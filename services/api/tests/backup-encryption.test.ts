@@ -24,7 +24,7 @@ describe('authenticated backup encryption', () => {
     await writeFile(input, expected);
     const key = await loadOrCreateBackupKey(keyPath);
     expect(key).toHaveLength(32);
-    expect((await stat(keyPath)).mode & 0o077).toBe(0);
+    if (process.platform !== 'win32') expect((await stat(keyPath)).mode & 0o077).toBe(0);
     await encryptBackupFile(input, encrypted, key);
     expect((await readFile(encrypted)).includes(expected)).toBe(false);
     await decryptBackupFile(encrypted, decrypted, key);
