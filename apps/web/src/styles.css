@@ -323,3 +323,21 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   .budget-explainer { padding: 14px; }
   .allocation-actions { flex-direction: column; }
 }
+
+
+.monthly-trend-panel { margin-top: 16px; }
+.trend-table-wrap { width: 100%; overflow-x: auto; }
+.trend-table { width: 100%; min-width: 760px; border-collapse: collapse; text-align: left; }
+.trend-table th { padding: 12px 10px; border-bottom: 1px solid #30425a; color: #8094ae; background: #131f30; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.trend-table td { padding: 12px 10px; border-bottom: 1px solid #223149; color: #aebed2; font-size: 10px; vertical-align: middle; }
+.trend-table tbody tr:last-child td { border-bottom: 0; }
+.trend-table tbody tr:hover { background: #142136; }
+.trend-bars { display: grid; grid-template-columns: 10px minmax(66px, 100px) 10px minmax(66px, 100px); align-items: center; gap: 5px; }
+.trend-label { color: #8296ad; font-size: 9px; }
+.trend-track { height: 6px; overflow: hidden; border-radius: 999px; background: #202f43; }
+.trend-track span { display: block; height: 100%; border-radius: 999px; }
+.trend-track .income { background: #7cddb4; }
+.trend-track .expense { background: #e98773; }
+.trend-number { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.income-text { color: #8cdeb9 !important; }
+.expense-text { color: #ffb2a3 !important; }
