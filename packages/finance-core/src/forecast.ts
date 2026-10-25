@@ -104,7 +104,7 @@ export function projectSavings(
     const aggregate = byMonth.get(month) ?? { income: 0, expense: 0, recurringExpense: 0 };
     const category = entry.categoryId ? categoryById.get(entry.categoryId) : undefined;
     if (category?.isIncome) aggregate.income += entry.amountMinor;
-    else if (entry.amountMinor < 0) aggregate.expense += -entry.amountMinor;
+    else if (entry.categoryId !== null || entry.amountMinor < 0) aggregate.expense += -entry.amountMinor;
     byMonth.set(month, aggregate);
   }
 
@@ -126,12 +126,18 @@ export function projectSavings(
   const recurringExpenseMonthlyMinor = stableMedian(monthlyRecurring) ?? 0;
   const extraordinaryExpenseMonthlyMinor = Math.max(0, totalMonthlyExpenseMinor - recurringExpenseMonthlyMinor);
 
-  const categoryMonthTotals = new Map<string, number[]>();
+  // Aggregate by category and calendar month first. A transaction-level
+  // median understates categories with several purchases per month and ignores
+  // months with no spend, so include zeroes for every month represented in history.
+  const categoryMonthTotals = new Map<string, Map<string, number>>();
   for (const entry of historyEntries) {
-    if (entry.isTransfer || entry.amountMinor >= 0 || !entry.categoryId) continue;
-    const list = categoryMonthTotals.get(entry.categoryId) ?? [];
-    list.push(-entry.amountMinor);
-    categoryMonthTotals.set(entry.categoryId, list);
+    if (entry.isTransfer || entry.categoryId === null) continue;
+    const category = categoryById.get(entry.categoryId);
+    if (category?.isIncome) continue;
+    const month = monthKey(entry.date);
+    const byMonthForCategory = categoryMonthTotals.get(entry.categoryId) ?? new Map<string, number>();
+    byMonthForCategory.set(month, (byMonthForCategory.get(month) ?? 0) - entry.amountMinor);
+    categoryMonthTotals.set(entry.categoryId, byMonthForCategory);
   }
 
   let projectedMonthlyIncomeMinor = baselineMonthlyIncomeMinor;
@@ -142,7 +148,9 @@ export function projectSavings(
     assumptions.push(`Cambio de ingreso mensual del ${scenario.percent} % sobre la mediana histórica (${baselineMonthlyIncomeMinor} unidades monetarias menores).`);
   } else {
     const category = categoryById.get(scenario.categoryId)!;
-    const categoryMedian = stableMedian(categoryMonthTotals.get(scenario.categoryId) ?? []) ?? 0;
+    const categoryMonthlyValues = [...byMonth.keys()].map((month) =>
+      categoryMonthTotals.get(scenario.categoryId)?.get(month) ?? 0);
+    const categoryMedian = Math.max(0, stableMedian(categoryMonthlyValues) ?? 0);
     const reduction = Math.round(categoryMedian * scenario.percent / 100);
     projectedMonthlyExpenseMinor = Math.max(0, totalMonthlyExpenseMinor - reduction);
     assumptions.push(`Reducción del ${scenario.percent} % en la categoría ${category.name}; mediana mensual histórica de la categoría ${categoryMedian} y reducción estimada de ${reduction} unidades monetarias menores.`);
