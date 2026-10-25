@@ -61,8 +61,9 @@ interface Period {
   endDate: string;
 }
 interface ApiPayload<T> {
-  data: T;
+  data?: T;
   error?: { code?: string; message?: string };
+  pagination?: { total: number; limit: number; offset: number; sortBy?: SortKey; order?: 'asc' | 'desc' };
 }
 class ApiError extends Error {
   constructor(message: string, public readonly code?: string) {
@@ -113,13 +114,18 @@ function previousPeriod(mode: PeriodMode, period: Period): Period {
   const start = new Date(startMs - days * 86_400_000);
   return { startDate: isoDate(start), endDate: isoDate(end) };
 }
-async function apiData<T>(url: string, signal?: AbortSignal): Promise<T> {
+async function apiResponse<T>(url: string, signal?: AbortSignal): Promise<ApiPayload<T>> {
   const response = await fetch(url, { signal, headers: { Accept: 'application/json' } });
-  const payload = await response.json().catch(() => ({})) as ApiPayload<T>;
+  const payload = await response.json().catch(() => ({})) as ApiPayload<T> & { status?: string };
   if (!response.ok) {
-    throw new ApiError(payload.error?.message ?? 'La API local no ha podido completar la consulta.', payload.error?.code);
+    const code = payload.error?.code ?? (response.status === 503 && payload.status === 'not_configured' ? 'NOT_CONFIGURED' : undefined);
+    throw new ApiError(payload.error?.message ?? 'La API local no ha podido completar la consulta.', code);
   }
-  return payload.data;
+  return payload;
+}
+async function apiData<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const payload = await apiResponse<T>(url, signal);
+  return payload.data === undefined ? payload as T : payload.data;
 }
 function formatMoney(amountMinor: number, currency: string): string {
   try {
@@ -161,6 +167,7 @@ export function App() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [transactionTotal, setTransactionTotal] = useState(0);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [comparison, setComparison] = useState<Summary | null>(null);
   const [bootError, setBootError] = useState('');
@@ -187,8 +194,9 @@ export function App() {
 
   useEffect(() => {
     const controller = new AbortController();
-    void apiData<{ status: string }>('/ready', controller.signal)
-      .then(async () => {
+    void (async () => {
+      try {
+        await apiData<{ status: string }>('/ready', controller.signal);
         const [accountsResult, categoriesResult] = await Promise.all([
           apiData<Account[]>('/api/v1/accounts', controller.signal),
           apiData<Category[]>('/api/v1/categories', controller.signal),
@@ -197,22 +205,19 @@ export function App() {
         setAccounts(accountsResult);
         setCategories(categoriesResult);
         setConnection('connected');
-        setBootLoaded(true);
-      })
-      .catch((error: unknown) => {
+      } catch (error) {
         if (controller.signal.aborted) return;
         if (error instanceof ApiError && (error.code === 'NOT_CONFIGURED' || error.code === 'CLOSED')) {
           setConnection('unconfigured');
           setBootError('Configura ACTUAL_BUDGET_ID en el archivo .env y comprueba que Actual Budget está iniciado.');
-        } else if (error instanceof ApiError && error.message.includes('fetch')) {
-          setConnection('error');
-          setBootError('No se puede contactar con la API local. Comprueba que el backend está iniciado.');
         } else {
           setConnection('error');
           setBootError(error instanceof Error ? error.message : 'No se han podido cargar los datos locales.');
         }
-        setBootLoaded(true);
-      });
+      } finally {
+        if (!controller.signal.aborted) setBootLoaded(true);
+      }
+    })();
     return () => controller.abort();
   }, []);
 
@@ -222,13 +227,24 @@ export function App() {
     let active = true;
     setDataLoading(true);
     setDataError('');
-    const activeAccounts = accounts.filter((account) => !account.closed);
+    const transactionQuery = new URLSearchParams({
+      startDate: period.startDate,
+      endDate: period.endDate,
+      limit: '20',
+      offset: String((page - 1) * 20),
+      sortBy: sortKey,
+      order: sortAscending ? 'asc' : 'desc',
+    });
+    if (accountFilter !== 'all') transactionQuery.set('accountId', accountFilter);
+    if (categoryFilter !== 'all') transactionQuery.set('categoryId', categoryFilter);
+    if (uncategorizedOnly) transactionQuery.set('uncategorized', 'true');
+    if (searchText.trim()) transactionQuery.set('search', searchText.trim());
+    const transactionRequest = route === '/movements'
+      ? apiResponse<Transaction[]>('/api/v1/transactions?' + transactionQuery.toString(), controller.signal)
+      : Promise.resolve({ data: [] as Transaction[], pagination: { total: 0, limit: 20, offset: 0 } });
     Promise.all([
       apiData<Summary>('/api/v1/reports/summary' + queryFor(period), controller.signal),
-      Promise.all(activeAccounts.map((account) =>
-        apiData<Transaction[]>('/api/v1/transactions?accountId=' + encodeURIComponent(account.id) +
-          '&startDate=' + encodeURIComponent(period.startDate) + '&endDate=' + encodeURIComponent(period.endDate), controller.signal),
-      )).then((groups) => groups.flat()),
+      transactionRequest,
       route === '/reports'
         ? apiData<Summary>('/api/v1/reports/summary' + queryFor(previous), controller.signal)
         : Promise.resolve(null),
@@ -236,7 +252,8 @@ export function App() {
       .then(([summaryResult, transactionResult, previousResult]) => {
         if (!active) return;
         setSummary(summaryResult);
-        setTransactions(transactionResult.filter((item) => item.is_child !== true && !item.parent_id));
+        setTransactions(transactionResult.data ?? []);
+        setTransactionTotal(transactionResult.pagination?.total ?? transactionResult.data?.length ?? 0);
         setComparison(previousResult);
       })
       .catch((error: unknown) => {
@@ -245,33 +262,15 @@ export function App() {
       })
       .finally(() => { if (active) setDataLoading(false); });
     return () => { active = false; controller.abort(); };
-  }, [accounts, bootLoaded, connection, invalidPeriod, period, previous, route]);
+  }, [accountFilter, accounts, bootLoaded, categoryFilter, connection, invalidPeriod, page, period, previous, route, searchText, sortAscending, sortKey, uncategorizedOnly]);
 
   const categoriesById = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
   const accountsById = useMemo(() => new Map(accounts.map((account) => [account.id, account])), [accounts]);
-  const filteredTransactions = useMemo(() => {
-    const q = searchText.trim().toLocaleLowerCase('es');
-    const filtered = transactions.filter((transaction) => {
-      if (accountFilter !== 'all' && transaction.account !== accountFilter) return false;
-      if (categoryFilter !== 'all' && transaction.category !== categoryFilter) return false;
-      if (uncategorizedOnly && transaction.category) return false;
-      if (q && ![transactionDescription(transaction), transaction.notes ?? '', accountsById.get(transaction.account)?.name ?? '',
-        categoriesById.get(transaction.category ?? '')?.name ?? ''].some((value) => value.toLocaleLowerCase('es').includes(q))) return false;
-      return true;
-    });
-    filtered.sort((left, right) => {
-      let delta = 0;
-      if (sortKey === 'amount') delta = left.amount - right.amount;
-      else if (sortKey === 'description') delta = transactionDescription(left).localeCompare(transactionDescription(right), 'es');
-      else delta = left.date.localeCompare(right.date);
-      return sortAscending ? delta : -delta;
-    });
-    return filtered;
-  }, [transactions, accountFilter, categoryFilter, uncategorizedOnly, searchText, accountsById, categoriesById, sortKey, sortAscending]);
+  const filteredTransactions = transactions;
   const pageSize = 20;
-  const pageCount = Math.max(1, Math.ceil(filteredTransactions.length / pageSize));
+  const pageCount = Math.max(1, Math.ceil(transactionTotal / pageSize));
   const currentPage = Math.min(page, pageCount);
-  const visibleTransactions = filteredTransactions.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const visibleTransactions = filteredTransactions;
 
   function retryBoot() {
     window.location.reload();
@@ -393,7 +392,7 @@ export function App() {
 
             {!dataLoading && !dataError && !invalidPeriod && route === '/movements' && (
               <section className="content-section" aria-labelledby="movements-heading">
-                <div className="section-heading"><div><p className="eyebrow">LIBRO DE MOVIMIENTOS</p><h2 id="movements-heading">Transacciones</h2></div><span className="date-badge">{filteredTransactions.length} resultados</span></div>
+                <div className="section-heading"><div><p className="eyebrow">LIBRO DE MOVIMIENTOS</p><h2 id="movements-heading">Transacciones</h2></div><span className="date-badge">{transactionTotal} resultados</span></div>
                 {accounts.filter((item) => !item.closed).length === 0 ? <EmptyState title="No hay cuentas disponibles" body="Crea o abre una cuenta en Actual Budget y vuelve a cargar los datos." /> : (
                   <>
                     <div className="filters-panel">
@@ -425,7 +424,7 @@ export function App() {
                         </table>
                       </div>
                     )}
-                    <div className="table-footer"><span>Página {currentPage} de {pageCount} · {filteredTransactions.length} movimientos</span><div className="pagination"><button className="button secondary" type="button" disabled={currentPage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>Anterior</button><button className="button secondary" type="button" disabled={currentPage >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>Siguiente</button></div></div>
+                    <div className="table-footer"><span>Página {currentPage} de {pageCount} · {transactionTotal} movimientos</span><div className="pagination"><button className="button secondary" type="button" disabled={currentPage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>Anterior</button><button className="button secondary" type="button" disabled={currentPage >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>Siguiente</button></div></div>
                     <p className="section-footnote">La API limita los periodos de consulta a cinco años. Los importes conservan el signo de Actual; los traspasos se muestran en el registro, pero se excluyen de los totales consolidados.</p>
                   </>
                 )}
