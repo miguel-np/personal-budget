@@ -1,5 +1,11 @@
 import { createInterface } from 'node:readline';
-const VERSION = '2024-11-05', MAX_LINE = 8192, MAX_OUTPUT = 65536, MAX_CALLS = 24, TIMEOUT = 5000;
+const VERSION = '2024-11-05', MAX_LINE = 8192, MAX_OUTPUT = 65536, MAX_CALLS = 24;
+const configuredTimeout = process.env.PERSONAL_BUDGET_MCP_API_TIMEOUT_MS;
+const TIMEOUT = configuredTimeout === undefined ? 5000 : Number(configuredTimeout);
+if (!Number.isInteger(TIMEOUT) || TIMEOUT < 100 || TIMEOUT > 30000) {
+ process.stderr.write('PERSONAL_BUDGET_MCP_API_TIMEOUT_MS must be an integer from 100 to 30000.\\n');
+ process.exit(2);
+}
 let calls = 0;
 const base = process.env.PERSONAL_BUDGET_API_URL || 'http://127.0.0.1:3000';
 function loopback(value) {
@@ -21,11 +27,43 @@ const tools=[
 {name:'get_recurring_candidates',description:'Find historical recurring-payment candidates; never a guarantee. Read-only.',inputSchema:schema({startDate:{type:'string'},endDate:{type:'string'},limit:{type:'integer',minimum:1,maximum:50}},['startDate','endDate'])},
 {name:'simulate_budget_change',description:'Calculate hypothetical category reduction; never persists changes. Read-only.',inputSchema:schema({startDate:{type:'string'},endDate:{type:'string'},categoryName:{type:'string',minLength:1,maxLength:128},reductionPercent:{type:'number',minimum:0,maximum:100}},['startDate','endDate','categoryName','reductionPercent'])}
 ];
+async function boundedBody(response, maxBytes) {
+ const declaredLength = Number(response.headers.get('content-length'));
+ if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+  await response.body?.cancel().catch(() => undefined);
+  throw Error('Local API response exceeds size limit.');
+ }
+ if (!response.body) return '';
+ const reader = response.body.getReader();
+ const chunks = [];
+ let total = 0;
+ try {
+  while (true) {
+   const { done, value } = await reader.read();
+   if (done) break;
+   total += value.byteLength;
+   if (total > maxBytes) {
+    await reader.cancel().catch(() => undefined);
+    throw Error('Local API response exceeds size limit.');
+   }
+   chunks.push(value);
+  }
+ } finally {
+  reader.releaseLock();
+ }
+ const body = new Uint8Array(total);
+ let offset = 0;
+ for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.byteLength; }
+ return new TextDecoder().decode(body);
+}
 async function api(path) {
  const u=new URL(path,base.endsWith('/')?base:base+'/');
  const r=await fetch(u,{headers:{Accept:'application/json'},signal:AbortSignal.timeout(TIMEOUT)});
- if(!r.ok) throw Error('Local finance API request failed.');
- const raw=await r.text(); if(raw.length>MAX_OUTPUT) throw Error('Local API response exceeds size limit.');
+ if(!r.ok) {
+  await r.body?.cancel().catch(() => undefined);
+  throw Error('Local finance API request failed.');
+ }
+ const raw=await boundedBody(r,MAX_OUTPUT);
  const j=JSON.parse(raw); if(!j||typeof j!=='object'||j.error) throw Error('Local API returned invalid data.'); return j;
 }
 const q=(p,params)=>'/api/v1/'+p+'?'+new URLSearchParams(params);
