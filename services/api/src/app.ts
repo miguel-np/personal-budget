@@ -1,4 +1,4 @@
-import Fastify, { LogController, type FastifyInstance, type FastifyServerOptions } from 'fastify';
+import Fastify, { LogController, type FastifyInstance, type FastifyReply, type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import helmet from '@fastify/helmet';
 import { calculateSummary, isIsoDate, normalizeTransactions, validatePeriod } from '@personal-budget/finance-core';
 import type { BudgetRepository } from '@personal-budget/finance-core';
@@ -183,8 +183,8 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     }
   });
   const handleImport = async (
-    request: Parameters<Parameters<FastifyInstance['post']>[1]>[0],
-    reply: Parameters<Parameters<FastifyInstance['post']>[1]>[1],
+    request: FastifyRequest,
+    reply: FastifyReply,
     dryRun: boolean,
   ) => {
     try {
