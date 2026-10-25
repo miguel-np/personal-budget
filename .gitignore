@@ -1,0 +1,55 @@
+# Entorno y secretos
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Node / build
+node_modules/
+dist/
+build/
+coverage/
+.next/
+.vite/
+.turbo/
+*.tsbuildinfo
+
+# Aplicación y datos personales
+/data/
+/data-*
+/actual-data/
+/actual-server-data/
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+*.actual
+*.budget
+/*.ofx
+/*.qfx
+/*.qif
+/*.camt
+/*.xlsx
+/*.xls
+/*.bak
+/*.backup
+/backups/
+/imports/
+/exports/
+/reports-private/
+
+# Modelos, cachés y logs
+/.ollama/
+/models/
+/.cache/
+/logs/
+*.log
+*.pid
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
