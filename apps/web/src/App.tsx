@@ -146,7 +146,7 @@ function previousPeriod(mode: PeriodMode, period: Period): Period {
   return { startDate: isoDate(start), endDate: isoDate(end) };
 }
 async function apiResponse<T>(url: string, signal?: AbortSignal): Promise<ApiPayload<T>> {
-  const response = await fetch(url, { signal, headers: { Accept: 'application/json' } });
+  const response = await fetch(url, { ...(signal ? { signal } : {}), headers: { Accept: 'application/json' } });
   const payload = await response.json().catch(() => ({})) as ApiPayload<T> & { status?: string };
   if (!response.ok) {
     const code = payload.error?.code ?? (response.status === 503 && payload.status === 'not_configured' ? 'NOT_CONFIGURED' : undefined);
