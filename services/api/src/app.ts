@@ -7,9 +7,16 @@ import { z, ZodError } from 'zod';
 import type { AppConfig } from './config.js';
 
 const TransactionQuerySchema = z.object({
-  accountId: z.string().trim().min(1).max(128),
+  accountId: z.string().trim().min(1).max(128).optional(),
+  categoryId: z.string().trim().min(1).max(128).optional(),
+  search: z.string().trim().max(200).optional(),
+  uncategorized: z.enum(['true', 'false']).optional(),
   startDate: z.string().refine(isIsoDate, 'startDate must be a valid YYYY-MM-DD date.'),
   endDate: z.string().refine(isIsoDate, 'endDate must be a valid YYYY-MM-DD date.'),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).max(100_000).default(0),
+  sortBy: z.enum(['date', 'amount', 'description']).default('date'),
+  order: z.enum(['asc', 'desc']).default('desc'),
 }).strict();
 const SummaryQuerySchema = z.object({
   startDate: z.string().refine(isIsoDate, 'startDate must be a valid YYYY-MM-DD date.'),
@@ -102,7 +109,60 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     try {
       const query = TransactionQuerySchema.parse(request.query);
       assertPeriod(query.startDate, query.endDate);
-      return { data: await repository.listTransactions(query.accountId, query.startDate, query.endDate) };
+      const accounts = query.accountId
+        ? [{ id: query.accountId, name: '', closed: false }]
+        : (await repository.listAccounts()).filter((account) => !account.closed);
+      const groups = await Promise.all(accounts.map((account) =>
+        repository.listTransactions(account.id, query.startDate, query.endDate),
+      ));
+      const flattened = groups.flat().flatMap((transaction) => {
+        if (transaction.is_child === true || transaction.parent_id) return [];
+        if (transaction.subtransactions && transaction.subtransactions.length > 0) {
+          return transaction.subtransactions.map((child, index) => ({
+            ...child,
+            id: child.id || transaction.id + ':split:' + index,
+            account: child.account || transaction.account,
+            date: child.date || transaction.date,
+            payee_id: child.payee_id ?? transaction.payee_id,
+            payee_name: ('payee_name' in child ? child.payee_name : undefined) ?? ('payee_name' in transaction ? transaction.payee_name : undefined),
+            imported_payee: ('imported_payee' in child ? child.imported_payee : undefined) ?? ('imported_payee' in transaction ? transaction.imported_payee : undefined),
+            is_child: false,
+            parent_id: null,
+          }));
+        }
+        return [transaction];
+      });
+      const categories = await repository.listCategories();
+      const categoriesById = new Map(categories.map((category) => [category.id, category]));
+      const accountsById = new Map(accounts.map((account) => [account.id, account]));
+      const queryText = query.search?.toLocaleLowerCase('es') ?? '';
+      const filtered = flattened.filter((transaction) => {
+        if (query.categoryId && transaction.category !== query.categoryId) return false;
+        if (query.uncategorized === 'true' && transaction.category) return false;
+        if (query.uncategorized === 'false' && !transaction.category) return false;
+        if (!queryText) return true;
+        const extra = transaction as typeof transaction & { payee_name?: string | null; imported_payee?: string | null };
+        const description = extra.payee_name || extra.imported_payee || transaction.notes || transaction.payee_id || '';
+        const accountName = accountsById.get(transaction.account)?.name ?? '';
+        const categoryName = categoriesById.get(transaction.category ?? '')?.name ?? '';
+        return [description, accountName, categoryName, transaction.notes ?? '']
+          .some((value) => value.toLocaleLowerCase('es').includes(queryText));
+      });
+      filtered.sort((left, right) => {
+        let comparison = 0;
+        if (query.sortBy === 'amount') comparison = left.amount - right.amount;
+        else if (query.sortBy === 'description') {
+          const leftExtra = left as typeof left & { payee_name?: string | null; imported_payee?: string | null };
+          const rightExtra = right as typeof right & { payee_name?: string | null; imported_payee?: string | null };
+          const leftDescription = leftExtra.payee_name || leftExtra.imported_payee || left.notes || left.payee_id || '';
+          const rightDescription = rightExtra.payee_name || rightExtra.imported_payee || right.notes || right.payee_id || '';
+          comparison = leftDescription.localeCompare(rightDescription, 'es');
+        } else comparison = left.date.localeCompare(right.date);
+        return query.order === 'asc' ? comparison : -comparison;
+      });
+      const total = filtered.length;
+      const data = filtered.slice(query.offset, query.offset + query.limit);
+      return { data, pagination: { total, limit: query.limit, offset: query.offset, sortBy: query.sortBy, order: query.order } };
     } catch (error) {
       const normalized = sanitizedErrorResponse(error);
       return reply.code(normalized.statusCode).send(normalized.body);
