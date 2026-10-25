@@ -1,5 +1,32 @@
 import type { BudgetAccount, BudgetCategory, BudgetTransaction } from '@personal-budget/finance-core';
 
+export interface ActualBudgetMonthCategory {
+  readonly id: string;
+  readonly name: string;
+  readonly hidden?: boolean;
+  readonly budgeted?: number | null;
+  readonly spent?: number | null;
+  readonly balance?: number | null;
+  readonly carryover?: boolean | null;
+}
+export interface ActualBudgetMonthGroup {
+  readonly id: string;
+  readonly name: string;
+  readonly is_income?: boolean;
+  readonly hidden?: boolean;
+  readonly categories?: readonly ActualBudgetMonthCategory[];
+}
+export interface ActualBudgetMonthRecord {
+  readonly month: string;
+  readonly categoryGroups: readonly ActualBudgetMonthGroup[];
+  readonly totalBudgeted?: number;
+  readonly totalSpent?: number;
+  readonly totalBalance?: number;
+  readonly totalIncome?: number;
+  readonly incomeAvailable?: number;
+  readonly toBudget?: number;
+}
+
 export interface ActualAccountRecord {
   readonly id: string;
   readonly name: string;
@@ -38,6 +65,8 @@ export interface ActualApiContract {
   shutdown(): Promise<void>;
   getAccounts(): Promise<readonly ActualAccountRecord[]>;
   getCategories(): Promise<readonly ActualCategoryRecord[]>;
+  getBudgetMonth?(month: string): Promise<ActualBudgetMonthRecord>;
+  setBudgetAmount?(month: string, categoryId: string, amount: number): Promise<null>;
   getTransactions(accountId: string, startDate: string, endDate: string): Promise<readonly BudgetTransaction[]>;
   importTransactions(
     accountId: string,
