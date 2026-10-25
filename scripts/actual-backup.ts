@@ -1,5 +1,7 @@
+import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { chmod, mkdtemp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
 import { dirname, basename, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -12,6 +14,11 @@ const backupDir = resolve(root, process.env.BACKUP_DIR ?? '.local/backups');
 
 async function command(program: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
   return execFileAsync(program, args, { cwd: root, encoding: 'utf8', maxBuffer: 2 * 1024 * 1024 });
+}
+async function checksumFile(path: string): Promise<string> {
+  const hash = createHash('sha256');
+  for await (const chunk of createReadStream(path)) hash.update(chunk);
+  return hash.digest('hex');
 }
 async function assertDirectory(path: string): Promise<void> {
   const info = await stat(path).catch(() => null);
@@ -34,7 +41,7 @@ async function verifyArchive(archive: string): Promise<void> {
   const sidecar = await readFile(archive + '.sha256', 'utf8');
   const [expected, namedFile] = sidecar.trim().split(/\s+/);
   if (!expected || namedFile !== basename(archive) || !/^[a-f0-9]{64}$/.test(expected)) throw new Error('Backup checksum file is invalid.');
-  const actual = checksum(await readFile(archive));
+  const actual = await checksumFile(archive);
   if (actual !== expected) throw new Error('Backup checksum verification failed.');
   await archiveMembers(archive);
 }
@@ -57,16 +64,21 @@ async function backup(): Promise<string> {
   await mkdir(backupDir, { recursive: true });
   const archive = join(backupDir, makeBackupFilename());
   await command('docker', ['compose', 'stop', 'actual']);
+  let archiveCreated = false;
   try {
+    // Create exclusively with private permissions before tar writes any financial data.
+    await writeFile(archive, '', { flag: 'wx', mode: 0o600 });
+    archiveCreated = true;
     await command('tar', ['-czf', archive, '-C', dirname(dataDir), basename(dataDir)]);
-    // Financial backups must not be readable by other local users by default.
     await chmod(archive, 0o600);
     await archiveMembers(archive);
-    const digest = checksum(await readFile(archive));
+    const digest = await checksumFile(archive);
     await writeFile(archive + '.sha256', checksumSidecarContents(archive, digest), { mode: 0o600 });
   } catch (error) {
-    await rm(archive, { force: true });
-    await rm(archive + '.sha256', { force: true });
+    if (archiveCreated) {
+      await rm(archive, { force: true });
+      await rm(archive + '.sha256', { force: true });
+    }
     throw error;
   } finally {
     await command('docker', ['compose', 'start', 'actual']);
