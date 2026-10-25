@@ -121,6 +121,21 @@ describe('local API', () => {
   });
 
 
+  it('filters transactions and bounds each page at the API boundary', async () => {
+    const repository = createRepository();
+    const app = await createTestApp(repository);
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/transactions?startDate=2026-10-01&endDate=2026-10-31&categoryId=food&limit=1&offset=0&sortBy=amount&order=asc',
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toHaveLength(1);
+    expect(response.json().data[0]).toMatchObject({ id: 'expense-1', category: 'food' });
+    expect(response.json().pagination).toMatchObject({ total: 1, limit: 1, offset: 0, sortBy: 'amount', order: 'asc' });
+    expect(repository.listAccounts).toHaveBeenCalledTimes(1);
+    expect(repository.listTransactions).toHaveBeenCalledTimes(1);
+  });
+
   it('returns transactions for a validated account and date range', async () => {
     const repository = createRepository();
     const app = await createTestApp(repository);
@@ -129,7 +144,8 @@ describe('local API', () => {
       url: '/api/v1/transactions?accountId=account-1&startDate=2026-10-01&endDate=2026-10-31',
     });
     expect(response.statusCode).toBe(200);
-    expect(response.json().data).toEqual(transactions);
+    expect(response.json().data).toEqual([transactions[1], transactions[2], transactions[0]]);
+    expect(response.json().pagination).toMatchObject({ total: 3, limit: 50, offset: 0, sortBy: 'date', order: 'desc' });
     expect(repository.listTransactions).toHaveBeenCalledWith('account-1', '2026-10-01', '2026-10-31');
   });
 
