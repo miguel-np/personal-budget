@@ -1,6 +1,6 @@
 # Instalación: Windows + WSL2
 
-Esta guía prepara los componentes base para ejecución local. La shell web es provisional; dashboard y registro completo de movimientos se implementarán en P1.
+Esta guía describe una instalación local reproducible. La shell web incorpora resumen financiero, consulta y filtrado de movimientos, registro manual, importación CSV con previsualización, informes comparativos y seguimiento de presupuestos. Las escrituras pasan por la API local y requieren una acción explícita.
 
 ## Requisitos
 
@@ -86,7 +86,7 @@ En otra terminal:
 npm run dev:web
 ~~~
 
-Abre http://127.0.0.1:5173. La shell provisional consulta el endpoint local de salud. El resto de pantallas se implementará en P1.
+Abre http://127.0.0.1:5173. La aplicación usa solo la API local: Resumen, Movimientos, Informes, Presupuestos y Configuración. El Asistente aparece como no conectado y no envía movimientos a ningún modelo. Para registrar movimientos e importar extractos, revisa la previsualización y confirma la operación; el CSV se procesa en el navegador y la conciliación final la realiza Actual Budget.
 
 ## 5. Validar calidad
 
@@ -99,14 +99,65 @@ npm run audit
 npm run audit:production
 ~~~
 
-No cierres P0 hasta confirmar que los comandos pasan en un checkout limpio y que el adaptador se ha ensayado con una instancia local de Actual y un presupuesto de prueba.
+La CI ejecuta los controles en Linux y en Windows nativo. Para cerrar la validación de instalación también hay que ejecutar estos comandos en un checkout limpio de WSL2 y completar la prueba opcional de aceptación con un presupuesto de prueba de Actual. Un workflow Windows verde no prueba por sí solo la integración WSL2 ni el acceso a un servidor Actual real.
 
-## 6. IA local (opcional, P2)
+
+## 6. Matriz de aceptación: Windows nativo y WSL2
+
+### Windows nativo
+
+Desde PowerShell, en un checkout limpio del repositorio, ejecuta:
+
+~~~powershell
+node --version
+npm --version
+npm ci
+npm run lint
+npm run typecheck
+npm run test:coverage
+npm run build
+npm run audit
+npm run audit:production
+~~~
+
+La versión esperada de Node es v24.22.1. El workflow `windows-quality` ejecuta esta instalación y los mismos controles en un runner `windows-latest`; comprueba que su ejecución asociada a la PR haya terminado en verde.
+
+### WSL2
+
+Comprueba desde PowerShell:
+
+~~~powershell
+wsl --status
+wsl -l -v
+~~~
+
+La distribución usada debe indicar versión 2. Guarda el checkout en el filesystem Linux de la distribución (por ejemplo, `~/projects/personal-budget`) y, desde su raíz, ejecuta:
+
+~~~bash
+nvm install
+nvm use
+node --version
+npm --version
+npm ci
+docker compose config --quiet
+npm run lint
+npm run typecheck
+npm run test:coverage
+npm run build
+npm run audit
+npm run audit:production
+~~~
+
+Después, valida el contenedor y la API con las secciones anteriores. Registra el resultado de la prueba de aceptación real solo con un presupuesto de prueba. No uses datos financieros reales para una importación de validación.
+
+**Estado de validación:** esta guía y la CI automatizada son una ayuda reproducible, no evidencia de que una máquina Windows/WSL2 concreta se haya probado. No marques la issue de instalación como terminada hasta que la matriz se haya ejecutado en ambos entornos y la aceptación local de Actual haya pasado.
+
+## 7. IA local (opcional, P2)
 
 La integración con Ollama aún no está conectada a la shell P0. Para prepararla, instala Ollama desde la [web oficial](https://ollama.com/download) y consulta su [API](https://docs.ollama.com/api). La descarga del modelo requiere red; no configures endpoints alojados si el requisito es mantener las consultas en el equipo.
 
 
-## 7. Prueba de aceptación con un presupuesto local existente (opcional)
+## 8. Prueba de aceptación con un presupuesto local existente (opcional)
 
 Cuando Actual Budget esté iniciado y hayas creado/configurado un presupuesto de prueba, puedes probar el adaptador real en modo solo lectura. Esta prueba consulta cuentas, categorías y movimientos del año configurado, pero no crea ni modifica transacciones.
 
