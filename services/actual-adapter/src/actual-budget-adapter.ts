@@ -83,7 +83,9 @@ export class ActualBudgetAdapter implements BudgetRepository {
     if (!/^\\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
       throw new ActualAdapterError('INVALID_INPUT', 'Budget month must use YYYY-MM.');
     }
-    if (!this.api.getBudgetAllocations) return [];
+    if (!this.api.getBudgetAllocations) {
+      throw new ActualAdapterError('UPSTREAM_FAILURE', 'The configured Actual API client does not support explicit budget allocation lookup.');
+    }
     return this.enqueue(async () => this.api.getBudgetAllocations!(month));
   }
 
