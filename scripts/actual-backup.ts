@@ -1,9 +1,9 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, basename, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { checksum, checksumSidecarContents, makeBackupFilename, parseRetentionDays, validateArchiveMembers } from './backup-restore.js';
+import { checksum, checksumSidecarContents, makeBackupFilename, parseRetentionDays, validateArchiveEntryTypes, validateArchiveMembers } from './backup-restore.js';
 
 const execFileAsync = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -18,9 +18,14 @@ async function assertDirectory(path: string): Promise<void> {
   if (!info?.isDirectory()) throw new Error('Expected data directory is missing.');
 }
 async function archiveMembers(archive: string): Promise<string[]> {
-  const result = await command('tar', ['-tzf', archive]);
-  const members = result.stdout.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+  const [listing, detailedListing] = await Promise.all([
+    command('tar', ['-tzf', archive]),
+    command('tar', ['-tvzf', archive]),
+  ]);
+  const members = listing.stdout.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+  const entries = detailedListing.stdout.split(/\r?\n/).filter(Boolean);
   validateArchiveMembers(members, basename(dataDir));
+  validateArchiveEntryTypes(entries);
   return members;
 }
 async function verifyArchive(archive: string): Promise<void> {
@@ -54,8 +59,9 @@ async function backup(): Promise<string> {
   await command('docker', ['compose', 'stop', 'actual']);
   try {
     await command('tar', ['-czf', archive, '-C', dirname(dataDir), basename(dataDir)]);
-    const result = await command('tar', ['-tzf', archive]);
-    validateArchiveMembers(result.stdout.split(/\r?\n/).filter(Boolean), basename(dataDir));
+    // Financial backups must not be readable by other local users by default.
+    await chmod(archive, 0o600);
+    await archiveMembers(archive);
     const digest = checksum(await readFile(archive));
     await writeFile(archive + '.sha256', checksumSidecarContents(archive, digest), { mode: 0o600 });
   } catch (error) {
