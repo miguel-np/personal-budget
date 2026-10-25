@@ -5,7 +5,7 @@ import { createReadStream } from 'node:fs';
 import { dirname, basename, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { checksum, checksumSidecarContents, makeBackupFilename, parseRetentionDays, validateArchiveEntryTypes, validateArchiveMembers } from './backup-restore.js';
+import { checksumSidecarContents, makeBackupFilename, parseRetentionDays, validateArchiveEntryTypes, validateArchiveMembers } from './backup-restore.js';
 
 const execFileAsync = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
