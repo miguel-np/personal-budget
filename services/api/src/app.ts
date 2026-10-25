@@ -25,7 +25,7 @@ const SummaryQuerySchema = z.object({
 }).strict();
 const ImportRecordSchema = z.object({
   date: z.string().refine(isIsoDate, 'date must be a valid YYYY-MM-DD date.'),
-  amount: z.number().int().safe().refine((amount) => amount !== 0, 'amount cannot be zero.'),
+  amount: z.number().int().refine(Number.isSafeInteger, 'amount must be a safe integer.').refine((amount) => amount !== 0, 'amount cannot be zero.'),
   payee_name: z.string().trim().min(1).max(200),
   imported_payee: z.string().trim().max(500).optional(),
   category: z.string().trim().min(1).max(128).optional(),
@@ -37,7 +37,7 @@ const ImportRequestSchema = z.object({
   records: z.array(ImportRecordSchema).min(1).max(2_000),
 }).strict();
 const BudgetMonthSchema = z.string().regex(/^\\d{4}-(0[1-9]|1[0-2])$/, 'month must use YYYY-MM.');
-const BudgetAmountSchema = z.object({ amountMinor: z.number().int().safe().min(0) }).strict();
+const BudgetAmountSchema = z.object({ amountMinor: z.number().int().refine(Number.isSafeInteger, 'amount must be a safe integer.').min(0) }).strict();
 const MAX_REPORT_DAYS = 366 * 5;
 
 export interface AppDependencies {
