@@ -198,6 +198,7 @@ export function MovementTools({ accounts, categories, currency, onImported }: Mo
   const [csvDebitColumn, setCsvDebitColumn] = useState('');
   const [csvCreditColumn, setCsvCreditColumn] = useState('');
   const [csvCategoryColumn, setCsvCategoryColumn] = useState('');
+  const [invertCsvAmountSign, setInvertCsvAmountSign] = useState(false);
   const [csvRecords, setCsvRecords] = useState<ImportRecord[] | null>(null);
   const [csvResult, setCsvResult] = useState<ImportResult | null>(null);
   const [csvBusy, setCsvBusy] = useState(false);
@@ -347,7 +348,8 @@ export function MovementTools({ accounts, categories, currency, onImported }: Mo
       const description = selectorValue(row, csvDescriptionColumn);
       let amountMinor: number | null;
       if (csvAmountColumn !== '') {
-        amountMinor = parseCsvMoney(selectorValue(row, csvAmountColumn), decimalSeparator);
+        const parsedAmount = parseCsvMoney(selectorValue(row, csvAmountColumn), decimalSeparator);
+        amountMinor = parsedAmount === null ? null : invertCsvAmountSign ? -parsedAmount : parsedAmount;
       } else {
         const debitText = selectorValue(row, csvDebitColumn);
         const creditText = selectorValue(row, csvCreditColumn);
@@ -463,6 +465,7 @@ export function MovementTools({ accounts, categories, currency, onImported }: Mo
             <label className="field-label">Delimitador<select value={delimiter} onChange={(event) => rebuildCsvForDelimiter(event.currentTarget.value as Delimiter)}><option value=";">Punto y coma (;)</option><option value=",">Coma (,)</option><option value={'\t'}>Tabulador</option></select></label>
             <label className="field-label">Separador decimal<select value={decimalSeparator} onChange={(event) => { setDecimalSeparator(event.currentTarget.value as ',' | '.'); setCsvRecords(null); }}><option value=",">Coma (12,34)</option><option value=".">Punto (12.34)</option></select></label>
             <label className="field-label">Formato de fecha<select value={dateFormat} onChange={(event) => { setDateFormat(event.currentTarget.value as DateFormat); setCsvRecords(null); }}><option value="iso">AAAA-MM-DD</option><option value="dmy">DD/MM/AAAA</option><option value="mdy">MM/DD/AAAA</option></select></label>
+            <label className="field-label">Signo del importe<select value={invertCsvAmountSign ? 'invert' : 'signed'} onChange={(event) => { setInvertCsvAmountSign(event.currentTarget.value === 'invert'); setCsvRecords(null); }}><option value="signed">Mantener signo del archivo</option><option value="invert">Invertir signo del importe</option></select></label>
           </div>
           {fileName ? <p className="file-caption">Archivo cargado: <strong>{fileName}</strong> · {csvRows.length} filas de datos</p> : null}
           {headers.length ? (
@@ -481,6 +484,32 @@ export function MovementTools({ accounts, categories, currency, onImported }: Mo
                 {csvRows.slice(0, 3).map((row, index) => <div className="csv-sample-row" key={index}>{row.slice(0, 6).map((cell, cellIndex) => <span key={cellIndex}>{cell}</span>)}</div>)}
               </div>
             </>
+          ) : null}
+          {csvRecords ? (
+            <div className="csv-preview-result">
+              <div className="panel-heading"><div><p className="eyebrow">PREVISUALIZACIÓN DE CONCILIACIÓN</p><h4>Movimientos normalizados</h4></div><span className="muted-label">{csvRecords.length} filas</span></div>
+              <p className="tool-hint">
+                Cuenta destino: <strong>{openAccounts.find((account) => account.id === accountId)?.name ?? 'Cuenta no disponible'}</strong>.
+                {csvResult?.dryRun ? ' Actual informa ' + csvResult.added + ' movimientos nuevos y ' + csvResult.updated + ' actualizables; el análisis no ha escrito cambios.' : ' Revisa las filas antes de confirmar.'}
+              </p>
+              <div className="csv-preview-table-wrap">
+                <table className="csv-preview-table">
+                  <thead><tr><th scope="col">Fecha</th><th scope="col">Concepto</th><th scope="col">Categoría</th><th scope="col">Importe ({currency})</th><th scope="col">Resultado</th></tr></thead>
+                  <tbody>{csvRecords.slice(0, 50).map((record) => {
+                    const category = categories.find((candidate) => candidate.id === record.category);
+                    const amountLabel = new Intl.NumberFormat('es-ES', { style: 'currency', currency, maximumFractionDigits: 2 }).format(record.amount / 100);
+                    return <tr key={record.imported_id}>
+                      <td>{record.date}</td>
+                      <td>{record.payee_name}</td>
+                      <td>{category?.name ?? 'Sin categoría'}</td>
+                      <td className={'amount-cell ' + (record.amount < 0 ? 'expense' : 'income')}>{amountLabel}</td>
+                      <td><span className="cleared-badge">Pendiente de confirmación</span></td>
+                    </tr>;
+                  })}</tbody>
+                </table>
+              </div>
+              {csvRecords.length > 50 ? <p className="tool-hint">Se muestran las primeras 50 filas de {csvRecords.length}; todas se incluyen en la operación confirmada.</p> : null}
+            </div>
           ) : null}
           <div className="tool-actions">
             <button className="button primary" type="button" disabled={csvBusy || !csvRows.length || openAccounts.length === 0} onClick={() => void previewCsv()}>{csvBusy ? 'Analizando…' : 'Validar y previsualizar'}</button>
