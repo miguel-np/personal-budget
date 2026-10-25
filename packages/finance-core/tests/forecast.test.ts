@@ -57,6 +57,35 @@ describe('projectSavings', () => {
     expect(result.assumptions.some((assumption) => assumption.includes('Alimentación'))).toBe(true);
   });
 
+  it('reduces the monthly category total, not the median individual transaction', () => {
+    const transactions = stableHistory();
+    for (let month = 1; month <= 6; month += 1) {
+      const monthLabel = String(month).padStart(2, '0');
+      transactions.push(expense('food-extra-' + month, '2026-' + monthLabel + '-04', -20_000, 'Mercado adicional', 'food'));
+    }
+    const result = projectSavings(transactions, categories, { type: 'category_reduction', categoryId: 'food', percent: 10 }, {
+      currency: 'EUR', horizonMonths: 3, ...historyPeriod,
+    });
+    // Food is 50,000 minor units per month (30,000 + 20,000), so a 10%
+    // reduction lowers monthly spending by 5,000, not 3,000 or 2,000.
+    expect(result.projectedMonthlyExpenseMinor).toBe(130_000 - 5_000);
+    expect(result.projectedMonthlySavingsMinor).toBe(75_000);
+  });
+
+  it('includes zero-spend months in the category monthly median', () => {
+    const transactions = stableHistory().filter((transaction) =>
+      transaction.category !== 'food' || transaction.date.startsWith('2026-01') || transaction.date.startsWith('2026-02'));
+    transactions.push(expense('food-extra-01', '2026-01-04', -20_000, 'Mercado adicional', 'food'));
+    transactions.push(expense('food-extra-02', '2026-02-04', -20_000, 'Mercado adicional', 'food'));
+    const result = projectSavings(transactions, categories, { type: 'category_reduction', categoryId: 'food', percent: 10 }, {
+      currency: 'EUR', horizonMonths: 3, ...historyPeriod,
+    });
+    // The category has no spend in four of six months; the median monthly
+    // category spend is therefore zero and should not create artificial savings.
+    expect(result.projectedMonthlyExpenseMinor).toBe(80_000);
+    expect(result.projectedMonthlySavingsMinor).toBe(120_000);
+  });
+
   it('applies an income change on the historical median', () => {
     const result = projectSavings(stableHistory(), categories, { type: 'income_change', percent: 10 }, {
       currency: 'EUR', horizonMonths: 2, ...historyPeriod,
