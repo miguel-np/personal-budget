@@ -137,6 +137,71 @@ describe('local API', () => {
     expect(repository.listTransactions).toHaveBeenCalledTimes(1);
   });
 
+  it('normalizes Actual monthly category budget amounts and deviation', async () => {
+    const getBudgetMonth = vi.fn(async (month: string) => ({
+      month,
+      totalBudgeted: 5_000,
+      totalSpent: -6_000,
+      totalBalance: -1_000,
+      totalIncome: 200_000,
+      incomeAvailable: 190_000,
+      toBudget: 10_000,
+      categoryGroups: [{
+        id: 'spend',
+        name: 'Gastos',
+        is_income: false,
+        categories: [
+          { id: 'food', name: 'Alimentación', budgeted: 5_000, spent: -6_000, balance: -1_000, carryover: false, hidden: false },
+          { id: 'salary', name: 'Ingreso', budgeted: 0, spent: 0, balance: 0, carryover: false, hidden: true },
+        ],
+      }],
+    }));
+    const repository = Object.assign(createRepository(), { getBudgetMonth }) as BudgetRepository & {
+      getBudgetMonth: typeof getBudgetMonth;
+    };
+    const app = await createTestApp(repository);
+    const response = await app.inject({ method: 'GET', url: '/api/v1/budgets/2026-10' });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.totals).toMatchObject({ totalBudgetedMinor: 5_000, totalSpentMinor: 6_000, totalBalanceMinor: -1_000 });
+    expect(response.json().data.categories).toHaveLength(1);
+    expect(response.json().data.categories[0]).toMatchObject({
+      categoryId: 'food',
+      budgetedMinor: 5_000,
+      spentMinor: 6_000,
+      availableMinor: -1_000,
+      percentUsed: 120,
+      state: 'budgeted',
+    });
+    expect(getBudgetMonth).toHaveBeenCalledWith('2026-10');
+  });
+
+  it('updates category allocations only for an existing expense category', async () => {
+    const getBudgetMonth = vi.fn(async (month: string) => ({ month, categoryGroups: [] }));
+    const setBudgetAmount = vi.fn(async () => undefined);
+    const repository = Object.assign(createRepository(), { getBudgetMonth, setBudgetAmount }) as BudgetRepository & {
+      getBudgetMonth: typeof getBudgetMonth;
+      setBudgetAmount: typeof setBudgetAmount;
+    };
+    const app = await createTestApp(repository);
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/api/v1/budgets/2026-10/food',
+      payload: { amountMinor: 12_345 },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toMatchObject({ month: '2026-10', categoryId: 'food', amountMinor: 12_345, updated: true });
+    expect(setBudgetAmount).toHaveBeenCalledWith('2026-10', 'food', 12_345);
+
+    const income = await app.inject({
+      method: 'PUT',
+      url: '/api/v1/budgets/2026-10/salary',
+      payload: { amountMinor: 1_000 },
+    });
+    expect(income.statusCode).toBe(400);
+    expect(income.json().error.code).toBe('INVALID_CATEGORY');
+    expect(setBudgetAmount).toHaveBeenCalledTimes(1);
+  });
+
   it('previews and explicitly commits validated, idempotent transaction imports', async () => {
     const importTransactions = vi.fn(async (
       _accountId: string,
