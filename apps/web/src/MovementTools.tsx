@@ -185,6 +185,7 @@ export function MovementTools({ accounts, categories, currency, onImported }: Mo
   const [manualError, setManualError] = useState('');
 
   const [csvOpen, setCsvOpen] = useState(false);
+  const [csvAccountId, setCsvAccountId] = useState('');
   const [fileName, setFileName] = useState('');
   const [csvText, setCsvText] = useState('');
   const [delimiter, setDelimiter] = useState<Delimiter>(';');
@@ -335,7 +336,7 @@ export function MovementTools({ accounts, categories, currency, onImported }: Mo
     }
   }
   function buildCsvRecords(): ImportRecord[] {
-    if (!accountId || !openAccounts.some((account) => account.id === accountId)) throw new Error('Selecciona una cuenta de destino abierta.');
+    if (!csvAccountId || !openAccounts.some((account) => account.id === csvAccountId)) throw new Error('Selecciona explícitamente una cuenta de destino abierta.');
     if (csvDateColumn === '' || csvDescriptionColumn === '') throw new Error('Asigna las columnas de fecha y concepto.');
     if (csvAmountColumn === '' && csvDebitColumn === '' && csvCreditColumn === '') throw new Error('Asigna una columna de importe o de cargo/abono.');
     const categoryMap = new Map(categories.map((category) => [category.name.trim().toLocaleLowerCase('es'), category.id]));
@@ -390,7 +391,7 @@ export function MovementTools({ accounts, categories, currency, onImported }: Mo
     try {
       if (!csvRows.length) throw new Error('Carga primero un archivo CSV.');
       const records = buildCsvRecords();
-      const result = await sendImport('/api/v1/import/preview', accountId, records);
+      const result = await sendImport('/api/v1/import/preview', csvAccountId, records);
       setCsvRecords(records);
       setCsvResult(result);
       setCsvMessage('Previsualización completada: ' + result.added + ' movimientos nuevos y ' + result.updated + ' posibles conciliaciones/actualizaciones. No se han escrito cambios.');
@@ -406,7 +407,7 @@ export function MovementTools({ accounts, categories, currency, onImported }: Mo
     setCsvError('');
     setCsvMessage('');
     try {
-      const result = await sendImport('/api/v1/import/commit', accountId, csvRecords);
+      const result = await sendImport('/api/v1/import/commit', csvAccountId, csvRecords);
       setCsvResult(result);
       setCsvRecords(null);
       setCsvMessage('Importación confirmada por Actual: ' + result.added + ' añadidos, ' + result.updated + ' actualizados y ' + result.errors + ' errores. Los movimientos conciliados no se duplican por su identificador importado.');
@@ -461,7 +462,7 @@ export function MovementTools({ accounts, categories, currency, onImported }: Mo
           <p className="tool-hint">El archivo se lee y procesa en este navegador. Selecciona explícitamente la cuenta destino, mapea columnas y revisa todos los errores antes de importar. No se aceptan extractos OFX/QFX/QIF/CAMT en esta primera versión.</p>
           <div className="csv-controls-top">
             <label className="field-label">Archivo CSV<input type="file" accept=".csv,text/csv" onChange={(event) => void handleFile(event)} /></label>
-            <label className="field-label">Cuenta destino<select value={accountId} onChange={(event) => { setAccountId(event.currentTarget.value); setCsvRecords(null); }} required>{openAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
+            <label className="field-label">Cuenta destino<select value={csvAccountId} onChange={(event) => { setCsvAccountId(event.currentTarget.value); setCsvRecords(null); }} required><option value="">Selecciona cuenta destino…</option>{openAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
             <label className="field-label">Delimitador<select value={delimiter} onChange={(event) => rebuildCsvForDelimiter(event.currentTarget.value as Delimiter)}><option value=";">Punto y coma (;)</option><option value=",">Coma (,)</option><option value={'\t'}>Tabulador</option></select></label>
             <label className="field-label">Separador decimal<select value={decimalSeparator} onChange={(event) => { setDecimalSeparator(event.currentTarget.value as ',' | '.'); setCsvRecords(null); }}><option value=",">Coma (12,34)</option><option value=".">Punto (12.34)</option></select></label>
             <label className="field-label">Formato de fecha<select value={dateFormat} onChange={(event) => { setDateFormat(event.currentTarget.value as DateFormat); setCsvRecords(null); }}><option value="iso">AAAA-MM-DD</option><option value="dmy">DD/MM/AAAA</option><option value="mdy">MM/DD/AAAA</option></select></label>
@@ -489,7 +490,7 @@ export function MovementTools({ accounts, categories, currency, onImported }: Mo
             <div className="csv-preview-result">
               <div className="panel-heading"><div><p className="eyebrow">PREVISUALIZACIÓN DE CONCILIACIÓN</p><h4>Movimientos normalizados</h4></div><span className="muted-label">{csvRecords.length} filas</span></div>
               <p className="tool-hint">
-                Cuenta destino: <strong>{openAccounts.find((account) => account.id === accountId)?.name ?? 'Cuenta no disponible'}</strong>.
+                Cuenta destino: <strong>{openAccounts.find((account) => account.id === csvAccountId)?.name ?? 'Cuenta no disponible'}</strong>.
                 {csvResult?.dryRun ? ' Actual informa ' + csvResult.added + ' movimientos nuevos y ' + csvResult.updated + ' actualizables; el análisis no ha escrito cambios.' : ' Revisa las filas antes de confirmar.'}
               </p>
               <div className="csv-preview-table-wrap">
@@ -512,7 +513,7 @@ export function MovementTools({ accounts, categories, currency, onImported }: Mo
             </div>
           ) : null}
           <div className="tool-actions">
-            <button className="button primary" type="button" disabled={csvBusy || !csvRows.length || openAccounts.length === 0} onClick={() => void previewCsv()}>{csvBusy ? 'Analizando…' : 'Validar y previsualizar'}</button>
+            <button className="button primary" type="button" disabled={csvBusy || !csvRows.length || !csvAccountId || openAccounts.length === 0} onClick={() => void previewCsv()}>{csvBusy ? 'Analizando…' : 'Validar y previsualizar'}</button>
             {csvRecords ? <button className="button primary" type="button" disabled={csvBusy} onClick={() => void commitCsv()}>{csvBusy ? 'Importando…' : 'Confirmar importación (' + csvRecords.length + ')'}</button> : null}
             {csvRecords ? <button className="button secondary" type="button" disabled={csvBusy} onClick={() => { setCsvRecords(null); setCsvMessage('Confirmación cancelada. No se han escrito movimientos.'); }}>{'Cancelar'}</button> : null}
           </div>
