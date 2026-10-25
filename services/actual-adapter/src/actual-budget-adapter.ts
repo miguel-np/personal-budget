@@ -70,7 +70,7 @@ export class ActualBudgetAdapter implements BudgetRepository {
   }
 
   public async getBudgetMonth(month: string): Promise<ActualBudgetMonthRecord> {
-    if (!/^\\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
       throw new ActualAdapterError('INVALID_INPUT', 'Budget month must use YYYY-MM.');
     }
     if (!this.api.getBudgetMonth) {
@@ -80,7 +80,7 @@ export class ActualBudgetAdapter implements BudgetRepository {
   }
 
   public async getBudgetAllocations(month: string): Promise<readonly ActualBudgetAllocation[]> {
-    if (!/^\\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
       throw new ActualAdapterError('INVALID_INPUT', 'Budget month must use YYYY-MM.');
     }
     if (!this.api.getBudgetAllocations) {
@@ -90,7 +90,7 @@ export class ActualBudgetAdapter implements BudgetRepository {
   }
 
   public async setBudgetAmount(month: string, categoryId: string, amount: number): Promise<void> {
-    if (!/^\\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
       throw new ActualAdapterError('INVALID_INPUT', 'Budget month must use YYYY-MM.');
     }
     const parsedCategoryId = IdentifierSchema.safeParse(categoryId);
