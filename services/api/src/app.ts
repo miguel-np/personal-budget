@@ -125,9 +125,13 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     try {
       const query = TransactionQuerySchema.parse(request.query);
       assertPeriod(query.startDate, query.endDate);
-      const accounts = query.accountId
-        ? [{ id: query.accountId, name: '', closed: false }]
-        : (await repository.listAccounts()).filter((account) => !account.closed);
+      const allAccounts = await repository.listAccounts();
+      const accounts = allAccounts.filter((account) =>
+        !account.closed && (query.accountId === undefined || account.id === query.accountId),
+      );
+      if (query.accountId !== undefined && accounts.length === 0) {
+        return reply.code(400).send({ error: { code: 'INVALID_ACCOUNT', message: 'Choose an open account from the configured budget.' } });
+      }
       const groups = await Promise.all(accounts.map((account) =>
         repository.listTransactions(account.id, query.startDate, query.endDate),
       ));
