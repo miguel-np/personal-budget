@@ -168,6 +168,27 @@ describe('ActualBudgetAdapter', () => {
       .rejects.toMatchObject({ code: 'INVALID_INPUT' });
     expect(api.importTransactions).not.toHaveBeenCalled();
   });
+  it('categorizes a transaction explicitly and syncs before returning', async () => {
+    const api = createApi({ updateTransaction: vi.fn(async () => undefined) });
+    const adapter = new ActualBudgetAdapter(config, api);
+    await adapter.updateTransactionCategory('transaction-1', 'food');
+    expect(api.updateTransaction).toHaveBeenCalledWith('transaction-1', { category: 'food' });
+    expect(api.sync).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects invalid categorization ids and missing update capability', async () => {
+    const api = createApi();
+    const adapter = new ActualBudgetAdapter(config, api);
+    await expect(adapter.updateTransactionCategory('   ', 'food')).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+    await expect(adapter.updateTransactionCategory('transaction-1', '')).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+  });
+
+  it('sanitizes categorization failures without exposing upstream details', async () => {
+    const api = createApi({ updateTransaction: vi.fn(async () => { throw new Error('private category dump'); }) });
+    const adapter = new ActualBudgetAdapter(config, api);
+    await expect(adapter.updateTransactionCategory('transaction-1', 'food')).rejects.toMatchObject({ code: 'UPSTREAM_FAILURE' });
+  });
+
   it('rejects operations after close', async () => {
     const api = createApi();
     const adapter = new ActualBudgetAdapter(config, api);

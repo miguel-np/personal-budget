@@ -11,8 +11,16 @@ describe('normalizeTransactions', () => {
   it('maps a normal transaction to a ledger entry', () => {
     expect(normalizeTransactions([raw()])).toEqual([{
       id: 'tx-1', accountId: 'account-1', date: '2026-10-01', amountMinor: -1_000,
-      categoryId: 'food', transferId: null, isTransfer: false,
+      categoryId: 'food', transferId: null, isTransfer: false, payeeLabel: null,
     }]);
+  });
+  it('normalizes payee labels for grouping and falls back to imported payee', () => {
+    const result = normalizeTransactions([
+      raw({ id: 'a', payee_name: '  SUPERMERCADO   MADRID ' }),
+      raw({ id: 'b', imported_payee: 'Supermercado Madrid' }),
+      raw({ id: 'c', payee_name: '   ' }),
+    ]);
+    expect(result.map((entry) => entry.payeeLabel)).toEqual(['supermercado madrid', 'supermercado madrid', null]);
   });
   it('flattens split parents and skips duplicate flat child rows', () => {
     const parent = raw({

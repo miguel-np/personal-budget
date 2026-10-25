@@ -2,7 +2,7 @@
 
 Aplicación local de finanzas personales con una única interfaz web para gastos, presupuestos, ahorro e informes. Un asistente con IA local será una ampliación opcional.
 
-> **Estado: base técnica P0 implementada y MVP P1 en integración.** La rama de trabajo incluye shell web local, dashboard e informes comparativos, consultas paginadas de movimientos, registro manual, importación CSV con previsualización y conciliación oficial de Actual, y presupuestos por categoría con asignaciones explícitas. La CI debe validar esta integración antes de considerarla lista. La aceptación live contra un presupuesto configurado y la instalación limpia en Windows + WSL2 todavía requieren confirmación en sus entornos objetivo.
+> **Estado: roadmap P0–P3 completo (25-oct-2026).** La aplicación incluye shell web local, dashboard e informes comparativos, consultas paginadas de movimientos, registro manual, importación CSV con previsualización y conciliación oficial de Actual, presupuestos por categoría, planificación P3 (pagos recurrentes, sugerencias de categoría y previsiones explicables), asistente local con Ollama, MCP de solo lectura y backup/restore verificados. Todo validado en vivo en el entorno objetivo Windows + WSL2 con datos sintéticos; CI verde en Linux y Windows.
 
 ## Arquitectura
 
@@ -11,7 +11,7 @@ Aplicación local de finanzas personales con una única interfaz web para gastos
 - **packages/finance-core:** normalización de movimientos y cálculos deterministas con importes en unidades monetarias menores.
 - **services/api:** API Fastify local, configuración validada y errores saneados.
 - **apps/web:** shell React/Vite con dashboard, movimientos, informes, importación CSV y edición de presupuestos en una sola interfaz local.
-- **Ollama y MCP:** fase posterior, aún no conectados a la interfaz.
+- **Ollama y MCP:** asistente local opcional conectado a la interfaz y servidor MCP de solo lectura por stdio, validados con `qwen3:8b`.
 
 ## Requisitos
 
@@ -41,7 +41,7 @@ En otra terminal WSL:
 npm run dev:web
 ~~~
 
-Abre http://127.0.0.1:5173. La aplicación incluye Resumen, Movimientos, Informes, Presupuestos, Asistente (desconectado) y Configuración. Configura ACTUAL_BUDGET_ID con el Sync ID del presupuesto de Actual. En Movimientos puedes registrar un movimiento o importar CSV; ambas operaciones muestran una previsualización y exigen confirmar antes de escribir en Actual.
+Abre http://127.0.0.1:5173. La aplicación incluye Resumen, Movimientos, Informes, Presupuestos, Planificación, Asistente y Configuración. Configura ACTUAL_BUDGET_ID con el Sync ID del presupuesto de Actual. En Movimientos puedes registrar un movimiento o importar CSV; ambas operaciones muestran una previsualización y exigen confirmar antes de escribir en Actual. Planificación detecta pagos recurrentes, sugiere categorías con confirmación y simula escenarios explicables. El Asistente es opcional (AI_ENABLED/OLLAMA_MODEL en .env) y funciona con Ollama local.
 
 ## Prueba opcional con un presupuesto de Actual existente
 

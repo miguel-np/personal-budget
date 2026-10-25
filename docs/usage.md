@@ -1,6 +1,6 @@
 # Guía de uso
 
-Esta guía describe el comportamiento previsto de la interfaz. Las pantallas se implementarán en el código futuro; el paquete actual no incluye la aplicación ejecutable.
+Esta guía describe la interfaz implementada: Resumen, Movimientos, Informes, Presupuestos, Planificación, Asistente y Configuración. Los ejemplos de la documentación no representan datos reales.
 
 ## 1. Dashboard
 
@@ -55,19 +55,19 @@ Compara ingresos, gastos, ahorro y categorías con el mes anterior. Muestra tant
 
 Muestra los doce meses y la distribución anual por categorías. Permite comparar años y consultar si el cambio proviene de ingresos, consumo, gastos excepcionales o transferencias.
 
-## 5. Chat financiero
+## 5. Planificación
 
-El chat debe aceptar preguntas en lenguaje natural y responder a partir de resultados obtenidos de herramientas autorizadas. Ejemplos:
+La sección Planificación reúne las mejoras P3 (detalles en [planning.md](planning.md)):
 
-- «¿Cuánto gasté en supermercado el último mes?»
-- «Compara mi gasto en transporte en los últimos seis meses».
-- «¿Qué categorías han aumentado más este año?»
-- «Calcula un escenario en el que reduzco ocio un 10 %».
-- «Prepara un gasto de 28,50 € en transporte para hoy».
+- **Pagos recurrentes:** candidatos detectados con señales deterministas, con explicación de cadencia e importe y avisos de falso positivo. Son candidatos, no garantías.
+- **Sugerencias de categoría:** movimientos sin clasificar con evidencia histórica del mismo beneficiario; puedes editar la categoría, aplicar o descartar cada una, o aplicar todas con confirmación. La previsualización no escribe; el commit es explícito.
+- **Previsión:** escenarios de reducción por categoría o cambio de ingreso con horizonte en meses; separa recurrente de extraordinario, muestra supuestos y avisos, y se marca como estimación sin tocar el presupuesto real.
 
-Las preguntas de lectura pueden ejecutarse directamente. Las solicitudes que cambien datos deben generar una vista previa con los campos completos y esperar confirmación explícita. El chat no debe inferir que el usuario ha confirmado solo porque el mensaje sea ambiguo.
+## 6. Chat financiero
 
-## 6. Interpretar los resultados
+El chat responde a partir de resultados calculados por el backend. Las cifras proceden de finance-core y la narración del modelo es cualitativa, separada y saneada. Las solicitudes que cambiarían datos no se ejecutan desde el chat; los cambios se hacen desde Movimientos o Planificación con previsualización y confirmación.
+
+## 7. Interpretar los resultados
 
 - El gasto consolidado excluye traspasos entre cuentas propias.
 - Un movimiento sin categoría aparece como «Sin clasificar».
@@ -75,10 +75,10 @@ Las preguntas de lectura pueden ejecutarse directamente. Las solicitudes que cam
 - Una previsión no es una garantía y debe exponer sus supuestos.
 - Si faltan datos o la consulta es ambigua, el asistente debe pedir el periodo/cuenta/categoría que falta o informar de la limitación.
 
-## 7. Revisión semanal sugerida
+## 8. Revisión semanal sugerida
 
 1. Importar movimientos recientes.
 2. Revisar duplicados y conciliación con el saldo bancario.
-3. Clasificar operaciones pendientes.
+3. Abrir Planificación y clasificar operaciones pendientes con las sugerencias.
 4. Consultar las categorías con mayor desviación del presupuesto.
 5. Verificar que el ahorro mensual excluye traspasos y no contabiliza dos veces el mismo dinero.

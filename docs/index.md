@@ -13,6 +13,7 @@ Esta documentación describe el diseño objetivo de `personal-budget`, una aplic
 ## Diseño y funcionamiento
 
 - [Criterios y procedimiento de aceptación P2](p2-acceptance.md)
+- [Planificación: recurrentes, sugerencias y previsiones](planning.md)
 
 - [Arquitectura](architecture.md)
 - [Registro de movimientos e importaciones](transactions-and-imports.md)

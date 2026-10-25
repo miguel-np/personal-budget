@@ -1,7 +1,7 @@
 import Fastify, { LogController, type FastifyInstance, type FastifyReply, type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import helmet from '@fastify/helmet';
-import { calculateSummary, isIsoDate, normalizeTransactions, validatePeriod } from '@personal-budget/finance-core';
-import type { BudgetRepository, BudgetTransaction } from '@personal-budget/finance-core';
+import { calculateSummary, detectRecurringCandidates, isIsoDate, normalizeTransactions, projectSavings, suggestCategories, validatePeriod } from '@personal-budget/finance-core';
+import type { BudgetRepository, BudgetTransaction, ForecastScenario } from '@personal-budget/finance-core';
 import { ActualAdapterError } from '@personal-budget/actual-adapter';
 import type { ActualBudgetMonthRecord, ActualImportRecord, ActualImportResult } from '@personal-budget/actual-adapter';
 import { z, ZodError } from 'zod';
@@ -40,6 +40,30 @@ const ImportRequestSchema = z.object({
 }).strict();
 const BudgetMonthSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'month must use YYYY-MM.');
 const BudgetAmountSchema = z.object({ amountMinor: z.number().int().refine(Number.isSafeInteger, 'amount must be a safe integer.').min(0) }).strict();
+const InsightsQuerySchema = z.object({
+  accountId: z.string().trim().min(1).max(128).optional(),
+  startDate: z.string().refine(isIsoDate, 'startDate must be a valid YYYY-MM-DD date.'),
+  endDate: z.string().refine(isIsoDate, 'endDate must be a valid YYYY-MM-DD date.'),
+}).strict();
+const CategorizeRequestSchema = z.object({
+  startDate: z.string().refine(isIsoDate, 'startDate must be a valid YYYY-MM-DD date.'),
+  endDate: z.string().refine(isIsoDate, 'endDate must be a valid YYYY-MM-DD date.'),
+  commit: z.boolean().default(false),
+  transactions: z.array(z.object({
+    transactionId: z.string().trim().min(1).max(128),
+    categoryId: z.string().trim().min(1).max(128),
+  }).strict()).min(1).max(200),
+}).strict();
+const ForecastScenarioSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('category_reduction'), categoryId: z.string().trim().min(1).max(128), percent: z.number().min(0).max(100) }).strict(),
+  z.object({ type: z.literal('income_change'), percent: z.number().min(-100).max(1000) }).strict(),
+]);
+const ForecastRequestSchema = z.object({
+  startDate: z.string().refine(isIsoDate, 'startDate must be a valid YYYY-MM-DD date.'),
+  endDate: z.string().refine(isIsoDate, 'endDate must be a valid YYYY-MM-DD date.'),
+  horizonMonths: z.number().int().min(1).max(60),
+  scenario: ForecastScenarioSchema,
+}).strict();
 const AssistantRequestSchema = z.object({
   question: z.string().trim().min(1).max(2_000),
   startDate: z.string().refine(isIsoDate, 'startDate must be a valid YYYY-MM-DD date.'),
@@ -460,6 +484,145 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
           startDate: query.startDate, endDate: query.endDate, currency: config.budgetCurrency,
         }),
       };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  async function openAccountTransactions(
+    accountId: string | undefined,
+    startDate: string,
+    endDate: string,
+  ): Promise<{ readonly accounts: readonly { readonly id: string; readonly name: string }[]; readonly transactions: readonly BudgetTransaction[] }> {
+    const allAccounts = await repository.listAccounts();
+    const accounts = allAccounts.filter((account) =>
+      !account.closed && (accountId === undefined || account.id === accountId));
+    if (accountId !== undefined && accounts.length === 0) {
+      throw new ActualAdapterError('INVALID_INPUT', 'Choose an open account from the configured budget.');
+    }
+    const groups = await Promise.all(accounts.map((account) =>
+      repository.listTransactions(account.id, startDate, endDate)));
+    return { accounts, transactions: groups.flat() };
+  }
+
+  function monthsBefore(date: string, months: number): string {
+    const year = Number(date.slice(0, 4));
+    const month = Number(date.slice(5, 7));
+    const shifted = new Date(Date.UTC(year, month - 1 - months, 1));
+    return shifted.toISOString().slice(0, 10);
+  }
+
+  app.get('/api/v1/insights/recurring', async (request, reply) => {
+    try {
+      const query = InsightsQuerySchema.parse(request.query);
+      assertPeriod(query.startDate, query.endDate);
+      const { transactions } = await openAccountTransactions(query.accountId, query.startDate, query.endDate);
+      const candidates = detectRecurringCandidates(transactions, {
+        startDate: query.startDate, endDate: query.endDate,
+      });
+      return {
+        data: candidates,
+        notes: [
+          'Los candidatos se detectan con señales deterministas (beneficiario, frecuencia, importe y fechas) y no garantizan que el gasto se repita.',
+          'Este endpoint no modifica Actual Budget; la confirmación de sugerencias usa un flujo separado con previsualización.',
+        ],
+      };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.get('/api/v1/insights/category-suggestions', async (request, reply) => {
+    try {
+      const query = InsightsQuerySchema.parse(request.query);
+      assertPeriod(query.startDate, query.endDate);
+      const evidenceStart = monthsBefore(query.startDate, 12);
+      const [accounts, categories] = await Promise.all([
+        repository.listAccounts(),
+        repository.listCategories(),
+      ]);
+      const activeAccounts = accounts.filter((account) =>
+        !account.closed && (query.accountId === undefined || account.id === query.accountId));
+      if (query.accountId !== undefined && activeAccounts.length === 0) {
+        return reply.code(400).send({ error: { code: 'INVALID_ACCOUNT', message: 'Choose an open account from the configured budget.' } });
+      }
+      const groups = await Promise.all(activeAccounts.map((account) =>
+        repository.listTransactions(account.id, evidenceStart, query.endDate)));
+      const suggestions = suggestCategories(groups.flat(), categories, {
+        startDate: query.startDate, endDate: query.endDate,
+      });
+      return {
+        data: suggestions,
+        notes: [
+          'Las sugerencias usan reglas deterministas sobre el historial local de los últimos 12 meses y no aprenden ni almacenan reglas nuevas.',
+          'Nada se modifica en Actual Budget sin revisión y confirmación explícita.',
+        ],
+      };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.post('/api/v1/insights/categorize', async (request, reply) => {
+    try {
+      const parsed = CategorizeRequestSchema.parse(request.body);
+      assertPeriod(parsed.startDate, parsed.endDate);
+      const categorizer = repository as BudgetRepository & {
+        updateTransactionCategory?: (transactionId: string, categoryId: string) => Promise<void>;
+      };
+      if (typeof categorizer.updateTransactionCategory !== 'function') {
+        return reply.code(503).send({ error: { code: 'TRANSACTION_UPDATE_NOT_SUPPORTED', message: 'The configured local adapter does not support transaction updates.' } });
+      }
+      const { transactions } = await openAccountTransactions(undefined, parsed.startDate, parsed.endDate);
+      const transactionById = new Map(transactions
+        .filter((transaction) => !transaction.is_child && !transaction.parent_id)
+        .map((transaction) => [transaction.id, transaction]));
+      for (const change of parsed.transactions) {
+        if (!transactionById.has(change.transactionId)) {
+          return reply.code(400).send({ error: { code: 'INVALID_TRANSACTION', message: 'One or more transaction ids do not belong to an open account in the period.' } });
+        }
+      }
+      const categories = await repository.listCategories();
+      const expenseCategories = new Set(categories.filter((category) => !category.isIncome).map((category) => category.id));
+      if (parsed.transactions.some((change) => !expenseCategories.has(change.categoryId))) {
+        return reply.code(400).send({ error: { code: 'INVALID_CATEGORY', message: 'Choose an expense category from the configured budget.' } });
+      }
+      if (!parsed.commit) {
+        return { data: { preview: true, requested: parsed.transactions.length, changes: parsed.transactions.length } };
+      }
+      for (const change of parsed.transactions) {
+        await categorizer.updateTransactionCategory!(change.transactionId, change.categoryId);
+      }
+      return { data: { preview: false, requested: parsed.transactions.length, changes: parsed.transactions.length } };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.post('/api/v1/forecasts/simulate', async (request, reply) => {
+    try {
+      const parsed = ForecastRequestSchema.parse(request.body);
+      assertPeriod(parsed.startDate, parsed.endDate);
+      const [accounts, categories] = await Promise.all([repository.listAccounts(), repository.listCategories()]);
+      const activeAccounts = accounts.filter((account) => !account.closed);
+      const groups = await Promise.all(activeAccounts.map((account) =>
+        repository.listTransactions(account.id, parsed.startDate, parsed.endDate)));
+      const result = projectSavings(
+        groups.flat(),
+        categories,
+        parsed.scenario as ForecastScenario,
+        {
+          currency: config.budgetCurrency,
+          horizonMonths: parsed.horizonMonths,
+          startDate: parsed.startDate,
+          endDate: parsed.endDate,
+        },
+      );
+      return { data: result };
     } catch (error) {
       const normalized = sanitizedErrorResponse(error);
       return reply.code(normalized.statusCode).send(normalized.body);

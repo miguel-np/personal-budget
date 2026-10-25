@@ -27,6 +27,10 @@ function toEntry(
     throw new InvalidTransactionError('Transaction amount must be a safe integer in minor units.');
   }
 
+  const rawPayee = transaction.payee_name ?? transaction.imported_payee ?? '';
+  const trimmedPayee = rawPayee.trim();
+  const payeeLabel = trimmedPayee.length === 0 ? null : trimmedPayee.toLocaleLowerCase('es').replace(/\s+/g, ' ');
+
   return {
     id: transaction.id,
     accountId,
@@ -35,6 +39,7 @@ function toEntry(
     categoryId: transaction.category ?? null,
     transferId,
     isTransfer: Boolean(transferId),
+    payeeLabel,
   };
 }
 

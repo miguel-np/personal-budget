@@ -107,6 +107,21 @@ export class ActualBudgetAdapter implements BudgetRepository {
     });
   }
 
+  public async updateTransactionCategory(transactionId: string, categoryId: string): Promise<void> {
+    const parsedTransactionId = IdentifierSchema.safeParse(transactionId);
+    const parsedCategoryId = IdentifierSchema.safeParse(categoryId);
+    if (!parsedTransactionId.success || !parsedCategoryId.success) {
+      throw new ActualAdapterError('INVALID_INPUT', 'Transaction or category id is invalid.');
+    }
+    if (!this.api.updateTransaction) {
+      throw new ActualAdapterError('UPSTREAM_FAILURE', 'The configured Actual API client does not support transaction updates.');
+    }
+    await this.enqueue(async () => {
+      await this.api.updateTransaction!(parsedTransactionId.data, { category: parsedCategoryId.data });
+      await this.api.sync();
+    });
+  }
+
   public async listTransactions(accountId: string, startDate: string, endDate: string): Promise<readonly BudgetTransaction[]> {
     const parsedAccountId = IdentifierSchema.safeParse(accountId);
     if (!parsedAccountId.success) throw new ActualAdapterError('INVALID_INPUT', 'accountId is invalid.');
