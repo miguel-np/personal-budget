@@ -332,7 +332,8 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .trend-table td { padding: 12px 10px; border-bottom: 1px solid #223149; color: #aebed2; font-size: 10px; vertical-align: middle; }
 .trend-table tbody tr:last-child td { border-bottom: 0; }
 .trend-table tbody tr:hover { background: #142136; }
-.trend-bars { display: grid; grid-template-columns: 10px minmax(66px, 100px) 10px minmax(66px, 100px); align-items: center; gap: 5px; }
+/* Trend bars show income (I), expense (G) and savings (A). */
+.trend-bars { display: grid; grid-template-columns: 10px minmax(48px, 76px) 10px minmax(48px, 76px) 10px minmax(48px, 76px); align-items: center; gap: 5px; }
 .trend-label { color: #8296ad; font-size: 9px; }
 .trend-track { height: 6px; overflow: hidden; border-radius: 999px; background: #202f43; }
 .trend-track span { display: block; height: 100%; border-radius: 999px; }
@@ -341,3 +342,14 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .trend-number { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .income-text { color: #8cdeb9 !important; }
 .expense-text { color: #ffb2a3 !important; }
+
+
+.csv-preview-result { margin-top: 16px; border: 1px solid #30445d; border-radius: 11px; padding: 13px; background: #0c1522; }
+.csv-preview-result .panel-heading { margin-bottom: 10px; }
+.csv-preview-table-wrap { width: 100%; overflow-x: auto; border: 1px solid #293950; border-radius: 8px; }
+.csv-preview-table { width: 100%; min-width: 760px; border-collapse: collapse; text-align: left; }
+.csv-preview-table th { padding: 10px 11px; border-bottom: 1px solid #30425a; background: #131f30; color: #8094ae; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.csv-preview-table td { padding: 10px 11px; border-bottom: 1px solid #223149; color: #aebed2; font-size: 10px; vertical-align: middle; }
+.csv-preview-table tbody tr:last-child td { border-bottom: 0; }
+.csv-preview-table tbody tr:hover { background: #142136; }
+.csv-preview-table td:nth-child(2) { max-width: 230px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
