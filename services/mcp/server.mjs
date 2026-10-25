@@ -65,8 +65,8 @@ async function handle(m){
  if(m.method==='tools/call'){
   if(++calls>MAX_CALLS)return {jsonrpc:'2.0',id,result:{isError:true,content:[{type:'text',text:'Session tool-call limit reached.'}]}};
   const name=m.params?.name;if(!tools.some(t=>t.name===name))return {jsonrpc:'2.0',id,result:{isError:true,content:[{type:'text',text:'Unknown tool; no action was taken.'}]}};
-  try{const data=await invoke(name,m.params?.arguments??{});const s=JSON.stringify(data);if(s.length>MAX_OUTPUT)throw Error('Tool response exceeds size limit.');return {jsonrpc:'2.0',id,result:{isError:false,structuredContent:data,content:[{type:'text',text:s}]};}
-  catch(e){const s=e instanceof Error&&/invalid|must |found|unsupported|unknown|limit|period|date|category|year|month|size/i.test(e.message)?e.message:'Local finance tool failed.';return {jsonrpc:'2.0',id,result:{isError:true,content:[{type:'text',text:s}]};}
+  try{const data=await invoke(name,m.params?.arguments??{});const s=JSON.stringify(data);if(s.length>MAX_OUTPUT)throw Error('Tool response exceeds size limit.');return {jsonrpc:'2.0',id,result:{isError:false,structuredContent:data,content:[{type:'text',text:s}]}};
+  catch(e){const s=e instanceof Error&&/invalid|must |found|unsupported|unknown|limit|period|date|category|year|month|size/i.test(e.message)?e.message:'Local finance tool failed.';return {jsonrpc:'2.0',id,result:{isError:true,content:[{type:'text',text:s}]}};
  }
  return error(id??null,-32601,'Method not found');
 }

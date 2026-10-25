@@ -13,7 +13,7 @@ describe('MCP stdio protocol', () => {
   closeServer=()=>new Promise((resolveClose,reject)=>server.close(e=>e?reject(e):resolveClose()));
   child=spawn(process.execPath,[resolve('services/mcp/server.mjs')],{env:{...process.env,PERSONAL_BUDGET_API_URL:'http://127.0.0.1:'+address.port},stdio:['pipe','pipe','pipe']});
   let buffer='';child.stdout.on('data',(chunk:Buffer)=>{buffer+=chunk.toString('utf8');});
-  const read=async()=>{const start=Date.now();while(Date.now()-start<4000){const i=buffer.indexOf('\n');if(i>=0){const line=buffer.slice(0,i);buffer=buffer.slice(i+1);return JSON.parse(line) as {id?:number;result?:any;error?:any};}await new Promise(r=>setTimeout(r,10));}throw Error('MCP response timed out.');};
+  const read=async()=>{const start=Date.now();while(Date.now()-start<4000){const i=buffer.indexOf('\n');if(i>=0){const line=buffer.slice(0,i);buffer=buffer.slice(i+1);return JSON.parse(line) as {id?:number;result?:{protocolVersion?:string;capabilities?:{tools?:object};tools?:{name:string;description:string}[];structuredContent?:{currency?:string;incomeMinor?:number;expenseMinor?:number};isError?:boolean};error?:unknown};}await new Promise(r=>setTimeout(r,10));}throw Error('MCP response timed out.');};
   child.stdin.write(JSON.stringify({jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'test',version:'1'}})+'\n');
   expect(await read()).toMatchObject({id:1,result:{protocolVersion:'2024-11-05',capabilities:{tools:{}}}});
   child.stdin.write(JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})+'\n');
