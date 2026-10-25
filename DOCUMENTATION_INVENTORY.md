@@ -14,6 +14,8 @@
 - docs/mcp.md — herramientas MCP y permisos.
 - docs/privacy.md — privacidad y flujo de datos.
 - docs/backup-restore.md — copias y recuperación.
+- docs/planning.md — recurrentes, sugerencias y previsiones P3.
+- docs/p2-acceptance.md — criterios y resultados de aceptación P2.
 - docs/operations.md — operación local.
 - docs/troubleshooting.md — resolución de problemas.
 - docs/licensing.md — licencia y derechos sobre datos.
