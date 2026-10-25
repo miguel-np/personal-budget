@@ -1,40 +1,29 @@
 # Copias de seguridad y restauración
 
-Los presupuestos y las exportaciones bancarias son datos sensibles. La estrategia de copias debe estar activa antes de utilizar el sistema con datos reales.
+Los datos de Actual contienen información financiera personal. Los comandos de esta guía trabajan sobre el directorio persistente de Compose (.local/actual-server-data por defecto), no sobre el directorio de trabajo de @actual-app/api.
 
-## Qué respaldar
+## Crear una copia consistente
 
-- Exportación del presupuesto de Actual Budget realizada mediante sus funciones oficiales.
-- Directorio persistente del servidor Actual, detenido o respaldado mediante un procedimiento compatible con la versión utilizada.
-- Configuración no secreta necesaria para reconstruir la aplicación.
-- Configuración local de la aplicación, si se desea conservar.
+1. Verifica que Actual funciona.
+2. Desde la raíz del repositorio en WSL2, ejecuta `npm run backup:actual`.
+3. El script detiene el servicio Compose actual, crea un archivo .tar.gz fechado, valida sus rutas, calcula un SHA-256 y vuelve a arrancar el servicio incluso si la creación falla.
+4. Las copias quedan en .local/backups, ignorado por Git. El checksum detecta corrupción, no cifra el archivo.
+5. BACKUP_RETENTION_DAYS controla la retención (1–3650 días; por defecto 30). Usa una ubicación protegida con espacio suficiente.
 
-No es necesario respaldar los modelos descargados para recuperar los datos financieros; pueden descargarse otra vez. La configuración `.env` debe protegerse aparte y nunca subirse al repositorio.
-
-## Política inicial sugerida
-
-- Copia automática diaria cuando el sistema se utilice regularmente.
-- Copia manual antes de actualización, importación masiva o migración.
-- Al menos una copia cifrada en un dispositivo distinto.
-- Retención rotativa (por ejemplo, copias diarias recientes y copias semanales/mensuales), ajustada a la capacidad y necesidad personal.
-- Verificación periódica de integridad y prueba de restauración.
-
-La copia fuera del equipo mejora la recuperación, pero deja de ser estrictamente local. Si se utiliza, debe ir cifrada antes de transferirse y no depender de un proveedor sin revisar sus condiciones.
+La ruta puede ajustarse mediante ACTUAL_SERVER_DATA_DIR y BACKUP_DIR. No incluyas .env, modelos, exportaciones bancarias ni contraseñas en Git. El directorio de trabajo ACTUAL_DATA_DIR del adaptador Node es distinto del volumen de datos del servidor.
 
 ## Restaurar
 
-1. Detén la aplicación y el servicio que modifique el presupuesto.
-2. Conserva intacta la copia actual por si el proceso falla.
-3. Sigue el procedimiento de exportación/importación oficial de Actual para la versión instalada.
-4. Si se restaura el directorio de datos del servidor, evita mezclar archivos de diferentes copias/versiones.
-5. Abre el presupuesto, comprueba cuentas, categorías y saldos contra el inventario esperado.
-6. Prueba un conjunto de movimientos y los informes principales antes de volver al uso normal.
+~~~bash
+npm run restore:actual -- .local/backups/actual-server-YYYYMMDDTHHMMSSZ.tar.gz
+~~~
 
-## No hacer
+El script valida el archivo y su sidecar SHA-256 antes de parar Actual, inspecciona que todos los miembros estén bajo el directorio esperado, extrae en staging temporal y conserva el directorio actual como copia pre-restore. Después del cambio intenta arrancar Actual; si el arranque falla, intenta volver al directorio anterior. No borres la copia pre-restore hasta validar la instancia.
 
-- No copies SQLite o ficheros internos activos sin una estrategia de backup compatible.
-- No asumas que una carpeta sincronizada equivale a una copia consistente.
-- No subas copias a GitHub, cloud drive sin cifrado o tickets de soporte.
-- No consideres comprobada la restauración hasta ejecutar una prueba real con datos no productivos.
+Después del restore, abre la UI y compara explícitamente cuentas, categorías, movimientos representativos, saldos e informes con un inventario sintético conocido. El script certifica integridad del archivo y finalización del proceso; no certifica por sí mismo que el presupuesto recuperado sea correcto.
 
-Consulta la [documentación de instalación y gestión de datos de Actual](https://actualbudget.org/docs/).
+## Cifrado, retención y privacidad
+
+El SHA-256 detecta corrupción accidental, pero no protege si alguien altera también el checksum. Protege el directorio con permisos del sistema y cifra la copia antes de moverla fuera del dispositivo. Una copia remota, aunque esté cifrada, sale del límite estrictamente local. Guarda la clave separada del archivo.
+
+Prueba la restauración en una instancia aislada con datos sintéticos antes de confiar en el procedimiento con datos personales. No copies bases activas arbitrariamente ni mezcles archivos de copias/versiones diferentes.

@@ -1,46 +1,17 @@
 # IA local con Ollama
 
-## Función de la IA
+La integración opcional usa la API de Ollama en loopback. Se mantiene desactivada por defecto: configura \`.env\` con \`AI_ENABLED=true\`, \`OLLAMA_MODEL\` con el nombre exacto de un modelo instalado y \`OLLAMA_BASE_URL=http://127.0.0.1:11434\`. \`OLLAMA_REQUEST_TIMEOUT_SECONDS\` admite de 1 a 180 segundos y \`AI_MAX_CONTEXT_CHARS\` limita el contexto agregado que se envía al modelo. La configuración remota se rechaza.
 
-La IA interpreta preguntas en lenguaje natural, decide qué herramienta aprobada necesita y explica los resultados. Los agregados, tasas, diferencias y previsiones deben calcularse en código con reglas reproducibles.
+## Límites de seguridad
 
-## Configuración objetivo
+- El estado del modelo está disponible en \`GET /api/v1/assistant/status\`; la API confirma disponibilidad y que el modelo esté instalado.
+- El chat acepta una pregunta limitada a 2.000 caracteres y fechas validadas; solo usa cálculos de \`finance-core\`.
+- Se envían al modelo agregados resumidos y totales de categorías, no las descripciones, notas, conceptos ni registros completos de movimientos.
+- Las cifras que presenta la interfaz proceden del backend; la narración se trata como explicación cualitativa, no como fuente de importes.
+- El asistente no tiene herramientas de escritura ni puede alterar Actual Budget. La variable \`AI_WRITE_OPERATIONS_ENABLED\` no habilita escrituras en esta versión.
+- Prompts y respuestas no se registran. Un timeout, un modelo ausente o un runtime caído produce un error saneado y no bloquea el resto de la aplicación.
+- Las descripciones bancarias son datos no confiables. La protección principal consiste en no enviarlas al modelo y no darle herramientas ni acceso al backend.
 
-- Ejecutar Ollama en el mismo equipo y preferiblemente en el mismo entorno WSL que el backend.
-- Usar el endpoint local `http://127.0.0.1:11434`.
-- Configurar `OLLAMA_MODEL` con un modelo instalado.
-- No usar endpoints de nube si el requisito es mantener prompts y resultados localmente.
-- No guardar contenido financiero completo en logs.
+No todas las combinaciones modelo/runtime están verificadas en vivo. La CI prueba comportamiento con respuestas sintéticas, sin descargar modelos ni acceder a internet. Para pruebas manuales, usa un presupuesto sintético y revisa la licencia y los requisitos hardware del modelo elegido.
 
-La API y las capacidades de Ollama pueden evolucionar. Consulta la [documentación oficial de la API](https://docs.ollama.com/api). La API local no requiere una API key por defecto, pero los endpoints de nube sí tienen sus propios requisitos.
-
-## Selección de modelo
-
-No se define un modelo único en esta especificación. La elección depende de:
-
-- RAM/VRAM disponible y velocidad aceptable.
-- Calidad en español.
-- Resistencia a prompt injection.
-- Soporte de tool calling en el modelo y la versión de Ollama.
-- Licencia y condiciones de redistribución/uso del modelo.
-
-Un modelo descargado no queda automáticamente cubierto por la licencia MIT del proyecto. Revisa los términos del modelo concreto.
-
-## Contrato de respuesta
-
-El backend debe entregar al modelo solo los agregados necesarios para cada pregunta. La respuesta debe:
-
-1. Citar el periodo, la cuenta o categoría analizada.
-2. Mostrar divisa y unidad.
-3. Separar cifras verificadas de proyecciones.
-4. Explicar datos ausentes y supuestos.
-5. No presentar una respuesta de IA como asesoramiento financiero profesional.
-6. No inventar movimientos, categorías, importes o resultados de herramientas.
-
-## Tool calling
-
-El soporte de API compatible no garantiza que un modelo determinado pueda emitir llamadas a herramientas correctas. Antes de usar un modelo con MCP, prueba la conversión de argumentos, el ciclo herramienta→resultado→respuesta, límites de llamadas y manejo de errores con datos sintéticos.
-
-## Fallos
-
-Si Ollama no está disponible, el registro manual, las importaciones a través de Actual y los informes deterministas deben seguir funcionando. La app debe indicar que el asistente no está disponible en vez de simular un resultado.
+La IA no constituye asesoramiento financiero profesional. Revisa los indicadores deterministas antes de tomar decisiones.

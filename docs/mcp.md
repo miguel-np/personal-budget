@@ -1,38 +1,9 @@
 # MCP: herramientas locales y límites
 
-MCP es una interfaz opcional para exponer al cliente de IA funciones financieras revisadas. La aplicación web puede llamar a las mismas funciones del backend directamente; MCP no es necesario para renderizar el dashboard.
+El servidor experimental se ejecuta por stdio con npm run mcp:serve. Debe lanzarse desde la raíz y requiere la API local en http://127.0.0.1:3000. PERSONAL_BUDGET_API_URL se puede configurar, pero solo se aceptan hosts loopback. No abre un puerto MCP de red.
 
-## Herramientas previstas
+Herramientas: get_monthly_summary, get_spending_by_category, compare_periods, get_yearly_overview, get_uncategorized_transactions, get_recurring_candidates y simulate_budget_change. Todas son de solo lectura; simulaciones tienen persisted=false y no actualizan Actual. Los movimientos sin categoría no devuelven conceptos ni notas. Los candidatos recurrentes son patrones históricos, no garantías.
 
-Todas las herramientas de consulta deben ser de solo lectura en la versión inicial.
+El protocolo JSON-RPC por líneas usa stdin/stdout; logs/diagnósticos solo en stderr. La lista de herramientas es cerrada: sin SQL libre, shell, filesystem, red pública ni escrituras. Rechaza parámetros extra, periodos inválidos o mayores de cinco años, respuestas por encima de 64 KiB y más de 24 llamadas por sesión. Las peticiones a la API expiran a los cinco segundos.
 
-| Herramienta | Uso | Acceso inicial |
-|---|---|---|
-| `get_monthly_summary` | Ingresos, gastos, ahorro y tasa para un mes | Solo lectura |
-| `get_spending_by_category` | Totales por categoría y periodo | Solo lectura |
-| `compare_periods` | Comparar periodos equivalentes | Solo lectura |
-| `get_yearly_overview` | Resumen de cada mes del año | Solo lectura |
-| `get_recurring_transactions` | Identificar candidatos a pagos recurrentes | Solo lectura; indicar que son candidatos |
-| `get_uncategorized_transactions` | Movimientos pendientes de categoría | Solo lectura |
-| `forecast_savings` | Escenario basado en reglas de cálculo explícitas | Solo lectura/cálculo |
-| `simulate_budget_change` | Simular un ajuste sin guardar cambios | Solo lectura/cálculo |
-| `prepare_transaction` | Preparar un movimiento para revisión | No escribe en Actual |
-| `create_transaction` | Crear movimiento | Deshabilitada por defecto; requerir aprobación fuera del modelo |
-
-## Política de herramientas
-
-- No aceptar SQL libre, comandos shell, rutas de archivos arbitrarias ni URLs arbitrarias como argumentos controlados por el modelo.
-- No dejar que el modelo elija un identificador de presupuesto/usuario sin validación de backend.
-- Validar periodos, divisas, categorías, límites de resultados y tamaño de argumentos.
-- Limitar el número de llamadas, duración total y tamaño de respuesta.
-- Redactar salidas para devolver únicamente los campos necesarios.
-- Mantener escrituras deshabilitadas hasta que haya confirmación explícita y pruebas de rollback/errores.
-- Ejecutar MCP por `stdio` en la configuración local inicial. No exponerlo a la LAN/Internet sin autenticación, autorización y protección de transporte.
-
-## Prompt injection y datos de transacciones
-
-Las descripciones importadas pueden contener texto que parezca instrucciones. Deben tratarse como datos, no como instrucciones del sistema. La lógica de permisos pertenece al código, no al prompt. El modelo no puede ampliar su lista de herramientas ni anular permisos.
-
-## Pruebas necesarias
-
-Pruebas de esquema, argumentos inválidos, herramientas desconocidas, timeout, modelo sin tool calling, múltiples llamadas, datos ambiguos y solicitudes de escritura sin aprobación. La prueba de integración puede usar un presupuesto sintético y debe poder ejecutarse sin Internet.
+Las pruebas usan un servidor sintético; no requieren Internet, Ollama ni datos reales. Falta validar manualmente la integración con el cliente MCP de escritorio elegido. No habilitar escrituras desde el modelo.

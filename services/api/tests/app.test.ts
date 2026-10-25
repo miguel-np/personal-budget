@@ -1,3 +1,5 @@
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BudgetAccount, BudgetCategory, BudgetRepository, BudgetTransaction } from '@personal-budget/finance-core';
 import { ActualAdapterError } from '@personal-budget/actual-adapter';
@@ -31,13 +33,47 @@ function createRepository(overrides: Partial<BudgetRepository> = {}): BudgetRepo
 const config: AppConfig = {
   environment: 'test', host: '127.0.0.1', port: 3000, logLevel: 'silent',
   actualServerURL: 'http://127.0.0.1:5006', actualDataDir: './.local/actual-api',
+  ollamaBaseURL: 'http://127.0.0.1:11434', aiEnabled: false, ollamaTimeoutMs: 120_000, aiMaxContextChars: 4_000,
   budgetCurrency: 'EUR', allowedOrigins: ['http://127.0.0.1:5173', 'http://localhost:5173'],
 };
 const openApps: Array<{ close: () => Promise<void> }> = [];
+
+async function createOllamaFixture(chatStatus = 200, narrative = 'Los gastos parecen estables.') {
+  const server = createServer((request, response) => {
+    response.setHeader('content-type', 'application/json');
+    if (request.url === '/api/tags') {
+      response.writeHead(200);
+      response.end(JSON.stringify({ models: [{ name: 'synthetic-model' }] }));
+      return;
+    }
+    if (request.url === '/api/chat') {
+      response.writeHead(chatStatus);
+      response.end(JSON.stringify(chatStatus >= 200 && chatStatus < 300
+        ? { message: { content: narrative } }
+        : { error: 'synthetic upstream failure' }));
+      return;
+    }
+    response.writeHead(404);
+    response.end('{}');
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Could not bind synthetic Ollama server.');
+  return {
+    url: `http://127.0.0.1:${(address as AddressInfo).port}`,
+    close: () => new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    }),
+  };
+}
+
 afterEach(async () => { await Promise.all(openApps.splice(0).map((app) => app.close())); });
 
-async function createTestApp(repository: BudgetRepository = createRepository()) {
-  const app = await buildApp({ repository, config, logger: false });
+async function createTestApp(repository: BudgetRepository = createRepository(), appConfig: AppConfig = config) {
+  const app = await buildApp({ repository, config: appConfig, logger: false });
   openApps.push(app);
   return app;
 }
@@ -56,6 +92,99 @@ describe('local API', () => {
     expect(response.statusCode).toBe(503);
     expect(response.json()).toEqual({ status: 'not_configured' });
     expect(response.body).not.toContain('127.0.0.1');
+  });
+
+  it('reports the assistant disabled without contacting Ollama by default', async () => {
+    const app = await createTestApp();
+    const status = await app.inject({ method: 'GET', url: '/api/v1/assistant/status' });
+    const chat = await app.inject({ method: 'POST', url: '/api/v1/assistant/chat', payload: { question: 'Resume octubre', startDate: '2026-10-01', endDate: '2026-10-31' } });
+    expect(status.statusCode).toBe(200);
+    expect(status.json()).toMatchObject({ enabled: false, status: 'disabled' });
+    expect(chat.statusCode).toBe(503);
+    expect(chat.json().error.code).toBe('AI_DISABLED');
+  });
+
+  it('validates assistant period and bounds without fetching finance data', async () => {
+    const repository = createRepository();
+    const app = await createTestApp(repository);
+    const response = await app.inject({ method: 'POST', url: '/api/v1/assistant/chat', payload: { question: 'x', startDate: '2020-01-01', endDate: '2026-01-01' } });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe('INVALID_PERIOD');
+    expect(repository.listAccounts).not.toHaveBeenCalled();
+  });
+
+  it('covers assistant comparison, account validation and successful local explanations', async () => {
+    const ollama = await createOllamaFixture();
+    const listTransactions = vi.fn(async () => transactions);
+    const repository = createRepository({ listTransactions });
+    const app = await createTestApp(repository, {
+      ...config,
+      aiEnabled: true,
+      ollamaBaseURL: ollama.url,
+      ollamaModel: 'synthetic-model',
+    });
+    try {
+      const incompleteComparison = await app.inject({
+        method: 'POST',
+        url: '/api/v1/assistant/chat',
+        payload: { question: 'Compara periodos', startDate: '2026-10-01', endDate: '2026-10-31', previousStartDate: '2026-09-01' },
+      });
+      expect(incompleteComparison.statusCode).toBe(400);
+      expect(incompleteComparison.json().error.code).toBe('INVALID_REQUEST');
+
+      const invalidAccount = await app.inject({
+        method: 'POST',
+        url: '/api/v1/assistant/chat',
+        payload: { question: 'Resume octubre', startDate: '2026-10-01', endDate: '2026-10-31', accountId: 'missing-account' },
+      });
+      expect(invalidAccount.statusCode).toBe(400);
+      expect(invalidAccount.json().error.code).toBe('INVALID_ACCOUNT');
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/assistant/chat',
+        payload: {
+          question: 'Compara octubre con septiembre',
+          startDate: '2026-10-01',
+          endDate: '2026-10-31',
+          previousStartDate: '2026-09-01',
+          previousEndDate: '2026-09-30',
+        },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json().data).toMatchObject({
+        answer: 'Los gastos parecen estables.',
+        answerKind: 'qualitative_explanation',
+        comparison: { startDate: '2026-09-01', endDate: '2026-09-30' },
+      });
+      expect(listTransactions).toHaveBeenCalledTimes(2);
+      expect(listTransactions).toHaveBeenCalledWith('account-1', '2026-10-01', '2026-10-31');
+      expect(listTransactions).toHaveBeenCalledWith('account-1', '2026-09-01', '2026-09-30');
+    } finally {
+      await ollama.close();
+    }
+  });
+
+  it('maps local assistant upstream failures to a sanitized 503 response', async () => {
+    const ollama = await createOllamaFixture(503);
+    const app = await createTestApp(createRepository(), {
+      ...config,
+      aiEnabled: true,
+      ollamaBaseURL: ollama.url,
+      ollamaModel: 'synthetic-model',
+    });
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/assistant/chat',
+        payload: { question: 'Resume octubre', startDate: '2026-10-01', endDate: '2026-10-31' },
+      });
+      expect(response.statusCode).toBe(503);
+      expect(response.json().error.code).toBe('AI_UNAVAILABLE');
+      expect(response.body).not.toContain('synthetic upstream failure');
+    } finally {
+      await ollama.close();
+    }
   });
 
   it('returns accounts and categories through the repository boundary', async () => {

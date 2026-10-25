@@ -13,6 +13,21 @@ describe('loadConfig', () => {
   it('rejects binding to a non-loopback interface', () => {
     expect(() => loadConfig({ APP_HOST: '0.0.0.0' })).toThrow();
   });
+  it('keeps Ollama disabled and loopback-only by default', () => {
+    const config = loadConfig({});
+    expect(config.aiEnabled).toBe(false);
+    expect(config.ollamaBaseURL).toBe('http://127.0.0.1:11434');
+    expect(config.ollamaTimeoutMs).toBe(120_000);
+  });
+  it('rejects remote Ollama endpoints and invalid timeout values', () => {
+    expect(() => loadConfig({ OLLAMA_BASE_URL: 'https://ollama.example.com' })).toThrow();
+    expect(() => loadConfig({ OLLAMA_REQUEST_TIMEOUT_SECONDS: '0' })).toThrow();
+    expect(() => loadConfig({ AI_MAX_CONTEXT_CHARS: '9000' })).toThrow();
+  });
+  it('trims and validates an explicitly configured Ollama model', () => {
+    expect(loadConfig({ AI_ENABLED: 'true', OLLAMA_MODEL: ' llama3.2 ' })).toMatchObject({ aiEnabled: true, ollamaModel: 'llama3.2' });
+    expect(() => loadConfig({ AI_ENABLED: 'yes' })).toThrow();
+  });
   it('rejects remote Actual server URLs', () => {
     expect(() => loadConfig({ ACTUAL_SERVER_URL: 'https://actual.example.com' })).toThrow();
   });
