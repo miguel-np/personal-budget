@@ -1,6 +1,6 @@
 import Fastify, { LogController, type FastifyInstance, type FastifyReply, type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import helmet from '@fastify/helmet';
-import { calculateSummary, detectRecurringCandidates, isIsoDate, normalizeTransactions, projectSavings, suggestCategories, validatePeriod } from '@personal-budget/finance-core';
+import { calculateSummary, convertAmountMinor, detectRecurringCandidates, isIsoDate, normalizeCurrencyCode, normalizeTransactions, projectSavings, suggestCategories, validatePeriod } from '@personal-budget/finance-core';
 import type { BudgetRepository, BudgetTransaction, ForecastScenario } from '@personal-budget/finance-core';
 import { ActualAdapterError } from '@personal-budget/actual-adapter';
 import type { ActualBudgetMonthRecord, ActualImportRecord, ActualImportResult } from '@personal-budget/actual-adapter';
@@ -8,6 +8,8 @@ import { z, ZodError } from 'zod';
 import type { AppConfig } from './config.js';
 import { LocalAiClient, LocalAiUnavailableError } from './local-ai.js';
 import type { AssistantContext } from './local-ai.js';
+import { CurrencyPreferencesSchema, readCurrencyPreferences, writeCurrencyPreferences } from './currency-preferences.js';
+import type { CurrencyPreferences } from './currency-preferences.js';
 
 const TransactionQuerySchema = z.object({
   accountId: z.string().trim().min(1).max(128).optional(),
@@ -158,6 +160,84 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     return { status: 'configured' };
   });
 
+
+  async function currencyPreferences(): Promise<CurrencyPreferences> {
+    return readCurrencyPreferences(config.actualDataDir, config.budgetCurrency);
+  }
+
+  function accountNativeCurrency(
+    account: { readonly id: string; readonly currencyCode?: string | null },
+    preferences: CurrencyPreferences,
+  ): string | null {
+    return normalizeCurrencyCode(account.currencyCode) ??
+      normalizeCurrencyCode(preferences.accountCurrencyOverrides[account.id]);
+  }
+
+  function withNativeCurrency(
+    transaction: BudgetTransaction,
+    nativeCurrency: string | null,
+  ): BudgetTransaction {
+    const explicit = normalizeCurrencyCode(transaction.currencyCode) ??
+      normalizeCurrencyCode(transaction.currency_code);
+    const currencyCode = explicit ?? nativeCurrency;
+    return {
+      ...transaction,
+      currencyCode,
+      ...(transaction.subtransactions === undefined ? {} : {
+        subtransactions: transaction.subtransactions.map((child) => withNativeCurrency(child, explicit ?? nativeCurrency)),
+      }),
+    };
+  }
+
+  async function transactionsForAccounts(
+    accounts: readonly { readonly id: string; readonly currencyCode?: string | null }[],
+    startDate: string,
+    endDate: string,
+    preferences: CurrencyPreferences,
+  ): Promise<readonly BudgetTransaction[]> {
+    const groups = await Promise.all(accounts.map(async (account) => {
+      const nativeCurrency = accountNativeCurrency(account, preferences);
+      const transactions = await repository.listTransactions(account.id, startDate, endDate);
+      return transactions.map((transaction) => withNativeCurrency(transaction, nativeCurrency));
+    }));
+    return groups.flat();
+  }
+
+  function convertTransactionsForAnalysis(
+    transactions: readonly BudgetTransaction[],
+    preferences: CurrencyPreferences,
+  ): { readonly transactions: readonly BudgetTransaction[]; readonly warnings: readonly string[] } {
+    const converted: BudgetTransaction[] = [];
+    const warnings = new Set<string>();
+    const convertOne = (transaction: BudgetTransaction): BudgetTransaction | null => {
+      const sourceCurrency = normalizeCurrencyCode(transaction.currencyCode) ??
+        normalizeCurrencyCode(transaction.currency_code);
+      if (transaction.subtransactions && transaction.subtransactions.length > 0) {
+        const children = transaction.subtransactions.map(convertOne).filter((child): child is BudgetTransaction => child !== null);
+        if (children.length === 0) return null;
+        return { ...transaction, amount: children.reduce((sum, child) => sum + child.amount, 0), currencyCode: preferences.displayCurrency, subtransactions: children };
+      }
+      const conversion = convertAmountMinor(
+        transaction.amount,
+        sourceCurrency,
+        preferences.displayCurrency,
+        transaction.date,
+        preferences.exchangeRates,
+      );
+      if (conversion.amountMinor === null) {
+        if (conversion.warning) warnings.add(conversion.warning);
+        return null;
+      }
+      return { ...transaction, amount: conversion.amountMinor, currencyCode: preferences.displayCurrency, currency_code: preferences.displayCurrency };
+    };
+    for (const transaction of transactions) {
+      if (transaction.is_child === true || transaction.parent_id) continue;
+      const item = convertOne(transaction);
+      if (item) converted.push(item);
+    }
+    return { transactions: converted, warnings: [...warnings] };
+  }
+
   app.get('/api/v1/assistant/status', async () => localAi.status());
 
   app.post('/api/v1/assistant/chat', async (request, reply) => {
@@ -174,16 +254,16 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       if (status.status !== 'available') {
         return reply.code(503).send({ error: { code: 'AI_UNAVAILABLE', message: 'Ollama o el modelo configurado no están disponibles en local.' } });
       }
-      const [allAccounts, categories] = await Promise.all([repository.listAccounts(), repository.listCategories()]);
+      const [allAccounts, categories, preferences] = await Promise.all([repository.listAccounts(), repository.listCategories(), currencyPreferences()]);
       const accounts = allAccounts.filter((account) => !account.closed &&
         (query.accountId === undefined || account.id === query.accountId));
       if (query.accountId && accounts.length === 0) {
         return reply.code(400).send({ error: { code: 'INVALID_ACCOUNT', message: 'Elige una cuenta abierta del presupuesto local.' } });
       }
       const summarize = async (startDate: string, endDate: string) => {
-        const groups = await Promise.all(accounts.map((account) => repository.listTransactions(account.id, startDate, endDate)));
-        return calculateSummary(normalizeTransactions(groups.flat()), categories, {
-          startDate, endDate, currency: config.budgetCurrency,
+        const transactions = await transactionsForAccounts(accounts, startDate, endDate, preferences);
+        return calculateSummary(normalizeTransactions(transactions), categories, {
+          startDate, endDate, currency: preferences.displayCurrency, exchangeRates: preferences.exchangeRates,
         });
       };
       const summary = await summarize(query.startDate, query.endDate);
@@ -224,20 +304,46 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     try { return { data: await repository.listCategories() }; }
     catch (error) { const normalized = sanitizedErrorResponse(error); return reply.code(normalized.statusCode).send(normalized.body); }
   });
+  app.get('/api/v1/preferences/currency', async (_request, reply) => {
+    try { return { data: await currencyPreferences() }; }
+    catch (error) { const normalized = sanitizedErrorResponse(error); return reply.code(normalized.statusCode).send(normalized.body); }
+  });
+  app.put('/api/v1/preferences/currency', async (request, reply) => {
+    try {
+      const preferences = CurrencyPreferencesSchema.parse(request.body);
+      const accounts = await repository.listAccounts();
+      const accountById = new Map(accounts.filter((account) => !account.closed).map((account) => [account.id, account]));
+      for (const [accountId, currencyCode] of Object.entries(preferences.accountCurrencyOverrides)) {
+        const account = accountById.get(accountId);
+        if (!account) return reply.code(400).send({ error: { code: 'INVALID_ACCOUNT_CURRENCY', message: 'La divisa solo se puede asignar a una cuenta abierta del presupuesto configurado.' } });
+        const sourceCurrency = normalizeCurrencyCode(account.currencyCode);
+        if (sourceCurrency && sourceCurrency !== currencyCode) {
+          return reply.code(400).send({ error: { code: 'NATIVE_CURRENCY_IS_AUTHORITATIVE', message: 'Actual Budget proporciona la divisa nativa de esta cuenta y tiene prioridad sobre la preferencia local.' } });
+        }
+      }
+      await writeCurrencyPreferences(config.actualDataDir, preferences);
+      return { data: await currencyPreferences() };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
   app.get('/api/v1/transactions', async (request, reply) => {
     try {
       const query = TransactionQuerySchema.parse(request.query);
       assertPeriod(query.startDate, query.endDate);
-      const allAccounts = await repository.listAccounts();
+      const [allAccounts, preferences] = await Promise.all([repository.listAccounts(), currencyPreferences()]);
       const accounts = allAccounts.filter((account) =>
         !account.closed && (query.accountId === undefined || account.id === query.accountId),
       );
       if (query.accountId !== undefined && accounts.length === 0) {
         return reply.code(400).send({ error: { code: 'INVALID_ACCOUNT', message: 'Choose an open account from the configured budget.' } });
       }
-      const groups = await Promise.all(accounts.map((account) =>
-        repository.listTransactions(account.id, query.startDate, query.endDate),
-      ));
+      const groups = await Promise.all(accounts.map(async (account) => {
+        const nativeCurrency = accountNativeCurrency(account, preferences);
+        const transactions = await repository.listTransactions(account.id, query.startDate, query.endDate);
+        return transactions.map((transaction) => withNativeCurrency(transaction, nativeCurrency));
+      }));
       type PresentedTransaction = BudgetTransaction & {
         readonly payee_name?: string | null;
         readonly imported_payee?: string | null;
@@ -256,6 +362,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
               id: child.id || transaction.id + ':split:' + index,
               account: child.account || transaction.account,
               date: child.date || transaction.date,
+              currencyCode: normalizeCurrencyCode(child.currencyCode ?? child.currency_code) ?? normalizeCurrencyCode(transaction.currencyCode) ?? null,
               ...(payeeId === undefined ? {} : { payee_id: payeeId }),
               ...(payeeName === undefined ? {} : { payee_name: payeeName }),
               ...(importedPayee === undefined ? {} : { imported_payee: importedPayee }),
@@ -295,8 +402,22 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         return query.order === 'asc' ? comparison : -comparison;
       });
       const total = filtered.length;
-      const data = filtered.slice(query.offset, query.offset + query.limit);
-      return { data, pagination: { total, limit: query.limit, offset: query.offset, sortBy: query.sortBy, order: query.order } };
+      const page = filtered.slice(query.offset, query.offset + query.limit).map((transaction) => {
+        const sourceCurrency = normalizeCurrencyCode(transaction.currencyCode) ?? normalizeCurrencyCode(transaction.currency_code);
+        const conversion = convertAmountMinor(transaction.amount, sourceCurrency, preferences.displayCurrency, transaction.date, preferences.exchangeRates);
+        return {
+          ...transaction,
+          currencyCode: sourceCurrency,
+          displayCurrency: preferences.displayCurrency,
+          displayAmountMinor: conversion.amountMinor,
+          conversion: {
+            fromCurrency: conversion.fromCurrency, toCurrency: conversion.toCurrency, rate: conversion.rate,
+            effectiveDate: conversion.effectiveDate, source: conversion.source, inverseRate: conversion.inverseRate,
+            ...(conversion.warning ? { warning: conversion.warning } : {}),
+          },
+        };
+      });
+      return { data: page, pagination: { total, limit: query.limit, offset: query.offset, sortBy: query.sortBy, order: query.order } };
     } catch (error) {
       const normalized = sanitizedErrorResponse(error);
       return reply.code(normalized.statusCode).send(normalized.body);
@@ -319,9 +440,10 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       if (typeof importer.importTransactions !== 'function') {
         return reply.code(503).send({ error: { code: 'IMPORT_NOT_SUPPORTED', message: 'The configured local adapter does not support transaction imports.' } });
       }
-      const [accounts, categories] = await Promise.all([
+      const [accounts, categories, preferences] = await Promise.all([
         repository.listAccounts(),
         repository.listCategories(),
+        currencyPreferences(),
       ]);
       if (!accounts.some((account) => account.id === parsed.accountId && !account.closed)) {
         return reply.code(400).send({ error: { code: 'INVALID_ACCOUNT', message: 'Choose an open account from the configured budget.' } });
@@ -473,15 +595,13 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     try {
       const query = SummaryQuerySchema.parse(request.query);
       assertPeriod(query.startDate, query.endDate);
-      const [accounts, categories] = await Promise.all([repository.listAccounts(), repository.listCategories()]);
+      const [accounts, categories, preferences] = await Promise.all([repository.listAccounts(), repository.listCategories(), currencyPreferences()]);
       const activeAccounts = accounts.filter((account) => !account.closed);
-      const transactionGroups = await Promise.all(activeAccounts.map((account) =>
-        repository.listTransactions(account.id, query.startDate, query.endDate),
-      ));
-      const entries = normalizeTransactions(transactionGroups.flat());
+      const transactions = await transactionsForAccounts(activeAccounts, query.startDate, query.endDate, preferences);
+      const entries = normalizeTransactions(transactions);
       return {
         data: calculateSummary(entries, categories, {
-          startDate: query.startDate, endDate: query.endDate, currency: config.budgetCurrency,
+          startDate: query.startDate, endDate: query.endDate, currency: preferences.displayCurrency, exchangeRates: preferences.exchangeRates,
         }),
       };
     } catch (error) {
@@ -495,15 +615,14 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     startDate: string,
     endDate: string,
   ): Promise<{ readonly accounts: readonly { readonly id: string; readonly name: string }[]; readonly transactions: readonly BudgetTransaction[] }> {
-    const allAccounts = await repository.listAccounts();
+    const [allAccounts, preferences] = await Promise.all([repository.listAccounts(), currencyPreferences()]);
     const accounts = allAccounts.filter((account) =>
       !account.closed && (accountId === undefined || account.id === accountId));
     if (accountId !== undefined && accounts.length === 0) {
       throw new ActualAdapterError('INVALID_INPUT', 'Choose an open account from the configured budget.');
     }
-    const groups = await Promise.all(accounts.map((account) =>
-      repository.listTransactions(account.id, startDate, endDate)));
-    return { accounts, transactions: groups.flat() };
+    const transactions = await transactionsForAccounts(accounts, startDate, endDate, preferences);
+    return { accounts, transactions };
   }
 
   function monthsBefore(date: string, months: number): string {
@@ -518,7 +637,9 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       const query = InsightsQuerySchema.parse(request.query);
       assertPeriod(query.startDate, query.endDate);
       const { transactions } = await openAccountTransactions(query.accountId, query.startDate, query.endDate);
-      const candidates = detectRecurringCandidates(transactions, {
+      const preferences = await currencyPreferences();
+      const converted = convertTransactionsForAnalysis(transactions, preferences);
+      const candidates = detectRecurringCandidates(converted.transactions, {
         startDate: query.startDate, endDate: query.endDate,
       });
       return {
@@ -526,6 +647,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         notes: [
           'Los candidatos se detectan con señales deterministas (beneficiario, frecuencia, importe y fechas) y no garantizan que el gasto se repita.',
           'Este endpoint no modifica Actual Budget; la confirmación de sugerencias usa un flujo separado con previsualización.',
+          ...converted.warnings,
         ],
       };
     } catch (error) {
@@ -548,9 +670,9 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       if (query.accountId !== undefined && activeAccounts.length === 0) {
         return reply.code(400).send({ error: { code: 'INVALID_ACCOUNT', message: 'Choose an open account from the configured budget.' } });
       }
-      const groups = await Promise.all(activeAccounts.map((account) =>
-        repository.listTransactions(account.id, evidenceStart, query.endDate)));
-      const suggestions = suggestCategories(groups.flat(), categories, {
+      const groups = await transactionsForAccounts(activeAccounts, evidenceStart, query.endDate, preferences);
+      const converted = convertTransactionsForAnalysis(groups, preferences);
+      const suggestions = suggestCategories(converted.transactions, categories, {
         startDate: query.startDate, endDate: query.endDate,
       });
       return {
@@ -558,6 +680,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         notes: [
           'Las sugerencias usan reglas deterministas sobre el historial local de los últimos 12 meses y no aprenden ni almacenan reglas nuevas.',
           'Nada se modifica en Actual Budget sin revisión y confirmación explícita.',
+          ...converted.warnings,
         ],
       };
     } catch (error) {
@@ -607,22 +730,22 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     try {
       const parsed = ForecastRequestSchema.parse(request.body);
       assertPeriod(parsed.startDate, parsed.endDate);
-      const [accounts, categories] = await Promise.all([repository.listAccounts(), repository.listCategories()]);
+      const [accounts, categories, preferences] = await Promise.all([repository.listAccounts(), repository.listCategories(), currencyPreferences()]);
       const activeAccounts = accounts.filter((account) => !account.closed);
-      const groups = await Promise.all(activeAccounts.map((account) =>
-        repository.listTransactions(account.id, parsed.startDate, parsed.endDate)));
+      const transactions = await transactionsForAccounts(activeAccounts, parsed.startDate, parsed.endDate, preferences);
+      const converted = convertTransactionsForAnalysis(transactions, preferences);
       const result = projectSavings(
-        groups.flat(),
+        converted.transactions,
         categories,
         parsed.scenario as ForecastScenario,
         {
-          currency: config.budgetCurrency,
+          currency: preferences.displayCurrency,
           horizonMonths: parsed.horizonMonths,
           startDate: parsed.startDate,
           endDate: parsed.endDate,
         },
       );
-      return { data: result };
+      return { data: { ...result, warnings: [...result.warnings, ...converted.warnings] } };
     } catch (error) {
       const normalized = sanitizedErrorResponse(error);
       return reply.code(normalized.statusCode).send(normalized.body);
