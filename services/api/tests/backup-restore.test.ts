@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checksum, checksumSidecarContents, isSafeArchiveMember, makeBackupFilename, parseRetentionDays, validateArchiveMembers } from '../../scripts/backup-restore.js';
+import { checksum, checksumSidecarContents, isSafeArchiveMember, makeBackupFilename, parseRetentionDays, validateArchiveMembers } from '../../../scripts/backup-restore.js';
 
 describe('Actual backup and restore safety helpers', () => {
   it('only accepts files rooted in the expected data directory', () => {

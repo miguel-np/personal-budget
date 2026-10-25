@@ -88,7 +88,15 @@ npm run dev:web
 
 Abre http://127.0.0.1:5173. La aplicación usa solo la API local: Resumen, Movimientos, Informes, Presupuestos y Configuración. El Asistente aparece como no conectado y no envía movimientos a ningún modelo. Para registrar movimientos e importar extractos, revisa la previsualización y confirma la operación; el CSV se procesa en el navegador y la conciliación final la realiza Actual Budget.
 
-## 5. Validar calidad
+## 5. IA local, MCP y recuperación
+
+Para activar IA opcional, instala Ollama local, descarga el modelo elegido y configura AI_ENABLED=true y OLLAMA_MODEL en .env. Solo se permiten endpoints loopback; si la IA no está disponible la gestión financiera sigue funcionando.
+
+MCP se lanza por stdio con npm run mcp:serve después de arrancar la API. No abre un puerto de red y sus herramientas son de solo lectura.
+
+Antes de actualizaciones o importaciones masivas, ejecuta npm run backup:actual. Para restaurar, ejecuta npm run restore:actual -- <ruta-de-copia>. Compara cuentas, categorías y movimientos en una instancia aislada; la integridad del archivo no demuestra por sí sola que la restauración sea funcional.
+
+## 6. Validar calidad
 
 ~~~bash
 npm run lint
@@ -102,7 +110,7 @@ npm run audit:production
 La CI ejecuta los controles en Linux y en Windows nativo. Para cerrar la validación de instalación también hay que ejecutar estos comandos en un checkout limpio de WSL2 y completar la prueba opcional de aceptación con un presupuesto de prueba de Actual. Un workflow Windows verde no prueba por sí solo la integración WSL2 ni el acceso a un servidor Actual real.
 
 
-## 6. Matriz de aceptación: Windows nativo y WSL2
+## 7. Matriz de aceptación: Windows nativo y WSL2
 
 ### Windows nativo
 

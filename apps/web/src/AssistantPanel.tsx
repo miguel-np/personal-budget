@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 
 interface Summary {
   currency: string; startDate: string; endDate: string; incomeMinor: number; expenseMinor: number;
@@ -45,7 +45,7 @@ export function AssistantPanel({ currency }: { currency: string }) {
       .catch(() => { if (!controller.signal.aborted) setStatus({ enabled: false, status: 'unavailable' }); });
     return () => controller.abort();
   }, []);
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy || question.trim().length === 0) return;
     setBusy(true); setError(''); setAnswer(null);
