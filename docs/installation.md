@@ -152,12 +152,44 @@ Después, valida el contenedor y la API con las secciones anteriores. Registra e
 
 **Estado de validación:** esta guía y la CI automatizada son una ayuda reproducible, no evidencia de que una máquina Windows/WSL2 concreta se haya probado. No marques la issue de instalación como terminada hasta que la matriz se haya ejecutado en ambos entornos y la aceptación local de Actual haya pasado.
 
-## 7. IA local (opcional, P2)
+## 7. Resolución de problemas
+
+### Puertos ocupados
+
+Los procesos usan estos puertos por defecto: Actual `5006`, API `3000`, Vite `5173` y Vite preview `4173`. En WSL, identifica el proceso que escucha antes de detenerlo:
+
+~~~bash
+ss -ltnp | grep -E ':(3000|4173|5006|5173)\\b' || true
+docker compose ps
+docker compose logs --tail=100 actual
+~~~
+
+En PowerShell puedes inspeccionar puertos con:
+
+~~~powershell
+Get-NetTCPConnection -State Listen | Where-Object { $_.LocalPort -in 3000,4173,5006,5173 }
+~~~
+
+Vite usa `strictPort`: si 5173/4173 está ocupado, no elige otro puerto automáticamente. Libera el puerto o actualiza el puerto y los orígenes permitidos de forma coherente. Conserva los servicios ligados a `127.0.0.1`; no los publiques en `0.0.0.0` ni abras puertos al LAN.
+
+### Docker, memoria y Actual
+
+Si Actual no inicia, consulta `docker compose ps` y `docker compose logs --tail=100 actual`. Comprueba que Docker Desktop tiene integración con la distribución WSL2 correcta y suficiente memoria asignada para el contenedor. No borres `.local/actual-server-data` como método de reparación: contiene los datos persistentes de Actual. Para reiniciar el servicio, usa `docker compose restart actual` y vuelve a comprobar la interfaz en `http://127.0.0.1:5006`.
+
+### Permisos y dependencias
+
+Guarda el checkout en el filesystem Linux y ejecuta los comandos de Node con tu usuario normal; evita `sudo npm ci`, que puede crear archivos propiedad de root. Si aparece `EACCES`, inspecciona primero `ls -ld . .local` y corrige únicamente los archivos del proyecto afectados. Tras modificar dependencias, usa `npm ci` para respetar el lockfile y vuelve a ejecutar los controles de calidad.
+
+### Ollama opcional
+
+La aplicación financiera no necesita Ollama: `AI_ENABLED=false` y `MCP_ENABLED=false` son los valores de plantilla. Si en el futuro habilitas la IA local, consulta `ollama --version`, `ollama list` y `curl http://127.0.0.1:11434/api/tags`; configura el modelo solo después de revisar sus requisitos de memoria y almacenamiento. Mantén el endpoint en loopback y no uses un endpoint remoto para el requisito local-first.
+
+## 8. IA local (opcional, P2)
 
 La integración con Ollama aún no está conectada a la shell P0. Para prepararla, instala Ollama desde la [web oficial](https://ollama.com/download) y consulta su [API](https://docs.ollama.com/api). La descarga del modelo requiere red; no configures endpoints alojados si el requisito es mantener las consultas en el equipo.
 
 
-## 8. Prueba de aceptación con un presupuesto local existente (opcional)
+## 9. Prueba de aceptación con un presupuesto local existente (opcional)
 
 Cuando Actual Budget esté iniciado y hayas creado/configurado un presupuesto de prueba, puedes probar el adaptador real en modo solo lectura. Esta prueba consulta cuentas, categorías y movimientos del año configurado, pero no crea ni modifica transacciones.
 
