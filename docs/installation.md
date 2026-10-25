@@ -150,7 +150,7 @@ npm run audit:production
 
 Después, valida el contenedor y la API con las secciones anteriores. Registra el resultado de la prueba de aceptación real solo con un presupuesto de prueba. No uses datos financieros reales para una importación de validación.
 
-**Estado de validación:** esta guía y la CI automatizada son una ayuda reproducible, no evidencia de que una máquina Windows/WSL2 concreta se haya probado. No marques la issue de instalación como terminada hasta que la matriz se haya ejecutado en ambos entornos y la aceptación local de Actual haya pasado.
+**Estado de validación:** la CI automatizada cubre Linux, instalación nativa en Windows y el arranque del contenedor Actual, pero no crea ni configura un presupuesto de prueba. Estos resultados no equivalen a una instalación en una distribución WSL2 concreta ni a una prueba de importación/edición contra un presupuesto real. Esta matriz sigue pendiente hasta ejecutar y registrar la aceptación en ambos entornos; no marques la issue de instalación como terminada antes de hacerlo.
 
 ## 7. Resolución de problemas
 
