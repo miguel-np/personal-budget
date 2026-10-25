@@ -36,3 +36,9 @@ export function checksum(contents: Uint8Array): string {
 export function checksumSidecarContents(archivePath: string, digest: string): string {
   return digest + '  ' + basename(archivePath) + '\n';
 }
+
+export function validateArchiveEntryTypes(entries: readonly string[]): void {
+  if (entries.length === 0 || entries.some((entry) => !/^[-d]/.test(entry))) {
+    throw new Error('Backup archive may contain only regular files and directories.');
+  }
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checksum, checksumSidecarContents, isSafeArchiveMember, makeBackupFilename, parseRetentionDays, validateArchiveMembers } from '../../../scripts/backup-restore.js';
+import { checksum, checksumSidecarContents, isSafeArchiveMember, makeBackupFilename, parseRetentionDays, validateArchiveEntryTypes, validateArchiveMembers } from '../../../scripts/backup-restore.js';
 
 describe('Actual backup and restore safety helpers', () => {
   it('only accepts files rooted in the expected data directory', () => {
@@ -14,6 +14,20 @@ describe('Actual backup and restore safety helpers', () => {
     expect(() => validateArchiveMembers([], 'actual-server-data')).toThrow();
     expect(() => validateArchiveMembers(['actual-server-data/data', '../.env'], 'actual-server-data')).toThrow();
     expect(() => validateArchiveMembers(['unrelated/file'], 'actual-server-data')).toThrow();
+  });
+  it('only permits regular files and directories in a restore archive', () => {
+    validateArchiveEntryTypes([
+      'drwxr-xr-x root/root 0 2026-10-25 12:00 actual-server-data/',
+      '-rw------- root/root 128 2026-10-25 12:00 actual-server-data/server.sqlite',
+    ]);
+    expect(() => validateArchiveEntryTypes([])).toThrow(/regular files and directories/i);
+    expect(() => validateArchiveEntryTypes([
+      'drwxr-xr-x root/root 0 2026-10-25 12:00 actual-server-data/',
+      'lrwxrwxrwx root/root 0 2026-10-25 12:00 actual-server-data/link -> ../../.env',
+    ])).toThrow(/regular files and directories/i);
+    expect(() => validateArchiveEntryTypes([
+      'hrw-r--r-- root/root 0 2026-10-25 12:00 actual-server-data/hardlink link to ../../.env',
+    ])).toThrow(/regular files and directories/i);
   });
   it('validates retention configuration and defaults safely', () => {
     expect(parseRetentionDays(undefined)).toBe(30);

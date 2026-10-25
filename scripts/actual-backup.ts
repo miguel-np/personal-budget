@@ -1,9 +1,11 @@
+import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { mkdtemp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
 import { dirname, basename, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { checksum, checksumSidecarContents, makeBackupFilename, parseRetentionDays, validateArchiveMembers } from './backup-restore.js';
+import { checksumSidecarContents, makeBackupFilename, parseRetentionDays, validateArchiveEntryTypes, validateArchiveMembers } from './backup-restore.js';
 
 const execFileAsync = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -13,14 +15,24 @@ const backupDir = resolve(root, process.env.BACKUP_DIR ?? '.local/backups');
 async function command(program: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
   return execFileAsync(program, args, { cwd: root, encoding: 'utf8', maxBuffer: 2 * 1024 * 1024 });
 }
+async function checksumFile(path: string): Promise<string> {
+  const hash = createHash('sha256');
+  for await (const chunk of createReadStream(path)) hash.update(chunk);
+  return hash.digest('hex');
+}
 async function assertDirectory(path: string): Promise<void> {
   const info = await stat(path).catch(() => null);
   if (!info?.isDirectory()) throw new Error('Expected data directory is missing.');
 }
 async function archiveMembers(archive: string): Promise<string[]> {
-  const result = await command('tar', ['-tzf', archive]);
-  const members = result.stdout.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+  const [listing, detailedListing] = await Promise.all([
+    command('tar', ['-tzf', archive]),
+    command('tar', ['-tvzf', archive]),
+  ]);
+  const members = listing.stdout.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+  const entries = detailedListing.stdout.split(/\r?\n/).filter(Boolean);
   validateArchiveMembers(members, basename(dataDir));
+  validateArchiveEntryTypes(entries);
   return members;
 }
 async function verifyArchive(archive: string): Promise<void> {
@@ -29,7 +41,7 @@ async function verifyArchive(archive: string): Promise<void> {
   const sidecar = await readFile(archive + '.sha256', 'utf8');
   const [expected, namedFile] = sidecar.trim().split(/\s+/);
   if (!expected || namedFile !== basename(archive) || !/^[a-f0-9]{64}$/.test(expected)) throw new Error('Backup checksum file is invalid.');
-  const actual = checksum(await readFile(archive));
+  const actual = await checksumFile(archive);
   if (actual !== expected) throw new Error('Backup checksum verification failed.');
   await archiveMembers(archive);
 }
@@ -52,15 +64,21 @@ async function backup(): Promise<string> {
   await mkdir(backupDir, { recursive: true });
   const archive = join(backupDir, makeBackupFilename());
   await command('docker', ['compose', 'stop', 'actual']);
+  let archiveCreated = false;
   try {
+    // Create exclusively with private permissions before tar writes any financial data.
+    await writeFile(archive, '', { flag: 'wx', mode: 0o600 });
+    archiveCreated = true;
     await command('tar', ['-czf', archive, '-C', dirname(dataDir), basename(dataDir)]);
-    const result = await command('tar', ['-tzf', archive]);
-    validateArchiveMembers(result.stdout.split(/\r?\n/).filter(Boolean), basename(dataDir));
-    const digest = checksum(await readFile(archive));
+    await chmod(archive, 0o600);
+    await archiveMembers(archive);
+    const digest = await checksumFile(archive);
     await writeFile(archive + '.sha256', checksumSidecarContents(archive, digest), { mode: 0o600 });
   } catch (error) {
-    await rm(archive, { force: true });
-    await rm(archive + '.sha256', { force: true });
+    if (archiveCreated) {
+      await rm(archive, { force: true });
+      await rm(archive + '.sha256', { force: true });
+    }
     throw error;
   } finally {
     await command('docker', ['compose', 'start', 'actual']);
