@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseCsv, parseCsvMoney, parseDate } from '../src/MovementTools.js';
+import { parseCsv, parseCsvMoney, parseDate } from '../src/csv-import.js';
 
 describe('CSV parsing helpers', () => {
   it('handles UTF-8 BOM, CRLF, quoted delimiters and escaped quotes', () => {
