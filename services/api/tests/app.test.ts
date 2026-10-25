@@ -175,6 +175,37 @@ describe('local API', () => {
     expect(getBudgetMonth).toHaveBeenCalledWith('2026-10');
   });
 
+  it('distinguishes unassigned categories from explicit zero allocations', async () => {
+    const getBudgetMonth = vi.fn(async (month: string) => ({
+      month,
+      categoryGroups: [{
+        id: 'spend',
+        name: 'Gastos',
+        is_income: false,
+        categories: [
+          { id: 'food', name: 'Alimentación', budgeted: 0, spent: -1_000, balance: -1_000 },
+          { id: 'other', name: 'Otros', budgeted: 0, spent: 0, balance: 0 },
+          { id: 'zero', name: 'Presupuesto cero', budgeted: 0, spent: 0, balance: 0 },
+        ],
+      }],
+    }));
+    const getBudgetAllocations = vi.fn(async () => [
+      { categoryId: 'food', amountMinor: 5_000 },
+      { categoryId: 'zero', amountMinor: 0 },
+    ]);
+    const repository = Object.assign(createRepository(), { getBudgetMonth, getBudgetAllocations }) as BudgetRepository & {
+      getBudgetMonth: typeof getBudgetMonth;
+      getBudgetAllocations: typeof getBudgetAllocations;
+    };
+    const app = await createTestApp(repository);
+    const response = await app.inject({ method: 'GET', url: '/api/v1/budgets/2026-10' });
+    expect(response.statusCode).toBe(200);
+    const rows = response.json().data.categories as Array<{ categoryId: string; state: string; budgetedMinor: number }>;
+    expect(rows.find((item) => item.categoryId === 'food')).toMatchObject({ state: 'budgeted', budgetedMinor: 5_000 });
+    expect(rows.find((item) => item.categoryId === 'other')).toMatchObject({ state: 'unbudgeted', budgetedMinor: 0 });
+    expect(rows.find((item) => item.categoryId === 'zero')).toMatchObject({ state: 'zero', budgetedMinor: 0 });
+  });
+
   it('updates category allocations only for an existing expense category', async () => {
     const getBudgetMonth = vi.fn(async (month: string) => ({ month, categoryGroups: [] }));
     const setBudgetAmount = vi.fn(async () => undefined);
