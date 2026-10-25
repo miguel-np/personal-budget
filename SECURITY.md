@@ -2,7 +2,14 @@
 
 ## Estado
 
-Este es un proyecto personal-first cuya implementación aún está pendiente. Esta política define los requisitos de diseño y operación; no certifica que una versión futura los cumpla automáticamente.
+Proyecto local-first implementado (P0–P2, 25-oct-2026). La política define requisitos de diseño y operación; no certifica que ninguna versión cumpla todos los requisitos automáticamente.
+
+Revisión de seguridad de P2 registrada:
+
+- CI ejecuta lint, typecheck, build, pruebas con cobertura (92 % statements / 79 % branches), auditoría de dependencias (`npm audit` y `npm audit --omit=dev`) y escaneo de secretos con permisos mínimos en workflow; todo verde en `main`.
+- Verificado en el entorno objetivo WSL2: servicios ligados solo a `127.0.0.1`, CORS rechaza orígenes no permitidos (403), logs sin prompts ni detalles de movimientos, respuestas de error saneadas sin secretos.
+- Pruebas de prompt injection (descripciones y solicitudes ambiguas), herramientas MCP desconocidas rechazadas, importaciones sin aprobación no persisten y el asistente no tiene herramientas de escritura.
+- Límites: los escaneos automáticos detectan dependencias y secretos conocidos, pero **no prueban ausencia de vulnerabilidades**, ni sustituyen revisiones manuales del código ni la validación de restauraciones con inventario (registrada en `docs/backup-restore.md`).
 
 ## Informar una vulnerabilidad
 

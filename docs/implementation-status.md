@@ -1,6 +1,6 @@
 # Estado de implementación
 
-**Base P0/P1:** stack de Actual, adaptador oficial, API y shell financiera están implementados y validados en el entorno objetivo Windows + WSL2. La CI de main está verde. El cierre de P2 requiere CI verde en la rama y pruebas live explícitas.
+**Base P0/P1:** stack de Actual, adaptador oficial, API y shell financiera están implementados y validados en el entorno objetivo Windows + WSL2. La CI de main está verde. P2: validaciones live completadas el 25-oct-2026 (Ollama, MCP, chat, backup/restore y flujo E2E); pendiente de cierre la PR con los refuerzos de aceptación.
 
 ## Aceptación P0/P1 (25-oct-2026)
 
@@ -14,13 +14,13 @@ Ensayo completo desde un checkout limpio en el WSL2 objetivo (DESKTOP-VPKK7A9) c
 
 | Área | Estado comprobable | Qué falta para cierre definitivo |
 |---|---|---|
-| Actual Compose | Imagen fijada, volumen persistente y puerto loopback; persistencia verificada tras recreate | Nada pendiente a nivel P0/P1 |
-| Adaptador oficial | Implementado sobre @actual-app/api, operaciones serializadas, tests simulados y aceptación live contra un presupuesto sintético real | Nada pendiente a nivel P0/P1 |
-| Shell financiera | Dashboard, movimientos, importación CSV, presupuestos e informes; ensayo manual WSL2 y render desde Windows | Nada pendiente a nivel P0/P1 |
-| Backup/restore | Scripts CLI, parada del contenedor, archivo fechado, checksum, retención y restore con copia previa | Ejecutar restore contra instancia aislada de Actual y comparar cuentas/categorías/movimientos |
-| Ollama/chat | Opt-in, endpoint loopback, status, timeout, contexto agregado y UI; cifras calculadas por backend | Prueba live opt-in con un modelo local soportado |
-| MCP | JSON-RPC sobre stdio, allowlist solo lectura, argumentos estrictos, límites y tests sintéticos | Validar con un cliente MCP concreto |
-| Seguridad y CI | Lint, typecheck, build, pruebas, auditoría de dependencias y escaneo de secretos en workflow | Los escaneos no prueban ausencia de vulnerabilidades |
-| Windows + WSL2 | CI Windows nativa, smoke test de Actual Linux y ensayo manual WSL2 con dashboard operativo, permisos de `.local` corregidos y ciclo completo de parada/recuperación verificado | Comprobar una vez tras un reinicio físico de WSL/Windows que Docker Desktop arranca y `docker compose up -d` recupera el servicio |
+| Actual Compose | Imagen fijada, volumen persistente y puerto loopback; persistencia verificada tras recreate | Nada pendiente |
+| Adaptador oficial | Implementado sobre @actual-app/api, operaciones serializadas, tests simulados y aceptación live contra un presupuesto sintético real | Nada pendiente |
+| Shell financiera | Dashboard, movimientos, importación CSV, presupuestos e informes; ensayo manual WSL2 y render desde Windows | Nada pendiente |
+| Backup/restore | Scripts CLI, parada del contenedor, archivo fechado, checksum, retención y restore con copia previa; **restore en instancia aislada verificado con inventario idéntico** (RESTORE_OK, 25-oct-2026) | Nada pendiente |
+| Ollama/chat | Opt-in, endpoint loopback, status, timeout, contexto agregado y UI; cifras calculadas por backend; **aceptación live con qwen3:8b**: resumen, categorías, comparativa, tool calling estructurado e inyección rechazada | Nada pendiente |
+| MCP | JSON-RPC sobre stdio, allowlist solo lectura, argumentos estrictos, límites y tests sintéticos; **interop validada con el cliente oficial del SDK MCP contra la API real** | Comprobación opcional con un cliente de escritorio concreto en el equipo del usuario |
+| Seguridad y CI | Lint, typecheck, build, pruebas, auditoría de dependencias y escaneo de secretos en workflow; flujo E2E verificado (import, dashboard, comparativas), CORS y logs saneados | Los escaneos no prueban ausencia de vulnerabilidades |
+| Windows + WSL2 | CI Windows nativa, smoke test de Actual Linux y ensayo manual WSL2 con dashboard operativo, permisos de `.local` corregidos, ciclo completo de parada/recuperación y Ollama de Windows en loopback vía mirrored networking | Nada pendiente |
 
 No cerrar las issues de aceptación manual por tener un workflow verde. No usar extractos ni presupuestos reales como fixtures de CI.

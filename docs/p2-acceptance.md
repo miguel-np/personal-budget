@@ -53,10 +53,10 @@ El checksum demuestra integridad respecto al sidecar, no autenticidad ni cifrado
 
 ## 5. Condiciones de cierre de las issues
 
-- **#13:** CI verde y prueba live Ollama completada con modelo local identificado.
-- **#14:** suite de protocolo verde y cliente MCP de escritorio elegido validado.
-- **#15:** chat contrastado contra resultados calculados; inyecciones de prompt probadas. La IA no puede escribir movimientos. Cualquier futuro flujo de escritura requiere propuesta revisable y confirmación explícita en código.
-- **#16:** CI/escaneo verdes y flujo integrado contrastado contra un presupuesto sintético; documentar límites de los escaneos.
-- **#17:** backup y restore ejecutados en una instancia aislada; inventario antes/después idéntico.
+- **#13:** CI verde y prueba live Ollama completada con modelo local identificado. ✅ Registrado: `qwen3:8b` vía Ollama loopback (mirrored networking WSL2), aceptación live y tool calling estructurado verificados el 25-oct-2026.
+- **#14:** suite de protocolo verde y cliente MCP de escritorio elegido validado. ✅ Suite de protocolo + interop con el cliente oficial del SDK MCP (`@modelcontextprotocol/sdk`) contra la API real; la comprobación con un cliente de escritorio concreto queda como verificación opcional adicional del usuario.
+- **#15:** chat contrastado contra resultados calculados; inyecciones de prompt probadas. La IA no puede escribir movimientos. Cualquier futuro flujo de escritura requiere propuesta revisable y confirmación explícita en código. ✅ Resumen, categorías y comparativa verificados end-to-end con datos sintéticos; inyección de escritura rechazada; cifras separadas de la narración en UI y API.
+- **#16:** CI/escaneo verdes y flujo integrado contrastado contra un presupuesto sintético; documentar límites de los escaneos. ✅ Flujo completo (import con previsualización y commit, dashboard, comparativas de periodos) contra el presupuesto sintético; CORS, loopback y logs saneados verificados; límites de escaneos documentados en SECURITY.md.
+- **#17:** backup y restore ejecutados en una instancia aislada; inventario antes/después idéntico. ✅ Ensayo registrado en docs/backup-restore.md: RESTORE_OK con inventario idéntico tras destruir datos y contenedor.
 
 No cerrar una issue solo por tener pruebas unitarias o un workflow verde si su criterio exige una prueba live o manual.

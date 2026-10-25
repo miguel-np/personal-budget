@@ -475,6 +475,51 @@ describe('local API', () => {
     expect(importTransactions).not.toHaveBeenCalled();
   });
 
+  it('reports import capability gaps without exposing adapter details', async () => {
+    const app = await createTestApp(createRepository());
+    const preview = await app.inject({
+      method: 'POST', url: '/api/v1/import/preview',
+      payload: { accountId: 'account-1', records: [{ date: '2026-10-12', amount: -1299, payee_name: 'Compra', imported_id: 'id-1' }] },
+    });
+    expect(preview.statusCode).toBe(503);
+    expect(preview.json().error.code).toBe('IMPORT_NOT_SUPPORTED');
+    expect(preview.body).not.toContain('importTransactions');
+  });
+
+  it('rejects imports for accounts that are not open in the configured budget', async () => {
+    const importTransactions = vi.fn(async (): Promise<ActualImportResult> => ({ errors: [], added: [], updated: [] }));
+    const repository = Object.assign(createRepository(), { importTransactions }) as BudgetRepository & {
+      importTransactions: typeof importTransactions;
+    };
+    const app = await createTestApp(repository);
+    const response = await app.inject({
+      method: 'POST', url: '/api/v1/import/commit',
+      payload: { accountId: 'closed-or-missing', records: [{ date: '2026-10-12', amount: -1299, payee_name: 'Compra', imported_id: 'id-1' }] },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe('INVALID_ACCOUNT');
+    expect(importTransactions).not.toHaveBeenCalled();
+  });
+
+  it('reports reconciliation failures as conflicts without leaking import internals', async () => {
+    const importTransactions = vi.fn(async (): Promise<ActualImportResult> => ({
+      errors: [{ message: 'private upstream reconciliation dump' }],
+      added: [], updated: [],
+    }));
+    const repository = Object.assign(createRepository(), { importTransactions }) as BudgetRepository & {
+      importTransactions: typeof importTransactions;
+    };
+    const app = await createTestApp(repository);
+    const response = await app.inject({
+      method: 'POST', url: '/api/v1/import/commit',
+      payload: { accountId: 'account-1', records: [{ date: '2026-10-12', amount: -1299, payee_name: 'Compra', imported_id: 'id-1' }] },
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe('IMPORT_RECONCILIATION_FAILED');
+    expect(response.json().result).toMatchObject({ added: 0, updated: 0, errors: 1, dryRun: false });
+    expect(response.body).not.toContain('reconciliation dump');
+  });
+
   it('returns transactions for a validated account and date range', async () => {
     const repository = createRepository();
     const app = await createTestApp(repository);

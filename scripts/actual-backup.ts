@@ -81,7 +81,7 @@ async function backup(): Promise<string> {
     }
     throw error;
   } finally {
-    await command('docker', ['compose', 'start', 'actual']);
+    await command('docker', ['compose', 'up', '-d', 'actual']);
   }
   await verifyArchive(archive);
   await pruneOldBackups();
@@ -108,17 +108,17 @@ async function restore(archiveInput: string): Promise<{ safetyCopy?: string }> {
     await rename(candidate, dataDir);
     replacementMoved = true;
     try {
-      await command('docker', ['compose', 'start', 'actual']);
+      await command('docker', ['compose', 'up', '-d', 'actual']);
       stopped = false;
     } catch (error) {
       if (replacementMoved) await rm(dataDir, { recursive: true, force: true });
       if (oldMoved) await rename(safetyCopy, dataDir);
-      await command('docker', ['compose', 'start', 'actual']).catch(() => undefined);
+      await command('docker', ['compose', 'up', '-d', 'actual']).catch(() => undefined);
       stopped = false;
       throw error;
     }
   } catch (error) {
-    if (stopped) await command('docker', ['compose', 'start', 'actual']).catch(() => undefined);
+    if (stopped) await command('docker', ['compose', 'up', '-d', 'actual']).catch(() => undefined);
     throw error;
   } finally {
     await rm(stage, { recursive: true, force: true });
