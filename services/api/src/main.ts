@@ -26,14 +26,17 @@ async function main(): Promise<void> {
   const api = Object.create(ActualApiNamespace) as ActualApiContract;
   api.getBudgetAllocations = async (month: string) => {
     const monthId = Number(month.replace('-', ''));
-    const [zeroBudgetResult, trackingBudgetResult] = await Promise.all([
+    type BudgetAllocationRow = { readonly category: string; readonly amount: number };
+    type BudgetQueryResult = { readonly data?: readonly BudgetAllocationRow[] };
+    const [zeroBudgetRaw, trackingBudgetRaw] = await Promise.all([
       ActualApiNamespace.aqlQuery(ActualApiNamespace.q('zero_budgets').filter({ month: monthId }).select(['category', 'amount'])),
       ActualApiNamespace.aqlQuery(ActualApiNamespace.q('reflect_budgets').filter({ month: monthId }).select(['category', 'amount'])),
     ]);
-    type BudgetAllocationRow = { readonly category: string; readonly amount: number };
+    const zeroBudgetResult = zeroBudgetRaw as BudgetQueryResult;
+    const trackingBudgetResult = trackingBudgetRaw as BudgetQueryResult;
     const rows = [
-      ...((zeroBudgetResult.data ?? []) as BudgetAllocationRow[]),
-      ...((trackingBudgetResult.data ?? []) as BudgetAllocationRow[]),
+      ...(zeroBudgetResult.data ?? []),
+      ...(trackingBudgetResult.data ?? []),
     ];
     return rows.map((row) => ({ categoryId: row.category, amountMinor: row.amount }));
   };
