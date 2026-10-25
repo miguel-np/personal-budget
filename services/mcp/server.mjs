@@ -3,7 +3,7 @@ const VERSION = '2024-11-05', MAX_LINE = 8192, MAX_OUTPUT = 65536, MAX_CALLS = 2
 const configuredTimeout = process.env.PERSONAL_BUDGET_MCP_API_TIMEOUT_MS;
 const TIMEOUT = configuredTimeout === undefined ? 5000 : Number(configuredTimeout);
 if (!Number.isInteger(TIMEOUT) || TIMEOUT < 100 || TIMEOUT > 30000) {
- process.stderr.write('PERSONAL_BUDGET_MCP_API_TIMEOUT_MS must be an integer from 100 to 30000.\\n');
+ process.stderr.write('PERSONAL_BUDGET_MCP_API_TIMEOUT_MS must be an integer from 100 to 30000.\n');
  process.exit(2);
 }
 let calls = 0;
