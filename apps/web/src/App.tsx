@@ -92,7 +92,8 @@ function isoDate(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 function currentDate(): string {
-  return isoDate(new Date());
+  const now = new Date();
+  return [String(now.getFullYear()).padStart(4, '0'), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
 }
 function periodFor(mode: PeriodMode, anchor: string, customStart: string, customEnd: string): Period {
   if (mode === 'custom') return { startDate: customStart, endDate: customEnd };
