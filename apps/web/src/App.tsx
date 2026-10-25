@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { MovementTools } from './MovementTools.js';
+import { BudgetPanel } from './BudgetPanel.js';
 
 type ConnectionState = 'checking' | 'connected' | 'unconfigured' | 'error';
 type PeriodMode = 'day' | 'month' | 'year' | 'custom';
@@ -76,6 +77,7 @@ const NAV_ITEMS = [
   { href: '/', label: 'Resumen', icon: '◫' },
   { href: '/movements', label: 'Movimientos', icon: '↕' },
   { href: '/reports', label: 'Informes', icon: '▥' },
+  { href: '/budgets', label: 'Presupuestos', icon: '◷' },
   { href: '/assistant', label: 'Asistente', icon: '✧' },
   { href: '/settings', label: 'Configuración', icon: '⚙' },
 ] as const;
@@ -465,6 +467,10 @@ export function App() {
               </section>
             )}
 
+            {route === '/budgets' && (
+              <BudgetPanel currency={currency} onBudgetUpdated={() => { setRefreshKey((value) => value + 1); }} />
+            )}
+
             {route === '/assistant' && (
               <section className="content-section">
                 <div className="section-heading"><div><p className="eyebrow">IA OPCIONAL · FASE FUTURA</p><h2>Asistente local</h2></div></div>
@@ -483,7 +489,7 @@ export function App() {
               </section>
             )}
 
-            {!['/', '/movements', '/reports', '/assistant', '/settings'].includes(route) && (
+            {!['/', '/movements', '/reports', '/budgets', '/assistant', '/settings'].includes(route) && (
               <section className="content-section"><EmptyState title="Sección no encontrada" body="Utiliza la navegación principal para abrir una sección disponible." /><a className="button primary" href="/">Volver al resumen</a></section>
             )}
           </>
