@@ -16,11 +16,11 @@ Ensayo completo desde un checkout limpio en el WSL2 objetivo (DESKTOP-VPKK7A9) c
 |---|---|---|
 | Actual Compose | Imagen fijada, volumen persistente y puerto loopback; persistencia verificada tras recreate | Nada pendiente a nivel P0/P1 |
 | Adaptador oficial | Implementado sobre @actual-app/api, operaciones serializadas, tests simulados y aceptación live contra un presupuesto sintético real | Nada pendiente a nivel P0/P1 |
-| Shell financiera | Dashboard, movimientos, importación CSV, presupuestos e informes; ensayo manual WSL2 y render desde Windows | Confirmar ciclo completo de recuperación tras reiniciar WSL/Windows |
+| Shell financiera | Dashboard, movimientos, importación CSV, presupuestos e informes; ensayo manual WSL2 y render desde Windows | Nada pendiente a nivel P0/P1 |
 | Backup/restore | Scripts CLI, parada del contenedor, archivo fechado, checksum, retención y restore con copia previa | Ejecutar restore contra instancia aislada de Actual y comparar cuentas/categorías/movimientos |
 | Ollama/chat | Opt-in, endpoint loopback, status, timeout, contexto agregado y UI; cifras calculadas por backend | Prueba live opt-in con un modelo local soportado |
 | MCP | JSON-RPC sobre stdio, allowlist solo lectura, argumentos estrictos, límites y tests sintéticos | Validar con un cliente MCP concreto |
 | Seguridad y CI | Lint, typecheck, build, pruebas, auditoría de dependencias y escaneo de secretos en workflow | Los escaneos no prueban ausencia de vulnerabilidades |
-| Windows + WSL2 | CI Windows nativa, smoke test de Actual Linux y ensayo manual WSL2 con dashboard operativo | Reinicio completo de WSL/Windows y permisos de `.local` corregidos en el entorno del usuario |
+| Windows + WSL2 | CI Windows nativa, smoke test de Actual Linux y ensayo manual WSL2 con dashboard operativo, permisos de `.local` corregidos y ciclo completo de parada/recuperación verificado | Comprobar una vez tras un reinicio físico de WSL/Windows que Docker Desktop arranca y `docker compose up -d` recupera el servicio |
 
 No cerrar las issues de aceptación manual por tener un workflow verde. No usar extractos ni presupuestos reales como fixtures de CI.
