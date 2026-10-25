@@ -23,7 +23,23 @@ async function main(): Promise<void> {
     ...parsedConfig,
     actualDataDir: isAbsolute(parsedConfig.actualDataDir) ? parsedConfig.actualDataDir : resolve(repositoryRoot, parsedConfig.actualDataDir),
   };
-  const api = ActualApiNamespace as unknown as ActualApiContract;
+  const api = Object.create(ActualApiNamespace) as ActualApiContract;
+  api.getBudgetAllocations = async (month: string) => {
+    const monthId = Number(month.replace('-', ''));
+    type BudgetAllocationRow = { readonly category: string; readonly amount: number };
+    type BudgetQueryResult = { readonly data?: readonly BudgetAllocationRow[] };
+    const [zeroBudgetRaw, trackingBudgetRaw] = await Promise.all([
+      ActualApiNamespace.aqlQuery(ActualApiNamespace.q('zero_budgets').filter({ month: monthId }).select(['category', 'amount'])),
+      ActualApiNamespace.aqlQuery(ActualApiNamespace.q('reflect_budgets').filter({ month: monthId }).select(['category', 'amount'])),
+    ]);
+    const zeroBudgetResult = zeroBudgetRaw as BudgetQueryResult;
+    const trackingBudgetResult = trackingBudgetRaw as BudgetQueryResult;
+    const rows = [
+      ...(zeroBudgetResult.data ?? []),
+      ...(trackingBudgetResult.data ?? []),
+    ];
+    return rows.map((row) => ({ categoryId: row.category, amountMinor: row.amount }));
+  };
   const repository = new ActualBudgetAdapter({
     serverURL: config.actualServerURL,
     dataDir: config.actualDataDir,

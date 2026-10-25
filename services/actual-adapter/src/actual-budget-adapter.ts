@@ -2,7 +2,7 @@ import { resolve } from 'node:path';
 import type { BudgetAccount, BudgetCategory, BudgetRepository, BudgetTransaction } from '@personal-budget/finance-core';
 import { isIsoDate, validatePeriod } from '@personal-budget/finance-core';
 import { z } from 'zod';
-import type { ActualAdapterConfig, ActualApiContract, ActualImportRecord, ActualImportResult } from './actual-api-contract.js';
+import type { ActualAdapterConfig, ActualApiContract, ActualBudgetAllocation, ActualBudgetMonthRecord, ActualImportRecord, ActualImportResult } from './actual-api-contract.js';
 import { mapActualAccount, mapActualCategory } from './actual-api-contract.js';
 
 export class ActualAdapterError extends Error {
@@ -20,6 +20,7 @@ const ImportRecordSchema = z.object({
   date: z.string().refine(isIsoDate, 'date must be a valid YYYY-MM-DD date'),
   amount: z.number().int().safe(),
   payee_name: z.string().trim().max(500).optional(),
+  imported_payee: z.string().trim().max(500).optional(),
   category: IdentifierSchema.optional(),
   notes: z.string().max(2_000).optional(),
   imported_id: z.string().trim().max(500).optional(),
@@ -33,6 +34,7 @@ function omitUndefinedImportFields(
     date: record.date,
     amount: record.amount,
     ...(record.payee_name === undefined ? {} : { payee_name: record.payee_name }),
+    ...(record.imported_payee === undefined ? {} : { imported_payee: record.imported_payee }),
     ...(record.category === undefined ? {} : { category: record.category }),
     ...(record.notes === undefined ? {} : { notes: record.notes }),
     ...(record.imported_id === undefined ? {} : { imported_id: record.imported_id }),
@@ -65,6 +67,43 @@ export class ActualBudgetAdapter implements BudgetRepository {
 
   public async listCategories(): Promise<readonly BudgetCategory[]> {
     return this.enqueue(async () => (await this.api.getCategories()).map(mapActualCategory));
+  }
+
+  public async getBudgetMonth(month: string): Promise<ActualBudgetMonthRecord> {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+      throw new ActualAdapterError('INVALID_INPUT', 'Budget month must use YYYY-MM.');
+    }
+    if (!this.api.getBudgetMonth) {
+      throw new ActualAdapterError('UPSTREAM_FAILURE', 'The configured Actual API client does not support budget queries.');
+    }
+    return this.enqueue(async () => this.api.getBudgetMonth!(month));
+  }
+
+  public async getBudgetAllocations(month: string): Promise<readonly ActualBudgetAllocation[]> {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+      throw new ActualAdapterError('INVALID_INPUT', 'Budget month must use YYYY-MM.');
+    }
+    if (!this.api.getBudgetAllocations) {
+      throw new ActualAdapterError('UPSTREAM_FAILURE', 'The configured Actual API client does not support explicit budget allocation lookup.');
+    }
+    return this.enqueue(async () => this.api.getBudgetAllocations!(month));
+  }
+
+  public async setBudgetAmount(month: string, categoryId: string, amount: number): Promise<void> {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+      throw new ActualAdapterError('INVALID_INPUT', 'Budget month must use YYYY-MM.');
+    }
+    const parsedCategoryId = IdentifierSchema.safeParse(categoryId);
+    if (!parsedCategoryId.success || !Number.isSafeInteger(amount) || amount < 0) {
+      throw new ActualAdapterError('INVALID_INPUT', 'Budget category or amount is invalid.');
+    }
+    if (!this.api.setBudgetAmount) {
+      throw new ActualAdapterError('UPSTREAM_FAILURE', 'The configured Actual API client does not support budget updates.');
+    }
+    await this.enqueue(async () => {
+      await this.api.setBudgetAmount!(month, parsedCategoryId.data, amount);
+      await this.api.sync();
+    });
   }
 
   public async listTransactions(accountId: string, startDate: string, endDate: string): Promise<readonly BudgetTransaction[]> {

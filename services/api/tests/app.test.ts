@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BudgetAccount, BudgetCategory, BudgetRepository, BudgetTransaction } from '@personal-budget/finance-core';
 import { ActualAdapterError } from '@personal-budget/actual-adapter';
+import type { ActualImportRecord, ActualImportResult } from '@personal-budget/actual-adapter';
 import { buildApp } from '../src/app.js';
 import type { AppConfig } from '../src/config.js';
 
@@ -121,6 +122,230 @@ describe('local API', () => {
   });
 
 
+  it('filters transactions and bounds each page at the API boundary', async () => {
+    const repository = createRepository();
+    const app = await createTestApp(repository);
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/transactions?startDate=2026-10-01&endDate=2026-10-31&categoryId=food&limit=1&offset=0&sortBy=amount&order=asc',
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toHaveLength(1);
+    expect(response.json().data[0]).toMatchObject({ id: 'expense-1', category: 'food' });
+    expect(response.json().pagination).toMatchObject({ total: 1, limit: 1, offset: 0, sortBy: 'amount', order: 'asc' });
+    expect(repository.listAccounts).toHaveBeenCalledTimes(1);
+    expect(repository.listTransactions).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports unsupported budget read and write capabilities without exposing details', async () => {
+    const repository = createRepository();
+    const app = await createTestApp(repository);
+    const read = await app.inject({ method: 'GET', url: '/api/v1/budgets/2026-10' });
+    expect(read.statusCode).toBe(503);
+    expect(read.json().error.code).toBe('BUDGET_QUERY_NOT_SUPPORTED');
+
+    const write = await app.inject({
+      method: 'PUT',
+      url: '/api/v1/budgets/2026-10/food',
+      payload: { amountMinor: 1_000 },
+    });
+    expect(write.statusCode).toBe(503);
+    expect(write.json().error.code).toBe('BUDGET_WRITE_NOT_SUPPORTED');
+  });
+
+  it('rejects malformed budget month and unsafe category allocations', async () => {
+    const app = await createTestApp();
+    const badMonth = await app.inject({ method: 'GET', url: '/api/v1/budgets/2026-13' });
+    expect(badMonth.statusCode).toBe(400);
+    expect(badMonth.json().error.code).toBe('INVALID_REQUEST');
+
+    const negative = await app.inject({
+      method: 'PUT', url: '/api/v1/budgets/2026-10/food',
+      payload: { amountMinor: -1 },
+    });
+    expect(negative.statusCode).toBe(400);
+
+    const fractional = await app.inject({
+      method: 'PUT', url: '/api/v1/budgets/2026-10/food',
+      payload: { amountMinor: 1.5 },
+    });
+    expect(fractional.statusCode).toBe(400);
+  });
+
+  it('uses the official monthly budget when explicit allocation rows are unavailable', async () => {
+    const getBudgetMonth = vi.fn(async (month: string) => ({
+      month,
+      categoryGroups: [{
+        id: 'spend',
+        name: 'Gastos',
+        is_income: false,
+        categories: [{ id: 'food', name: 'Alimentación', budgeted: 1_500, spent: -400, balance: 1_100 }],
+      }],
+    }));
+    const repository = Object.assign(createRepository(), { getBudgetMonth }) as BudgetRepository & {
+      getBudgetMonth: typeof getBudgetMonth;
+    };
+    const app = await createTestApp(repository);
+    const response = await app.inject({ method: 'GET', url: '/api/v1/budgets/2026-10' });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.categories[0]).toMatchObject({ categoryId: 'food', budgetedMinor: 1_500, state: 'budgeted' });
+    expect(response.json().data.notes.at(-1)).toContain('no pueden distinguirse');
+  });
+
+  it('normalizes Actual monthly category budget amounts and deviation', async () => {
+    const getBudgetMonth = vi.fn(async (month: string) => ({
+      month,
+      totalBudgeted: 5_000,
+      totalSpent: -6_000,
+      totalBalance: -1_000,
+      totalIncome: 200_000,
+      incomeAvailable: 190_000,
+      toBudget: 10_000,
+      categoryGroups: [{
+        id: 'spend',
+        name: 'Gastos',
+        is_income: false,
+        categories: [
+          { id: 'food', name: 'Alimentación', budgeted: 5_000, spent: -6_000, balance: -1_000, carryover: false, hidden: false },
+          { id: 'salary', name: 'Ingreso', budgeted: 0, spent: 0, balance: 0, carryover: false, hidden: true },
+        ],
+      }],
+    }));
+    const repository = Object.assign(createRepository(), { getBudgetMonth }) as BudgetRepository & {
+      getBudgetMonth: typeof getBudgetMonth;
+    };
+    const app = await createTestApp(repository);
+    const response = await app.inject({ method: 'GET', url: '/api/v1/budgets/2026-10' });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.totals).toMatchObject({ totalBudgetedMinor: 5_000, totalSpentMinor: 6_000, totalBalanceMinor: -1_000 });
+    expect(response.json().data.categories).toHaveLength(1);
+    expect(response.json().data.categories[0]).toMatchObject({
+      categoryId: 'food',
+      budgetedMinor: 5_000,
+      spentMinor: 6_000,
+      availableMinor: -1_000,
+      percentUsed: 120,
+      state: 'budgeted',
+    });
+    expect(getBudgetMonth).toHaveBeenCalledWith('2026-10');
+  });
+
+  it('distinguishes unassigned categories from explicit zero allocations', async () => {
+    const getBudgetMonth = vi.fn(async (month: string) => ({
+      month,
+      categoryGroups: [{
+        id: 'spend',
+        name: 'Gastos',
+        is_income: false,
+        categories: [
+          { id: 'food', name: 'Alimentación', budgeted: 0, spent: -1_000, balance: -1_000 },
+          { id: 'other', name: 'Otros', budgeted: 0, spent: 0, balance: 0 },
+          { id: 'zero', name: 'Presupuesto cero', budgeted: 0, spent: 0, balance: 0 },
+        ],
+      }],
+    }));
+    const getBudgetAllocations = vi.fn(async () => [
+      { categoryId: 'food', amountMinor: 5_000 },
+      { categoryId: 'zero', amountMinor: 0 },
+    ]);
+    const repository = Object.assign(createRepository(), { getBudgetMonth, getBudgetAllocations }) as BudgetRepository & {
+      getBudgetMonth: typeof getBudgetMonth;
+      getBudgetAllocations: typeof getBudgetAllocations;
+    };
+    const app = await createTestApp(repository);
+    const response = await app.inject({ method: 'GET', url: '/api/v1/budgets/2026-10' });
+    expect(response.statusCode).toBe(200);
+    const rows = response.json().data.categories as Array<{ categoryId: string; state: string; budgetedMinor: number }>;
+    expect(rows.find((item) => item.categoryId === 'food')).toMatchObject({ state: 'budgeted', budgetedMinor: 5_000 });
+    expect(rows.find((item) => item.categoryId === 'other')).toMatchObject({ state: 'unbudgeted', budgetedMinor: 0 });
+    expect(rows.find((item) => item.categoryId === 'zero')).toMatchObject({ state: 'zero', budgetedMinor: 0 });
+  });
+
+  it('updates category allocations only for an existing expense category', async () => {
+    const getBudgetMonth = vi.fn(async (month: string) => ({ month, categoryGroups: [] }));
+    const setBudgetAmount = vi.fn(async () => undefined);
+    const repository = Object.assign(createRepository(), { getBudgetMonth, setBudgetAmount }) as BudgetRepository & {
+      getBudgetMonth: typeof getBudgetMonth;
+      setBudgetAmount: typeof setBudgetAmount;
+    };
+    const app = await createTestApp(repository);
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/api/v1/budgets/2026-10/food',
+      payload: { amountMinor: 12_345 },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toMatchObject({ month: '2026-10', categoryId: 'food', amountMinor: 12_345, updated: true });
+    expect(setBudgetAmount).toHaveBeenCalledWith('2026-10', 'food', 12_345);
+
+    const income = await app.inject({
+      method: 'PUT',
+      url: '/api/v1/budgets/2026-10/salary',
+      payload: { amountMinor: 1_000 },
+    });
+    expect(income.statusCode).toBe(400);
+    expect(income.json().error.code).toBe('INVALID_CATEGORY');
+    expect(setBudgetAmount).toHaveBeenCalledTimes(1);
+  });
+
+  it('previews and explicitly commits validated, idempotent transaction imports', async () => {
+    const importTransactions = vi.fn(async (
+      _accountId: string,
+      _records: readonly ActualImportRecord[],
+      options?: { readonly dryRun?: boolean },
+    ): Promise<ActualImportResult> => ({
+      errors: [],
+      added: [options?.dryRun ? 'preview-id' : 'saved-id'],
+      updated: [],
+    }));
+    const repository = Object.assign(createRepository(), { importTransactions }) as BudgetRepository & {
+      importTransactions: typeof importTransactions;
+    };
+    const app = await createTestApp(repository);
+    const body = {
+      accountId: 'account-1',
+      records: [{
+        date: '2026-10-12',
+        amount: -1299,
+        payee_name: 'Supermercado',
+        imported_payee: 'SUPERMERCADO MADRID',
+        category: 'food',
+        imported_id: 'personal-budget-manual:test-123',
+      }],
+    };
+    const preview = await app.inject({ method: 'POST', url: '/api/v1/import/preview', payload: body });
+    expect(preview.statusCode).toBe(200);
+    expect(preview.json().data).toMatchObject({ added: 1, updated: 0, errors: 0, submitted: 1, dryRun: true });
+    expect(importTransactions).toHaveBeenLastCalledWith('account-1', expect.any(Array), { dryRun: true });
+
+    const commit = await app.inject({ method: 'POST', url: '/api/v1/import/commit', payload: body });
+    expect(commit.statusCode).toBe(200);
+    expect(commit.json().data).toMatchObject({ added: 1, updated: 0, errors: 0, submitted: 1, dryRun: false });
+    expect(importTransactions).toHaveBeenLastCalledWith('account-1', expect.any(Array), { dryRun: false });
+    expect(importTransactions.mock.calls[0]?.[1]?.[0]?.imported_id).toBe(body.records[0]?.imported_id);
+    expect(importTransactions.mock.calls[1]?.[1]?.[0]?.imported_id).toBe(body.records[0]?.imported_id);
+  });
+
+  it('rejects invalid categories and malformed import rows without writing', async () => {
+    const importTransactions = vi.fn(async (): Promise<ActualImportResult> => ({ errors: [], added: [], updated: [] }));
+    const repository = Object.assign(createRepository(), { importTransactions }) as BudgetRepository & {
+      importTransactions: typeof importTransactions;
+    };
+    const app = await createTestApp(repository);
+    const invalidCategory = await app.inject({
+      method: 'POST', url: '/api/v1/import/commit',
+      payload: { accountId: 'account-1', records: [{ date: '2026-10-12', amount: -1299, payee_name: 'Compra', category: 'missing', imported_id: 'id-1' }] },
+    });
+    expect(invalidCategory.statusCode).toBe(400);
+    expect(invalidCategory.json().error.code).toBe('INVALID_CATEGORY');
+    const invalidAmount = await app.inject({
+      method: 'POST', url: '/api/v1/import/commit',
+      payload: { accountId: 'account-1', records: [{ date: '2026-10-12', amount: 1.25, payee_name: 'Compra', imported_id: 'id-2' }] },
+    });
+    expect(invalidAmount.statusCode).toBe(400);
+    expect(importTransactions).not.toHaveBeenCalled();
+  });
+
   it('returns transactions for a validated account and date range', async () => {
     const repository = createRepository();
     const app = await createTestApp(repository);
@@ -129,7 +354,8 @@ describe('local API', () => {
       url: '/api/v1/transactions?accountId=account-1&startDate=2026-10-01&endDate=2026-10-31',
     });
     expect(response.statusCode).toBe(200);
-    expect(response.json().data).toEqual(transactions);
+    expect(response.json().data).toEqual([transactions[1], transactions[2], transactions[0]]);
+    expect(response.json().pagination).toMatchObject({ total: 3, limit: 50, offset: 0, sortBy: 'date', order: 'desc' });
     expect(repository.listTransactions).toHaveBeenCalledWith('account-1', '2026-10-01', '2026-10-31');
   });
 

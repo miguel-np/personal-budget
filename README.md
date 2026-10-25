@@ -2,7 +2,7 @@
 
 Aplicación local de finanzas personales con una única interfaz web para gastos, presupuestos, ahorro e informes. Un asistente con IA local será una ampliación opcional.
 
-> **Estado: base técnica P0 implementada y CI verde.** El repositorio contiene un workspace TypeScript, núcleo financiero, adaptador para Actual Budget, API local y una shell React/Vite provisional. La CI aprobó 40 pruebas; una prueba live opcional de Actual se omite por defecto. Cobertura global: 94,5 % de sentencias, 86,02 % de ramas y 96,1 % de líneas. Las auditorías de dependencias reportaron cero vulnerabilidades conocidas y el smoke test de Docker confirma que Actual Budget arranca en localhost. Aún no se ha probado el adaptador con un presupuesto real configurado; el dashboard completo y el registro/importación desde la nueva interfaz siguen pendientes de P1.
+> **Estado: base técnica P0 implementada y MVP P1 en integración.** La rama de trabajo incluye shell web local, dashboard e informes comparativos, consultas paginadas de movimientos, registro manual, importación CSV con previsualización y conciliación oficial de Actual, y presupuestos por categoría con asignaciones explícitas. La CI debe validar esta integración antes de considerarla lista. La aceptación live contra un presupuesto configurado y la instalación limpia en Windows + WSL2 todavía requieren confirmación en sus entornos objetivo.
 
 ## Arquitectura
 
@@ -10,7 +10,7 @@ Aplicación local de finanzas personales con una única interfaz web para gastos
 - **@actual-app/api:** acceso programático oficial; no se presupone una API REST de Actual.
 - **packages/finance-core:** normalización de movimientos y cálculos deterministas con importes en unidades monetarias menores.
 - **services/api:** API Fastify local, configuración validada y errores saneados.
-- **apps/web:** shell React/Vite provisional; dashboard y funciones completas serán P1.
+- **apps/web:** shell React/Vite con dashboard, movimientos, informes, importación CSV y edición de presupuestos en una sola interfaz local.
 - **Ollama y MCP:** fase posterior, aún no conectados a la interfaz.
 
 ## Requisitos
@@ -40,11 +40,11 @@ En otra terminal WSL:
 npm run dev:web
 ~~~
 
-Abre http://127.0.0.1:5173. La shell actual solo comprueba el estado de la API; el dashboard, registro manual, importación desde la app e informes completos se implementarán en P1. Configura ACTUAL_BUDGET_ID con el Sync ID del presupuesto de Actual.
+Abre http://127.0.0.1:5173. La aplicación incluye Resumen, Movimientos, Informes, Presupuestos, Asistente (desconectado) y Configuración. Configura ACTUAL_BUDGET_ID con el Sync ID del presupuesto de Actual. En Movimientos puedes registrar un movimiento o importar CSV; ambas operaciones muestran una previsualización y exigen confirmar antes de escribir en Actual.
 
 ## Prueba opcional con un presupuesto de Actual existente
 
-Para probar la API oficial contra un presupuesto local de prueba sin modificar transacciones, sigue [la guía de instalación](docs/installation.md#7-prueba-de-aceptación-con-un-presupuesto-local-existente-opcional). Esa prueba se omite en CI si no se habilita explícitamente y no usa datos financieros en pipelines normales.
+Para probar la API oficial contra un presupuesto local de prueba sin modificar transacciones, sigue [la guía de instalación](docs/installation.md#9-prueba-de-aceptación-con-un-presupuesto-local-existente-opcional). Esa prueba se omite en CI si no se habilita explícitamente y no usa datos financieros en pipelines normales.
 
 ## Calidad
 

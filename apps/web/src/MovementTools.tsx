@@ -1,0 +1,455 @@
+import { useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
+import { parseCsv, parseCsvMoney, parseDate, isValidIsoDate, type DateFormat, type Delimiter } from './csv-import.js';
+
+export interface MovementAccount {
+  readonly id: string;
+  readonly name: string;
+  readonly closed: boolean;
+}
+export interface MovementCategory {
+  readonly id: string;
+  readonly name: string;
+  readonly isIncome: boolean;
+}
+interface ImportRecord {
+  date: string;
+  amount: number;
+  payee_name: string;
+  imported_payee?: string;
+  category?: string;
+  notes?: string;
+  imported_id: string;
+}
+interface ImportResult {
+  added: number;
+  updated: number;
+  errors: number;
+  submitted: number;
+  dryRun: boolean;
+}
+interface ApiResponse<T> {
+  data?: T;
+  error?: { code?: string; message?: string };
+}
+interface MovementToolsProps {
+  accounts: readonly MovementAccount[];
+  categories: readonly MovementCategory[];
+  currency: string;
+  onImported: () => void;
+}
+
+function localToday(): string {
+  const date = new Date();
+  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
+}
+function newIdentifier(): string {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? 'personal-budget-manual:' + crypto.randomUUID()
+    : 'personal-budget-manual:' + Date.now().toString(36) + ':' + Math.random().toString(36).slice(2);
+}
+function stableHash(value: string): string {
+  let first = 0x811c9dc5;
+  let second = 0x9e3779b9;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    first = Math.imul(first ^ code, 0x01000193);
+    second = Math.imul(second ^ code, 0x85ebca6b);
+  }
+  return (first >>> 0).toString(36) + (second >>> 0).toString(36);
+}
+function parseMoney(raw: string): number | null {
+  let value = raw.trim().replace(/[\s€$£]/g, '');
+  if (!value) return null;
+  if (value.startsWith('(') && value.endsWith(')')) value = '-' + value.slice(1, -1);
+  if (value.includes(',') && value.includes('.')) {
+    if (value.lastIndexOf(',') > value.lastIndexOf('.')) value = value.replace(/\./g, '').replace(',', '.');
+    else value = value.replace(/,/g, '');
+  } else if (value.includes(',')) {
+    value = value.replace(',', '.');
+  }
+  if (!/^[+-]?\d+(?:\.\d{1,2})?$/.test(value)) return null;
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount === 0 || Math.abs(amount) > 1_000_000_000_000) return null;
+  const minor = Math.round(amount * 100);
+  return Number.isSafeInteger(minor) && minor !== 0 ? minor : null;
+}
+function findHeader(headers: readonly string[], candidates: readonly string[]): string {
+  const normalized = headers.map((header) => header.trim().toLocaleLowerCase('es'));
+  const index = normalized.findIndex((header) => candidates.some((candidate) => header === candidate || header.includes(candidate)));
+  return index >= 0 ? String(index) : '';
+}
+function selectorValue(row: readonly string[], index: string): string {
+  if (index === '') return '';
+  return row[Number(index)]?.trim() ?? '';
+}
+async function sendImport(path: '/api/v1/import/preview' | '/api/v1/import/commit', accountId: string, records: readonly ImportRecord[]): Promise<ImportResult> {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ accountId, records }),
+  });
+  const payload = await response.json().catch(() => ({})) as ApiResponse<ImportResult>;
+  if (!response.ok) throw new Error(payload.error?.message ?? 'La API local rechazó la importación.');
+  if (!payload.data) throw new Error('La API local no devolvió un resultado verificable.');
+  return payload.data;
+}
+function FormAlert({ children, error = false }: { children: string; error?: boolean }) {
+  return <p className={'form-alert' + (error ? ' error' : '')} role={error ? 'alert' : 'status'}>{children}</p>;
+}
+
+export function MovementTools({ accounts, categories, currency, onImported }: MovementToolsProps) {
+  const openAccounts = useMemo(() => accounts.filter((account) => !account.closed), [accounts]);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [accountId, setAccountId] = useState(openAccounts[0]?.id ?? '');
+  const [date, setDate] = useState(localToday);
+  const [amount, setAmount] = useState('');
+  const [payee, setPayee] = useState('');
+  const [categoryId, setCategoryId] = useState('');
+  const [notes, setNotes] = useState('');
+  const [manualRecords, setManualRecords] = useState<ImportRecord[] | null>(null);
+  const [manualResult, setManualResult] = useState<ImportResult | null>(null);
+  const [manualBusy, setManualBusy] = useState(false);
+  const [manualMessage, setManualMessage] = useState('');
+  const [manualError, setManualError] = useState('');
+
+  const [csvOpen, setCsvOpen] = useState(false);
+  const [csvAccountId, setCsvAccountId] = useState('');
+  const [fileName, setFileName] = useState('');
+  const [csvText, setCsvText] = useState('');
+  const [delimiter, setDelimiter] = useState<Delimiter>(';');
+  const [decimalSeparator, setDecimalSeparator] = useState<',' | '.'>(',');
+  const [dateFormat, setDateFormat] = useState<DateFormat>('dmy');
+  const [headers, setHeaders] = useState<string[]>([]);
+  const [csvRows, setCsvRows] = useState<string[][]>([]);
+  const [csvDateColumn, setCsvDateColumn] = useState('');
+  const [csvDescriptionColumn, setCsvDescriptionColumn] = useState('');
+  const [csvAmountColumn, setCsvAmountColumn] = useState('');
+  const [csvDebitColumn, setCsvDebitColumn] = useState('');
+  const [csvCreditColumn, setCsvCreditColumn] = useState('');
+  const [csvCategoryColumn, setCsvCategoryColumn] = useState('');
+  const [invertCsvAmountSign, setInvertCsvAmountSign] = useState(false);
+  const [csvRecords, setCsvRecords] = useState<ImportRecord[] | null>(null);
+  const [csvResult, setCsvResult] = useState<ImportResult | null>(null);
+  const [csvBusy, setCsvBusy] = useState(false);
+  const [csvMessage, setCsvMessage] = useState('');
+  const [csvError, setCsvError] = useState('');
+
+  async function previewManual(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setManualError('');
+    setManualMessage('');
+    const amountMinor = parseMoney(amount);
+    if (!accountId || !openAccounts.some((account) => account.id === accountId)) {
+      setManualError('Selecciona una cuenta abierta del presupuesto.');
+      return;
+    }
+    if (!isValidIsoDate(date)) {
+      setManualError('Introduce una fecha válida.');
+      return;
+    }
+    if (amountMinor === null) {
+      setManualError('El importe debe ser distinto de cero y tener como máximo dos decimales.');
+      return;
+    }
+    if (!payee.trim()) {
+      setManualError('El concepto es obligatorio.');
+      return;
+    }
+    setManualBusy(true);
+    try {
+      const record: ImportRecord = {
+        date,
+        amount: amountMinor,
+        payee_name: payee.trim(),
+        imported_payee: payee.trim(),
+        imported_id: newIdentifier(),
+        ...(categoryId ? { category: categoryId } : {}),
+        ...(notes.trim() ? { notes: notes.trim() } : {}),
+      };
+      const result = await sendImport('/api/v1/import/preview', accountId, [record]);
+      setManualRecords([record]);
+      setManualResult(result);
+      setManualMessage('Previsualización calculada. Actual no se ha modificado.');
+    } catch (error) {
+      setManualError(error instanceof Error ? error.message : 'No se ha podido previsualizar el movimiento.');
+    } finally {
+      setManualBusy(false);
+    }
+  }
+  async function commitManual() {
+    if (!manualRecords) return;
+    setManualBusy(true);
+    setManualError('');
+    setManualMessage('');
+    try {
+      const result = await sendImport('/api/v1/import/commit', accountId, manualRecords);
+      setManualResult(result);
+      setManualRecords(null);
+      setManualMessage('Resultado confirmado por Actual: ' + result.added + ' añadidos, ' + result.updated + ' actualizados y ' + result.errors + ' errores.');
+      setAmount('');
+      setPayee('');
+      setNotes('');
+      onImported();
+    } catch (error) {
+      setManualError(error instanceof Error ? error.message : 'No se ha podido registrar el movimiento.');
+    } finally {
+      setManualBusy(false);
+    }
+  }
+
+  async function handleFile(event: ChangeEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    setCsvError('');
+    setCsvMessage('');
+    setCsvRecords(null);
+    setCsvResult(null);
+    setCsvRows([]);
+    setHeaders([]);
+    setCsvText('');
+    setFileName('');
+    if (!file) return;
+    if (!/\.csv$/i.test(file.name) && file.type !== 'text/csv' && file.type !== 'application/vnd.ms-excel') {
+      setCsvError('Selecciona un archivo .csv.');
+      input.value = '';
+      return;
+    }
+    if (file.size > 350_000) {
+      setCsvError('El archivo supera los 350 KB. Divide el extracto en varios CSV pequeños para evitar cargas grandes.');
+      input.value = '';
+      return;
+    }
+    try {
+      const text = await file.text();
+      const rows = parseCsv(text, delimiter);
+      if (rows.length < 2) throw new Error('El archivo debe contener una cabecera y al menos una fila de datos.');
+      const headerRow = rows[0]!.map((cell) => cell.trim());
+      setFileName(file.name);
+      setCsvText(text);
+      setHeaders(headerRow);
+      setCsvRows(rows.slice(1));
+      setCsvDateColumn(findHeader(headerRow, ['date', 'fecha', 'booking date', 'transaction date']));
+      setCsvDescriptionColumn(findHeader(headerRow, ['description', 'concepto', 'concept', 'payee', 'beneficiario', 'counterparty', 'merchant']));
+      setCsvAmountColumn(findHeader(headerRow, ['amount', 'importe', 'monto', 'amount eur']));
+      setCsvDebitColumn(findHeader(headerRow, ['debit', 'cargo', 'debe', 'outflow']));
+      setCsvCreditColumn(findHeader(headerRow, ['credit', 'abono', 'haber', 'inflow']));
+      setCsvCategoryColumn(findHeader(headerRow, ['category', 'categoría', 'categoria']));
+      setCsvMessage((rows.length - 1) + ' filas detectadas. El archivo se procesa en el navegador y no se envía al servidor hasta que confirmes la importación.');
+    } catch (error) {
+      setCsvError(error instanceof Error ? error.message : 'No se ha podido leer el CSV.');
+      input.value = '';
+    }
+  }
+  function rebuildCsvForDelimiter(nextDelimiter: Delimiter) {
+    setDelimiter(nextDelimiter);
+    if (!csvText) return;
+    try {
+      const rows = parseCsv(csvText, nextDelimiter);
+      if (rows.length < 2) throw new Error('El archivo debe tener cabecera y datos.');
+      const nextHeaders = rows[0]!.map((cell) => cell.trim());
+      setHeaders(nextHeaders);
+      setCsvRows(rows.slice(1));
+      setCsvDateColumn(findHeader(nextHeaders, ['date', 'fecha', 'booking date', 'transaction date']));
+      setCsvDescriptionColumn(findHeader(nextHeaders, ['description', 'concepto', 'concept', 'payee', 'beneficiario', 'counterparty', 'merchant']));
+      setCsvAmountColumn(findHeader(nextHeaders, ['amount', 'importe', 'monto', 'amount eur']));
+      setCsvDebitColumn(findHeader(nextHeaders, ['debit', 'cargo', 'debe', 'outflow']));
+      setCsvCreditColumn(findHeader(nextHeaders, ['credit', 'abono', 'haber', 'inflow']));
+      setCsvCategoryColumn(findHeader(nextHeaders, ['category', 'categoría', 'categoria']));
+      setCsvRecords(null);
+      setCsvResult(null);
+      setCsvMessage((rows.length - 1) + ' filas detectadas con el nuevo delimitador.');
+      setCsvError('');
+    } catch (error) {
+      setCsvError(error instanceof Error ? error.message : 'Delimitador no válido.');
+    }
+  }
+  function buildCsvRecords(): ImportRecord[] {
+    if (!csvAccountId || !openAccounts.some((account) => account.id === csvAccountId)) throw new Error('Selecciona explícitamente una cuenta de destino abierta.');
+    if (csvDateColumn === '' || csvDescriptionColumn === '') throw new Error('Asigna las columnas de fecha y concepto.');
+    if (csvAmountColumn === '' && csvDebitColumn === '' && csvCreditColumn === '') throw new Error('Asigna una columna de importe o de cargo/abono.');
+    const categoryMap = new Map(categories.map((category) => [category.name.trim().toLocaleLowerCase('es'), category.id]));
+    const records: ImportRecord[] = [];
+    const errors: string[] = [];
+    for (const [index, row] of csvRows.entries()) {
+      const rowNumber = index + 2;
+      const rawDate = selectorValue(row, csvDateColumn);
+      const parsedDate = parseDate(rawDate, dateFormat);
+      const description = selectorValue(row, csvDescriptionColumn);
+      let amountMinor: number | null;
+      if (csvAmountColumn !== '') {
+        const parsedAmount = parseCsvMoney(selectorValue(row, csvAmountColumn), decimalSeparator);
+        amountMinor = parsedAmount === null ? null : invertCsvAmountSign ? -parsedAmount : parsedAmount;
+      } else {
+        const debitText = selectorValue(row, csvDebitColumn);
+        const creditText = selectorValue(row, csvCreditColumn);
+        const debit = debitText ? parseCsvMoney(debitText, decimalSeparator) : 0;
+        const credit = creditText ? parseCsvMoney(creditText, decimalSeparator) : 0;
+        if (debit === null || credit === null) amountMinor = null;
+        else if (debitText && creditText && debit !== 0 && credit !== 0) amountMinor = null;
+        else if (credit !== 0) amountMinor = Math.abs(credit);
+        else if (debit !== 0) amountMinor = -Math.abs(debit);
+        else amountMinor = null;
+      }
+      const rawCategory = selectorValue(row, csvCategoryColumn);
+      const matchedCategory = rawCategory ? categoryMap.get(rawCategory.toLocaleLowerCase('es')) : undefined;
+      if (!parsedDate) errors.push('Fila ' + rowNumber + ': fecha "' + rawDate + '" no válida.');
+      if (amountMinor === null || amountMinor === 0) errors.push('Fila ' + rowNumber + ': importe no válido.');
+      if (!description) errors.push('Fila ' + rowNumber + ': falta el concepto.');
+      if (rawCategory && !matchedCategory) errors.push('Fila ' + rowNumber + ': la categoría "' + rawCategory + '" no coincide con Actual Budget.');
+      if (!parsedDate || amountMinor === null || amountMinor === 0 || !description || (rawCategory && !matchedCategory)) continue;
+      const importedId = 'personal-budget-csv:' + stableHash(String(rowNumber) + '|' + parsedDate + '|' + amountMinor + '|' + description + '|' + (matchedCategory ?? ''));
+      records.push({
+        date: parsedDate,
+        amount: amountMinor,
+        payee_name: description.slice(0, 200),
+        imported_payee: description.slice(0, 500),
+        imported_id: importedId,
+        ...(matchedCategory ? { category: matchedCategory } : {}),
+      });
+    }
+    if (errors.length) throw new Error(errors.slice(0, 8).join(' ') + (errors.length > 8 ? ' Y ' + (errors.length - 8) + ' errores más.' : ''));
+    if (records.length === 0) throw new Error('No hay movimientos válidos que importar.');
+    if (records.length > 2_000) throw new Error('El CSV supera el máximo de 2.000 movimientos por importación.');
+    return records;
+  }
+  async function previewCsv() {
+    setCsvError('');
+    setCsvMessage('');
+    setCsvBusy(true);
+    try {
+      if (!csvRows.length) throw new Error('Carga primero un archivo CSV.');
+      const records = buildCsvRecords();
+      const result = await sendImport('/api/v1/import/preview', csvAccountId, records);
+      setCsvRecords(records);
+      setCsvResult(result);
+      setCsvMessage('Previsualización completada: ' + result.added + ' movimientos nuevos y ' + result.updated + ' posibles conciliaciones/actualizaciones. No se han escrito cambios.');
+    } catch (error) {
+      setCsvError(error instanceof Error ? error.message : 'No se ha podido previsualizar la importación.');
+    } finally {
+      setCsvBusy(false);
+    }
+  }
+  async function commitCsv() {
+    if (!csvRecords) return;
+    setCsvBusy(true);
+    setCsvError('');
+    setCsvMessage('');
+    try {
+      const result = await sendImport('/api/v1/import/commit', csvAccountId, csvRecords);
+      setCsvResult(result);
+      setCsvRecords(null);
+      setCsvMessage('Importación confirmada por Actual: ' + result.added + ' añadidos, ' + result.updated + ' actualizados y ' + result.errors + ' errores. Los movimientos conciliados no se duplican por su identificador importado.');
+      onImported();
+    } catch (error) {
+      setCsvError(error instanceof Error ? error.message : 'No se ha podido importar el CSV.');
+    } finally {
+      setCsvBusy(false);
+    }
+  }
+  const columnOptions = useMemo(() => headers.map((header, index) => ({
+    value: String(index),
+    label: (header || ('Columna ' + (index + 1))) + ' (' + (index + 1) + ')',
+  })), [headers]);
+
+  return (
+    <section className="movement-tools" aria-label="Registro e importación de movimientos">
+      <div className="movement-tools-header">
+        <div><p className="eyebrow">GESTIÓN DE MOVIMIENTOS</p><h3>Nuevo movimiento o importación</h3></div>
+        <div className="tool-actions">
+          <button className="button secondary" type="button" onClick={() => { setManualOpen((open) => !open); setManualError(''); setManualRecords(null); }}>{manualOpen ? 'Cerrar formulario' : 'Registrar movimiento'}</button>
+          <button className="button secondary" type="button" onClick={() => { setCsvOpen((open) => !open); setCsvError(''); }}>{csvOpen ? 'Cerrar importación' : 'Importar CSV'}</button>
+        </div>
+      </div>
+
+      {manualOpen ? (
+        <form className="tool-panel" onSubmit={previewManual}>
+          <div className="panel-heading"><div><p className="eyebrow">REGISTRO MANUAL</p><h4>Añadir a Actual Budget</h4></div><span className="muted-label">Importe en {currency}</span></div>
+          <div className="manual-form-grid">
+            <label className="field-label">Cuenta destino<select value={accountId} onChange={(event) => { setAccountId(event.currentTarget.value); setManualRecords(null); }} required>{openAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
+            <label className="field-label">Fecha<input type="date" value={date} onChange={(event) => { setDate(event.currentTarget.value); setManualRecords(null); }} required /></label>
+            <label className="field-label">Importe ({currency})<input type="text" inputMode="decimal" autoComplete="off" placeholder="-25,99 gasto · 1500 ingreso" value={amount} onChange={(event) => { setAmount(event.currentTarget.value); setManualRecords(null); }} required /></label>
+            <label className="field-label">Concepto<input type="text" maxLength={200} value={payee} onChange={(event) => { setPayee(event.currentTarget.value); setManualRecords(null); }} placeholder="Supermercado, nómina…" required /></label>
+            <label className="field-label">Categoría<select value={categoryId} onChange={(event) => { setCategoryId(event.currentTarget.value); setManualRecords(null); }}><option value="">Sin categoría</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+            <label className="field-label">Notas (opcional)<input type="text" maxLength={2000} value={notes} onChange={(event) => { setNotes(event.currentTarget.value); setManualRecords(null); }} /></label>
+          </div>
+          <p className="tool-hint">Los gastos se introducen con signo negativo y los ingresos con signo positivo. Antes de escribir, se muestra una previsualización de conciliación de Actual Budget.</p>
+          <div className="tool-actions">
+            <button className="button primary" type="submit" disabled={manualBusy || openAccounts.length === 0}>{manualBusy ? 'Comprobando…' : 'Previsualizar'}</button>
+            {manualRecords ? <button className="button primary" type="button" disabled={manualBusy} onClick={() => void commitManual()}>{manualBusy ? 'Guardando…' : 'Confirmar y registrar'}</button> : null}
+            {manualRecords ? <button className="button secondary" type="button" disabled={manualBusy} onClick={() => { setManualRecords(null); setManualMessage('Previsualización cancelada. No se ha modificado el presupuesto.'); }}>{'Cancelar'}</button> : null}
+          </div>
+          {manualResult ? <FormAlert>{manualResult.dryRun ? 'Previsualización: ' + manualResult.added + ' nuevos, ' + manualResult.updated + ' actualizables, ' + manualResult.errors + ' errores.' : 'Resultado: ' + manualResult.added + ' añadidos, ' + manualResult.updated + ' actualizados.'}</FormAlert> : null}
+          {manualMessage ? <FormAlert>{manualMessage}</FormAlert> : null}
+          {manualError ? <FormAlert error>{manualError}</FormAlert> : null}
+        </form>
+      ) : null}
+
+      {csvOpen ? (
+        <div className="tool-panel">
+          <div className="panel-heading"><div><p className="eyebrow">EXTRACTO LOCAL</p><h4>CSV con previsualización y conciliación</h4></div><span className="muted-label">Máx. 350 KB / 2.000 filas</span></div>
+          <p className="tool-hint">El archivo se lee y procesa en este navegador. Selecciona explícitamente la cuenta destino, mapea columnas y revisa todos los errores antes de importar. No se aceptan extractos OFX/QFX/QIF/CAMT en esta primera versión.</p>
+          <div className="csv-controls-top">
+            <label className="field-label">Archivo CSV<input type="file" accept=".csv,text/csv" onChange={(event) => void handleFile(event)} /></label>
+            <label className="field-label">Cuenta destino<select value={csvAccountId} onChange={(event) => { setCsvAccountId(event.currentTarget.value); setCsvRecords(null); }} required><option value="">Selecciona cuenta destino…</option>{openAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
+            <label className="field-label">Delimitador<select value={delimiter} onChange={(event) => rebuildCsvForDelimiter(event.currentTarget.value as Delimiter)}><option value=";">Punto y coma (;)</option><option value=",">Coma (,)</option><option value={'\t'}>Tabulador</option></select></label>
+            <label className="field-label">Separador decimal<select value={decimalSeparator} onChange={(event) => { setDecimalSeparator(event.currentTarget.value as ',' | '.'); setCsvRecords(null); }}><option value=",">Coma (12,34)</option><option value=".">Punto (12.34)</option></select></label>
+            <label className="field-label">Formato de fecha<select value={dateFormat} onChange={(event) => { setDateFormat(event.currentTarget.value as DateFormat); setCsvRecords(null); }}><option value="iso">AAAA-MM-DD</option><option value="dmy">DD/MM/AAAA</option><option value="mdy">MM/DD/AAAA</option></select></label>
+            <label className="field-label">Signo del importe<select value={invertCsvAmountSign ? 'invert' : 'signed'} onChange={(event) => { setInvertCsvAmountSign(event.currentTarget.value === 'invert'); setCsvRecords(null); }}><option value="signed">Mantener signo del archivo</option><option value="invert">Invertir signo del importe</option></select></label>
+          </div>
+          {fileName ? <p className="file-caption">Archivo cargado: <strong>{fileName}</strong> · {csvRows.length} filas de datos</p> : null}
+          {headers.length ? (
+            <>
+              <div className="csv-mapping-grid">
+                <label className="field-label">Fecha<select value={csvDateColumn} onChange={(event) => { setCsvDateColumn(event.currentTarget.value); setCsvRecords(null); }}><option value="">Elegir columna…</option>{columnOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+                <label className="field-label">Concepto / beneficiario<select value={csvDescriptionColumn} onChange={(event) => { setCsvDescriptionColumn(event.currentTarget.value); setCsvRecords(null); }}><option value="">Elegir columna…</option>{columnOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+                <label className="field-label">Importe firmado<select value={csvAmountColumn} onChange={(event) => { setCsvAmountColumn(event.currentTarget.value); setCsvRecords(null); }}><option value="">Usar cargo / abono…</option>{columnOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+                <label className="field-label">Cargos / gastos<select value={csvDebitColumn} onChange={(event) => { setCsvDebitColumn(event.currentTarget.value); setCsvAmountColumn(''); setCsvRecords(null); }}><option value="">Sin columna de cargos</option>{columnOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+                <label className="field-label">Abonos / ingresos<select value={csvCreditColumn} onChange={(event) => { setCsvCreditColumn(event.currentTarget.value); setCsvAmountColumn(''); setCsvRecords(null); }}><option value="">Sin columna de abonos</option>{columnOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+                <label className="field-label">Categoría (opcional)<select value={csvCategoryColumn} onChange={(event) => { setCsvCategoryColumn(event.currentTarget.value); setCsvRecords(null); }}><option value="">Sin importar categorías</option>{columnOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+              </div>
+              <div className="csv-sample">
+                <strong>Ejemplo de cabecera detectada</strong>
+                <div className="csv-sample-header">{headers.slice(0, 6).map((header, index) => <span key={index}>{header || ('Columna ' + (index + 1))}</span>)}</div>
+                {csvRows.slice(0, 3).map((row, index) => <div className="csv-sample-row" key={index}>{row.slice(0, 6).map((cell, cellIndex) => <span key={cellIndex}>{cell}</span>)}</div>)}
+              </div>
+            </>
+          ) : null}
+          {csvRecords ? (
+            <div className="csv-preview-result">
+              <div className="panel-heading"><div><p className="eyebrow">PREVISUALIZACIÓN DE CONCILIACIÓN</p><h4>Movimientos normalizados</h4></div><span className="muted-label">{csvRecords.length} filas</span></div>
+              <p className="tool-hint">
+                Cuenta destino: <strong>{openAccounts.find((account) => account.id === csvAccountId)?.name ?? 'Cuenta no disponible'}</strong>.
+                {csvResult?.dryRun ? ' Actual informa ' + csvResult.added + ' movimientos nuevos y ' + csvResult.updated + ' actualizables; el análisis no ha escrito cambios.' : ' Revisa las filas antes de confirmar.'}
+              </p>
+              <div className="csv-preview-table-wrap">
+                <table className="csv-preview-table">
+                  <thead><tr><th scope="col">Fecha</th><th scope="col">Concepto</th><th scope="col">Categoría</th><th scope="col">Importe ({currency})</th><th scope="col">Resultado</th></tr></thead>
+                  <tbody>{csvRecords.slice(0, 50).map((record) => {
+                    const category = categories.find((candidate) => candidate.id === record.category);
+                    const amountLabel = new Intl.NumberFormat('es-ES', { style: 'currency', currency, maximumFractionDigits: 2 }).format(record.amount / 100);
+                    return <tr key={record.imported_id}>
+                      <td>{record.date}</td>
+                      <td>{record.payee_name}</td>
+                      <td>{category?.name ?? 'Sin categoría'}</td>
+                      <td className={'amount-cell ' + (record.amount < 0 ? 'expense' : 'income')}>{amountLabel}</td>
+                      <td><span className="cleared-badge">Pendiente de confirmación</span></td>
+                    </tr>;
+                  })}</tbody>
+                </table>
+              </div>
+              {csvRecords.length > 50 ? <p className="tool-hint">Se muestran las primeras 50 filas de {csvRecords.length}; todas se incluyen en la operación confirmada.</p> : null}
+            </div>
+          ) : null}
+          <div className="tool-actions">
+            <button className="button primary" type="button" disabled={csvBusy || !csvRows.length || !csvAccountId || openAccounts.length === 0} onClick={() => void previewCsv()}>{csvBusy ? 'Analizando…' : 'Validar y previsualizar'}</button>
+            {csvRecords ? <button className="button primary" type="button" disabled={csvBusy} onClick={() => void commitCsv()}>{csvBusy ? 'Importando…' : 'Confirmar importación (' + csvRecords.length + ')'}</button> : null}
+            {csvRecords ? <button className="button secondary" type="button" disabled={csvBusy} onClick={() => { setCsvRecords(null); setCsvMessage('Confirmación cancelada. No se han escrito movimientos.'); }}>{'Cancelar'}</button> : null}
+          </div>
+          {csvResult ? <FormAlert>{csvResult.dryRun ? 'Previsualización: ' + csvResult.added + ' nuevos, ' + csvResult.updated + ' posibles coincidencias, ' + csvResult.errors + ' errores.' : 'Resultado confirmado: ' + csvResult.added + ' añadidos, ' + csvResult.updated + ' actualizados, ' + csvResult.errors + ' errores.'}</FormAlert> : null}
+          {csvMessage ? <FormAlert>{csvMessage}</FormAlert> : null}
+          {csvError ? <FormAlert error>{csvError}</FormAlert> : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
