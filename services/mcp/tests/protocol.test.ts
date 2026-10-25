@@ -47,14 +47,14 @@ async function startFixture(handler: FixtureHandler, timeoutMs = 5_000): Promise
   const waiters: Array<(line: string) => void> = [];
   child.stdout.on('data', (chunk: Buffer) => {
     buffer += chunk.toString('utf8');
-    let newline = buffer.indexOf('\\n');
+    let newline = buffer.indexOf('\n');
     while (newline >= 0) {
       const line = buffer.slice(0, newline);
       buffer = buffer.slice(newline + 1);
       const waiter = waiters.shift();
       if (waiter) waiter(line);
       else queue.push(line);
-      newline = buffer.indexOf('\\n');
+      newline = buffer.indexOf('\n');
     }
   });
   const fixture: McpFixture = {
@@ -76,7 +76,7 @@ async function startFixture(handler: FixtureHandler, timeoutMs = 5_000): Promise
         waiters.push(onLine);
       });
     },
-    write: (message) => child.stdin.write(JSON.stringify(message) + '\\n'),
+    write: (message) => child.stdin.write(JSON.stringify(message) + '\n'),
     close: async () => {
       if (child.exitCode === null && !child.killed) child.kill();
       server.closeAllConnections();
