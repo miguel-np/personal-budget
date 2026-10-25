@@ -267,8 +267,8 @@ describe('local API', () => {
     expect(commit.statusCode).toBe(200);
     expect(commit.json().data).toMatchObject({ added: 1, updated: 0, errors: 0, submitted: 1, dryRun: false });
     expect(importTransactions).toHaveBeenLastCalledWith('account-1', expect.any(Array), { dryRun: false });
-    expect(importTransactions.mock.calls[0]?.[1][0]?.imported_id).toBe(body.records[0].imported_id);
-    expect(importTransactions.mock.calls[1]?.[1][0]?.imported_id).toBe(body.records[0].imported_id);
+    expect(importTransactions.mock.calls[0]?.[1]?.[0]?.imported_id).toBe(body.records[0].imported_id);
+    expect(importTransactions.mock.calls[1]?.[1]?.[0]?.imported_id).toBe(body.records[0].imported_id);
   });
 
   it('rejects invalid categories and malformed import rows without writing', async () => {
