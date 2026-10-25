@@ -50,6 +50,7 @@ export interface ActualImportRecord {
   readonly date: string;
   readonly amount: number;
   readonly payee_name?: string;
+  readonly imported_payee?: string;
   readonly category?: string;
   readonly notes?: string;
   readonly imported_id?: string;
