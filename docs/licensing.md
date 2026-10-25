@@ -2,7 +2,7 @@
 
 ## Recomendación para `personal-budget`
 
-La propuesta inicial es **MIT para el código y la documentación originales**. Es una licencia permisiva, breve y adecuada si el objetivo es publicar una aplicación local-first que otras personas puedan instalar, adaptar y redistribuir sin obligaciones de copyleft. Exige conservar los avisos de copyright y la licencia en copias o partes sustanciales, pero permite distribuir versiones modificadas bajo otras condiciones, incluso propietarias. Consulta el resumen de [MIT en Choose a License](https://choosealicense.com/licenses/mit/).
+En esta versión, el repositorio aplica **MIT al código y la documentación originales** mediante el archivo `LICENSE`. Es una licencia permisiva, breve y adecuada si el objetivo es publicar una aplicación local-first que otras personas puedan instalar, adaptar y redistribuir sin obligaciones de copyleft. Exige conservar los avisos de copyright y la licencia en copias o partes sustanciales, pero permite distribuir versiones modificadas bajo otras condiciones, incluso propietarias. Consulta el resumen de [MIT en Choose a License](https://choosealicense.com/licenses/mit/).
 
 Esta decisión presupone que el propietario quiere permitir reutilización y uso comercial por terceros. Si no desea conceder esos permisos, no debe publicar el proyecto con MIT. En ese caso, puede mantener el repositorio privado o elegir una licencia distinta después de definir qué reutilización quiere permitir.
 
@@ -38,6 +38,6 @@ Actual Budget, Node.js, React, Ollama, las bibliotecas npm, las imágenes de con
 
 La implementación prevista integra Actual Budget mediante su API documentada; eso no implica que el repositorio redistribuya el código de Actual. Si se incorpora código de terceros, hay que revisar y mantener los avisos y las condiciones aplicables.
 
-## Confirmación antes de publicar versiones
+## Comprobación de la decisión
 
-La recomendación MIT solo es apropiada si el propietario acepta que otras personas usen, modifiquen, publiquen y comercialicen derivados sin obligación general de divulgar sus cambios. Si ese resultado no es deseable, cambia la elección de licencia **antes de distribuir**. Esta documentación es orientación técnica general y no asesoramiento jurídico.
+MIT es apropiada únicamente si el titular acepta que otras personas usen, modifiquen, publiquen y comercialicen derivados sin obligación general de divulgar sus cambios. Si ese resultado no es deseable, cambia la licencia y la visibilidad del repositorio antes de distribuir implementaciones adicionales. El titular de copyright debe verificar que tiene derechos suficientes sobre cada contribución incluida. Esta documentación es orientación técnica general y no asesoramiento jurídico.

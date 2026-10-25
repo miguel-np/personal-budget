@@ -17,7 +17,7 @@ Este archivo evita confundir el comportamiento deseado con el comportamiento com
 | Análisis diario/mensual/anual | Reglas definidas | Casos de prueba para fechas, traspasos, devoluciones y distintas divisas |
 | Copias de seguridad | Procedimiento definido | Restauración real probada con un presupuesto de prueba |
 | Seguridad y privacidad | Requisitos documentados | Revisión de red, logs, dependencias, filesystem y tráfico saliente |
-| Licencia | MIT recomendada para un proyecto público permisivo | Confirmar titular de copyright e intención de permitir reutilización comercial |
+| Licencia | MIT aplicada en el repositorio | Confirmar que el titular acepta el uso comercial y los derivados con licencia distinta |
 
 ## Criterio de documentación
 
