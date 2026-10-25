@@ -71,6 +71,14 @@ describe('ActualBudgetAdapter', () => {
     expect(api.sync).toHaveBeenCalledTimes(3);
   });
 
+  it('returns explicit category allocations from the budget query contract', async () => {
+    const allocations = [{ categoryId: 'food', amountMinor: 0 }];
+    const api = createApi({ getBudgetAllocations: vi.fn(async () => allocations) });
+    const adapter = new ActualBudgetAdapter(config, api);
+    await expect(adapter.getBudgetAllocations('2026-10')).resolves.toEqual(allocations);
+    expect(api.getBudgetAllocations).toHaveBeenCalledWith('2026-10');
+  });
+
   it('rejects malformed budget months and negative budget allocations', async () => {
     const api = createApi({ getBudgetMonth: vi.fn(async () => ({ month: '2026-10', categoryGroups: [] })) });
     const adapter = new ActualBudgetAdapter(config, api);
