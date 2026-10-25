@@ -3,6 +3,7 @@ import helmet from '@fastify/helmet';
 import { calculateSummary, isIsoDate, normalizeTransactions, validatePeriod } from '@personal-budget/finance-core';
 import type { BudgetRepository } from '@personal-budget/finance-core';
 import { ActualAdapterError } from '@personal-budget/actual-adapter';
+import type { ActualImportRecord, ActualImportResult } from '@personal-budget/actual-adapter';
 import { z, ZodError } from 'zod';
 import type { AppConfig } from './config.js';
 
@@ -21,6 +22,19 @@ const TransactionQuerySchema = z.object({
 const SummaryQuerySchema = z.object({
   startDate: z.string().refine(isIsoDate, 'startDate must be a valid YYYY-MM-DD date.'),
   endDate: z.string().refine(isIsoDate, 'endDate must be a valid YYYY-MM-DD date.'),
+}).strict();
+const ImportRecordSchema = z.object({
+  date: z.string().refine(isIsoDate, 'date must be a valid YYYY-MM-DD date.'),
+  amount: z.number().int().safe().refine((amount) => amount !== 0, 'amount cannot be zero.'),
+  payee_name: z.string().trim().min(1).max(200),
+  imported_payee: z.string().trim().max(500).optional(),
+  category: z.string().trim().min(1).max(128).optional(),
+  notes: z.string().max(2_000).optional(),
+  imported_id: z.string().trim().min(1).max(500),
+}).strict();
+const ImportRequestSchema = z.object({
+  accountId: z.string().trim().min(1).max(128),
+  records: z.array(ImportRecordSchema).min(1).max(2_000),
 }).strict();
 const MAX_REPORT_DAYS = 366 * 5;
 
@@ -168,6 +182,67 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       return reply.code(normalized.statusCode).send(normalized.body);
     }
   });
+  const handleImport = async (
+    request: Parameters<Parameters<FastifyInstance['post']>[1]>[0],
+    reply: Parameters<Parameters<FastifyInstance['post']>[1]>[1],
+    dryRun: boolean,
+  ) => {
+    try {
+      const parsed = ImportRequestSchema.parse(request.body);
+      const importer = repository as BudgetRepository & {
+        importTransactions?: (
+          accountId: string,
+          records: readonly ActualImportRecord[],
+          options?: { readonly dryRun?: boolean },
+        ) => Promise<ActualImportResult>;
+      };
+      if (typeof importer.importTransactions !== 'function') {
+        return reply.code(503).send({ error: { code: 'IMPORT_NOT_SUPPORTED', message: 'The configured local adapter does not support transaction imports.' } });
+      }
+      const [accounts, categories] = await Promise.all([
+        repository.listAccounts(),
+        repository.listCategories(),
+      ]);
+      if (!accounts.some((account) => account.id === parsed.accountId && !account.closed)) {
+        return reply.code(400).send({ error: { code: 'INVALID_ACCOUNT', message: 'Choose an open account from the configured budget.' } });
+      }
+      const categoryIds = new Set(categories.map((category) => category.id));
+      if (parsed.records.some((record) => record.category !== undefined && !categoryIds.has(record.category))) {
+        return reply.code(400).send({ error: { code: 'INVALID_CATEGORY', message: 'One or more records use a category that does not exist in the configured budget.' } });
+      }
+      const records: ActualImportRecord[] = parsed.records.map((record) => ({
+        date: record.date,
+        amount: record.amount,
+        payee_name: record.payee_name,
+        imported_id: record.imported_id,
+        ...(record.imported_payee === undefined ? {} : { imported_payee: record.imported_payee }),
+        ...(record.category === undefined ? {} : { category: record.category }),
+        ...(record.notes === undefined ? {} : { notes: record.notes }),
+      }));
+      const result = await importer.importTransactions(parsed.accountId, records, { dryRun });
+      if (result.errors.length > 0) {
+        return reply.code(409).send({
+          error: { code: 'IMPORT_RECONCILIATION_FAILED', message: 'Actual Budget reported an import error; check the budget in Actual before retrying.' },
+          result: { added: result.added.length, updated: result.updated.length, errors: result.errors.length, dryRun },
+        });
+      }
+      return {
+        data: {
+          added: result.added.length,
+          updated: result.updated.length,
+          errors: result.errors.length,
+          submitted: records.length,
+          dryRun,
+        },
+      };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  };
+  app.post('/api/v1/import/preview', async (request, reply) => handleImport(request, reply, true));
+  app.post('/api/v1/import/commit', async (request, reply) => handleImport(request, reply, false));
+
   app.get('/api/v1/reports/summary', async (request, reply) => {
     try {
       const query = SummaryQuerySchema.parse(request.query);
