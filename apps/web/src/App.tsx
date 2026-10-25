@@ -115,7 +115,7 @@ function monthPeriod(month: string): Period {
   };
 }
 function monthlyTrendWindows(mode: PeriodMode, period: Period, anchor: string): TrendWindow[] {
-  const lastMonth = (mode === 'custom' ? period.endDate : anchor).slice(0, 7);
+  const lastMonth = (mode === 'year' ? period.endDate : mode === 'custom' ? period.endDate : anchor).slice(0, 7);
   const count = mode === 'year' ? 12 : 6;
   const [yearText, monthText] = lastMonth.split('-');
   const endYear = Number(yearText);
