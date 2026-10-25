@@ -135,20 +135,31 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       const groups = await Promise.all(accounts.map((account) =>
         repository.listTransactions(account.id, query.startDate, query.endDate),
       ));
-      const flattened = groups.flat().flatMap((transaction) => {
+      type PresentedTransaction = BudgetTransaction & {
+        readonly payee_name?: string | null;
+        readonly imported_payee?: string | null;
+      };
+      const flattened: PresentedTransaction[] = groups.flat().flatMap((source): PresentedTransaction[] => {
+        const transaction = source as PresentedTransaction;
         if (transaction.is_child === true || transaction.parent_id) return [];
         if (transaction.subtransactions && transaction.subtransactions.length > 0) {
-          return transaction.subtransactions.map((child, index) => ({
-            ...child,
-            id: child.id || transaction.id + ':split:' + index,
-            account: child.account || transaction.account,
-            date: child.date || transaction.date,
-            payee_id: child.payee_id ?? transaction.payee_id,
-            payee_name: ('payee_name' in child ? child.payee_name : undefined) ?? ('payee_name' in transaction ? transaction.payee_name : undefined),
-            imported_payee: ('imported_payee' in child ? child.imported_payee : undefined) ?? ('imported_payee' in transaction ? transaction.imported_payee : undefined),
-            is_child: false,
-            parent_id: null,
-          }));
+          return transaction.subtransactions.map((sourceChild, index): PresentedTransaction => {
+            const child = sourceChild as PresentedTransaction;
+            const payeeId = child.payee_id ?? transaction.payee_id;
+            const payeeName = child.payee_name ?? transaction.payee_name;
+            const importedPayee = child.imported_payee ?? transaction.imported_payee;
+            return {
+              ...child,
+              id: child.id || transaction.id + ':split:' + index,
+              account: child.account || transaction.account,
+              date: child.date || transaction.date,
+              ...(payeeId === undefined ? {} : { payee_id: payeeId }),
+              ...(payeeName === undefined ? {} : { payee_name: payeeName }),
+              ...(importedPayee === undefined ? {} : { imported_payee: importedPayee }),
+              is_child: false,
+              parent_id: null,
+            };
+          });
         }
         return [transaction];
       });
