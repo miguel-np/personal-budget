@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BudgetAccount, BudgetCategory, BudgetRepository, BudgetTransaction } from '@personal-budget/finance-core';
 import { ActualAdapterError } from '@personal-budget/actual-adapter';
+import type { ActualImportRecord, ActualImportResult } from '@personal-budget/actual-adapter';
 import { buildApp } from '../src/app.js';
 import type { AppConfig } from '../src/config.js';
 
@@ -134,6 +135,64 @@ describe('local API', () => {
     expect(response.json().pagination).toMatchObject({ total: 1, limit: 1, offset: 0, sortBy: 'amount', order: 'asc' });
     expect(repository.listAccounts).toHaveBeenCalledTimes(1);
     expect(repository.listTransactions).toHaveBeenCalledTimes(1);
+  });
+
+  it('previews and explicitly commits validated, idempotent transaction imports', async () => {
+    const importTransactions = vi.fn(async (
+      _accountId: string,
+      _records: readonly ActualImportRecord[],
+      options?: { readonly dryRun?: boolean },
+    ): Promise<ActualImportResult> => ({
+      errors: [],
+      added: [options?.dryRun ? 'preview-id' : 'saved-id'],
+      updated: [],
+    }));
+    const repository = Object.assign(createRepository(), { importTransactions }) as BudgetRepository & {
+      importTransactions: typeof importTransactions;
+    };
+    const app = await createTestApp(repository);
+    const body = {
+      accountId: 'account-1',
+      records: [{
+        date: '2026-10-12',
+        amount: -1299,
+        payee_name: 'Supermercado',
+        imported_payee: 'SUPERMERCADO MADRID',
+        category: 'food',
+        imported_id: 'personal-budget-manual:test-123',
+      }],
+    };
+    const preview = await app.inject({ method: 'POST', url: '/api/v1/import/preview', payload: body });
+    expect(preview.statusCode).toBe(200);
+    expect(preview.json().data).toMatchObject({ added: 1, updated: 0, errors: 0, submitted: 1, dryRun: true });
+    expect(importTransactions).toHaveBeenLastCalledWith('account-1', expect.any(Array), { dryRun: true });
+
+    const commit = await app.inject({ method: 'POST', url: '/api/v1/import/commit', payload: body });
+    expect(commit.statusCode).toBe(200);
+    expect(commit.json().data).toMatchObject({ added: 1, updated: 0, errors: 0, submitted: 1, dryRun: false });
+    expect(importTransactions).toHaveBeenLastCalledWith('account-1', expect.any(Array), { dryRun: false });
+    expect(importTransactions.mock.calls[0]?.[1][0]?.imported_id).toBe(body.records[0].imported_id);
+    expect(importTransactions.mock.calls[1]?.[1][0]?.imported_id).toBe(body.records[0].imported_id);
+  });
+
+  it('rejects invalid categories and malformed import rows without writing', async () => {
+    const importTransactions = vi.fn(async (): Promise<ActualImportResult> => ({ errors: [], added: [], updated: [] }));
+    const repository = Object.assign(createRepository(), { importTransactions }) as BudgetRepository & {
+      importTransactions: typeof importTransactions;
+    };
+    const app = await createTestApp(repository);
+    const invalidCategory = await app.inject({
+      method: 'POST', url: '/api/v1/import/commit',
+      payload: { accountId: 'account-1', records: [{ date: '2026-10-12', amount: -1299, payee_name: 'Compra', category: 'missing', imported_id: 'id-1' }] },
+    });
+    expect(invalidCategory.statusCode).toBe(400);
+    expect(invalidCategory.json().error.code).toBe('INVALID_CATEGORY');
+    const invalidAmount = await app.inject({
+      method: 'POST', url: '/api/v1/import/commit',
+      payload: { accountId: 'account-1', records: [{ date: '2026-10-12', amount: 1.25, payee_name: 'Compra', imported_id: 'id-2' }] },
+    });
+    expect(invalidAmount.statusCode).toBe(400);
+    expect(importTransactions).not.toHaveBeenCalled();
   });
 
   it('returns transactions for a validated account and date range', async () => {
