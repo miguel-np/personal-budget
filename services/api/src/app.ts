@@ -251,30 +251,37 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       const query = z.object({ includeHidden: z.enum(['true', 'false']).default('false') }).strict().parse(request.query);
       const budgetRepository = repository as BudgetRepository & {
         getBudgetMonth?: (month: string) => Promise<ActualBudgetMonthRecord>;
+        getBudgetAllocations?: (month: string) => Promise<readonly { readonly categoryId: string; readonly amountMinor: number }[]>;
       };
       if (typeof budgetRepository.getBudgetMonth !== 'function') {
         return reply.code(503).send({ error: { code: 'BUDGET_QUERY_NOT_SUPPORTED', message: 'The configured local adapter does not support budget queries.' } });
       }
-      const [budget, categories] = await Promise.all([
+      const allocationSourceAvailable = typeof budgetRepository.getBudgetAllocations === 'function';
+      const [budget, categories, allocations] = await Promise.all([
         budgetRepository.getBudgetMonth(params.month),
         repository.listCategories(),
+        allocationSourceAvailable ? budgetRepository.getBudgetAllocations!(params.month) : Promise.resolve(null),
       ]);
       const categoriesById = new Map(categories.map((category) => [category.id, category]));
+      const allocationsByCategory = new Map((allocations ?? []).map((allocation) => [allocation.categoryId, allocation.amountMinor]));
       const categoryRows = budget.categoryGroups.flatMap((group) =>
         (group.categories ?? []).map((category) => {
           const metadata = categoriesById.get(category.id);
-          const budgetedMinor = category.budgeted === undefined || category.budgeted === null
-            ? null
-            : category.budgeted;
+          const explicitAllocation = allocationsByCategory.get(category.id);
+          const budgetedMinor = allocationSourceAvailable
+            ? (explicitAllocation ?? 0)
+            : category.budgeted === undefined || category.budgeted === null ? null : category.budgeted;
           const spentMinor = category.spent === undefined || category.spent === null
             ? null
             : Math.abs(category.spent);
           const availableMinor = category.balance === undefined || category.balance === null
             ? null
             : category.balance;
-          const state = category.budgeted === undefined ? 'unbudgeted'
-            : category.budgeted === null ? 'unknown'
-              : category.budgeted === 0 ? 'zero' : 'budgeted';
+          const state = allocationSourceAvailable
+            ? explicitAllocation === undefined ? 'unbudgeted' : explicitAllocation === 0 ? 'zero' : 'budgeted'
+            : category.budgeted === undefined ? 'unbudgeted'
+              : category.budgeted === null ? 'unknown'
+                : category.budgeted === 0 ? 'zero' : 'budgeted';
           return {
             categoryId: category.id,
             categoryName: metadata?.name ?? category.name,
@@ -306,7 +313,9 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
           categories: categoryRows,
           notes: [
             'Importes procedentes de getBudgetMonth de la API oficial de Actual Budget.',
-            'La API de Actual puede devolver cero para categorías sin una asignación efectiva; cuando no expone un valor explícito, se muestra como desconocido o sin asignación.',
+            allocationSourceAvailable
+              ? 'Sin asignación significa que no existe una fila explícita de presupuesto para esa categoría y mes; cero presupuestado significa que existe una asignación guardada con importe cero.'
+              : 'El adaptador no expone las filas de asignación explícitas; los estados de cero y sin asignación no pueden distinguirse con certeza.',
           ],
         },
       };
