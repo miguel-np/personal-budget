@@ -24,7 +24,10 @@
     "audit": "npm audit --audit-level=high",
     "audit:production": "npm audit --omit=dev --audit-level=high",
     "dev:api": "npm run build --workspace=@personal-budget/finance-core && npm run build --workspace=@personal-budget/actual-adapter && npm run dev --workspace=@personal-budget/api",
-    "dev:web": "npm run dev --workspace=@personal-budget/web"
+    "dev:web": "npm run dev --workspace=@personal-budget/web",
+    "backup:actual": "tsx scripts/actual-backup.ts backup",
+    "restore:actual": "tsx scripts/actual-backup.ts restore",
+    "mcp:serve": "node services/mcp/server.mjs"
   },
   "dependencies": {
     "@actual-app/api": "26.10.0",

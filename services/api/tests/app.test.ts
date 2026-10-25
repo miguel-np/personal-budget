@@ -31,6 +31,7 @@ function createRepository(overrides: Partial<BudgetRepository> = {}): BudgetRepo
 const config: AppConfig = {
   environment: 'test', host: '127.0.0.1', port: 3000, logLevel: 'silent',
   actualServerURL: 'http://127.0.0.1:5006', actualDataDir: './.local/actual-api',
+  ollamaBaseURL: 'http://127.0.0.1:11434', aiEnabled: false, ollamaTimeoutMs: 120_000, aiMaxContextChars: 4_000,
   budgetCurrency: 'EUR', allowedOrigins: ['http://127.0.0.1:5173', 'http://localhost:5173'],
 };
 const openApps: Array<{ close: () => Promise<void> }> = [];
@@ -56,6 +57,25 @@ describe('local API', () => {
     expect(response.statusCode).toBe(503);
     expect(response.json()).toEqual({ status: 'not_configured' });
     expect(response.body).not.toContain('127.0.0.1');
+  });
+
+  it('reports the assistant disabled without contacting Ollama by default', async () => {
+    const app = await createTestApp();
+    const status = await app.inject({ method: 'GET', url: '/api/v1/assistant/status' });
+    const chat = await app.inject({ method: 'POST', url: '/api/v1/assistant/chat', payload: { question: 'Resume octubre', startDate: '2026-10-01', endDate: '2026-10-31' } });
+    expect(status.statusCode).toBe(200);
+    expect(status.json()).toMatchObject({ enabled: false, status: 'disabled' });
+    expect(chat.statusCode).toBe(503);
+    expect(chat.json().error.code).toBe('AI_DISABLED');
+  });
+
+  it('validates assistant period and bounds without fetching finance data', async () => {
+    const repository = createRepository();
+    const app = await createTestApp(repository);
+    const response = await app.inject({ method: 'POST', url: '/api/v1/assistant/chat', payload: { question: 'x', startDate: '2020-01-01', endDate: '2026-01-01' } });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe('INVALID_REQUEST');
+    expect(repository.listAccounts).not.toHaveBeenCalled();
   });
 
   it('returns accounts and categories through the repository boundary', async () => {

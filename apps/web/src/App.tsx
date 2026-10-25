@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { MovementTools } from './MovementTools.js';
 import { BudgetPanel } from './BudgetPanel.js';
+import { AssistantPanel } from './AssistantPanel.js';
 
 type ConnectionState = 'checking' | 'connected' | 'unconfigured' | 'error';
 type PeriodMode = 'day' | 'month' | 'year' | 'custom';
@@ -529,12 +530,7 @@ export function App() {
               <BudgetPanel currency={currency} onBudgetUpdated={() => { setRefreshKey((value) => value + 1); }} />
             )}
 
-            {route === '/assistant' && (
-              <section className="content-section">
-                <div className="section-heading"><div><p className="eyebrow">IA OPCIONAL · FASE FUTURA</p><h2>Asistente local</h2></div></div>
-                <div className="panel assistant-panel"><span className="assistant-symbol" aria-hidden="true">✧</span><h3>El asistente aún no está conectado</h3><p>Esta sección no envía movimientos ni consultas a un modelo. La integración de IA local se abordará como una fase independiente, con herramientas de solo lectura y permisos explícitos.</p><span className="status-chip">No conectado</span></div>
-              </section>
-            )}
+            {route === '/assistant' && <AssistantPanel currency={currency} />}
 
             {route === '/settings' && (
               <section className="content-section">

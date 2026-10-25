@@ -41,6 +41,11 @@ const EnvironmentSchema = z.object({
     message: 'ACTUAL_SERVER_URL must target a loopback host for local-only deployments.',
   }),
   ACTUAL_SERVER_PASSWORD: z.string().optional(),
+  OLLAMA_BASE_URL: z.string().url().default('http://127.0.0.1:11434').refine(isLoopbackUrl, { message: 'OLLAMA_BASE_URL must target a loopback host for local-only deployments.' }),
+  OLLAMA_MODEL: z.string().trim().min(1).max(128).optional(),
+  AI_ENABLED: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
+  OLLAMA_REQUEST_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(180).default(120),
+  AI_MAX_CONTEXT_CHARS: z.coerce.number().int().min(512).max(8_000).default(4_000),
   ACTUAL_BUDGET_ID: z.string().trim().max(128).optional(),
   ACTUAL_DATA_DIR: z.string().trim().min(1).max(1024).default('./.local/actual-api'),
   BUDGET_CURRENCY: z.string().regex(/^[A-Z]{3}$/).default('EUR'),
@@ -54,6 +59,11 @@ export interface AppConfig {
   readonly logLevel: 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'silent';
   readonly actualServerURL: string;
   readonly actualServerPassword?: string;
+  readonly ollamaBaseURL: string;
+  readonly ollamaModel?: string;
+  readonly aiEnabled: boolean;
+  readonly ollamaTimeoutMs: number;
+  readonly aiMaxContextChars: number;
   readonly actualBudgetId?: string;
   readonly actualDataDir: string;
   readonly budgetCurrency: string;
@@ -64,6 +74,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
   const parsed = EnvironmentSchema.parse(environment);
   const normalizedBudgetId = parsed.ACTUAL_BUDGET_ID?.trim();
   const normalizedPassword = parsed.ACTUAL_SERVER_PASSWORD;
+  const normalizedModel = parsed.OLLAMA_MODEL?.trim();
 
   return {
     environment: parsed.NODE_ENV,
@@ -72,6 +83,11 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
     logLevel: parsed.LOG_LEVEL,
     actualServerURL: parsed.ACTUAL_SERVER_URL,
     ...(normalizedPassword ? { actualServerPassword: normalizedPassword } : {}),
+    ollamaBaseURL: parsed.OLLAMA_BASE_URL,
+    ...(normalizedModel ? { ollamaModel: normalizedModel } : {}),
+    aiEnabled: parsed.AI_ENABLED,
+    ollamaTimeoutMs: parsed.OLLAMA_REQUEST_TIMEOUT_SECONDS * 1_000,
+    aiMaxContextChars: parsed.AI_MAX_CONTEXT_CHARS,
     ...(normalizedBudgetId ? { actualBudgetId: normalizedBudgetId } : {}),
     actualDataDir: parsed.ACTUAL_DATA_DIR,
     budgetCurrency: parsed.BUDGET_CURRENCY,
