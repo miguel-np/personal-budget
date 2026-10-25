@@ -22,6 +22,8 @@ export interface BudgetTransaction {
   readonly category?: string | null;
   readonly transfer_id?: string | null;
   readonly payee_id?: string | null;
+  readonly payee_name?: string | null;
+  readonly imported_payee?: string | null;
   readonly notes?: string | null;
   readonly cleared?: boolean;
   readonly is_parent?: boolean;
@@ -38,6 +40,8 @@ export interface LedgerEntry {
   readonly categoryId: string | null;
   readonly transferId: string | null;
   readonly isTransfer: boolean;
+  /** Normalized beneficiary label, when the source transaction carries one. */
+  readonly payeeLabel?: string | null;
 }
 
 export interface Period {
@@ -75,4 +79,6 @@ export interface BudgetRepository {
   listAccounts(): Promise<readonly BudgetAccount[]>;
   listCategories(): Promise<readonly BudgetCategory[]>;
   listTransactions(accountId: string, startDate: string, endDate: string): Promise<readonly BudgetTransaction[]>;
+  /** Explicit transaction categorization; optional until the adapter supports it. */
+  updateTransactionCategory?(transactionId: string, categoryId: string): Promise<void>;
 }

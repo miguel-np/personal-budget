@@ -73,6 +73,7 @@ export interface ActualApiContract {
   getBudgetMonth?(month: string): Promise<ActualBudgetMonthRecord>;
   getBudgetAllocations?(month: string): Promise<readonly ActualBudgetAllocation[]>;
   setBudgetAmount?(month: string, categoryId: string, amount: number): Promise<null>;
+  updateTransaction?(transactionId: string, fields: { readonly category?: string }): Promise<unknown>;
   getTransactions(accountId: string, startDate: string, endDate: string): Promise<readonly BudgetTransaction[]>;
   importTransactions(
     accountId: string,

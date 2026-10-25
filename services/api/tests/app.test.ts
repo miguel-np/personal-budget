@@ -596,4 +596,124 @@ describe('local API', () => {
     expect(response.statusCode).toBe(502);
     expect(response.body).not.toContain('secret transaction content');
   });
+
+  it('detects recurring candidates from local history without writing anything', async () => {
+    const recurringTransactions: readonly BudgetTransaction[] = [
+      { id: 'gym-1', account: 'account-1', date: '2026-08-01', amount: -1000, category: null, payee_name: 'Gimnasio' },
+      { id: 'gym-2', account: 'account-1', date: '2026-09-01', amount: -1000, category: null, payee_name: 'Gimnasio' },
+      { id: 'gym-3', account: 'account-1', date: '2026-10-01', amount: -1000, category: null, payee_name: 'Gimnasio' },
+      { id: 'one-off', account: 'account-1', date: '2026-10-05', amount: -400, category: null, payee_name: 'Café' },
+    ];
+    const listTransactions = vi.fn(async () => recurringTransactions);
+    const app = await createTestApp(createRepository({ listTransactions }));
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/insights/recurring?startDate=2026-08-01&endDate=2026-10-31',
+    });
+    expect(response.statusCode).toBe(200);
+    const data = response.json().data as Array<{ payee: string; occurrenceCount: number; confidence: string }>;
+    expect(data).toHaveLength(1);
+    expect(data[0]).toMatchObject({ payee: 'gimnasio', occurrenceCount: 3, confidence: 'candidate_only' });
+    expect(response.json().notes.some((note: string) => note.includes('no garantizan'))).toBe(true);
+  });
+
+  it('suggests categories from local history with rule-based confidence', async () => {
+    const history: readonly BudgetTransaction[] = [
+      { id: 'h-1', account: 'account-1', date: '2026-09-03', amount: -4200, category: 'food', payee_name: 'Supermercado' },
+      { id: 'u-1', account: 'account-1', date: '2026-10-07', amount: -3890, category: null, payee_name: 'Supermercado' },
+    ];
+    const listTransactions = vi.fn(async () => history);
+    const app = await createTestApp(createRepository({ listTransactions }));
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/insights/category-suggestions?startDate=2026-10-01&endDate=2026-10-31',
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toHaveLength(1);
+    expect(response.json().data[0]).toMatchObject({
+      transactionId: 'u-1', suggestedCategoryId: 'food', suggestedCategoryName: 'Alimentación', confidence: 'rule_based',
+    });
+  });
+
+  it('previews categorization without writing and commits only when asked', async () => {
+    const updateTransactionCategory = vi.fn(async () => undefined);
+    const listTransactions = vi.fn(async () => transactions);
+    const repository = Object.assign(createRepository({ listTransactions }), { updateTransactionCategory }) as BudgetRepository & {
+      updateTransactionCategory: typeof updateTransactionCategory;
+    };
+    const app = await createTestApp(repository);
+    const body = {
+      startDate: '2026-10-01',
+      endDate: '2026-10-31',
+      transactions: [{ transactionId: 'expense-1', categoryId: 'food' }],
+    };
+    const preview = await app.inject({ method: 'POST', url: '/api/v1/insights/categorize', payload: { ...body, commit: false } });
+    expect(preview.statusCode).toBe(200);
+    expect(preview.json().data).toMatchObject({ preview: true, changes: 1 });
+    expect(updateTransactionCategory).not.toHaveBeenCalled();
+
+    const commit = await app.inject({ method: 'POST', url: '/api/v1/insights/categorize', payload: { ...body, commit: true } });
+    expect(commit.statusCode).toBe(200);
+    expect(commit.json().data).toMatchObject({ preview: false, changes: 1 });
+    expect(updateTransactionCategory).toHaveBeenCalledTimes(1);
+    expect(updateTransactionCategory).toHaveBeenCalledWith('expense-1', 'food');
+  });
+
+  it('fails closed on unknown transactions, income categories and missing update capability', async () => {
+    const updateTransactionCategory = vi.fn(async () => undefined);
+    const listTransactions = vi.fn(async () => transactions);
+    const repository = Object.assign(createRepository({ listTransactions }), { updateTransactionCategory }) as BudgetRepository & {
+      updateTransactionCategory: typeof updateTransactionCategory;
+    };
+    const app = await createTestApp(repository);
+    const unknownTransaction = await app.inject({
+      method: 'POST', url: '/api/v1/insights/categorize',
+      payload: { startDate: '2026-10-01', endDate: '2026-10-31', commit: true, transactions: [{ transactionId: 'missing', categoryId: 'food' }] },
+    });
+    expect(unknownTransaction.statusCode).toBe(400);
+    expect(unknownTransaction.json().error.code).toBe('INVALID_TRANSACTION');
+
+    const incomeCategory = await app.inject({
+      method: 'POST', url: '/api/v1/insights/categorize',
+      payload: { startDate: '2026-10-01', endDate: '2026-10-31', commit: true, transactions: [{ transactionId: 'expense-1', categoryId: 'salary' }] },
+    });
+    expect(incomeCategory.statusCode).toBe(400);
+    expect(incomeCategory.json().error.code).toBe('INVALID_CATEGORY');
+    expect(updateTransactionCategory).not.toHaveBeenCalled();
+
+    const withoutCapability = await createTestApp(createRepository({ listTransactions }));
+    const unsupported = await withoutCapability.inject({
+      method: 'POST', url: '/api/v1/insights/categorize',
+      payload: { startDate: '2026-10-01', endDate: '2026-10-31', commit: true, transactions: [{ transactionId: 'expense-1', categoryId: 'food' }] },
+    });
+    expect(unsupported.statusCode).toBe(503);
+    expect(unsupported.json().error.code).toBe('TRANSACTION_UPDATE_NOT_SUPPORTED');
+  });
+
+  it('simulates forecasts deterministically and rejects malformed scenarios', async () => {
+    const listTransactions = vi.fn(async () => transactions);
+    const app = await createTestApp(createRepository({ listTransactions }));
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/forecasts/simulate',
+      payload: {
+        startDate: '2026-10-01', endDate: '2026-10-31', horizonMonths: 3,
+        scenario: { type: 'income_change', percent: 10 },
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toMatchObject({ isEstimate: true, currency: 'EUR', horizonMonths: 3 });
+    expect(response.json().data.monthlyProjection).toHaveLength(3);
+
+    const invalid = await app.inject({
+      method: 'POST',
+      url: '/api/v1/forecasts/simulate',
+      payload: {
+        startDate: '2026-10-01', endDate: '2026-10-31', horizonMonths: 3,
+        scenario: { type: 'category_reduction', categoryId: 'missing', percent: 10 },
+      },
+    });
+    expect(invalid.statusCode).toBe(400);
+    expect(listTransactions).toHaveBeenCalledTimes(2);
+  });
 });
