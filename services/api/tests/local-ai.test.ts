@@ -30,6 +30,20 @@ describe('LocalAiClient', () => {
     await expect(client.explain(context)).rejects.toBeInstanceOf(LocalAiUnavailableError);
   });
 
+  it('bounds readiness probes with an abort signal and degrades to unavailable', async () => {
+    const timeoutConfig = { ...config, timeoutMs: 1 };
+    const fetcher = vi.fn<typeof fetch>(async (_input, init) => await new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal as AbortSignal;
+      const onAbort = () => reject(signal.reason);
+      if (signal.aborted) onAbort();
+      else signal.addEventListener('abort', onAbort, { once: true });
+    }));
+    const client = new LocalAiClient(timeoutConfig, fetcher);
+    await expect(client.status()).resolves.toMatchObject({ status: 'unavailable' });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+  });
+
   it('detects a missing model without exposing runtime details', async () => {
     const fetcher = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ models: [{ name: 'other-model' }] }), { status: 200 }));
     const client = new LocalAiClient(config, fetcher);
