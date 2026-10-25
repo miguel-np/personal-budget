@@ -23,7 +23,8 @@ describe('LocalAiClient', () => {
 
   it('reports an unconfigured model without contacting Ollama', async () => {
     const fetcher = vi.fn<typeof fetch>();
-    const client = new LocalAiClient({ ...config, model: undefined }, fetcher);
+    const { model: _configuredModel, ...unconfiguredConfig } = config;
+    const client = new LocalAiClient(unconfiguredConfig, fetcher);
     await expect(client.status()).resolves.toEqual({ enabled: true, status: 'not_configured' });
     expect(fetcher).not.toHaveBeenCalled();
     await expect(client.explain(context)).rejects.toBeInstanceOf(LocalAiUnavailableError);
