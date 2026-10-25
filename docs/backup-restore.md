@@ -27,3 +27,15 @@ Después del restore, abre la UI y compara explícitamente cuentas, categorías,
 El SHA-256 detecta corrupción accidental, pero no protege si alguien altera también el checksum. Protege el directorio con permisos del sistema y cifra la copia antes de moverla fuera del dispositivo. Una copia remota, aunque esté cifrada, sale del límite estrictamente local. Guarda la clave separada del archivo.
 
 Prueba la restauración en una instancia aislada con datos sintéticos antes de confiar en el procedimiento con datos personales. No copies bases activas arbitrariamente ni mezcles archivos de copias/versiones diferentes.
+
+## Ensayo de restauración registrado
+
+Fecha 25-oct-2026, instancia aislada de Actual Budget `actualbudget/actual-server:26.10.0` en `127.0.0.1:5007` con Compose y directorio de datos propios (`COMPOSE_FILE`/`ACTUAL_SERVER_DATA_DIR`/`BACKUP_DIR` en un directorio temporal).
+
+1. Inventario sintético: 1 cuenta (`Cuenta sintética`), 9 categorías, 3 movimientos (ingreso 1500,00 €, gastos 32,00 € y 78,00 €) y saldo 1890,00 €; presupuesto de 200,00 € en `Comida` para 2026-09.
+2. `npm run backup:actual` creó el archivo fechado con permisos `0600` y su `.sha256`.
+3. Se destruyó el directorio de datos y se eliminó el contenedor (`docker compose down`), el peor caso de recuperación.
+4. `npm run restore:actual -- <copia>` recreó el contenedor (`docker compose up -d`) y restauró el directorio.
+5. Verificación con la API oficial contra la instancia restaurada: cuentas, categorías, movimientos (mismos IDs y fechas) y saldo **idénticos** al inventario previo (`RESTORE_OK`).
+
+El script usa ahora `docker compose up -d` en lugar de `start` para que la restauración también funcione cuando el contenedor fue eliminado y no solo parado. La copia pre-restore se conserva hasta verificar el inventario completo.

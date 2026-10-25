@@ -14,4 +14,14 @@ La integración opcional usa la API de Ollama en loopback. Se mantiene desactiva
 
 No todas las combinaciones modelo/runtime están verificadas en vivo. La CI prueba comportamiento con respuestas sintéticas, sin descargar modelos ni acceder a internet. Para pruebas manuales, usa un presupuesto sintético y revisa la licencia y los requisitos hardware del modelo elegido.
 
+## Validación live registrada
+
+Fecha 25-oct-2026, WSL2 (kernel 6.18.33.2-microsoft-standard-WSL2) con Ollama de Windows expuesto en loopback mediante `networkingMode=mirrored` en `.wslconfig`.
+
+- Modelo probado: **qwen3:8b** (8.2B, Q4_K_M, capacidades `completion`, `tools`, `thinking`). `npm run test:ollama:acceptance` pasa: disponibilidad detectada, generación real completada y narración devuelta sin cifras ni enlaces.
+- Compatibilidad de tool calling del runtime/modelo: qwen3:8b devuelve la llamada en el campo estructurado `tool_calls` con argumentos JSON válidos. El modo `thinking` consume tokens de generación: la aplicación usa `num_predict=768` para dejar margen a la respuesta; con 256 la narración se truncaba.
+- Otros modelos instalados en el entorno: qwen3:14b (misma familia, sin probar en vivo) y qwen2.5-coder:7b, que emite la llamada de herramienta como texto JSON en `content` en lugar del campo estructurado; usar un cliente que solo parse `tool_calls` lo descartaría.
+- Chat end-to-end contra datos sintéticos: resumen mensual, gasto por categoría y comparativa de periodos devuelven cifras del backend y narración cualitativa separada; una inyección de prompt pidiendo borrar gastos fue rechazada por el modelo (asistente de solo lectura) y la salida no contiene cifras, URLs ni descripciones de movimientos.
+- El fallo del runtime (Ollama caído) está cubierto por tests sintéticos: el chat devuelve 503 saneado y el resto de la aplicación sigue operativo. Los prompts y respuestas no se registran.
+
 La IA no constituye asesoramiento financiero profesional. Revisa los indicadores deterministas antes de tomar decisiones.
