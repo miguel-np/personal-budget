@@ -2,7 +2,7 @@
 
 Aplicación local de finanzas personales con una única interfaz web para gastos, presupuestos, ahorro e informes. Un asistente con IA local será una ampliación opcional.
 
-> **Estado: base técnica P0 añadida; validación de CI e integración real pendientes.** El repositorio contiene un workspace TypeScript, núcleo financiero, adaptador para Actual Budget, API local y una shell React/Vite provisional. El MVP de movimientos e informes todavía no está completo.
+> **Estado: base técnica P0 implementada y CI verde.** El repositorio contiene un workspace TypeScript, núcleo financiero, adaptador para Actual Budget, API local y una shell React/Vite provisional. La CI aprobó 40 pruebas; una prueba live opcional de Actual se omite por defecto. Cobertura global: 94,5 % de sentencias, 86,02 % de ramas y 96,1 % de líneas. Las auditorías de dependencias reportaron cero vulnerabilidades conocidas y el smoke test de Docker confirma que Actual Budget arranca en localhost. Aún no se ha probado el adaptador con un presupuesto real configurado; el dashboard completo y el registro/importación desde la nueva interfaz siguen pendientes de P1.
 
 ## Arquitectura
 
@@ -41,6 +41,10 @@ npm run dev:web
 ~~~
 
 Abre http://127.0.0.1:5173. La shell actual solo comprueba el estado de la API; el dashboard, registro manual, importación desde la app e informes completos se implementarán en P1. Configura ACTUAL_BUDGET_ID con el Sync ID del presupuesto de Actual.
+
+## Prueba opcional con un presupuesto de Actual existente
+
+Para probar la API oficial contra un presupuesto local de prueba sin modificar transacciones, sigue [la guía de instalación](docs/installation.md#7-prueba-de-aceptación-con-un-presupuesto-local-existente-opcional). Esa prueba se omite en CI si no se habilita explícitamente y no usa datos financieros en pipelines normales.
 
 ## Calidad
 

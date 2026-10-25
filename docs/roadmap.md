@@ -11,13 +11,13 @@ El repositorio está pasando de especificación a código inicial. El seguimient
 
 ## Fase 0 — Fundamentos (P0)
 
-- [ ] [#2 Workspace TypeScript, scripts y CI](https://github.com/miguel-np/personal-budget/issues/2)
+- [x] [#2 Workspace TypeScript, scripts y CI](https://github.com/miguel-np/personal-budget/issues/2)
 - [ ] [#3 Actual Budget local, persistencia y puertos seguros](https://github.com/miguel-np/personal-budget/issues/3)
 - [ ] [#4 Adaptador oficial @actual-app/api](https://github.com/miguel-np/personal-budget/issues/4)
-- [ ] [#5 Cálculos deterministas y pruebas](https://github.com/miguel-np/personal-budget/issues/5)
-- [ ] [#6 Backend local y frontera de seguridad](https://github.com/miguel-np/personal-budget/issues/6)
+- [x] [#5 Cálculos deterministas y pruebas](https://github.com/miguel-np/personal-budget/issues/5)
+- [x] [#6 Backend local y frontera de seguridad](https://github.com/miguel-np/personal-budget/issues/6)
 
-Salida: lockfile reproducible, CI verde, adaptador probado contra Actual local, reglas financieras cubiertas y backend local protegido.
+Salida parcial (25-oct-2026): lockfile reproducible, CI verde, núcleo financiero cubierto y backend local protegido. Pendiente completar prueba manual de persistencia en Windows + WSL2 y aceptación live del adaptador contra un presupuesto de Actual; por eso #3 y #4 siguen abiertas.
 
 ## Fase 1 — MVP sin IA (P1)
 

@@ -9,5 +9,7 @@
 - Añadida shell React/Vite que comprueba el estado del backend; el dashboard completo queda pendiente.
 - Añadido Compose con versión fijada de Actual Budget y puerto limitado a localhost.
 - Añadidas pruebas unitarias y de API, política de cobertura y CI para auditoría, lint, typecheck y build.
+- Añadido smoke test de Docker para validar la configuración y el arranque del servidor Actual Budget 26.10.0 en localhost.
+- CI verde: 40 pruebas aprobadas, 1 prueba live opcional omitida, cobertura global del 94,5 % de sentencias, 86,02 % de ramas y 96,1 % de líneas; `npm audit` y auditoría de dependencias de producción reportan cero vulnerabilidades conocidas.
 - Añadido lockfile npm inicial por CI.
 - Pendiente: validar resultados de CI, probar adaptador contra Actual local y completar funciones del producto en P1.
