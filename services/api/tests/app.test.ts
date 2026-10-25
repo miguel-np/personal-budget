@@ -141,6 +141,7 @@ describe('local API', () => {
     const notConfiguredResponse = await notConfiguredApp.inject({ method: 'GET', url: '/api/v1/accounts' });
     expect(notConfiguredResponse.statusCode).toBe(503);
     expect(notConfiguredResponse.json().error.code).toBe('NOT_CONFIGURED');
+    expect(notConfiguredResponse.body).not.toContain('ACTUAL_SERVER_PASSWORD');
     expect(notConfiguredResponse.body).not.toContain('private server settings');
 
     const closed = createRepository({

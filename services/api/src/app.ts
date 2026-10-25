@@ -35,7 +35,7 @@ function sanitizedErrorResponse(error: unknown): { statusCode: number; body: { e
   }
   if (error instanceof ActualAdapterError) {
     if (error.code === 'INVALID_INPUT') return { statusCode: 400, body: { error: { code: error.code, message: error.message } } };
-    if (error.code === 'NOT_CONFIGURED') return { statusCode: 503, body: { error: { code: error.code, message: error.message } } };
+    if (error.code === 'NOT_CONFIGURED') return { statusCode: 503, body: { error: { code: error.code, message: 'The local Actual Budget connection is not configured.' } } };
     if (error.code === 'CLOSED') return { statusCode: 503, body: { error: { code: error.code, message: 'The local Actual Budget connection is closed.' } } };
   }
   if (error instanceof RangeError || (error instanceof Error && error.name === 'InvalidPeriodError')) {

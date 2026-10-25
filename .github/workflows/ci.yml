@@ -41,3 +41,31 @@ jobs:
         run: npm run test:coverage
       - name: Production dependency audit
         run: npm run audit:production
+
+
+  actual-container-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Validate local Actual Budget Compose configuration
+        run: docker compose config --quiet
+      - name: Start pinned Actual Budget server
+        run: |
+          mkdir -p .local/actual-server-data
+          docker compose up -d actual
+      - name: Wait for local Actual Budget UI
+        run: |
+          for attempt in $(seq 1 45); do
+            if curl --silent --show-error --fail --max-time 3 http://127.0.0.1:5006/ -o /dev/null; then
+              echo "Actual Budget answered on the loopback-bound port."
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose logs actual
+          exit 1
+      - name: Stop Actual Budget test service
+        if: always()
+        run: docker compose down --remove-orphans
