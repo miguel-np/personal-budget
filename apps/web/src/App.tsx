@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { MovementTools } from './MovementTools.js';
 
 type ConnectionState = 'checking' | 'connected' | 'unconfigured' | 'error';
 type PeriodMode = 'day' | 'month' | 'year' | 'custom';
@@ -174,6 +175,7 @@ export function App() {
   const [dataError, setDataError] = useState('');
   const [bootLoaded, setBootLoaded] = useState(false);
   const [dataLoading, setDataLoading] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [mode, setMode] = useState<PeriodMode>('month');
   const [anchor, setAnchor] = useState(currentDate);
   const [customStart, setCustomStart] = useState(currentDate().slice(0, 8) + '01');
@@ -262,7 +264,7 @@ export function App() {
       })
       .finally(() => { if (active) setDataLoading(false); });
     return () => { active = false; controller.abort(); };
-  }, [accountFilter, accounts, bootLoaded, categoryFilter, connection, invalidPeriod, page, period, previous, route, searchText, sortAscending, sortKey, uncategorizedOnly]);
+  }, [accountFilter, accounts, bootLoaded, categoryFilter, connection, invalidPeriod, page, period, previous, refreshKey, route, searchText, sortAscending, sortKey, uncategorizedOnly]);
 
   const categoriesById = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
   const accountsById = useMemo(() => new Map(accounts.map((account) => [account.id, account])), [accounts]);
@@ -393,6 +395,12 @@ export function App() {
             {!dataLoading && !dataError && !invalidPeriod && route === '/movements' && (
               <section className="content-section" aria-labelledby="movements-heading">
                 <div className="section-heading"><div><p className="eyebrow">LIBRO DE MOVIMIENTOS</p><h2 id="movements-heading">Transacciones</h2></div><span className="date-badge">{transactionTotal} resultados</span></div>
+                <MovementTools
+                  accounts={accounts}
+                  categories={categories}
+                  currency={currency}
+                  onImported={() => { setPage(1); setRefreshKey((value) => value + 1); }}
+                />
                 {accounts.filter((item) => !item.closed).length === 0 ? <EmptyState title="No hay cuentas disponibles" body="Crea o abre una cuenta en Actual Budget y vuelve a cargar los datos." /> : (
                   <>
                     <div className="filters-panel">
