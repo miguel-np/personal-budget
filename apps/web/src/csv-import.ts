@@ -14,7 +14,7 @@ export function parseCsvMoney(raw: string, decimalSeparator: ',' | '.'): number 
   const minor = Math.round(amount * 100) * (negativeByParentheses ? -1 : 1);
   return Number.isSafeInteger(minor) ? minor : null;
 }
-function isValidIsoDate(value: string): boolean {
+export function isValidIsoDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(value + 'T00:00:00.000Z');
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
