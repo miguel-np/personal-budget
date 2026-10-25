@@ -14,6 +14,28 @@
 - Sigue la guía de la versión de `@actual-app/api` usada por la implementación.
 - No inventes endpoints REST; Actual no ofrece una REST API general para consultar el presupuesto.
 - Revisa si el servidor de Actual y la API programática usan versiones compatibles.
+- Comprueba que el directorio de datos de la API (`ACTUAL_DATA_DIR`) existe y es escribible por tu usuario.
+
+## `.local` aparece propiedad de root tras `docker compose up`
+
+Cuando Docker crea el directorio de montaje de un bind mount, puede dejarlo propiedad de root, y el contenedor de Actual escribe sus archivos como root. Si `.local` queda inaccesible:
+
+- Crea los directorios con tu usuario **antes** del primer `docker compose up`:
+
+  ~~~bash
+  mkdir -p .local/actual-server-data .local/actual-api .local/backups
+  docker compose up -d
+  ~~~
+
+- Si ya los creó Docker, corrígelos una vez con:
+
+  ~~~bash
+  sudo chown -R "$(id -u):$(id -g)" .local
+  ~~~
+
+- Los archivos que escriba después el contenedor dentro de `.local/actual-server-data` pueden volver a quedar propiedad de root; el acceso de lectura y el backup con tar siguen funcionando, pero el usuario necesita poder crear `.local/actual-api` y `.local/backups`.
+
+- No uses `sudo npm ci` ni ejecutes los scripts de Node como root; mantén el resto del repositorio propiedad de tu usuario.
 
 ## Ollama no responde
 

@@ -42,9 +42,10 @@ docker --version
 docker compose version
 ~~~
 
-Desde la raíz:
+Desde la raíz, crea primero los directorios de datos con tu usuario para que Docker no los deje propiedad de root:
 
 ~~~bash
+mkdir -p .local/actual-server-data .local/actual-api .local/backups
 docker compose up -d
 docker compose ps
 ~~~

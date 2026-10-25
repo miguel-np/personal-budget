@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import { tmpdir } from 'node:os';
+import { resolve } from 'node:path';
 import type { BudgetTransaction } from '@personal-budget/finance-core';
 import { ActualBudgetAdapter } from '../src/actual-budget-adapter.js';
 import { mapActualAccount, mapActualCategory } from '../src/actual-api-contract.js';
@@ -18,7 +20,7 @@ function createApi(overrides: Partial<ActualApiContract> = {}): ActualApiContrac
   };
 }
 
-const config = { serverURL: 'http://127.0.0.1:5006', dataDir: './.local/actual-api', budgetId: 'budget-uuid' };
+const config = { serverURL: 'http://127.0.0.1:5006', dataDir: resolve(tmpdir(), 'personal-budget-adapter-tests'), budgetId: 'budget-uuid' };
 
 describe('ActualBudgetAdapter', () => {
 

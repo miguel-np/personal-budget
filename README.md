@@ -30,6 +30,7 @@ nvm install
 nvm use
 npm ci
 cp .env.example .env
+mkdir -p .local/actual-server-data .local/actual-api .local/backups
 docker compose up -d
 npm run dev:api
 ~~~
