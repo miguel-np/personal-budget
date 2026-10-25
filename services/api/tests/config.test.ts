@@ -28,6 +28,10 @@ describe('loadConfig', () => {
     expect(loadConfig({ AI_ENABLED: 'true', OLLAMA_MODEL: ' llama3.2 ' })).toMatchObject({ aiEnabled: true, ollamaModel: 'llama3.2' });
     expect(() => loadConfig({ AI_ENABLED: 'yes' })).toThrow();
   });
+  it('treats an empty Ollama model from the .env template as unset', () => {
+    const config = loadConfig({ OLLAMA_MODEL: '' });
+    expect(config.ollamaModel).toBeUndefined();
+  });
   it('rejects remote Actual server URLs', () => {
     expect(() => loadConfig({ ACTUAL_SERVER_URL: 'https://actual.example.com' })).toThrow();
   });

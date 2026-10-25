@@ -1,3 +1,4 @@
+import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { BudgetAccount, BudgetCategory, BudgetRepository, BudgetTransaction } from '@personal-budget/finance-core';
 import { isIsoDate, validatePeriod } from '@personal-budget/finance-core';
@@ -178,6 +179,7 @@ export class ActualBudgetAdapter implements BudgetRepository {
       throw new ActualAdapterError('NOT_CONFIGURED', 'Set ACTUAL_SERVER_URL and ACTUAL_BUDGET_ID before reading financial data.');
     }
     try {
+      await mkdir(this.dataDir, { recursive: true });
       await this.api.init({
         dataDir: this.dataDir,
         serverURL: this.config.serverURL,

@@ -42,7 +42,7 @@ const EnvironmentSchema = z.object({
   }),
   ACTUAL_SERVER_PASSWORD: z.string().optional(),
   OLLAMA_BASE_URL: z.string().url().default('http://127.0.0.1:11434').refine(isLoopbackUrl, { message: 'OLLAMA_BASE_URL must target a loopback host for local-only deployments.' }),
-  OLLAMA_MODEL: z.string().trim().min(1).max(128).optional(),
+  OLLAMA_MODEL: z.preprocess((value) => (value === '' ? undefined : value), z.string().trim().min(1).max(128).optional()),
   AI_ENABLED: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
   OLLAMA_REQUEST_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(180).default(120),
   AI_MAX_CONTEXT_CHARS: z.coerce.number().int().min(512).max(8_000).default(4_000),
