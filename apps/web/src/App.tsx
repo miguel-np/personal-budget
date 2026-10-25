@@ -593,9 +593,10 @@ function MonthlyTrendPanel({ points, currency, loading, error }: { points: reado
               return (
                 <tr key={point.month}>
                   <td>{label}</td>
-                  <td><div className="trend-bars" role="img" aria-label={point.month + ': ingresos ' + formatMoney(income, currency) + ', gastos ' + formatMoney(expense, currency)}>
+                  <td><div className="trend-bars" role="img" aria-label={point.month + ': ingresos ' + formatMoney(income, currency) + ', gastos ' + formatMoney(expense, currency) + ', ahorro ' + formatMoney(point.summary.savingsMinor, currency)}>
                     <span className="trend-label">I</span><div className="trend-track"><span className="income" style={{ width: income / maxValue * 100 + '%' }} /></div>
                     <span className="trend-label">G</span><div className="trend-track"><span className="expense" style={{ width: expense / maxValue * 100 + '%' }} /></div>
+                    <span className="trend-label">A</span><div className="trend-track"><span className={point.summary.savingsMinor < 0 ? 'expense' : 'income'} style={{ width: Math.min(100, Math.abs(point.summary.savingsMinor) / maxValue * 100) + '%' }} /></div>
                   </div></td>
                   <td className="trend-number income-text">{formatMoney(point.summary.incomeMinor, currency)}</td>
                   <td className="trend-number expense-text">{formatMoney(point.summary.expenseMinor, currency)}</td>
