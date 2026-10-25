@@ -62,6 +62,12 @@ interface Period {
   startDate: string;
   endDate: string;
 }
+interface TrendWindow extends Period {
+  month: string;
+}
+interface TrendPoint extends TrendWindow {
+  summary: Summary;
+}
 interface ApiPayload<T> {
   data?: T;
   error?: { code?: string; message?: string };
@@ -98,6 +104,27 @@ function periodFor(mode: PeriodMode, anchor: string, customStart: string, custom
   const first = new Date(Date.UTC(year, month - 1, 1));
   const last = new Date(Date.UTC(year, month, 0));
   return { startDate: isoDate(first), endDate: isoDate(last) };
+}
+function monthPeriod(month: string): Period {
+  const [yearText, monthText] = month.split('-');
+  const year = Number(yearText);
+  const monthNumber = Number(monthText);
+  return {
+    startDate: month + '-01',
+    endDate: isoDate(new Date(Date.UTC(year, monthNumber, 0))),
+  };
+}
+function monthlyTrendWindows(mode: PeriodMode, period: Period, anchor: string): TrendWindow[] {
+  const lastMonth = (mode === 'custom' ? period.endDate : anchor).slice(0, 7);
+  const count = mode === 'year' ? 12 : 6;
+  const [yearText, monthText] = lastMonth.split('-');
+  const endYear = Number(yearText);
+  const endMonth = Number(monthText);
+  return Array.from({ length: count }, (_, index) => {
+    const date = new Date(Date.UTC(endYear, endMonth - count + index, 1));
+    const month = isoDate(date).slice(0, 7);
+    return { month, ...monthPeriod(month) };
+  });
 }
 function previousPeriod(mode: PeriodMode, period: Period): Period {
   if (mode === 'month') {
@@ -178,6 +205,9 @@ export function App() {
   const [bootLoaded, setBootLoaded] = useState(false);
   const [dataLoading, setDataLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [trendPoints, setTrendPoints] = useState<TrendPoint[]>([]);
+  const [trendLoading, setTrendLoading] = useState(false);
+  const [trendError, setTrendError] = useState('');
   const [mode, setMode] = useState<PeriodMode>('month');
   const [anchor, setAnchor] = useState(currentDate);
   const [customStart, setCustomStart] = useState(currentDate().slice(0, 8) + '01');
@@ -194,6 +224,7 @@ export function App() {
   const pageTitle = NAV_ITEMS.find((item) => item.href === route)?.label ?? 'Resumen';
   const period = useMemo(() => periodFor(mode, anchor, customStart, customEnd), [mode, anchor, customStart, customEnd]);
   const previous = useMemo(() => previousPeriod(mode, period), [mode, period]);
+  const trendWindows = useMemo(() => monthlyTrendWindows(mode, period, anchor), [mode, period, anchor]);
   const invalidPeriod = period.startDate > period.endDate;
 
   useEffect(() => {
@@ -267,6 +298,31 @@ export function App() {
       .finally(() => { if (active) setDataLoading(false); });
     return () => { active = false; controller.abort(); };
   }, [accountFilter, accounts, bootLoaded, categoryFilter, connection, invalidPeriod, page, period, previous, refreshKey, route, searchText, sortAscending, sortKey, uncategorizedOnly]);
+
+  useEffect(() => {
+    if (!bootLoaded || connection !== 'connected' || route !== '/') {
+      setTrendPoints([]);
+      setTrendError('');
+      setTrendLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setTrendLoading(true);
+    setTrendError('');
+    void Promise.all(trendWindows.map(async (window) => ({
+      ...window,
+      summary: await apiData<Summary>('/api/v1/reports/summary' + queryFor(window), controller.signal),
+    })))
+      .then((results) => { if (!controller.signal.aborted) setTrendPoints(results); })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setTrendError(error instanceof Error ? error.message : 'No se ha podido cargar la tendencia mensual.');
+          setTrendPoints([]);
+        }
+      })
+      .finally(() => { if (!controller.signal.aborted) setTrendLoading(false); });
+    return () => controller.abort();
+  }, [bootLoaded, connection, refreshKey, route, trendWindows]);
 
   const categoriesById = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
   const accountsById = useMemo(() => new Map(accounts.map((account) => [account.id, account])), [accounts]);
@@ -388,6 +444,7 @@ export function App() {
                         <div className="detail-line"><span>Traspasos excluidos del consolidado</span><strong>{summary.excludedTransferCount}</strong></div>
                       </article>
                     </div>
+                    <MonthlyTrendPanel points={trendPoints} currency={currency} loading={trendLoading} error={trendError} />
                     <div className="section-footnote">Importes calculados con reglas deterministas en el backend. Los movimientos divididos se normalizan antes de agregarse; no se suman divisas distintas.</div>
                   </>
                 ) : <EmptyState title="No hay resumen disponible" body="Selecciona un periodo válido o comprueba la conexión con Actual Budget." />}
@@ -510,6 +567,49 @@ function CategoryBars({ totals, currency }: { totals: readonly CategoryTotal[]; 
     </div>
   ))}</div>;
 }
+function MonthlyTrendPanel({ points, currency, loading, error }: { points: readonly TrendPoint[]; currency: string; loading: boolean; error: string }) {
+  const maxValue = Math.max(1, ...points.flatMap((point) => [
+    Math.max(0, point.summary.incomeMinor),
+    Math.max(0, point.summary.expenseMinor),
+  ]));
+  return (
+    <article className="panel monthly-trend-panel">
+      <div className="panel-heading">
+        <div><p className="eyebrow">HISTÓRICO</p><h3>Tendencia mensual de ingresos, gastos y ahorro</h3></div>
+        <span className="muted-label">{points.length ? points.length + ' meses' : 'Sin datos'}</span>
+      </div>
+      {loading && points.length === 0 ? <LoadingState /> : null}
+      {error ? <p className="form-alert error" role="alert">{error}</p> : null}
+      {!loading && !error && points.length === 0 ? <EmptyState title="Tendencia no disponible" body="No hay meses para comparar en este momento." /> : null}
+      {points.length ? (
+        <div className="trend-table-wrap">
+          <table className="trend-table">
+            <thead><tr><th scope="col">Mes</th><th scope="col">Comparación visual</th><th scope="col">Ingresos</th><th scope="col">Gastos</th><th scope="col">Ahorro neto</th></tr></thead>
+            <tbody>{points.map((point) => {
+              const label = new Intl.DateTimeFormat('es-ES', { month: 'short', year: '2-digit', timeZone: 'UTC' }).format(new Date(point.month + '-01T00:00:00.000Z'));
+              const income = Math.max(0, point.summary.incomeMinor);
+              const expense = Math.max(0, point.summary.expenseMinor);
+              return (
+                <tr key={point.month}>
+                  <td>{label}</td>
+                  <td><div className="trend-bars" role="img" aria-label={point.month + ': ingresos ' + formatMoney(income, currency) + ', gastos ' + formatMoney(expense, currency)}>
+                    <span className="trend-label">I</span><div className="trend-track"><span className="income" style={{ width: income / maxValue * 100 + '%' }} /></div>
+                    <span className="trend-label">G</span><div className="trend-track"><span className="expense" style={{ width: expense / maxValue * 100 + '%' }} /></div>
+                  </div></td>
+                  <td className="trend-number income-text">{formatMoney(point.summary.incomeMinor, currency)}</td>
+                  <td className="trend-number expense-text">{formatMoney(point.summary.expenseMinor, currency)}</td>
+                  <td className={'trend-number ' + (point.summary.savingsMinor < 0 ? 'expense-text' : 'income-text')}>{formatMoney(point.summary.savingsMinor, currency)}</td>
+                </tr>
+              );
+            })}</tbody>
+          </table>
+        </div>
+      ) : null}
+      <p className="section-footnote">Cada barra tiene su valor exacto en la tabla. Los traspasos internos se excluyen del resumen; no se mezclan importes de divisas distintas.</p>
+    </article>
+  );
+}
+
 function ComparisonRow({ label, current, previous, currency }: { label: string; current: number; previous: number; currency: string }) {
   const delta = current - previous;
   return <div className="comparison-row"><div><span>{label}</span><strong>{formatMoney(current, currency)}</strong></div><div className="comparison-meta"><span>Anterior: {formatMoney(previous, currency)}</span><strong className={delta > 0 ? 'up' : delta < 0 ? 'down' : ''}>{delta > 0 ? '+' : ''}{formatMoney(delta, currency)}</strong></div></div>;
