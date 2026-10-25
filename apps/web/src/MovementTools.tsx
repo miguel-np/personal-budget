@@ -74,7 +74,7 @@ function parseMoney(raw: string): number | null {
   const minor = Math.round(amount * 100);
   return Number.isSafeInteger(minor) && minor !== 0 ? minor : null;
 }
-function parseCsvMoney(raw: string, decimalSeparator: ',' | '.'): number | null {
+export function parseCsvMoney(raw: string, decimalSeparator: ',' | '.'): number | null {
   let value = raw.trim().replace(/[\s€$£]/g, '');
   if (!value) return null;
   const negativeByParentheses = value.startsWith('(') && value.endsWith(')');
@@ -92,7 +92,7 @@ function isValidIsoDate(value: string): boolean {
   const date = new Date(value + 'T00:00:00.000Z');
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
-function parseDate(raw: string, format: DateFormat): string | null {
+export function parseDate(raw: string, format: DateFormat): string | null {
   const value = raw.trim();
   if (format === 'iso') return isValidIsoDate(value) ? value : null;
   const match = /^(\d{1,2})[/. -](\d{1,2})[/. -](\d{4})$/.exec(value);
@@ -105,7 +105,7 @@ function parseDate(raw: string, format: DateFormat): string | null {
   const date = [String(year).padStart(4, '0'), String(month).padStart(2, '0'), String(day).padStart(2, '0')].join('-');
   return isValidIsoDate(date) ? date : null;
 }
-function parseCsv(source: string, delimiter: Delimiter): string[][] {
+export function parseCsv(source: string, delimiter: Delimiter): string[][] {
   const text = source.replace(/^\uFEFF/, '');
   const rows: string[][] = [];
   let row: string[] = [];
