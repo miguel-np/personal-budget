@@ -27,7 +27,8 @@
     "dev:web": "npm run dev --workspace=@personal-budget/web",
     "backup:actual": "tsx scripts/actual-backup.ts backup",
     "restore:actual": "tsx scripts/actual-backup.ts restore",
-    "mcp:serve": "node services/mcp/server.mjs"
+    "mcp:serve": "node services/mcp/server.mjs",
+    "test:ollama:acceptance": "vitest run services/api/tests/local-ai-live-acceptance.test.ts"
   },
   "dependencies": {
     "@actual-app/api": "26.10.0",
