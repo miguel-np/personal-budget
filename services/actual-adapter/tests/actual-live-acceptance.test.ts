@@ -12,7 +12,7 @@ describe.skipIf(!enabled)('Actual Budget live acceptance (read-only)', () => {
   const adapter = new ActualBudgetAdapter({
     serverURL: serverURL ?? 'http://127.0.0.1:5006',
     dataDir,
-    budgetId,
+    ...(budgetId ? { budgetId } : {}),
     ...(process.env.ACTUAL_SERVER_PASSWORD ? { password: process.env.ACTUAL_SERVER_PASSWORD } : {}),
   }, ActualApiNamespace as unknown as ActualApiContract);
 

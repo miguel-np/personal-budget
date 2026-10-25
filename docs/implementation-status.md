@@ -6,7 +6,7 @@
 |---|---|---|
 | Workspace TypeScript y scripts | Implementado | Lockfile reproducible e instalación limpia validada |
 | Núcleo financiero | Implementado con pruebas unitarias | Cobertura alcanzada y reglas contrastadas con datos sintéticos |
-| Adaptador @actual-app/api | Implementado con interfaz inyectable y pruebas simuladas | Prueba real contra Actual local y versión fijada |
+| Adaptador @actual-app/api | Implementado con interfaz inyectable y pruebas simuladas; aceptación live opcional añadida | Ejecutar aceptación live contra un presupuesto local de prueba; CI valida el contenedor, no un presupuesto autenticado |
 | API Fastify | Implementada con pruebas de rutas | CI, seguridad y prueba end-to-end validadas |
 | Compose de Actual Budget | Configurado con versión fijada y bind a localhost | Arranque y persistencia probados en WSL2 |
 | Shell React/Vite | Provisional | Dashboard y secciones de usuario en P1 |

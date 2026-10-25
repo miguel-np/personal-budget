@@ -56,3 +56,8 @@ La suite ordinaria no debe necesitar credenciales, banco real, Internet ni un mo
 ## Clean Code y SOLID
 
 Las rutas HTTP dependen de la interfaz BudgetRepository, no de Actual directamente. El núcleo financiero no depende del framework web, de Actual ni de IA. El adaptador encapsula el ciclo de vida y serializa el uso de la API de Actual. Los cambios de contrato deben incluir pruebas y documentación. Prioriza funciones pequeñas, nombres explícitos, validación en fronteras y abstracciones justificadas.
+
+## Prueba opcional contra Actual Budget real
+
+La suite unitaria usa un contrato inyectable para que CI no necesite un presupuesto real. Para demostrar la compatibilidad con el servidor y API fijados, prepara un presupuesto local de prueba y sigue el comando de [instalación](installation.md#7-prueba-de-aceptación-con-un-presupuesto-local-existente-opcional). La prueba es de solo lectura y no debe usar un presupuesto con datos sensibles para CI o capturas.
+

@@ -105,6 +105,20 @@ No cierres P0 hasta confirmar que los comandos pasan en un checkout limpio y que
 
 La integración con Ollama aún no está conectada a la shell P0. Para prepararla, instala Ollama desde la [web oficial](https://ollama.com/download) y consulta su [API](https://docs.ollama.com/api). La descarga del modelo requiere red; no configures endpoints alojados si el requisito es mantener las consultas en el equipo.
 
+
+## 7. Prueba de aceptación con un presupuesto local existente (opcional)
+
+Cuando Actual Budget esté iniciado y hayas creado/configurado un presupuesto de prueba, puedes probar el adaptador real en modo solo lectura. Esta prueba consulta cuentas, categorías y movimientos del año configurado, pero no crea ni modifica transacciones.
+
+~~~bash
+ACTUAL_SERVER_URL=http://127.0.0.1:5006 \
+ACTUAL_BUDGET_ID='<sync-id-de-tu-presupuesto-de-prueba>' \
+PERSONAL_BUDGET_RUN_ACTUAL_ACCEPTANCE=1 \
+npm test -- services/actual-adapter/tests/actual-live-acceptance.test.ts
+~~~
+
+Si el servidor tiene contraseña, añade `ACTUAL_SERVER_PASSWORD` en el entorno antes de ejecutar la prueba; no la pongas en la línea de comandos ni la compartas. Si hay cifrado end-to-end del presupuesto, esta prueba necesitará una ampliación para recibir la contraseña de cifrado. La suite normal omite esta prueba cuando no se activa explícitamente.
+
 ## Datos privados
 
 Usa primero un presupuesto de prueba. Nunca añadas extractos, bases de datos, backups, .env ni logs sensibles al repositorio. No introduzcas credenciales bancarias en Actual, Ollama, MCP ni personal-budget.
