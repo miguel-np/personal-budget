@@ -289,3 +289,37 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   .tool-panel > .tool-actions { align-items: stretch; }
   .tool-panel > .tool-actions .button { flex: 1; }
 }
+
+
+.month-picker { min-width: 170px; }
+.budget-panel { margin-top: 16px; }
+.budget-table-wrap { width: 100%; overflow-x: auto; }
+.budget-table { width: 100%; min-width: 980px; border-collapse: collapse; text-align: left; }
+.budget-table th { padding: 12px 10px; border-bottom: 1px solid #30425a; color: #8094ae; background: #131f30; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.budget-table td { padding: 13px 10px; border-bottom: 1px solid #223149; color: #aebed2; font-size: 11px; vertical-align: middle; }
+.budget-table tbody tr:last-child td { border-bottom: 0; }
+.budget-table tbody tr:hover { background: #142136; }
+.budget-table td:first-child { min-width: 190px; }
+.budget-table td:first-child > strong { display: block; color: #e5eefb; font-size: 11px; }
+.budget-table td:first-child > small { display: block; margin-top: 4px; color: #7489a3; font-size: 9px; }
+.budget-deviation { display: block; margin-top: 7px; color: #83d8b0; font-size: 9px; }
+.budget-deviation.over, .budget-over { color: #ffad9e !important; }
+.budget-usage { display: grid; grid-template-columns: 75px 48px; align-items: center; gap: 8px; }
+.budget-usage small { color: #a7b9cf; font-size: 9px; white-space: nowrap; }
+.budget-usage .bar-track { height: 6px; }
+.budget-usage .bar-track span.over { background: #e98773; }
+.budget-state { display: inline-flex; border: 1px solid #354359; border-radius: 6px; padding: 4px 6px; font-size: 9px; white-space: nowrap; }
+.budget-state.state-budgeted { border-color: #305a4c; background: #14271f; color: #8bdab5; }
+.budget-state.state-zero { border-color: #6a543a; background: #241e16; color: #e5c18d; }
+.budget-state.state-unbudgeted, .budget-state.state-unknown { border-color: #3b485b; background: #151f2d; color: #a1afc2; }
+.allocation-input input { width: 108px; max-width: 100%; height: 33px; border: 1px solid #54749b; border-radius: 7px; padding: 0 8px; background: #0b1421; color: #f0f5fc; font: inherit; }
+.allocation-actions { display: flex; gap: 6px; }
+.allocation-actions .button { min-height: 30px; padding: 6px 8px; }
+.budget-explainer { margin-top: 15px; }
+.budget-explainer p:not(.eyebrow) { color: #8497af; font-size: 10px; line-height: 1.8; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+@media (max-width: 620px) {
+  .month-picker { width: 100%; }
+  .budget-explainer { padding: 14px; }
+  .allocation-actions { flex-direction: column; }
+}
