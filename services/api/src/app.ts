@@ -3,7 +3,7 @@ import helmet from '@fastify/helmet';
 import { calculateSummary, isIsoDate, normalizeTransactions, validatePeriod } from '@personal-budget/finance-core';
 import type { BudgetRepository } from '@personal-budget/finance-core';
 import { ActualAdapterError } from '@personal-budget/actual-adapter';
-import type { ActualImportRecord, ActualImportResult } from '@personal-budget/actual-adapter';
+import type { ActualBudgetMonthRecord, ActualImportRecord, ActualImportResult } from '@personal-budget/actual-adapter';
 import { z, ZodError } from 'zod';
 import type { AppConfig } from './config.js';
 
@@ -36,6 +36,8 @@ const ImportRequestSchema = z.object({
   accountId: z.string().trim().min(1).max(128),
   records: z.array(ImportRecordSchema).min(1).max(2_000),
 }).strict();
+const BudgetMonthSchema = z.string().regex(/^\\d{4}-(0[1-9]|1[0-2])$/, 'month must use YYYY-MM.');
+const BudgetAmountSchema = z.object({ amountMinor: z.number().int().safe().min(0) }).strict();
 const MAX_REPORT_DAYS = 366 * 5;
 
 export interface AppDependencies {
@@ -242,6 +244,103 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   };
   app.post('/api/v1/import/preview', async (request, reply) => handleImport(request, reply, true));
   app.post('/api/v1/import/commit', async (request, reply) => handleImport(request, reply, false));
+
+  app.get('/api/v1/budgets/:month', async (request, reply) => {
+    try {
+      const params = z.object({ month: BudgetMonthSchema }).strict().parse(request.params);
+      const query = z.object({ includeHidden: z.enum(['true', 'false']).default('false') }).strict().parse(request.query);
+      const budgetRepository = repository as BudgetRepository & {
+        getBudgetMonth?: (month: string) => Promise<ActualBudgetMonthRecord>;
+      };
+      if (typeof budgetRepository.getBudgetMonth !== 'function') {
+        return reply.code(503).send({ error: { code: 'BUDGET_QUERY_NOT_SUPPORTED', message: 'The configured local adapter does not support budget queries.' } });
+      }
+      const [budget, categories] = await Promise.all([
+        budgetRepository.getBudgetMonth(params.month),
+        repository.listCategories(),
+      ]);
+      const categoriesById = new Map(categories.map((category) => [category.id, category]));
+      const categoryRows = budget.categoryGroups.flatMap((group) =>
+        (group.categories ?? []).map((category) => {
+          const metadata = categoriesById.get(category.id);
+          const budgetedMinor = category.budgeted === undefined || category.budgeted === null
+            ? null
+            : category.budgeted;
+          const spentMinor = category.spent === undefined || category.spent === null
+            ? null
+            : Math.abs(category.spent);
+          const availableMinor = category.balance === undefined || category.balance === null
+            ? null
+            : category.balance;
+          const state = category.budgeted === undefined ? 'unbudgeted'
+            : category.budgeted === null ? 'unknown'
+              : category.budgeted === 0 ? 'zero' : 'budgeted';
+          return {
+            categoryId: category.id,
+            categoryName: metadata?.name ?? category.name,
+            groupId: group.id,
+            groupName: group.name,
+            isIncome: group.is_income ?? metadata?.isIncome ?? false,
+            hidden: category.hidden ?? group.hidden ?? false,
+            budgetedMinor,
+            spentMinor,
+            availableMinor,
+            percentUsed: budgetedMinor === null || budgetedMinor === 0 || spentMinor === null
+              ? null : (spentMinor / budgetedMinor) * 100,
+            carryover: category.carryover ?? null,
+            state,
+          };
+        }),
+      ).filter((category) => query.includeHidden === 'true' || !category.hidden);
+      return {
+        data: {
+          month: budget.month,
+          totals: {
+            totalBudgetedMinor: budget.totalBudgeted ?? null,
+            totalSpentMinor: budget.totalSpent === undefined ? null : Math.abs(budget.totalSpent),
+            totalBalanceMinor: budget.totalBalance ?? null,
+            totalIncomeMinor: budget.totalIncome ?? null,
+            incomeAvailableMinor: budget.incomeAvailable ?? null,
+            toBudgetMinor: budget.toBudget ?? null,
+          },
+          categories: categoryRows,
+          notes: [
+            'Importes procedentes de getBudgetMonth de la API oficial de Actual Budget.',
+            'La API de Actual puede devolver cero para categorías sin una asignación efectiva; cuando no expone un valor explícito, se muestra como desconocido o sin asignación.',
+          ],
+        },
+      };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.put('/api/v1/budgets/:month/:categoryId', async (request, reply) => {
+    try {
+      const params = z.object({
+        month: BudgetMonthSchema,
+        categoryId: z.string().trim().min(1).max(128),
+      }).strict().parse(request.params);
+      const body = BudgetAmountSchema.parse(request.body);
+      const budgetRepository = repository as BudgetRepository & {
+        setBudgetAmount?: (month: string, categoryId: string, amountMinor: number) => Promise<void>;
+      };
+      if (typeof budgetRepository.setBudgetAmount !== 'function') {
+        return reply.code(503).send({ error: { code: 'BUDGET_WRITE_NOT_SUPPORTED', message: 'The configured local adapter does not support budget updates.' } });
+      }
+      const categories = await repository.listCategories();
+      const category = categories.find((item) => item.id === params.categoryId);
+      if (!category || category.isIncome) {
+        return reply.code(400).send({ error: { code: 'INVALID_CATEGORY', message: 'Choose an expense category from the configured budget.' } });
+      }
+      await budgetRepository.setBudgetAmount(params.month, params.categoryId, body.amountMinor);
+      return { data: { month: params.month, categoryId: params.categoryId, amountMinor: body.amountMinor, updated: true } };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
 
   app.get('/api/v1/reports/summary', async (request, reply) => {
     try {
