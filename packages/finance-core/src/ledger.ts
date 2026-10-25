@@ -35,6 +35,7 @@ function toEntry(
     id: transaction.id,
     accountId,
     date,
+    currencyCode: transaction.currencyCode !== undefined ? transaction.currencyCode : transaction.currency_code !== undefined ? transaction.currency_code : inherited?.currencyCode,
     amountMinor: transaction.amount,
     categoryId: transaction.category ?? null,
     transferId,
@@ -57,6 +58,7 @@ export function normalizeTransactions(transactions: readonly BudgetTransaction[]
             account: transaction.account,
             date: transaction.date,
             ...(transaction.transfer_id === undefined ? {} : { transfer_id: transaction.transfer_id }),
+            ...(transaction.currencyCode !== undefined ? { currencyCode: transaction.currencyCode } : transaction.currency_code !== undefined ? { currencyCode: transaction.currency_code } : {}),
           },
         ));
       }
