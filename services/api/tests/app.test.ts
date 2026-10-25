@@ -137,6 +137,61 @@ describe('local API', () => {
     expect(repository.listTransactions).toHaveBeenCalledTimes(1);
   });
 
+  it('reports unsupported budget read and write capabilities without exposing details', async () => {
+    const repository = createRepository();
+    const app = await createTestApp(repository);
+    const read = await app.inject({ method: 'GET', url: '/api/v1/budgets/2026-10' });
+    expect(read.statusCode).toBe(503);
+    expect(read.json().error.code).toBe('BUDGET_QUERY_NOT_SUPPORTED');
+
+    const write = await app.inject({
+      method: 'PUT',
+      url: '/api/v1/budgets/2026-10/food',
+      payload: { amountMinor: 1_000 },
+    });
+    expect(write.statusCode).toBe(503);
+    expect(write.json().error.code).toBe('BUDGET_WRITE_NOT_SUPPORTED');
+  });
+
+  it('rejects malformed budget month and unsafe category allocations', async () => {
+    const app = await createTestApp();
+    const badMonth = await app.inject({ method: 'GET', url: '/api/v1/budgets/2026-13' });
+    expect(badMonth.statusCode).toBe(400);
+    expect(badMonth.json().error.code).toBe('INVALID_REQUEST');
+
+    const negative = await app.inject({
+      method: 'PUT', url: '/api/v1/budgets/2026-10/food',
+      payload: { amountMinor: -1 },
+    });
+    expect(negative.statusCode).toBe(400);
+
+    const fractional = await app.inject({
+      method: 'PUT', url: '/api/v1/budgets/2026-10/food',
+      payload: { amountMinor: 1.5 },
+    });
+    expect(fractional.statusCode).toBe(400);
+  });
+
+  it('uses the official monthly budget when explicit allocation rows are unavailable', async () => {
+    const getBudgetMonth = vi.fn(async (month: string) => ({
+      month,
+      categoryGroups: [{
+        id: 'spend',
+        name: 'Gastos',
+        is_income: false,
+        categories: [{ id: 'food', name: 'Alimentación', budgeted: 1_500, spent: -400, balance: 1_100 }],
+      }],
+    }));
+    const repository = Object.assign(createRepository(), { getBudgetMonth }) as BudgetRepository & {
+      getBudgetMonth: typeof getBudgetMonth;
+    };
+    const app = await createTestApp(repository);
+    const response = await app.inject({ method: 'GET', url: '/api/v1/budgets/2026-10' });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.categories[0]).toMatchObject({ categoryId: 'food', budgetedMinor: 1_500, state: 'budgeted' });
+    expect(response.json().data.notes.at(-1)).toContain('no puede distinguirse');
+  });
+
   it('normalizes Actual monthly category budget amounts and deviation', async () => {
     const getBudgetMonth = vi.fn(async (month: string) => ({
       month,
