@@ -26,7 +26,7 @@ describe('ActualBudgetAdapter', () => {
 
   it('maps absent optional Actual fields to explicit defaults', () => {
     expect(mapActualAccount({ id: 'account-2', name: 'Ahorro' })).toEqual({
-      id: 'account-2', name: 'Ahorro', closed: false, offBudget: false, currentBalanceMinor: null,
+      id: 'account-2', name: 'Ahorro', currencyCode: null, closed: false, offBudget: false, currentBalanceMinor: null,
     });
     expect(mapActualCategory({ id: 'other', name: 'Otros', group_id: 'expenses' })).toEqual({
       id: 'other', name: 'Otros', groupId: 'expenses', isIncome: false,
