@@ -26,6 +26,20 @@ const ImportRecordSchema = z.object({
   cleared: z.boolean().optional(),
 }).strict();
 
+function omitUndefinedImportFields(
+  record: z.infer<typeof ImportRecordSchema>,
+): ActualImportRecord {
+  return {
+    date: record.date,
+    amount: record.amount,
+    ...(record.payee_name === undefined ? {} : { payee_name: record.payee_name }),
+    ...(record.category === undefined ? {} : { category: record.category }),
+    ...(record.notes === undefined ? {} : { notes: record.notes }),
+    ...(record.imported_id === undefined ? {} : { imported_id: record.imported_id }),
+    ...(record.cleared === undefined ? {} : { cleared: record.cleared }),
+  };
+}
+
 /**
  * Serializes operations because the official Actual API owns one active budget
  * session. Raw upstream failures are intentionally replaced with safe errors.
@@ -64,7 +78,7 @@ export class ActualBudgetAdapter implements BudgetRepository {
     return this.enqueue(async () => this.api.getTransactions(parsedAccountId.data, startDate, endDate));
   }
 
-  /** Dry-run is the default. The future UI must preview and obtain approval before persistence. */
+  /** Dry-run is the default; persistence requires an explicit caller choice. */
   public async importTransactions(
     accountId: string,
     records: readonly ActualImportRecord[],
@@ -77,7 +91,8 @@ export class ActualBudgetAdapter implements BudgetRepository {
 
     return this.enqueue(async () => {
       const dryRun = options.dryRun ?? true;
-      const result = await this.api.importTransactions(parsedAccountId.data, parsedRecords.data, {
+      const normalizedRecords = parsedRecords.data.map(omitUndefinedImportFields);
+      const result = await this.api.importTransactions(parsedAccountId.data, normalizedRecords, {
         dryRun,
         reimportDeleted: false,
         defaultCleared: false,
@@ -108,7 +123,6 @@ export class ActualBudgetAdapter implements BudgetRepository {
       if (this.closing || this.closed) throw new ActualAdapterError('CLOSED', 'Actual Budget adapter is closed.');
       await this.ensureInitialized();
       try {
-        // Refresh the local client cache before each operation; writes sync only after explicit persistence.
         await this.api.sync();
         return await operation();
       } catch {

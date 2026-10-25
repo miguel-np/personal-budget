@@ -1,32 +1,24 @@
-# Inventario del paquete documental
+# Inventario de documentación
 
-Este archivo enumera el material incluido en el paquete de documentación de `personal-budget`.
-
-- `.env.example`
-- `.gitignore`
-- `CHANGELOG.md`
-- `CODE_OF_CONDUCT.md`
-- `CONTRIBUTING.md`
-- `LICENSE`
-- `README.md`
-- `SECURITY.md`
-- `SUPPORT.md`
-- `docs/architecture.md`
-- `docs/backup-restore.md`
-- `docs/configuration.md`
-- `docs/decisions/0001-local-first.md`
-- `docs/decisions/0002-actual-budget.md`
-- `docs/decisions/0003-mcp-permissions.md`
-- `docs/development.md`
-- `docs/implementation-status.md`
-- `docs/index.md`
-- `docs/installation.md`
-- `docs/licensing.md`
-- `docs/local-ai.md`
-- `docs/mcp.md`
-- `docs/operations.md`
-- `docs/privacy.md`
-- `docs/roadmap.md`
-- `docs/transactions-and-imports.md`
-- `docs/troubleshooting.md`
-- `docs/usage.md`
+- README.md — resumen, inicio y límites actuales.
+- docs/index.md — índice de guías.
+- docs/architecture.md — componentes y flujo de datos.
+- docs/installation.md — instalación local Windows + WSL2.
+- docs/configuration.md — variables de entorno.
+- docs/version-baseline.md — versiones fijadas y auditoría.
+- docs/development.md — estructura, comandos y pruebas.
+- docs/implementation-status.md — capacidades verificadas y pendientes.
+- docs/roadmap.md — fases y issues.
+- docs/transactions-and-imports.md — formatos de importación y conciliación.
+- docs/local-ai.md — Ollama y límites de la IA.
+- docs/mcp.md — herramientas MCP y permisos.
+- docs/privacy.md — privacidad y flujo de datos.
+- docs/backup-restore.md — copias y recuperación.
+- docs/operations.md — operación local.
+- docs/troubleshooting.md — resolución de problemas.
+- docs/licensing.md — licencia y derechos sobre datos.
+- CONTRIBUTING.md — contribuciones.
+- SECURITY.md — política de seguridad.
+- SUPPORT.md — soporte.
+- CODE_OF_CONDUCT.md — conducta.
+- CHANGELOG.md — historial de cambios.

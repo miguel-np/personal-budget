@@ -40,5 +40,9 @@
     "typescript-eslint": "8.72.0",
     "vitest": "5.0.5",
     "tsx": "4.23.15"
+  },
+  "allowScripts": {
+    "better-sqlite3": true,
+    "esbuild": true
   }
 }

@@ -1,76 +1,74 @@
 # personal-budget
 
-**Gestión local de finanzas personales con una interfaz web y un asistente de IA ejecutado en local.**
+Aplicación local de finanzas personales con una única interfaz web para gastos, presupuestos, ahorro e informes. Un asistente con IA local será una ampliación opcional.
 
-> **Estado del proyecto: especificación inicial.** Este paquete contiene la documentación y las decisiones de diseño de `personal-budget`; no contiene todavía la implementación completa de la web, el adaptador de Actual Budget ni el servidor MCP. Las funciones descritas como objetivo no deben interpretarse como ya implementadas o validadas.
+> **Estado: base técnica P0 añadida; validación de CI e integración real pendientes.** El repositorio contiene un workspace TypeScript, núcleo financiero, adaptador para Actual Budget, API local y una shell React/Vite provisional. El MVP de movimientos e informes todavía no está completo.
 
-## Objetivo
+## Arquitectura
 
-`personal-budget` está pensado para registrar y analizar gastos diarios, mensuales y anuales, visualizar categorías y ahorro, importar movimientos bancarios descargados manualmente y consultar las finanzas mediante un chat. La prioridad es mantener el control de los datos: ejecución local, sin suscripción obligatoria y sin enviar movimientos financieros a una API de IA alojada por terceros.
+- **Actual Budget:** fuente de verdad de cuentas, categorías, presupuestos y movimientos.
+- **@actual-app/api:** acceso programático oficial; no se presupone una API REST de Actual.
+- **packages/finance-core:** normalización de movimientos y cálculos deterministas con importes en unidades monetarias menores.
+- **services/api:** API Fastify local, configuración validada y errores saneados.
+- **apps/web:** shell React/Vite provisional; dashboard y funciones completas serán P1.
+- **Ollama y MCP:** fase posterior, aún no conectados a la interfaz.
 
-## Funciones previstas
+## Requisitos
 
-- Panel con ingresos, gastos, ahorro, tasa de ahorro y evolución histórica.
-- Registro y edición de movimientos, con cuenta, fecha, importe, categoría y descripción.
-- Informes por día, mes, año, categoría y cuenta.
-- Importación de ficheros bancarios compatibles a través de Actual Budget.
-- Presupuestos y seguimiento frente a gasto real.
-- Asistente conversacional conectado a funciones financieras explícitas.
-- Modelo de IA local mediante Ollama.
-- Herramientas MCP locales, limitadas y revisadas.
-- Copias de seguridad y restauración documentadas.
+- Windows + WSL2 (Ubuntu recomendado).
+- Docker/Compose.
+- Node.js 24.22.1 Active LTS y npm compatible.
 
-## Principios
+Consulta [baseline de versiones y política de auditoría](docs/version-baseline.md). Ninguna selección de versiones garantiza ausencia permanente de vulnerabilidades; CI ejecuta auditorías sobre el árbol de dependencias.
 
-1. **Local-first:** la aplicación y el modelo se ejecutan en el equipo del usuario.
-2. **Una sola interfaz:** dashboard, movimientos, informes y chat se presentan en la misma aplicación web local.
-3. **Actual Budget como motor financiero:** la aplicación propia consume la API oficial de Node.js de Actual; no presupone una API REST de Actual.
-4. **Cálculos deterministas:** los importes y agregaciones se calculan mediante código, no se dejan a la estimación libre del modelo.
-5. **Solo lectura por defecto para la IA:** las operaciones que escriban o modifiquen datos requieren confirmación explícita.
-6. **Importación manual:** no se solicita la contraseña del banco ni se configura sincronización bancaria automática por defecto.
-7. **Transparencia:** los límites, errores de datos y supuestos de una previsión deben hacerse visibles.
+## Inicio local
 
-## Arquitectura prevista
+Desde WSL, en la raíz del repositorio:
 
-```text
-Navegador de Windows
-  └── Aplicación web local (React + TypeScript)
-       └── Backend local (Node.js + TypeScript)
-            ├── Adaptador oficial @actual-app/api ── Actual Budget
-            ├── Cliente local de Ollama ─────────── Ollama / modelo local
-            └── Enrutador de herramientas ───────── MCP opcional por stdio
-```
+~~~bash
+nvm install
+nvm use
+npm ci
+cp .env.example .env
+docker compose up -d
+npm run dev:api
+~~~
 
-Consulta [Arquitectura](docs/architecture.md), [instalación en Windows + WSL2](docs/installation.md) y [estado de implementación](docs/implementation-status.md).
+En otra terminal WSL:
+
+~~~bash
+npm run dev:web
+~~~
+
+Abre http://127.0.0.1:5173. La shell actual solo comprueba el estado de la API; el dashboard, registro manual, importación desde la app e informes completos se implementarán en P1. Configura ACTUAL_BUDGET_ID con el Sync ID del presupuesto de Actual.
+
+## Calidad
+
+~~~bash
+npm run lint
+npm run typecheck
+npm run test:coverage
+npm run build
+npm run audit
+npm run audit:production
+~~~
+
+## Privacidad
+
+No se configura sincronización bancaria automática ni se requieren credenciales bancarias. Actual Budget y la API se vinculan a localhost; Ollama será local por defecto cuando se integre. Las pruebas usan datos sintéticos. No subas .env, extractos, bases de datos financieras, logs sensibles, modelos ni copias de seguridad a Git.
+
+La ejecución local reduce la exposición externa, pero no elimina los riesgos de malware, acceso del sistema operativo ni conexiones necesarias para descargar dependencias o actualizaciones. Consulta [privacidad](docs/privacy.md) y [seguridad](SECURITY.md).
 
 ## Documentación
 
-Empieza en el [índice de documentación](docs/index.md). Incluye instalación, uso, importaciones, configuración, IA local, MCP, privacidad, seguridad, copias de seguridad, desarrollo, licencia y resolución de problemas.
-
-## Estado de funciones
-
-Este repositorio documental describe la arquitectura objetivo, no una aplicación lista para ejecutarse. La instalación de Actual Budget y Ollama puede realizarse por separado siguiendo la guía, pero la web `personal-budget` solo podrá arrancar cuando se añada su código y los scripts correspondientes. Consulta [Implementation status](docs/implementation-status.md) antes de seguir las instrucciones de desarrollo.
-
-## Requisitos de destino
-
-- Windows con WSL2 y una distribución Linux, preferiblemente Ubuntu.
-- Docker Desktop con integración WSL2 o Docker Engine y Docker Compose dentro de WSL.
-- Node.js LTS y un gestor de paquetes compatible con el lockfile del futuro proyecto.
-- Actual Budget local.
-- Ollama y un modelo compatible con las funciones de conversación y, si se necesita, llamadas a herramientas.
-
-No se exige GPU para todos los modelos; el rendimiento dependerá del modelo seleccionado y del hardware.
-
-## Inicio rápido: componentes base
-
-Consulta [Instalación](docs/installation.md). Como mínimo, puedes preparar Actual Budget y Ollama de forma independiente. Las instrucciones para iniciar la aplicación web propia se publicarán cuando exista la implementación correspondiente.
-
-## Privacidad y limitaciones
-
-La ejecución local reduce la necesidad de confiar datos financieros a proveedores externos, pero no garantiza por sí sola ausencia total de tráfico de red. La instalación inicial, descargas de modelos, actualizaciones, el propio sistema operativo y las dependencias pueden comunicarse con servicios externos. La documentación de [Privacidad](docs/privacy.md) y [Seguridad](SECURITY.md) describe las medidas y límites.
-
-El proyecto no es un banco, asesor financiero, contable ni fiscal. Los resultados sirven para organizar información personal y no sustituyen asesoramiento profesional.
+- [Índice](docs/index.md)
+- [Instalación WSL2](docs/installation.md)
+- [Arquitectura](docs/architecture.md)
+- [Estado de implementación](docs/implementation-status.md)
+- [Roadmap](docs/roadmap.md)
+- [Desarrollo](docs/development.md)
+- [Licencia](docs/licensing.md)
 
 ## Licencia
 
-El código y la documentación originales se distribuyen bajo la licencia MIT incluida en [LICENSE](LICENSE). Esta elección permite reutilización amplia, incluido uso comercial y derivados bajo otros términos, a condición de conservar los avisos aplicables. No se aplica a los datos financieros del usuario ni reemplaza las licencias de Actual Budget, Ollama, los modelos o las dependencias. Consulta [Licencia y derechos sobre datos](docs/licensing.md) para conocer el alcance y las alternativas consideradas.
+El código y la documentación originales están bajo MIT. Los datos financieros del usuario no forman parte de esta licencia; las dependencias, componentes y modelos de terceros conservan sus propias licencias.

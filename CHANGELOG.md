@@ -1,15 +1,13 @@
 # Changelog
 
-Los cambios relevantes del proyecto se documentarán aquí. El formato sigue una estructura inspirada en Keep a Changelog.
+## Unreleased
 
-## [Unreleased]
-
-- Definida la especificación inicial de `personal-budget`.
-- Documentada la licencia MIT aplicada al repositorio y comparadas las alternativas permisivas y copyleft.
-- Documentada la arquitectura local con Actual Budget, Ollama y una interfaz web unificada.
-- Añadidas guías de instalación para Windows + WSL2, uso, importación, privacidad, seguridad, MCP, copias de seguridad, desarrollo y licencias.
-- Pendiente: implementar y probar la interfaz, el backend, el adaptador de Actual Budget, la integración con Ollama y las herramientas MCP.
-
-## [0.1.0] — documentación inicial
-
-- Primera versión del paquete de documentación.
+- Añadido workspace npm/TypeScript con núcleo financiero, adaptador de Actual Budget, API local y shell web.
+- Añadido núcleo financiero determinista con importes en unidades menores, validación de fechas, exclusión de transferencias y normalización de transacciones divididas.
+- Añadido adaptador inyectable para la API oficial de Actual, operaciones serializadas y dry-run por defecto para importaciones.
+- Añadida API Fastify local con validación de configuración, host loopback, controles de Origin, respuestas saneadas y endpoints de lectura.
+- Añadida shell React/Vite que comprueba el estado del backend; el dashboard completo queda pendiente.
+- Añadido Compose con versión fijada de Actual Budget y puerto limitado a localhost.
+- Añadidas pruebas unitarias y de API, política de cobertura y CI para auditoría, lint, typecheck y build.
+- Añadido lockfile npm inicial por CI.
+- Pendiente: validar resultados de CI, probar adaptador contra Actual local y completar funciones del producto en P1.

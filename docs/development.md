@@ -2,53 +2,57 @@
 
 ## Estado actual
 
-El paquete contiene documentación y una especificación de arquitectura. No existe todavía un código completo que permita ejecutar las pruebas descritas aquí. Esta guía define la práctica esperada cuando se implemente el repositorio.
+Existe un workspace inicial en packages/finance-core, services/actual-adapter, services/api y apps/web. La shell web es provisional; el flujo completo de movimientos, importación, dashboard y chat queda pendiente. No considerar P0 terminado hasta que CI pase y el adaptador se valide contra Actual Budget local.
 
-## Entorno objetivo
+## Entorno
 
-- Windows + WSL2 (Ubuntu recomendado).
-- Git, Node.js LTS y el gestor de paquetes seleccionado por el proyecto.
-- Docker/Compose para ejecutar Actual Budget localmente si se elige esa vía.
-- Ollama para las pruebas opcionales de IA.
+- Windows + WSL2, Ubuntu recomendado.
+- Node.js 24.22.1 y npm compatibles.
+- Docker/Compose para Actual Budget.
+- Ollama solo para una fase futura; no es requisito de los tests normales.
 
-Mantén código y dependencias dentro del filesystem Linux de WSL. No guardes datos personales en el árbol versionado.
+Mantén el código dentro del filesystem Linux de WSL. Nunca uses datos personales reales en fixtures o ejemplos.
 
-## Organización de carpetas propuesta
+## Estructura
 
-```text
+~~~text
 personal-budget/
-├── apps/
-│   └── web/                 # React + TypeScript
-├── services/
-│   ├── api/                 # Backend local
-│   ├── actual-adapter/      # @actual-app/api
-│   └── mcp/                 # Herramientas locales (opcional)
-├── packages/
-│   └── finance-core/        # Cálculos deterministas y tipos
+├── apps/web/                 # React/Vite shell
+├── services/api/             # Fastify local
+├── services/actual-adapter/  # adaptador @actual-app/api
+├── packages/finance-core/    # tipos y cálculos puros
 ├── docs/
-├── .env.example
-├── .gitignore
-├── CHANGELOG.md
-├── LICENSE
-└── README.md
-```
+└── compose.yaml
+~~~
 
-La estructura es una propuesta, no una descripción de directorios que ya existan.
+## Comandos
 
-## Pruebas de aceptación mínimas
+~~~bash
+npm ci
+npm run lint
+npm run typecheck
+npm run test:coverage
+npm run build
+npm run audit
+npm run audit:production
+npm run dev:api
+npm run dev:web
+~~~
 
-- Sumas monetarias exactas y reglas de redondeo.
-- Periodos con inicio/fin de mes, año bisiesto y zona horaria.
-- Traspasos internos excluidos de gasto consolidado.
-- Reembolsos, importes negativos y entradas duplicadas.
-- Diferentes divisas sin sumarlas silenciosamente.
-- CSV con distintos separadores, codificaciones y formato de fecha.
-- Fallos de Actual/Ollama y recuperación sin perder movimientos.
-- Tool calling inválido, prompt injection en conceptos y límites MCP.
-- Verificación de que el backend no escucha en interfaces externas por defecto.
-- Logs saneados y ausencia de secretos en el bundle del frontend.
-- Copia de seguridad y restauración comprobadas.
+## Pruebas mínimas
 
-## Scripts previstos
+- Cálculos exactos en unidades monetarias menores.
+- Límites de mes/año y años bisiestos.
+- Transferencias internas excluidas del gasto consolidado.
+- Reembolsos, categorías ausentes, importes extremos y transacciones divididas.
+- Validación del adaptador y ciclo de vida.
+- Configuración que prohíbe hosts y URLs remotos.
+- Errores de API saneados y límites de parámetros.
+- Integración contra una instancia de Actual con datos sintéticos.
+- Auditoría de dependencias y revisión de secretos en CI.
 
-Los nombres definitivos dependen del package manager y de los archivos de implementación. El repositorio deberá ofrecer comandos equivalentes a instalar dependencias con lockfile, lint, typecheck, tests, build de producción y arranque local. No documentar comandos como activos hasta que estén definidos en `package.json` y hayan sido probados.
+La suite ordinaria no debe necesitar credenciales, banco real, Internet ni un modelo real. Las pruebas de aceptación de Ollama/Actual pueden ser optativas, pero necesarias antes de afirmar que la integración está validada.
+
+## Clean Code y SOLID
+
+Las rutas HTTP dependen de la interfaz BudgetRepository, no de Actual directamente. El núcleo financiero no depende del framework web, de Actual ni de IA. El adaptador encapsula el ciclo de vida y serializa el uso de la API de Actual. Los cambios de contrato deben incluir pruebas y documentación. Prioriza funciones pequeñas, nombres explícitos, validación en fronteras y abstracciones justificadas.

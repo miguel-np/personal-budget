@@ -1,24 +1,22 @@
 # Estado de implementación
 
-**Estado general: documentación y diseño inicial; implementación pendiente.**
+**Estado: base técnica P0 añadida; CI y la integración real siguen pendientes de verificación.**
 
-Este archivo evita confundir el comportamiento deseado con el comportamiento comprobado. Debe actualizarse a medida que se implementen y prueben componentes.
-
-| Área | Estado en este paquete | Criterio para considerarla completada |
+| Área | Estado | Criterio para considerarla completada |
 |---|---|---|
-| Documentación del proyecto | Disponible | Enlaces revisados y alineados con el código final |
-| Actual Budget como gestor de cuentas y movimientos | Arquitectura definida | Instalación y prueba manual de la versión elegida |
-| Adaptador `@actual-app/api` | Pendiente | Consultas de solo lectura probadas y gestión de errores validada |
-| Interfaz web unificada | Pendiente | Vistas de dashboard, movimientos, informes y chat implementadas |
-| Backend de aplicación | Pendiente | API local con validación, límites y pruebas |
-| Importación en Actual Budget | Flujo documentado | Importar ficheros de prueba, revisar duplicados y conciliar saldos |
-| Ollama | Integración prevista | Consulta local confirmada; endpoint sin acceso público |
-| Herramientas MCP | Contrato propuesto | Pruebas de esquema, permisos, timeouts y llamadas reales |
-| Análisis diario/mensual/anual | Reglas definidas | Casos de prueba para fechas, traspasos, devoluciones y distintas divisas |
-| Copias de seguridad | Procedimiento definido | Restauración real probada con un presupuesto de prueba |
-| Seguridad y privacidad | Requisitos documentados | Revisión de red, logs, dependencias, filesystem y tráfico saliente |
-| Licencia | MIT aplicada en el repositorio | Confirmar que el titular acepta el uso comercial y los derivados con licencia distinta |
+| Workspace TypeScript y scripts | Implementado | Lockfile reproducible e instalación limpia validada |
+| Núcleo financiero | Implementado con pruebas unitarias | Cobertura alcanzada y reglas contrastadas con datos sintéticos |
+| Adaptador @actual-app/api | Implementado con interfaz inyectable y pruebas simuladas | Prueba real contra Actual local y versión fijada |
+| API Fastify | Implementada con pruebas de rutas | CI, seguridad y prueba end-to-end validadas |
+| Compose de Actual Budget | Configurado con versión fijada y bind a localhost | Arranque y persistencia probados en WSL2 |
+| Shell React/Vite | Provisional | Dashboard y secciones de usuario en P1 |
+| Registro manual de movimientos | Pendiente | Issue #9 |
+| Dashboard e informes completos | Pendiente | Issue #10 |
+| Importación desde interfaz | Pendiente | Issue #11; Actual UI sirve de momento para importar manualmente |
+| Presupuestos por categoría | Pendiente | Issue #12 |
+| Ollama y chat | Pendiente | Issues #13 y #15 |
+| MCP | Pendiente | Issue #14 |
+| Copia/restauración verificada | Documentada, no ensayada | Issue #17 |
+| Instalación limpia en WSL2 | No ensayada | Issue #18 |
 
-## Criterio de documentación
-
-No marcar una capacidad como implementada porque exista una guía o un ejemplo de configuración. Debe existir el código, una prueba apropiada y una instrucción de uso validada.
+No considerar una función completa solo porque exista código. El cierre requiere pruebas verdes, cobertura adecuada e integración apropiada. La cobertura objetivo está configurada en Vitest; CI debe confirmar que se alcanza.
