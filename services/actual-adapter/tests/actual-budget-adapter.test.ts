@@ -46,6 +46,20 @@ describe('ActualBudgetAdapter', () => {
     await expect(adapter.listTransactions('   ', '2026-10-01', '2026-10-31')).rejects.toMatchObject({ code: 'INVALID_INPUT' });
   });
 
+  it('fails clearly when optional budget capabilities are not provided by the API contract', async () => {
+    const adapter = new ActualBudgetAdapter(config, createApi());
+    await expect(adapter.getBudgetMonth('2026-10')).rejects.toMatchObject({ code: 'UPSTREAM_FAILURE' });
+    await expect(adapter.getBudgetAllocations('2026-10')).rejects.toMatchObject({ code: 'UPSTREAM_FAILURE' });
+    await expect(adapter.setBudgetAmount('2026-10', 'food', 1_000)).rejects.toMatchObject({ code: 'UPSTREAM_FAILURE' });
+  });
+
+  it('reads transactions for a valid account and date period', async () => {
+    const api = createApi();
+    const adapter = new ActualBudgetAdapter(config, api);
+    await expect(adapter.listTransactions('account-1', '2026-10-01', '2026-10-31')).resolves.toEqual([]);
+    expect(api.getTransactions).toHaveBeenCalledWith('account-1', '2026-10-01', '2026-10-31');
+  });
+
   it('reads official budget month data and persists explicit category allocation updates', async () => {
     const monthRecord: ActualBudgetMonthRecord = {
       month: '2026-10',
