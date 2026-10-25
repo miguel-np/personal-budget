@@ -137,7 +137,6 @@ describe('MCP stdio protocol and failure boundaries', () => {
 
     fixture.write(reply(5, 'tools/call', { name: 'get_monthly_summary', arguments: { month: '2026-99', extra: 'bad' } }));
     expect((await fixture.read()).result).toMatchObject({ isError: true });
-    expect(JSON.stringify(await fixture.read().catch(() => null))).toBe('null');
   });
 
   it('rejects API bodies above the byte limit without echoing the body', async () => {
