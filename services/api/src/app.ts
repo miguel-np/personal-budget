@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
+import Fastify, { LogController, type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import helmet from '@fastify/helmet';
 import { calculateSummary, isIsoDate, normalizeTransactions, validatePeriod } from '@personal-budget/finance-core';
 import type { BudgetRepository } from '@personal-budget/finance-core';
@@ -57,10 +57,10 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       redact: { paths: ['req.headers.authorization', 'req.headers.cookie', 'req.headers["set-cookie"]'], censor: '[REDACTED]' },
       serializers: { req(request) { return { method: request.method, id: request.id }; } },
     },
-    disableRequestLogging: true,
+    logController: new LogController({ disableRequestLogging: true }),
     bodyLimit: 1_048_576,
     requestTimeout: 30_000,
-    maxParamLength: 128,
+    routerOptions: { maxParamLength: 128 },
     forceCloseConnections: true,
   });
 

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BudgetAccount, BudgetCategory, BudgetRepository, BudgetTransaction } from '@personal-budget/finance-core';
+import { ActualAdapterError } from '@personal-budget/actual-adapter';
 import { buildApp } from '../src/app.js';
 import type { AppConfig } from '../src/config.js';
 
@@ -117,6 +118,72 @@ describe('local API', () => {
       savingsMinor: 190_000, excludedTransferCount: 1,
     });
     expect(repository.listTransactions).toHaveBeenCalledWith('account-1', '2026-10-01', '2026-10-31');
+  });
+
+
+  it('returns transactions for a validated account and date range', async () => {
+    const repository = createRepository();
+    const app = await createTestApp(repository);
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/transactions?accountId=account-1&startDate=2026-10-01&endDate=2026-10-31',
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toEqual(transactions);
+    expect(repository.listTransactions).toHaveBeenCalledWith('account-1', '2026-10-01', '2026-10-31');
+  });
+
+  it('maps unavailable Actual sessions without disclosing configuration', async () => {
+    const notConfigured = createRepository({
+      listAccounts: vi.fn(async () => { throw new ActualAdapterError('NOT_CONFIGURED', 'Configure private server settings.'); }),
+    });
+    const notConfiguredApp = await createTestApp(notConfigured);
+    const notConfiguredResponse = await notConfiguredApp.inject({ method: 'GET', url: '/api/v1/accounts' });
+    expect(notConfiguredResponse.statusCode).toBe(503);
+    expect(notConfiguredResponse.json().error.code).toBe('NOT_CONFIGURED');
+    expect(notConfiguredResponse.body).not.toContain('private server settings');
+
+    const closed = createRepository({
+      listAccounts: vi.fn(async () => { throw new ActualAdapterError('CLOSED', 'private upstream details'); }),
+    });
+    const closedApp = await createTestApp(closed);
+    const closedResponse = await closedApp.inject({ method: 'GET', url: '/api/v1/accounts' });
+    expect(closedResponse.statusCode).toBe(503);
+    expect(closedResponse.json().error.code).toBe('CLOSED');
+    expect(closedResponse.body).not.toContain('private upstream details');
+  });
+
+  it('sanitizes category and summary upstream failures', async () => {
+    const repository = createRepository({
+      listCategories: vi.fn(async () => { throw new Error('sensitive category dump'); }),
+    });
+    const app = await createTestApp(repository);
+    const categoriesResponse = await app.inject({ method: 'GET', url: '/api/v1/categories' });
+    const summaryResponse = await app.inject({
+      method: 'GET',
+      url: '/api/v1/reports/summary?startDate=2026-10-01&endDate=2026-10-31',
+    });
+    expect(categoriesResponse.statusCode).toBe(502);
+    expect(summaryResponse.statusCode).toBe(502);
+    expect(categoriesResponse.body).not.toContain('sensitive category dump');
+    expect(summaryResponse.body).not.toContain('sensitive category dump');
+  });
+
+  it('does not request transactions from closed accounts in a consolidated report', async () => {
+    const closedAccount: BudgetAccount = { ...accounts[0]!, id: 'closed-account', name: 'Cuenta cerrada', closed: true };
+    const listTransactions = vi.fn(async () => transactions);
+    const repository = createRepository({
+      listAccounts: vi.fn(async () => [...accounts, closedAccount]),
+      listTransactions,
+    });
+    const app = await createTestApp(repository);
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/reports/summary?startDate=2026-10-01&endDate=2026-10-31',
+    });
+    expect(response.statusCode).toBe(200);
+    expect(listTransactions).toHaveBeenCalledTimes(1);
+    expect(listTransactions).toHaveBeenCalledWith('account-1', '2026-10-01', '2026-10-31');
   });
 
   it('does not expose upstream exception details', async () => {

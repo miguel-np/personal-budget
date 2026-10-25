@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { BudgetTransaction } from '@personal-budget/finance-core';
 import { ActualBudgetAdapter } from '../src/actual-budget-adapter.js';
+import { mapActualAccount, mapActualCategory } from '../src/actual-api-contract.js';
 import type { ActualApiContract, ActualImportRecord } from '../src/actual-api-contract.js';
 
 function createApi(overrides: Partial<ActualApiContract> = {}): ActualApiContract {
@@ -20,6 +21,52 @@ function createApi(overrides: Partial<ActualApiContract> = {}): ActualApiContrac
 const config = { serverURL: 'http://127.0.0.1:5006', dataDir: './.local/actual-api', budgetId: 'budget-uuid' };
 
 describe('ActualBudgetAdapter', () => {
+
+  it('maps absent optional Actual fields to explicit defaults', () => {
+    expect(mapActualAccount({ id: 'account-2', name: 'Ahorro' })).toEqual({
+      id: 'account-2', name: 'Ahorro', closed: false, offBudget: false, currentBalanceMinor: null,
+    });
+    expect(mapActualCategory({ id: 'other', name: 'Otros', group_id: 'expenses' })).toEqual({
+      id: 'other', name: 'Otros', groupId: 'expenses', isIncome: false,
+    });
+  });
+
+  it('cleans up the API session when budget initialization fails', async () => {
+    const api = createApi({ downloadBudget: vi.fn(async () => { throw new Error('private sync failure'); }) });
+    const adapter = new ActualBudgetAdapter(config, api);
+    await expect(adapter.listAccounts()).rejects.toMatchObject({ code: 'UPSTREAM_FAILURE' });
+    expect(api.shutdown).toHaveBeenCalledTimes(1);
+    expect(api.shutdown).toHaveBeenCalledOnce();
+  });
+
+  it('sanitizes sync errors and rejects an empty account id', async () => {
+    const api = createApi({ sync: vi.fn(async () => { throw new Error('sensitive local payload'); }) });
+    const adapter = new ActualBudgetAdapter(config, api);
+    await expect(adapter.listAccounts()).rejects.toMatchObject({ code: 'UPSTREAM_FAILURE', message: 'Actual Budget operation failed.' });
+    await expect(adapter.listTransactions('   ', '2026-10-01', '2026-10-31')).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+  });
+
+  it('syncs explicitly persisted imports and never asks to reimport deleted transactions', async () => {
+    const api = createApi();
+    const adapter = new ActualBudgetAdapter(config, api);
+    const input: ActualImportRecord[] = [{ date: '2026-10-10', amount: -1299, payee_name: 'Supermercado' }];
+    await adapter.importTransactions('account-1', input, { dryRun: false });
+    expect(api.importTransactions).toHaveBeenCalledWith('account-1', input, {
+      dryRun: false, reimportDeleted: false, defaultCleared: false, payeeNameNormalization: 'original',
+    });
+    expect(api.sync).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports a sanitized failure if shutdown fails', async () => {
+    const api = createApi({ shutdown: vi.fn(async () => { throw new Error('private state'); }) });
+    const adapter = new ActualBudgetAdapter(config, api);
+    await adapter.listAccounts();
+    await expect(adapter.close()).rejects.toMatchObject({
+      code: 'UPSTREAM_FAILURE',
+      message: 'Actual Budget session could not shut down cleanly.',
+    });
+  });
+
   it('initializes lazily once, maps records and shuts down cleanly', async () => {
     const api = createApi();
     const adapter = new ActualBudgetAdapter(config, api);
