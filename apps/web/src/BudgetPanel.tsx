@@ -59,7 +59,7 @@ function parseAllocation(raw: string): number | null {
 }
 async function getBudget(month: string, signal?: AbortSignal): Promise<BudgetData> {
   const response = await fetch('/api/v1/budgets/' + encodeURIComponent(month), {
-    headers: { Accept: 'application/json' }, signal,
+    headers: { Accept: 'application/json' }, ...(signal ? { signal } : {}),
   });
   const payload = await response.json().catch(() => ({})) as ApiResponse<BudgetData>;
   if (!response.ok) throw new Error(payload.error?.message ?? 'No se ha podido consultar el presupuesto de Actual Budget.');
