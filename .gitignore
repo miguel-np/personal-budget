@@ -1,21 +1,18 @@
-# Entorno y secretos
+# Environment and secrets
 .env
 .env.*
 !.env.example
 *.pem
 *.key
-
-# Node / build
+# JavaScript / TypeScript
 node_modules/
 dist/
 build/
 coverage/
-.next/
+*.tsbuildinfo
 .vite/
 .turbo/
-*.tsbuildinfo
-
-# Aplicación y datos personales
+# Local finance data
 /data/
 /data-*
 /actual-data/
@@ -27,6 +24,7 @@ coverage/
 *.db-wal
 *.actual
 *.budget
+/*.csv
 /*.ofx
 /*.qfx
 /*.qif
@@ -39,15 +37,14 @@ coverage/
 /imports/
 /exports/
 /reports-private/
-
-# Modelos, cachés y logs
+/.local/
+# Model weights, caches and logs
 /.ollama/
 /models/
 /.cache/
 /logs/
 *.log
 *.pid
-
 # OS / editor
 .DS_Store
 Thumbs.db

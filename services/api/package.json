@@ -1,0 +1,19 @@
+{
+  "name": "@personal-budget/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@personal-budget/actual-adapter": "0.1.0",
+    "@personal-budget/finance-core": "0.1.0",
+    "@fastify/helmet": "13.2.0",
+    "fastify": "5.12.7",
+    "zod": "4.6.7"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js"
+  }
+}

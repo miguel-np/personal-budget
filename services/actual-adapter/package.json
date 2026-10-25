@@ -1,0 +1,21 @@
+{
+  "name": "@personal-budget/actual-adapter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@personal-budget/finance-core": "0.1.0",
+    "@actual-app/api": "26.10.0",
+    "zod": "4.6.7"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}

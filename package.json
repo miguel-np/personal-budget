@@ -1,0 +1,44 @@
+{
+  "name": "personal-budget",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local-first personal finance web application",
+  "engines": {
+    "node": ">=24.22.1 <25",
+    "npm": ">=11.6.0"
+  },
+  "workspaces": [
+    "packages/finance-core",
+    "services/actual-adapter",
+    "services/api",
+    "apps/web"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace=@personal-budget/finance-core && npm run build --workspace=@personal-budget/actual-adapter && npm run build --workspace=@personal-budget/api && npm run build --workspace=@personal-budget/web",
+    "typecheck": "npm run build --workspace=@personal-budget/finance-core && npm run build --workspace=@personal-budget/actual-adapter && npm run typecheck --workspace=@personal-budget/api && npm run typecheck --workspace=@personal-budget/web && tsc --noEmit -p tsconfig.tests.json",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest",
+    "audit": "npm audit --audit-level=high",
+    "audit:production": "npm audit --omit=dev --audit-level=high",
+    "dev:api": "npm run build --workspace=@personal-budget/finance-core && npm run build --workspace=@personal-budget/actual-adapter && npm run dev --workspace=@personal-budget/api",
+    "dev:web": "npm run dev --workspace=@personal-budget/web"
+  },
+  "dependencies": {
+    "@actual-app/api": "26.10.0",
+    "@fastify/helmet": "13.2.0",
+    "fastify": "5.12.7",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@vitest/coverage-v8": "5.0.5",
+    "eslint": "10.13.0",
+    "typescript": "7.0.2",
+    "typescript-eslint": "8.72.0",
+    "vitest": "5.0.5",
+    "tsx": "4.23.15"
+  }
+}

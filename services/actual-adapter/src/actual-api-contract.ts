@@ -1,0 +1,78 @@
+import type { BudgetAccount, BudgetCategory, BudgetTransaction } from '@personal-budget/finance-core';
+
+export interface ActualAccountRecord {
+  readonly id: string;
+  readonly name: string;
+  readonly closed?: boolean;
+  readonly offbudget?: boolean;
+  readonly balance_current?: number | null;
+}
+
+export interface ActualCategoryRecord {
+  readonly id: string;
+  readonly name: string;
+  readonly group_id: string;
+  readonly is_income?: boolean;
+}
+
+export interface ActualImportRecord {
+  readonly date: string;
+  readonly amount: number;
+  readonly payee_name?: string;
+  readonly category?: string;
+  readonly notes?: string;
+  readonly imported_id?: string;
+  readonly cleared?: boolean;
+}
+
+export interface ActualImportResult {
+  readonly errors: readonly unknown[];
+  readonly added: readonly string[];
+  readonly updated: readonly string[];
+}
+
+export interface ActualApiContract {
+  init(config: { readonly dataDir: string; readonly serverURL: string; readonly password?: string }): Promise<void>;
+  downloadBudget(budgetId: string): Promise<void>;
+  sync(): Promise<void>;
+  shutdown(): Promise<void>;
+  getAccounts(): Promise<readonly ActualAccountRecord[]>;
+  getCategories(): Promise<readonly ActualCategoryRecord[]>;
+  getTransactions(accountId: string, startDate: string, endDate: string): Promise<readonly BudgetTransaction[]>;
+  importTransactions(
+    accountId: string,
+    transactions: readonly ActualImportRecord[],
+    options?: {
+      readonly defaultCleared?: boolean;
+      readonly dryRun?: boolean;
+      readonly reimportDeleted?: boolean;
+      readonly payeeNameNormalization?: 'title-case' | 'original';
+    },
+  ): Promise<ActualImportResult>;
+}
+
+export interface ActualAdapterConfig {
+  readonly serverURL: string;
+  readonly password?: string;
+  readonly dataDir: string;
+  readonly budgetId?: string;
+}
+
+export function mapActualAccount(account: ActualAccountRecord): BudgetAccount {
+  return {
+    id: account.id,
+    name: account.name,
+    closed: account.closed ?? false,
+    offBudget: account.offbudget ?? false,
+    currentBalanceMinor: account.balance_current ?? null,
+  };
+}
+
+export function mapActualCategory(category: ActualCategoryRecord): BudgetCategory {
+  return {
+    id: category.id,
+    name: category.name,
+    groupId: category.group_id,
+    isIncome: category.is_income ?? false,
+  };
+}
