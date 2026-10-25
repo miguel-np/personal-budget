@@ -74,7 +74,7 @@ describe('local API', () => {
     const app = await createTestApp(repository);
     const response = await app.inject({ method: 'POST', url: '/api/v1/assistant/chat', payload: { question: 'x', startDate: '2020-01-01', endDate: '2026-01-01' } });
     expect(response.statusCode).toBe(400);
-    expect(response.json().error.code).toBe('INVALID_REQUEST');
+    expect(response.json().error.code).toBe('INVALID_PERIOD');
     expect(repository.listAccounts).not.toHaveBeenCalled();
   });
 

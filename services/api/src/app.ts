@@ -6,6 +6,8 @@ import { ActualAdapterError } from '@personal-budget/actual-adapter';
 import type { ActualBudgetMonthRecord, ActualImportRecord, ActualImportResult } from '@personal-budget/actual-adapter';
 import { z, ZodError } from 'zod';
 import type { AppConfig } from './config.js';
+import { LocalAiClient, LocalAiUnavailableError } from './local-ai.js';
+import type { AssistantContext } from './local-ai.js';
 
 const TransactionQuerySchema = z.object({
   accountId: z.string().trim().min(1).max(128).optional(),
@@ -38,6 +40,18 @@ const ImportRequestSchema = z.object({
 }).strict();
 const BudgetMonthSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'month must use YYYY-MM.');
 const BudgetAmountSchema = z.object({ amountMinor: z.number().int().refine(Number.isSafeInteger, 'amount must be a safe integer.').min(0) }).strict();
+const AssistantRequestSchema = z.object({
+  question: z.string().trim().min(1).max(2_000),
+  startDate: z.string().refine(isIsoDate, 'startDate must be a valid YYYY-MM-DD date.'),
+  endDate: z.string().refine(isIsoDate, 'endDate must be a valid YYYY-MM-DD date.'),
+  previousStartDate: z.string().refine(isIsoDate, 'previousStartDate must be a valid YYYY-MM-DD date.').optional(),
+  previousEndDate: z.string().refine(isIsoDate, 'previousEndDate must be a valid YYYY-MM-DD date.').optional(),
+  accountId: z.string().trim().min(1).max(128).optional(),
+}).strict().superRefine((value, context) => {
+  if ((value.previousStartDate === undefined) !== (value.previousEndDate === undefined)) {
+    context.addIssue({ code: 'custom', message: 'Both previous period dates must be supplied together.' });
+  }
+});
 const MAX_REPORT_DAYS = 366 * 5;
 
 export interface AppDependencies {
@@ -74,6 +88,13 @@ function assertPeriod(startDate: string, endDate: string): void {
 
 export async function buildApp(dependencies: AppDependencies): Promise<FastifyInstance> {
   const { repository, config } = dependencies;
+  const localAi = new LocalAiClient({
+    enabled: config.aiEnabled,
+    baseURL: config.ollamaBaseURL,
+    ...(config.ollamaModel ? { model: config.ollamaModel } : {}),
+    timeoutMs: config.ollamaTimeoutMs,
+    maxContextChars: config.aiMaxContextChars,
+  });
   const app = Fastify({
     logger: dependencies.logger ?? {
       level: config.logLevel,
@@ -111,6 +132,64 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   app.get('/ready', async (_request, reply) => {
     if (!repository.isConfigured) return reply.code(503).send({ status: 'not_configured' });
     return { status: 'configured' };
+  });
+
+  app.get('/api/v1/assistant/status', async () => localAi.status());
+
+  app.post('/api/v1/assistant/chat', async (request, reply) => {
+    try {
+      const query = AssistantRequestSchema.parse(request.body);
+      assertPeriod(query.startDate, query.endDate);
+      if (query.previousStartDate && query.previousEndDate) {
+        assertPeriod(query.previousStartDate, query.previousEndDate);
+      }
+      if (!config.aiEnabled) {
+        return reply.code(503).send({ error: { code: 'AI_DISABLED', message: 'El asistente local está desactivado. La aplicación financiera sigue disponible.' } });
+      }
+      const status = await localAi.status();
+      if (status.status !== 'available') {
+        return reply.code(503).send({ error: { code: 'AI_UNAVAILABLE', message: 'Ollama o el modelo configurado no están disponibles en local.' } });
+      }
+      const [allAccounts, categories] = await Promise.all([repository.listAccounts(), repository.listCategories()]);
+      const accounts = allAccounts.filter((account) => !account.closed &&
+        (query.accountId === undefined || account.id === query.accountId));
+      if (query.accountId && accounts.length === 0) {
+        return reply.code(400).send({ error: { code: 'INVALID_ACCOUNT', message: 'Elige una cuenta abierta del presupuesto local.' } });
+      }
+      const summarize = async (startDate: string, endDate: string) => {
+        const groups = await Promise.all(accounts.map((account) => repository.listTransactions(account.id, startDate, endDate)));
+        return calculateSummary(normalizeTransactions(groups.flat()), categories, {
+          startDate, endDate, currency: config.budgetCurrency,
+        });
+      };
+      const summary = await summarize(query.startDate, query.endDate);
+      const comparison = query.previousStartDate && query.previousEndDate
+        ? await summarize(query.previousStartDate, query.previousEndDate) : undefined;
+      const context: AssistantContext = {
+        question: query.question,
+        summary: {
+          currency: summary.currency, startDate: summary.startDate, endDate: summary.endDate,
+          incomeMinor: summary.incomeMinor, expenseMinor: summary.expenseMinor,
+          savingsMinor: summary.savingsMinor, savingsRatePercent: summary.savingsRatePercent,
+          transactionCount: summary.transactionCount, excludedTransferCount: summary.excludedTransferCount,
+        },
+        expensesByCategory: summary.expensesByCategory.slice(0, 15).map((item) => ({
+          categoryName: item.categoryName, amountMinor: item.amountMinor, transactionCount: item.transactionCount,
+        })),
+        ...(comparison ? { comparison: {
+          startDate: comparison.startDate, endDate: comparison.endDate,
+          incomeMinor: comparison.incomeMinor, expenseMinor: comparison.expenseMinor, savingsMinor: comparison.savingsMinor,
+        } } : {}),
+      };
+      const answer = await localAi.explain(context);
+      return { data: { summary, ...(comparison ? { comparison } : {}), answer, answerKind: 'qualitative_explanation' } };
+    } catch (error) {
+      if (error instanceof LocalAiUnavailableError) {
+        return reply.code(503).send({ error: { code: 'AI_UNAVAILABLE', message: 'Ollama no ha podido completar la explicación local.' } });
+      }
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
   });
 
   app.get('/api/v1/accounts', async (_request, reply) => {
