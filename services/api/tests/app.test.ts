@@ -189,7 +189,7 @@ describe('local API', () => {
     const response = await app.inject({ method: 'GET', url: '/api/v1/budgets/2026-10' });
     expect(response.statusCode).toBe(200);
     expect(response.json().data.categories[0]).toMatchObject({ categoryId: 'food', budgetedMinor: 1_500, state: 'budgeted' });
-    expect(response.json().data.notes.at(-1)).toContain('no puede distinguirse');
+    expect(response.json().data.notes.at(-1)).toContain('no pueden distinguirse');
   });
 
   it('normalizes Actual monthly category budget amounts and deviation', async () => {
