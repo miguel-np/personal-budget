@@ -16,6 +16,10 @@ export interface ActualBudgetMonthGroup {
   readonly hidden?: boolean;
   readonly categories?: readonly ActualBudgetMonthCategory[];
 }
+export interface ActualBudgetAllocation {
+  readonly categoryId: string;
+  readonly amountMinor: number;
+}
 export interface ActualBudgetMonthRecord {
   readonly month: string;
   readonly categoryGroups: readonly ActualBudgetMonthGroup[];
@@ -66,6 +70,7 @@ export interface ActualApiContract {
   getAccounts(): Promise<readonly ActualAccountRecord[]>;
   getCategories(): Promise<readonly ActualCategoryRecord[]>;
   getBudgetMonth?(month: string): Promise<ActualBudgetMonthRecord>;
+  getBudgetAllocations?(month: string): Promise<readonly ActualBudgetAllocation[]>;
   setBudgetAmount?(month: string, categoryId: string, amount: number): Promise<null>;
   getTransactions(accountId: string, startDate: string, endDate: string): Promise<readonly BudgetTransaction[]>;
   importTransactions(
