@@ -322,7 +322,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     catch (error) { const normalized = sanitizedErrorResponse(error); return reply.code(normalized.statusCode).send(normalized.body); }
   });
   app.get('/api/v1/preferences/currency', async (_request, reply) => {
-    try { return { data: await currencyPreferences() }; }
+    try { return { data: { ...(await currencyPreferences()), budgetCurrency: config.budgetCurrency } }; }
     catch (error) { const normalized = sanitizedErrorResponse(error); return reply.code(normalized.statusCode).send(normalized.body); }
   });
   app.put('/api/v1/preferences/currency', async (request, reply) => {
@@ -339,7 +339,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         }
       }
       await writeCurrencyPreferences(config.actualDataDir, preferences);
-      return { data: await currencyPreferences() };
+      return { data: { ...(await currencyPreferences()), budgetCurrency: config.budgetCurrency } };
     } catch (error) {
       const normalized = sanitizedErrorResponse(error);
       return reply.code(normalized.statusCode).send(normalized.body);
