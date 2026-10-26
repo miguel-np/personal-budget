@@ -14,7 +14,7 @@ function assertNonEmpty(value: string, field: string): void {
 
 function toEntry(
   transaction: BudgetTransaction,
-  inherited?: { readonly account?: string; readonly date?: string; readonly transfer_id?: string | null },
+  inherited?: { readonly account?: string; readonly date?: string; readonly transfer_id?: string | null; readonly currencyCode?: string | null },
 ): LedgerEntry {
   const accountId = transaction.account || inherited?.account;
   const date = transaction.date || inherited?.date;
