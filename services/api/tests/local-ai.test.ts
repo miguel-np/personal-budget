@@ -8,7 +8,7 @@ const context: AssistantContext = {
   summary: {
     currency: 'EUR', startDate: '2026-10-01', endDate: '2026-10-31',
     incomeMinor: 200_000, expenseMinor: 10_000, savingsMinor: 190_000,
-    savingsRatePercent: 95, transactionCount: 2, excludedTransferCount: 1,
+    savingsRatePercent: 95, transactionCount: 2, excludedTransferCount: 1, unconvertedTransactionCount: 0, warnings: [],
   },
   expensesByCategory: [{ categoryName: 'Alimentación', amountMinor: 10_000, transactionCount: 1 }],
 };
