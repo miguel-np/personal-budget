@@ -1,5 +1,6 @@
 import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,6 +17,7 @@ let runtimeExit;
 let runtimeSpawnError;
 let runtimeReady = false;
 let runtimeOutput = '';
+let apiPortBlocker;
 
 function startRuntime() {
   runtimeExit = undefined;
@@ -169,6 +171,43 @@ async function snapshotDirectory(directory) {
   return JSON.stringify(snapshot);
 }
 
+async function assertPartialStartupFailureCleansUp() {
+  apiPortBlocker = createServer((_request, response) => {
+    response.writeHead(503, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ status: 'test-port-blocker' }));
+  });
+  await new Promise((resolveListen, reject) => {
+    apiPortBlocker.once('error', reject);
+    apiPortBlocker.listen(3000, '127.0.0.1', resolveListen);
+  });
+
+  startRuntime();
+  await waitUntil(
+    async () => runtimeExit !== undefined,
+    15_000,
+    'El runtime no terminó cuando la API no pudo enlazar el puerto ocupado.',
+    false,
+  );
+  if (!runtimeExit || runtimeExit.code === 0 || runtimeExit.signal !== null) {
+    throw new Error(`El runtime debía fallar limpiamente con código distinto de cero si la API no puede arrancar; salida recibida: ${JSON.stringify(runtimeExit)}.`);
+  }
+  await waitUntil(
+    async () => (await request('http://127.0.0.1:4173/')).response === null,
+    5_000,
+    'El frontend parcial quedó activo después de fallar el arranque de la API; posible proceso huérfano.',
+    false,
+  );
+  const blocker = await request('http://127.0.0.1:3000/health');
+  if (blocker.status !== 503) throw new Error('La prueba perdió el proceso externo que ocupaba el puerto de la API.');
+  const snapshot = await snapshotDirectory(dataDir);
+  if (snapshot !== initialDataSnapshot) {
+    throw new Error('El directorio de datos sintéticos cambió durante un arranque fallido.');
+  }
+  await new Promise((resolveClose) => apiPortBlocker.close(resolveClose));
+  apiPortBlocker = undefined;
+  console.log('Partial-startup failure cleanup passed.');
+}
+
 try {
   for (let iteration = 1; iteration <= 2; iteration += 1) {
     startRuntime();
@@ -177,11 +216,15 @@ try {
     await assertStoppedAndReleased();
     console.log(`Runtime lifecycle iteration ${iteration}/2 passed.`);
   }
-  console.log('Runtime lifecycle OK: SIGINT/SIGTERM, readiness, port release, restart and isolated preference snapshot verified.');
+  await assertPartialStartupFailureCleansUp();
+  console.log('Runtime lifecycle OK: SIGINT/SIGTERM, restart, readiness, port release, isolated preference preservation and partial-startup cleanup verified.');
 } catch (error) {
   process.stderr.write((error instanceof Error ? error.message : String(error)) + '\n');
   process.exitCode = 1;
 } finally {
+  if (apiPortBlocker?.listening) {
+    await new Promise((resolveClose) => apiPortBlocker.close(resolveClose));
+  }
   if (runtime && !runtimeExit && !runtimeSpawnError) {
     try { await stopRuntime(); } catch { /* Preserve the failure and prevent the test from hanging. */ }
   }
