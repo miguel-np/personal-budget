@@ -41,15 +41,24 @@ async function waitFor(url, name, timeoutMs = 30_000) {
 async function shutdown(code = 0) {
   if (stopping) return;
   stopping = true; exitCode = code;
-  const live = children.filter(({ child }) => child.exitCode === null && !child.killed);
+  // A failed spawn may emit "error" without ever receiving a PID or an "exit" event.
+  const live = children.filter(({ child }) => child.pid !== undefined && child.exitCode === null && child.signalCode === null);
   if (live.length) {
-    const forceTimer = setTimeout(() => { for (const { child } of live) if (child.exitCode === null) child.kill('SIGKILL'); }, 5_000);
+    // Subscribe before sending signals so fast exits cannot be missed between kill() and listener registration.
+    const closed = live.map(({ child }) => new Promise((done) => {
+      if (child.exitCode !== null || child.signalCode !== null) return done();
+      child.once('close', done);
+    }));
+    const forceTimer = setTimeout(() => {
+      for (const { child } of live) {
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      }
+    }, 5_000);
     forceTimer.unref();
-    for (const { child } of live) child.kill('SIGTERM');
-    await Promise.all(live.map(({ child }) => new Promise((done) => {
-      if (child.exitCode !== null) return done();
-      child.once('exit', done);
-    })));
+    for (const { child } of live) {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
+    }
+    await Promise.all(closed);
     clearTimeout(forceTimer);
   }
   process.exitCode = exitCode;
