@@ -8,16 +8,16 @@ import { buildApp } from '../src/app.js';
 import type { AppConfig } from '../src/config.js';
 
 const accounts: readonly BudgetAccount[] = [
-  { id: 'account-1', name: 'Cuenta corriente', closed: false, offBudget: false, currentBalanceMinor: 200_000 },
+  { id: 'account-1', name: 'Cuenta corriente', currencyCode: 'EUR', closed: false, offBudget: false, currentBalanceMinor: 200_000 },
 ];
 const categories: readonly BudgetCategory[] = [
   { id: 'salary', name: 'Salario', groupId: 'income', isIncome: true },
   { id: 'food', name: 'Alimentación', groupId: 'spend', isIncome: false },
 ];
 const transactions: readonly BudgetTransaction[] = [
-  { id: 'income-1', account: 'account-1', date: '2026-10-01', amount: 200_000, category: 'salary' },
-  { id: 'expense-1', account: 'account-1', date: '2026-10-02', amount: -10_000, category: 'food' },
-  { id: 'transfer-1', account: 'account-1', date: '2026-10-02', amount: -50_000, transfer_id: 'transfer-pair' },
+  { id: 'income-1', account: 'account-1', currencyCode: 'EUR', date: '2026-10-01', amount: 200_000, category: 'salary' },
+  { id: 'expense-1', account: 'account-1', currencyCode: 'EUR', date: '2026-10-02', amount: -10_000, category: 'food' },
+  { id: 'transfer-1', account: 'account-1', currencyCode: 'EUR', date: '2026-10-02', amount: -50_000, transfer_id: 'transfer-pair' },
 ];
 
 function createRepository(overrides: Partial<BudgetRepository> = {}): BudgetRepository {
