@@ -71,6 +71,7 @@ export function PlanningPanel({ currency }: { currency: string }) {
   const [candidates, setCandidates] = useState<readonly RecurringCandidate[]>([]);
   const [suggestions, setSuggestions] = useState<readonly CategorySuggestion[]>([]);
   const [discarded, setDiscarded] = useState<readonly string[]>([]);
+  const [pendingChanges, setPendingChanges] = useState<readonly { transactionId: string; categoryId: string }[]>([]);
   const [chosenCategory, setChosenCategory] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -106,29 +107,66 @@ export function PlanningPanel({ currency }: { currency: string }) {
     setDiscarded((previous) => [...previous, transactionId]);
   }
 
-  async function apply(transactionIds: readonly string[]): Promise<void> {
-    if (transactionIds.length === 0 || busy) return;
+  async function previewApply(transactionIds: readonly string[]): Promise<void> {
+    if (transactionIds.length === 0 || busy || pendingChanges.length > 0) return;
     setBusy(true); setError(''); setNotice('');
     try {
-      const body = {
-        startDate: suggestionPeriod.startDate,
-        endDate: suggestionPeriod.endDate,
-        commit: true,
-        transactions: transactionIds.map((transactionId) => ({
-          transactionId,
-          categoryId: chosenCategory[transactionId] ?? suggestions.find((suggestion) => suggestion.transactionId === transactionId)?.suggestedCategoryId,
-        })),
-      };
+      const changes = transactionIds.map((transactionId) => ({
+        transactionId,
+        categoryId: chosenCategory[transactionId] ?? suggestions.find((suggestion) => suggestion.transactionId === transactionId)?.suggestedCategoryId ?? '',
+      }));
+      if (changes.some((change) => !change.categoryId)) throw new Error('Una o más sugerencias ya no tienen una categoría válida.');
       const response = await fetch('/api/v1/insights/categorize', {
         method: 'POST', headers: { 'content-type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          startDate: suggestionPeriod.startDate,
+          endDate: suggestionPeriod.endDate,
+          commit: false,
+          transactions: changes,
+        }),
       });
-      const payload = await jsonResponse<{ preview: boolean; changes: number }>(response);
-      setNotice('Se actualizaron ' + payload.data?.changes + ' movimiento(s) en Actual Budget tras tu confirmación.');
-      setDiscarded((previous) => [...previous, ...transactionIds]);
+      const payload = await jsonResponse<{ preview: boolean; requested?: number; changes: number }>(response);
+      if (!payload.data?.preview || payload.data.changes !== changes.length) {
+        throw new Error('La API no confirmó una previsualización de solo lectura para todos los cambios.');
+      }
+      setPendingChanges(changes);
+      setNotice('Previsualización: ' + changes.length + ' cambio(s) propuesto(s). No se ha escrito ningún cambio.');
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'No se pudo aplicar la sugerencia.');
+      setError(caught instanceof Error ? caught.message : 'No se pudo previsualizar la sugerencia.');
     } finally { setBusy(false); }
+  }
+
+  async function commitPreview(): Promise<void> {
+    if (pendingChanges.length === 0 || busy) return;
+    const changes = [...pendingChanges];
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const response = await fetch('/api/v1/insights/categorize', {
+        method: 'POST', headers: { 'content-type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          startDate: suggestionPeriod.startDate,
+          endDate: suggestionPeriod.endDate,
+          commit: true,
+          transactions: changes,
+        }),
+      });
+      const payload = await jsonResponse<{ preview: boolean; requested?: number; changes: number }>(response);
+      if (payload.data?.preview || payload.data?.changes !== changes.length) {
+        throw new Error('La API no confirmó que todos los cambios previstos se hayan aplicado.');
+      }
+      setNotice('Se actualizaron ' + payload.data.changes + ' movimiento(s) en Actual Budget tras la confirmación explícita.');
+      setDiscarded((previous) => [...previous, ...changes.map((change) => change.transactionId)]);
+      setPendingChanges([]);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'No se pudo aplicar la sugerencia. Comprueba el estado en Actual Budget antes de reintentar.');
+      // Preserve the preview so the user can inspect it; never auto-retry a write.
+    } finally { setBusy(false); }
+  }
+
+  function cancelPreview(): void {
+    setPendingChanges([]);
+    setNotice('Previsualización cancelada. No se ha escrito ningún cambio.');
+    setError('');
   }
 
   return (
@@ -177,16 +215,26 @@ export function PlanningPanel({ currency }: { currency: string }) {
                     </select>
                   </label>
                   <div className="button-row">
-                    <button className="button primary small" type="button" disabled={busy} onClick={() => { void apply([suggestion.transactionId]); }}>Aplicar</button>
+                    <button className="button primary small" type="button" disabled={busy} onClick={() => { void previewApply([suggestion.transactionId]); }}>Previsualizar</button>
                     <button className="button small" type="button" disabled={busy} onClick={() => discard(suggestion.transactionId)}>Descartar</button>
                   </div>
                 </div>
               </div>
             ))}
             <div className="button-row">
-              <button className="button primary" type="button" disabled={busy || visibleSuggestions.length === 0} onClick={() => { void apply(visibleSuggestions.map((suggestion) => suggestion.transactionId)); }}>
-                {busy ? 'Aplicando…' : 'Aplicar todas las sugerencias visibles'}
+              <button className="button primary" type="button" disabled={busy || pendingChanges.length > 0 || visibleSuggestions.length === 0} onClick={() => { void previewApply(visibleSuggestions.map((suggestion) => suggestion.transactionId)); }}>
+                {busy ? 'Preparando…' : 'Previsualizar todas las sugerencias visibles'}
               </button>
+            </div>
+          </div>
+        ) : null}
+        {pendingChanges.length > 0 ? (
+          <div className="panel confirmation-panel" role="group" aria-label="Confirmación de categorización">
+            <h4>Revisar cambios antes de guardar</h4>
+            <p>{pendingChanges.length} movimiento(s) se modificarán en Actual Budget. La previsualización no ha escrito nada; confirma para aplicar exactamente las categorías revisadas.</p>
+            <div className="button-row">
+              <button className="button primary" type="button" disabled={busy} onClick={() => { void commitPreview(); }}>{busy ? 'Guardando…' : 'Confirmar aplicación'}</button>
+              <button className="button secondary" type="button" disabled={busy} onClick={cancelPreview}>Cancelar</button>
             </div>
           </div>
         ) : null}

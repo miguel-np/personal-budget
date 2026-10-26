@@ -315,6 +315,9 @@ export function MovementTools({ accounts, categories, currency, onImported }: Mo
   async function previewCsv() {
     setCsvError('');
     setCsvMessage('');
+    // A failed re-preview must not leave an older import confirmation actionable.
+    setCsvRecords(null);
+    setCsvResult(null);
     setCsvBusy(true);
     try {
       if (!csvRows.length) throw new Error('Carga primero un archivo CSV.');
