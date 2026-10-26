@@ -208,7 +208,8 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     preferences: CurrencyPreferences,
   ): { readonly transactions: readonly BudgetTransaction[]; readonly warnings: readonly string[] } {
     const converted: BudgetTransaction[] = [];
-    const warnings = new Set<string>();
+    let unconvertedCount = 0;
+    let firstWarning: string | undefined;
     const convertOne = (transaction: BudgetTransaction): BudgetTransaction | null => {
       const sourceCurrency = normalizeCurrencyCode(transaction.currencyCode) ??
         normalizeCurrencyCode(transaction.currency_code);
@@ -225,7 +226,8 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         preferences.exchangeRates,
       );
       if (conversion.amountMinor === null) {
-        if (conversion.warning) warnings.add(conversion.warning);
+        unconvertedCount += 1;
+        if (!firstWarning && conversion.warning) firstWarning = conversion.warning;
         return null;
       }
       return { ...transaction, amount: conversion.amountMinor, currencyCode: preferences.displayCurrency, currency_code: preferences.displayCurrency };
@@ -235,7 +237,13 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       const item = convertOne(transaction);
       if (item) converted.push(item);
     }
-    return { transactions: converted, warnings: [...warnings] };
+    return {
+      transactions: converted,
+      warnings: unconvertedCount === 0 ? [] : [
+        unconvertedCount + ' movimiento(s) no se consolidaron por falta de divisa nativa o tipo de cambio válido.',
+        ...(firstWarning ? [firstWarning] : []),
+      ],
+    };
   }
 
   app.get('/api/v1/assistant/status', async () => localAi.status());
