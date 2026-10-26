@@ -67,6 +67,8 @@ try {
     console.log('El estado de Actual y del asistente se muestra por separado en la interfaz.');
   }
 } catch (error) {
-  process.stderr.write((error instanceof Error ? error.message : 'No se pudo iniciar la aplicación local.') + '\n');
-  await shutdown(1);
+  if (!stopping) {
+    process.stderr.write((error instanceof Error ? error.message : 'No se pudo iniciar la aplicación local.') + '\n');
+    await shutdown(1);
+  }
 }
