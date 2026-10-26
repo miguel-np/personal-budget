@@ -389,13 +389,11 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     try {
       const query = TransactionQuerySchema.parse(request.query);
       assertPeriod(query.startDate, query.endDate);
-      const [allAccounts, preferences] = await Promise.all([repository.listAccounts(), currencyPreferences()]);
-      const accounts = allAccounts.filter((account) =>
-        !account.closed && (query.accountId === undefined || account.id === query.accountId),
-      );
-      if (query.accountId !== undefined && accounts.length === 0) {
-        return reply.code(400).send({ error: { code: 'INVALID_ACCOUNT', message: 'Choose an open account from the configured budget.' } });
-      }
+      const [allAccounts, preferences, preference] = await Promise.all([
+        repository.listAccounts(), currencyPreferences(), accountScopePreference(),
+      ]);
+      const scope = resolveAccountScope(allAccounts, preference, query.accountId);
+      const accounts = scope.accounts;
       const groups = await Promise.all(accounts.map(async (account) => {
         const nativeCurrency = accountNativeCurrency(account, preferences);
         const transactions = await repository.listTransactions(account.id, query.startDate, query.endDate);
@@ -474,7 +472,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
           },
         };
       });
-      return { data: page, pagination: { total, limit: query.limit, offset: query.offset, sortBy: query.sortBy, order: query.order } };
+      return { data: page, pagination: { total, limit: query.limit, offset: query.offset, sortBy: query.sortBy, order: query.order }, accountScope: scope.metadata };
     } catch (error) {
       const normalized = sanitizedErrorResponse(error);
       return reply.code(normalized.statusCode).send(normalized.body);
