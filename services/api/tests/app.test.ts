@@ -810,6 +810,7 @@ describe('local API', () => {
       'account-2': [
         { id: 'savings-income', account: 'account-2', currencyCode: 'EUR', date: '2026-10-04', amount: 50_000, category: 'salary' },
         { id: 'savings-expense', account: 'account-2', currencyCode: 'EUR', date: '2026-10-05', amount: -5_000, category: 'food' },
+        { id: 'transfer-to-savings', account: 'account-2', currencyCode: 'EUR', date: '2026-10-03', amount: 50_000, transfer_id: 'transfer-1' },
       ],
     };
     const listTransactions = vi.fn(async (accountId: string) => txByAccount[accountId] ?? []);
@@ -824,6 +825,15 @@ describe('local API', () => {
     expect(initial.json().data).toMatchObject({
       mode: 'all', accountIds: [], activeAccountIds: ['account-1', 'account-2'],
       label: 'Todas las cuentas abiertas (2)',
+    });
+
+    const allSummary = await app.inject({
+      method: 'GET', url: '/api/v1/reports/summary?startDate=2026-10-01&endDate=2026-10-31',
+    });
+    expect(allSummary.statusCode).toBe(200);
+    expect(allSummary.json().data).toMatchObject({
+      incomeMinor: 250_000, expenseMinor: 15_000, savingsMinor: 235_000, excludedTransferCount: 2,
+      accountScope: { mode: 'all', accountIds: ['account-1', 'account-2'] },
     });
 
     const selected = await app.inject({
@@ -841,7 +851,7 @@ describe('local API', () => {
     });
     expect(report.statusCode).toBe(200);
     expect(report.json().data).toMatchObject({
-      incomeMinor: 50_000, expenseMinor: 5_000, savingsMinor: 45_000,
+      incomeMinor: 50_000, expenseMinor: 5_000, savingsMinor: 45_000, excludedTransferCount: 1,
       accountScope: { mode: 'selected', accountIds: ['account-2'], accountNames: ['Ahorro'] },
     });
     expect(listTransactions).toHaveBeenCalledTimes(1);
@@ -860,6 +870,19 @@ describe('local API', () => {
     const attemptsToExpand = await app.inject({
       method: 'GET', url: '/api/v1/transactions?accountId=account-1&startDate=2026-10-01&endDate=2026-10-31',
     });
+    const multiScope = await app.inject({
+      method: 'PUT', url: '/api/v1/preferences/accounts',
+      payload: { mode: 'selected', accountIds: ['account-1', 'account-2'] },
+    });
+    expect(multiScope.statusCode).toBe(200);
+    const multiReport = await app.inject({
+      method: 'GET', url: '/api/v1/reports/summary?startDate=2026-10-01&endDate=2026-10-31',
+    });
+    expect(multiReport.json().data).toMatchObject({
+      incomeMinor: 250_000, expenseMinor: 15_000, excludedTransferCount: 2,
+      accountScope: { mode: 'selected', accountIds: ['account-1', 'account-2'] },
+    });
+
     expect(attemptsToExpand.statusCode).toBe(400);
     expect(attemptsToExpand.json().error.code).toBe('ACCOUNT_OUTSIDE_SCOPE');
     expect(attemptsToExpand.json().error.message).toMatch(/no puede ampliar/i);
