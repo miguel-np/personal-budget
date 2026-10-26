@@ -244,8 +244,9 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   .check-field { grid-column: span 2; }
 }
 @media (max-width: 900px) {
-  .app-shell { grid-template-columns: 1fr; }
-  .sidebar { position: relative; top: auto; height: auto; min-height: 0; padding: 16px 18px; border-right: 0; border-bottom: 1px solid var(--border-subtle); }
+  /* A 1fr track has an automatic min-content minimum; long financial controls can widen the page. */
+  .app-shell { grid-template-columns: minmax(0, 1fr); }
+  .sidebar { min-width: 0; position: relative; top: auto; height: auto; min-height: 0; padding: 16px 18px; border-right: 0; border-bottom: 1px solid var(--border-subtle); }
   .brand { padding: 0 2px; }
   .brand-mark { width: 36px; height: 36px; flex-basis: 36px; border-radius: 10px; }
   .nav-list { display: flex; gap: 4px; margin-top: 17px; overflow-x: auto; }
