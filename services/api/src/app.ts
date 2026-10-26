@@ -652,15 +652,15 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     try {
       const query = SummaryQuerySchema.parse(request.query);
       assertPeriod(query.startDate, query.endDate);
-      const [accounts, categories, preferences] = await Promise.all([repository.listAccounts(), repository.listCategories(), currencyPreferences()]);
-      const activeAccounts = accounts.filter((account) => !account.closed);
-      const transactions = await transactionsForAccounts(activeAccounts, query.startDate, query.endDate, preferences);
-      const entries = normalizeTransactions(transactions);
-      return {
-        data: calculateSummary(entries, categories, {
-          startDate: query.startDate, endDate: query.endDate, currency: preferences.displayCurrency, exchangeRates: preferences.exchangeRates,
-        }),
-      };
+      const [accounts, categories, preferences, preference] = await Promise.all([
+        repository.listAccounts(), repository.listCategories(), currencyPreferences(), accountScopePreference(),
+      ]);
+      const scope = resolveAccountScope(accounts, preference);
+      const transactions = await transactionsForAccounts(scope.accounts, query.startDate, query.endDate, preferences);
+      const summary = calculateSummary(normalizeTransactions(transactions), categories, {
+        startDate: query.startDate, endDate: query.endDate, currency: preferences.displayCurrency, exchangeRates: preferences.exchangeRates,
+      });
+      return { data: { ...summary, accountScope: scope.metadata } };
     } catch (error) {
       const normalized = sanitizedErrorResponse(error);
       return reply.code(normalized.statusCode).send(normalized.body);
@@ -671,15 +671,17 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     accountId: string | undefined,
     startDate: string,
     endDate: string,
-  ): Promise<{ readonly accounts: readonly { readonly id: string; readonly name: string }[]; readonly transactions: readonly BudgetTransaction[] }> {
-    const [allAccounts, preferences] = await Promise.all([repository.listAccounts(), currencyPreferences()]);
-    const accounts = allAccounts.filter((account) =>
-      !account.closed && (accountId === undefined || account.id === accountId));
-    if (accountId !== undefined && accounts.length === 0) {
-      throw new ActualAdapterError('INVALID_INPUT', 'Choose an open account from the configured budget.');
-    }
-    const transactions = await transactionsForAccounts(accounts, startDate, endDate, preferences);
-    return { accounts, transactions };
+  ): Promise<{
+    readonly accounts: readonly { readonly id: string; readonly name: string; readonly closed: boolean; readonly currencyCode?: string | null }[];
+    readonly transactions: readonly BudgetTransaction[];
+    readonly scope: AccountScopeMetadata;
+  }> {
+    const [allAccounts, preferences, preference] = await Promise.all([
+      repository.listAccounts(), currencyPreferences(), accountScopePreference(),
+    ]);
+    const resolved = resolveAccountScope(allAccounts, preference, accountId);
+    const transactions = await transactionsForAccounts(resolved.accounts, startDate, endDate, preferences);
+    return { accounts: resolved.accounts, transactions, scope: resolved.metadata };
   }
 
   function monthsBefore(date: string, months: number): string {
