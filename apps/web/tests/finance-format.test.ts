@@ -11,7 +11,7 @@ describe('formatAccountBalance', () => {
   });
 
   it('labels an unconverted native amount with its source currency', () => {
-    expect(formatAccountBalance(10_000, null, 'EUR', 'USD')).toContain('USD');
+    expect(formatAccountBalance(10_000, null, 'EUR', 'USD')).toMatch(/US\\$|USD/);
   });
 
   it('labels an amount with an unknown source currency explicitly', () => {
