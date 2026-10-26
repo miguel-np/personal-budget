@@ -109,6 +109,8 @@ npm run audit
 npm run audit:production
 ~~~
 
+El comando `npm run test:runtime:lifecycle` necesita que los puertos 3000 y 4173 estén libres. Detén antes cualquier instancia de desarrollo o de uso diario; la prueba utiliza un presupuesto no configurado y un directorio temporal, sin conectar con Actual ni modificar datos financieros.
+
 La CI ejecuta los controles en Linux y en Windows nativo. Para cerrar la validación de instalación también hay que ejecutar estos comandos en un checkout limpio de WSL2 y completar la prueba opcional de aceptación con un presupuesto de prueba de Actual. Un workflow Windows verde no prueba por sí solo la integración WSL2 ni el acceso a un servidor Actual real.
 
 
