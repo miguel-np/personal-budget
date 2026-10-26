@@ -75,7 +75,6 @@ export function BudgetPanel({ currency, onBudgetUpdated }: { currency: string; o
     const controller = new AbortController();
     setLoading(true);
     setError('');
-    setNotice('');
     void getBudget(month, controller.signal)
       .then((result) => { if (!controller.signal.aborted) setBudget(result); })
       .catch((cause: unknown) => {
@@ -127,7 +126,7 @@ export function BudgetPanel({ currency, onBudgetUpdated }: { currency: string; o
     <section className="content-section" aria-labelledby="budget-heading">
       <div className="section-heading">
         <div><p className="eyebrow">PLANIFICACIÓN Y DESVIACIONES</p><h2 id="budget-heading">Presupuestos por categoría</h2></div>
-        <label className="field-label month-picker">Mes del presupuesto<input type="month" value={month} onChange={(event) => { setMonth(event.currentTarget.value); setEditingId(''); }} /></label>
+        <label className="field-label month-picker">Mes del presupuesto<input type="month" value={month} onChange={(event) => { setMonth(event.currentTarget.value); setEditingId(''); setNotice(''); setError(''); }} /></label>
       </div>
       {loading ? <div className="loading-state" role="status">Consultando el presupuesto de Actual Budget…</div> : null}
       {error ? <div className="notice notice-error" role="alert"><div><strong>No se ha podido operar con el presupuesto</strong><p>{error}</p></div><button className="button secondary" type="button" onClick={() => setReloadKey((value) => value + 1)}>Reintentar</button></div> : null}
