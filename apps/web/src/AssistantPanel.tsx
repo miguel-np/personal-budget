@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { formatMoney as sharedFormatMoney } from './finance-format.js';
 
 interface Summary {
   currency: string; startDate: string; endDate: string; incomeMinor: number; expenseMinor: number;
@@ -25,9 +26,7 @@ function previousMonth(month: string): string {
   const date = new Date(Date.UTC(Number(parts[0]), Number(parts[1]) - 2, 1));
   return String(date.getUTCFullYear()).padStart(4, '0') + '-' + String(date.getUTCMonth() + 1).padStart(2, '0');
 }
-function money(value: number, currency: string): string {
-  return new Intl.NumberFormat('es-ES', { style: 'currency', currency }).format(value / 100);
-}
+function money(value: number, currency: string): string { return sharedFormatMoney(value, currency); }
 async function jsonResponse<T>(response: Response): Promise<T> {
   const payload = await response.json() as T & { error?: { message?: string } };
   if (!response.ok) throw new Error(payload.error?.message || 'El asistente local no está disponible.');
