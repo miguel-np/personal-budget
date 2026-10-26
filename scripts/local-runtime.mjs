@@ -24,6 +24,17 @@ process.env.APP_PORT = '3000';
 function start(name, args, cwd = root) {
   const child = spawn(process.execPath, args, { cwd, env: process.env, stdio: 'inherit', windowsHide: true });
   children.push({ name, child });
+  child.once('spawn', () => {
+    // shutdown() can run before an asynchronous spawn has received its PID.
+    if (stopping) {
+      child.kill('SIGTERM');
+      const forceTimer = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      }, 5_000);
+      forceTimer.unref();
+      child.once('close', () => clearTimeout(forceTimer));
+    }
+  });
   child.once('error', () => { process.stderr.write('No se pudo iniciar ' + name + '. Comprueba las dependencias y ejecuta npm ci.\n'); void shutdown(1); });
   child.once('exit', (code, signal) => {
     if (!stopping) { process.stderr.write(name + ' terminó inesperadamente (' + (signal || code) + '). Se detendrán los demás procesos.\n'); void shutdown(code === 0 ? 1 : code ?? 1); }
