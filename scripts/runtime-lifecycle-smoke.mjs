@@ -18,7 +18,7 @@ runtime.once('exit', (code, signal) => {
 async function request(url) {
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(1_000) });
-    return { ok: response.ok, response };
+    return { ok: response.ok, status: response.status, response };
   } catch {
     return { ok: false, response: null };
   }
@@ -71,10 +71,10 @@ try {
   }, 40_000, 'La UI compilada y la API no quedaron disponibles dentro del tiempo límite.');
 
   const readiness = await request('http://127.0.0.1:4173/ready');
-  if (!readiness.ok) throw new Error('El endpoint de readiness no respondió correctamente.');
+  if (!readiness.response) throw new Error('El endpoint de readiness no respondió.');
   const readinessBody = await readiness.response.json();
-  if (readinessBody.status !== 'not_configured') {
-    throw new Error('El entorno sintético debía indicar status=not_configured; se recibió otro estado.');
+  if (readiness.status !== 503 || readinessBody.status !== 'not_configured') {
+    throw new Error(`Se esperaba HTTP 503 y status=not_configured; se recibió HTTP ${readiness.status} y status=${String(readinessBody.status)}.`);
   }
 
   await stopRuntime();
