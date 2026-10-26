@@ -35,7 +35,7 @@ function toEntry(
     id: transaction.id,
     accountId,
     date,
-    currencyCode: transaction.currencyCode !== undefined ? transaction.currencyCode : transaction.currency_code !== undefined ? transaction.currency_code : inherited?.currencyCode,
+    ...(transaction.currencyCode !== undefined ? { currencyCode: transaction.currencyCode } : transaction.currency_code !== undefined ? { currencyCode: transaction.currency_code } : inherited?.currencyCode === undefined ? {} : { currencyCode: inherited.currencyCode }),
     amountMinor: transaction.amount,
     categoryId: transaction.category ?? null,
     transferId,
