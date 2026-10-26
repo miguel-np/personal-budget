@@ -2,7 +2,7 @@
 
 ## Estado actual
 
-Existe un workspace inicial en packages/finance-core, services/actual-adapter, services/api y apps/web. La shell web es provisional; el flujo completo de movimientos, importación, dashboard y chat queda pendiente. No considerar P0 terminado hasta que CI pase y el adaptador se valide contra Actual Budget local.
+El repositorio contiene una aplicación local React/Vite, API Fastify, adaptador oficial de Actual, cálculos deterministas, importación CSV con confirmación, presupuestos por categoría, informes, planificación y asistente local opcional. El modo de uso diario y las pruebas de navegador se ejecutan sobre el frontend compilado. La suite sintética no sustituye la aceptación manual específica de Windows + WSL2.
 
 ## Entorno
 
@@ -26,6 +26,15 @@ personal-budget/
 ~~~
 
 ## Comandos
+
+~~~bash
+npm ci
+npm run doctor
+npm run start:local
+~~~
+
+El uso diario compila y sirve la aplicación en `127.0.0.1:4173`, con API en `127.0.0.1:3000`. Ctrl+C detiene ambos procesos. No se requieren comandos de desarrollo ni Ollama para las funciones financieras básicas. Usa `npm run dev:api` y `npm run dev:web` únicamente para desarrollo con recarga en caliente.
+
 
 ~~~bash
 npm ci
@@ -61,3 +70,14 @@ Las rutas HTTP dependen de la interfaz BudgetRepository, no de Actual directamen
 
 La suite unitaria usa un contrato inyectable para que CI no necesite un presupuesto real. Para demostrar la compatibilidad con el servidor y API fijados, prepara un presupuesto local de prueba y sigue el comando de [instalación](installation.md#7-prueba-de-aceptación-con-un-presupuesto-local-existente-opcional). La prueba es de solo lectura y no debe usar un presupuesto con datos sensibles para CI o capturas.
 
+
+
+## Pruebas E2E de navegador
+
+~~~bash
+npm run build
+npx playwright install chromium
+npm run test:e2e
+~~~
+
+La suite se ejecuta en Chromium contra el frontend compilado y una API de fixtures sintéticos; no accede al presupuesto local, backups ni Ollama. Consulta [Pruebas de navegador](browser-testing.md) y [Sistema de diseño](design-system.md).

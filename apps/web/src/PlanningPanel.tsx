@@ -208,6 +208,7 @@ export function PlanningPanel({ currency }: { currency: string }) {
                   <label className="field-label compact-label">
                     Categoría
                     <select
+                      disabled={busy || pendingChanges.length > 0}
                       value={chosenCategory[suggestion.transactionId] ?? suggestion.suggestedCategoryId}
                       onChange={(event) => setChosenCategory((previous) => ({ ...previous, [suggestion.transactionId]: event.currentTarget.value }))}
                     >
@@ -215,8 +216,8 @@ export function PlanningPanel({ currency }: { currency: string }) {
                     </select>
                   </label>
                   <div className="button-row">
-                    <button className="button primary small" type="button" disabled={busy} onClick={() => { void previewApply([suggestion.transactionId]); }}>Previsualizar</button>
-                    <button className="button small" type="button" disabled={busy} onClick={() => discard(suggestion.transactionId)}>Descartar</button>
+                    <button className="button primary small" type="button" disabled={busy || pendingChanges.length > 0} onClick={() => { void previewApply([suggestion.transactionId]); }}>Previsualizar</button>
+                    <button className="button small" type="button" disabled={busy || pendingChanges.length > 0} onClick={() => discard(suggestion.transactionId)}>Descartar</button>
                   </div>
                 </div>
               </div>
