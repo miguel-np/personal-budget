@@ -193,7 +193,8 @@ describe('local API', () => {
     const accountsResponse = await app.inject({ method: 'GET', url: '/api/v1/accounts' });
     const categoriesResponse = await app.inject({ method: 'GET', url: '/api/v1/categories' });
     expect(accountsResponse.statusCode).toBe(200);
-    expect(accountsResponse.json().data).toEqual(accounts);
+    expect(accountsResponse.json().data).toMatchObject(accounts);
+    expect(accountsResponse.json().data[0]).toMatchObject({ currencyCode: 'EUR', nativeCurrencyCode: 'EUR', displayCurrency: 'EUR', displayBalanceMinor: 200_000 });
     expect(categoriesResponse.statusCode).toBe(200);
     expect(categoriesResponse.json().data).toEqual(categories);
     expect(repository.listAccounts).toHaveBeenCalledTimes(1);
