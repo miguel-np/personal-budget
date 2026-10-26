@@ -467,10 +467,9 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       if (typeof importer.importTransactions !== 'function') {
         return reply.code(503).send({ error: { code: 'IMPORT_NOT_SUPPORTED', message: 'The configured local adapter does not support transaction imports.' } });
       }
-      const [accounts, categories, preferences] = await Promise.all([
+      const [accounts, categories] = await Promise.all([
         repository.listAccounts(),
         repository.listCategories(),
-        currencyPreferences(),
       ]);
       if (!accounts.some((account) => account.id === parsed.accountId && !account.closed)) {
         return reply.code(400).send({ error: { code: 'INVALID_ACCOUNT', message: 'Choose an open account from the configured budget.' } });
