@@ -276,6 +276,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
           incomeMinor: summary.incomeMinor, expenseMinor: summary.expenseMinor,
           savingsMinor: summary.savingsMinor, savingsRatePercent: summary.savingsRatePercent,
           transactionCount: summary.transactionCount, excludedTransferCount: summary.excludedTransferCount,
+          unconvertedTransactionCount: summary.unconvertedTransactionCount, warnings: summary.warnings,
         },
         expensesByCategory: summary.expensesByCategory.slice(0, 15).map((item) => ({
           categoryName: item.categoryName, amountMinor: item.amountMinor, transactionCount: item.transactionCount,
