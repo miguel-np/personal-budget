@@ -172,6 +172,23 @@ jobs:
         env:
           ACTUAL_API_PACKAGE_DIR: ${{ runner.temp }}/actual-api-269
         run: npm run test:update:acceptance -- seed
+      - name: Stop and restart Actual without deleting its data volume
+        run: |
+          docker compose stop --timeout 30 actual
+          docker compose start actual
+      - name: Wait for Actual after container restart
+        run: |
+          for attempt in $(seq 1 45); do
+            if curl --silent --show-error --fail --max-time 3 http://127.0.0.1:5006/ -o /dev/null; then
+              echo "Actual Budget answered after its container restart."
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose logs actual
+          exit 1
+      - name: Verify synthetic inventory after container restart
+        run: npm run test:update:acceptance -- verify
       - name: Verify update preflight
         run: npm run update:actual -- preflight --to actualbudget/actual-server:26.10.0
       - name: Update from 26.9.0 to 26.10.0
