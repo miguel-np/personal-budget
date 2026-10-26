@@ -54,8 +54,21 @@ interface CategoryTotal {
   amountMinor: number;
   transactionCount: number;
 }
+interface AccountScopePreference {
+  mode: 'all' | 'selected';
+  accountIds: string[];
+  label?: string;
+  activeAccountIds?: string[];
+  accountNames?: string[];
+  warning?: string;
+}
+interface AccountScopeDraft {
+  mode: 'all' | 'selected';
+  accountIds: string[];
+}
 interface Summary {
   currency: string;
+  accountScope?: { mode: 'all' | 'selected'; accountIds: readonly string[]; accountNames: readonly string[]; label: string };
   startDate: string;
   endDate: string;
   incomeMinor: number;
@@ -246,6 +259,11 @@ export function App() {
   const [currencySaving, setCurrencySaving] = useState(false);
   const [currencySaveError, setCurrencySaveError] = useState('');
   const [currencySaveNotice, setCurrencySaveNotice] = useState('');
+  const [accountScope, setAccountScope] = useState<AccountScopePreference | null>(null);
+  const [accountScopeDraft, setAccountScopeDraft] = useState<AccountScopeDraft>({ mode: 'all', accountIds: [] });
+  const [accountScopeSaving, setAccountScopeSaving] = useState(false);
+  const [accountScopeSaveError, setAccountScopeSaveError] = useState('');
+  const [accountScopeSaveNotice, setAccountScopeSaveNotice] = useState('');
 
   const route = window.location.pathname.replace(/\/+$/, '') || '/';
   const pageTitle = NAV_ITEMS.find((item) => item.href === route)?.label ?? 'Resumen';
@@ -259,10 +277,11 @@ export function App() {
     void (async () => {
       try {
         await apiData<{ status: string }>('/ready', controller.signal);
-        const [accountsResult, categoriesResult, currencyResult] = await Promise.all([
+        const [accountsResult, categoriesResult, currencyResult, accountScopeResult] = await Promise.all([
           apiData<Account[]>('/api/v1/accounts', controller.signal),
           apiData<Category[]>('/api/v1/categories', controller.signal),
           apiData<CurrencyPreferences>('/api/v1/preferences/currency', controller.signal),
+          apiData<AccountScopePreference>('/api/v1/preferences/accounts', controller.signal),
         ]);
         if (controller.signal.aborted) return;
         setAccounts(accountsResult);
@@ -273,6 +292,8 @@ export function App() {
           exchangeRates: currencyResult.exchangeRates ?? [],
           budgetCurrency: currencyResult.budgetCurrency ?? 'EUR',
         });
+        setAccountScope(accountScopeResult);
+        setAccountScopeDraft({ mode: accountScopeResult.mode, accountIds: [...(accountScopeResult.accountIds ?? [])] });
         setConnection('connected');
       } catch (error) {
         if (controller.signal.aborted) return;
@@ -360,11 +381,45 @@ export function App() {
 
   const categoriesById = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
   const accountsById = useMemo(() => new Map(accounts.map((account) => [account.id, account])), [accounts]);
+  const movementAccounts = useMemo(() => accounts.filter((account) => !account.closed &&
+    (accountScope?.mode !== 'selected' || accountScope.accountIds.includes(account.id))), [accounts, accountScope]);
   const filteredTransactions = transactions;
   const pageSize = 20;
   const pageCount = Math.max(1, Math.ceil(transactionTotal / pageSize));
   const currentPage = Math.min(page, pageCount);
   const visibleTransactions = filteredTransactions;
+
+
+  async function saveAccountScope(): Promise<void> {
+    if (accountScopeSaving) return;
+    setAccountScopeSaving(true);
+    setAccountScopeSaveError('');
+    setAccountScopeSaveNotice('');
+    try {
+      const payload: AccountScopeDraft = accountScopeDraft.mode === 'all'
+        ? { mode: 'all', accountIds: [] }
+        : { mode: 'selected', accountIds: [...new Set(accountScopeDraft.accountIds)] };
+      const response = await fetch('/api/v1/preferences/accounts', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const result = await response.json() as ApiPayload<AccountScopePreference>;
+      if (!response.ok || !result.data) {
+        throw new Error(result.error?.message ?? 'No se pudo guardar el ámbito de cuentas.');
+      }
+      setAccountScope(result.data);
+      setAccountScopeDraft({ mode: result.data.mode, accountIds: [...result.data.accountIds] });
+      setAccountFilter('all');
+      setPage(1);
+      setRefreshKey((value) => value + 1);
+      setAccountScopeSaveNotice('Ámbito de análisis guardado localmente.');
+    } catch (error) {
+      setAccountScopeSaveError(error instanceof Error ? error.message : 'No se pudo guardar el ámbito de cuentas.');
+    } finally {
+      setAccountScopeSaving(false);
+    }
+  }
 
   function retryBoot() {
     window.location.reload();
@@ -429,6 +484,58 @@ export function App() {
 
         {connection === 'connected' && bootLoaded ? (
           <>
+
+            <section className="panel account-scope-panel" aria-labelledby="account-scope-heading">
+              <div className="section-heading">
+                <div><p className="eyebrow">ÁMBITO GLOBAL DE ANÁLISIS</p><h2 id="account-scope-heading">Cuentas incluidas</h2></div>
+                <span className="date-badge">{accountScope?.label ?? 'Cargando ámbito…'}</span>
+              </div>
+              <p className="setting-hint">El ámbito se aplica a resumen, tendencias, informes, asistente y planificación. El filtro de Movimientos solo puede estrechar esta selección. Los presupuestos por categoría siguen siendo los del presupuesto completo de Actual.</p>
+              {accountScope?.warning ? <p className="form-alert error" role="alert">{accountScope.warning} Selecciona «Todas las cuentas abiertas» o guarda una selección válida para volver a habilitar los análisis.</p> : null}
+              <div className="account-scope-mode" role="radiogroup" aria-label="Modo del ámbito de cuentas">
+                <label className="check-field">
+                  <input type="radio" name="account-scope-mode" checked={accountScopeDraft.mode === 'all'}
+                    onChange={() => setAccountScopeDraft({ mode: 'all', accountIds: [] })} />
+                  Todas las cuentas abiertas
+                </label>
+                <label className="check-field">
+                  <input type="radio" name="account-scope-mode" checked={accountScopeDraft.mode === 'selected'}
+                    onChange={() => setAccountScopeDraft((previous) => ({ mode: 'selected', accountIds: previous.mode === 'selected' ? previous.accountIds : [] }))} />
+                  Seleccionar cuentas
+                </label>
+              </div>
+              {accountScopeDraft.mode === 'selected' ? (
+                <div className="account-scope-options" role="group" aria-label="Cuentas seleccionadas para análisis">
+                  {accounts.filter((account) => !account.closed).length === 0
+                    ? <p className="muted-copy">No hay cuentas abiertas disponibles.</p>
+                    : accounts.filter((account) => !account.closed).map((account) => (
+                      <label className="check-field" key={account.id}>
+                        <input type="checkbox" checked={accountScopeDraft.accountIds.includes(account.id)}
+                          onChange={(event) => setAccountScopeDraft((previous) => {
+                            const ids = event.currentTarget.checked
+                              ? [...previous.accountIds, account.id]
+                              : previous.accountIds.filter((id) => id !== account.id);
+                            return { mode: 'selected', accountIds: ids };
+                          })} />
+                        {account.name}
+                      </label>
+                    ))}
+                  {accountScopeDraft.accountIds.length === 0 ? <p className="setting-hint">No hay cuentas seleccionadas; los totales serán cero hasta seleccionar alguna.</p> : null}
+                </div>
+              ) : null}
+              <div className="button-row">
+                <button className="button primary" type="button" disabled={accountScopeSaving}
+                  onClick={() => { void saveAccountScope(); }}>
+                  {accountScopeSaving ? 'Guardando…' : 'Guardar ámbito'}
+                </button>
+                <button className="button secondary" type="button" disabled={accountScopeSaving}
+                  onClick={() => setAccountScopeDraft({ mode: 'all', accountIds: [] })}>
+                  Restablecer todas las cuentas
+                </button>
+              </div>
+              {accountScopeSaveError ? <p role="alert" className="form-alert error">{accountScopeSaveError}</p> : null}
+              {accountScopeSaveNotice ? <p role="status" className="form-alert success">{accountScopeSaveNotice}</p> : null}
+            </section>
             {(route === '/' || route === '/reports' || route === '/movements') && (
               <section className="period-panel" aria-label="Periodo de consulta">
                 <div className="period-modes" role="group" aria-label="Tipo de periodo">
@@ -514,7 +621,7 @@ export function App() {
                   <>
                     <div className="filters-panel">
                       <label className="field-label search-field">Buscar<input type="search" placeholder="Concepto, cuenta o categoría" value={searchText} onChange={(event) => { setSearchText(event.currentTarget.value); setPage(1); }} /></label>
-                      <label className="field-label">Cuenta<select value={accountFilter} onChange={(event) => { setAccountFilter(event.currentTarget.value); setPage(1); }}><option value="all">Todas las cuentas</option>{accounts.filter((item) => !item.closed).map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
+                      <label className="field-label">Cuenta<select value={accountFilter} onChange={(event) => { setAccountFilter(event.currentTarget.value); setPage(1); }}><option value="all">Todas las cuentas del ámbito</option>{movementAccounts.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
                       <label className="field-label">Categoría<select value={categoryFilter} onChange={(event) => { setCategoryFilter(event.currentTarget.value); setUncategorizedOnly(false); setPage(1); }}><option value="all">Todas las categorías</option>{categories.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
                       <label className="check-field"><input type="checkbox" checked={uncategorizedOnly} onChange={(event) => { setUncategorizedOnly(event.currentTarget.checked); setCategoryFilter('all'); setPage(1); }} /> Sin categoría</label>
                     </div>
@@ -580,7 +687,10 @@ export function App() {
             )}
 
             {route === '/budgets' && (
-              <BudgetPanel currency={currencyPreferences.budgetCurrency ?? 'EUR'} onBudgetUpdated={() => { setRefreshKey((value) => value + 1); }} />
+              <>
+                <p className="setting-hint">Los presupuestos y asignaciones de Actual pertenecen al presupuesto completo; el ámbito de cuentas limita el análisis de movimientos, no convierte un presupuesto global en presupuestos por cuenta.</p>
+                <BudgetPanel currency={currencyPreferences.budgetCurrency ?? 'EUR'} onBudgetUpdated={() => { setRefreshKey((value) => value + 1); }} />
+              </>
             )}
 
             {route === '/assistant' && <AssistantPanel currency={currency} />}
