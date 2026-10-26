@@ -104,6 +104,7 @@ npm run lint
 npm run typecheck
 npm run test:coverage
 npm run build
+npm run test:runtime:lifecycle
 npm run audit
 npm run audit:production
 ~~~
@@ -153,9 +154,12 @@ npm run lint
 npm run typecheck
 npm run test:coverage
 npm run build
+npm run test:runtime:lifecycle
 npm run audit
 npm run audit:production
 ~~~
+
+Antes del smoke de runtime, detén otras instancias de la aplicación y comprueba que los puertos 3000 y 4173 estén libres. La prueba arranca/parada la aplicación dos veces con un presupuesto sintético no configurado y un directorio temporal; no debe conectarse a una cuenta de Actual ni modificar datos financieros reales.
 
 Después, valida el contenedor y la API con las secciones anteriores. Registra el resultado de la prueba de aceptación real solo con un presupuesto de prueba. No uses datos financieros reales para una importación de validación.
 
