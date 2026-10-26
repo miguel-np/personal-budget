@@ -271,12 +271,11 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       if (status.status !== 'available') {
         return reply.code(503).send({ error: { code: 'AI_UNAVAILABLE', message: 'Ollama o el modelo configurado no están disponibles en local.' } });
       }
-      const [allAccounts, categories, preferences] = await Promise.all([repository.listAccounts(), repository.listCategories(), currencyPreferences()]);
-      const accounts = allAccounts.filter((account) => !account.closed &&
-        (query.accountId === undefined || account.id === query.accountId));
-      if (query.accountId && accounts.length === 0) {
-        return reply.code(400).send({ error: { code: 'INVALID_ACCOUNT', message: 'Elige una cuenta abierta del presupuesto local.' } });
-      }
+      const [allAccounts, categories, preferences, preference] = await Promise.all([
+        repository.listAccounts(), repository.listCategories(), currencyPreferences(), accountScopePreference(),
+      ]);
+      const scope = resolveAccountScope(allAccounts, preference, query.accountId);
+      const accounts = scope.accounts;
       const summarize = async (startDate: string, endDate: string) => {
         const transactions = await transactionsForAccounts(accounts, startDate, endDate, preferences);
         return calculateSummary(normalizeTransactions(transactions), categories, {
@@ -304,7 +303,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         } } : {}),
       };
       const answer = await localAi.explain(context);
-      return { data: { summary, ...(comparison ? { comparison } : {}), answer, answerKind: 'qualitative_explanation' } };
+      return { data: { summary, ...(comparison ? { comparison } : {}), answer, answerKind: 'qualitative_explanation', accountScope: scope.metadata } };
     } catch (error) {
       if (error instanceof LocalAiUnavailableError) {
         return reply.code(503).send({ error: { code: 'AI_UNAVAILABLE', message: 'Ollama no ha podido completar la explicación local.' } });
