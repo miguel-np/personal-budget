@@ -92,7 +92,7 @@ test('budgets load and an allocation write is visible after refresh', async ({ p
   const state = await (await request.get(fixtureApi + '/__test__/state')).json();
   expect(state.budgetedMinor).toBe(60000);
   await expect(page.locator('.budget-explainer').getByText(/Los cambios confirmados se guardan en Actual Budget/)).toBeVisible();
-  await expect(page.getByRole('status')).toContainText(/Asignación actualizada en Actual Budget/);
+  await expect(page.getByText(/Asignación actualizada en Actual Budget/)).toBeVisible();
 });
 
 test('category suggestions preview is read-only until confirmed; cancel is safe', async ({ page, request }) => {

@@ -51,6 +51,7 @@ const summary = (startDate, endDate) => {
     expensesByCategory: [{ categoryId: categories[0].id, categoryName: categories[0].name, amountMinor: 48500, transactionCount: transactions.length - 1 }],
     incomeByCategory: [{ categoryId: categories[1].id, categoryName: categories[1].name, amountMinor: 425000, transactionCount: 1 }],
     warnings: ['Dato sintético de pruebas; no corresponde a un presupuesto real.'],
+    unconvertedTransactionCount: 0,
     exchangeRatesUsed: [],
   };
   const incomeMinor = inScope.filter((tx) => tx.amount > 0).reduce((sum, tx) => sum + tx.amount, 0);
@@ -79,6 +80,7 @@ const summary = (startDate, endDate) => {
     expensesByCategory,
     incomeByCategory,
     warnings: ['Dato sintético filtrado por ámbito de cuentas; no corresponde a un presupuesto real.'],
+    unconvertedTransactionCount: 0,
     exchangeRatesUsed: [],
   };
 };
