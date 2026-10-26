@@ -9,6 +9,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = await mkdtemp(join(tmpdir(), 'personal-budget-runtime-lifecycle-'));
 const sentinelPath = join(dataDir, 'persistence-sentinel.json');
 await writeFile(sentinelPath, JSON.stringify({ marker: 'runtime-lifecycle', revision: 1 }), 'utf8');
+await writeFile(join(dataDir, 'currency-preferences.json'), JSON.stringify({ displayCurrency: 'GBP', accountCurrencyOverrides: {}, exchangeRates: [] }), 'utf8');
 const initialDataSnapshot = await snapshotDirectory(dataDir);
 let runtime;
 let runtimeExit;
@@ -19,7 +20,18 @@ function startRuntime() {
   runtimeSpawnError = undefined;
   runtime = spawn(process.execPath, ['scripts/local-runtime.mjs'], {
     cwd: root,
-    env: { ...process.env, ACTUAL_DATA_DIR: dataDir },
+    env: {
+      ...process.env,
+      NODE_ENV: 'test',
+      APP_HOST: '127.0.0.1',
+      APP_PORT: '3000',
+      ACTUAL_BUDGET_ID: '',
+      ACTUAL_SERVER_PASSWORD: '',
+      ACTUAL_SERVER_URL: 'http://127.0.0.1:9',
+      ACTUAL_DATA_DIR: dataDir,
+      AI_ENABLED: 'false',
+      MCP_ENABLED: 'false',
+    },
     stdio: 'inherit',
     windowsHide: true,
     detached: process.platform !== 'win32',
@@ -74,9 +86,9 @@ async function waitForRuntimeExit(timeoutMs) {
   });
 }
 
-async function stopRuntime() {
+async function stopRuntime(signal = 'SIGTERM') {
   if (!runtime || runtimeExit || runtimeSpawnError) return;
-  runtime.kill('SIGTERM');
+  runtime.kill(signal);
   try {
     await waitForRuntimeExit(8_000);
   } catch (error) {
@@ -103,6 +115,13 @@ async function assertRunningAndReady() {
   const readinessBody = await readiness.response.json();
   if (readiness.status !== 503 || readinessBody.status !== 'not_configured') {
     throw new Error(`Se esperaba HTTP 503 y status=not_configured; se recibió HTTP ${readiness.status} y status=${String(readinessBody.status)}.`);
+  }
+
+  const preferences = await request('http://127.0.0.1:4173/api/v1/preferences/currency');
+  if (!preferences.ok || !preferences.response) throw new Error('No se pudieron leer las preferencias persistidas de prueba.');
+  const preferencesBody = await preferences.response.json();
+  if (preferencesBody.data?.displayCurrency !== 'GBP') {
+    throw new Error('La API no leyó el valor sintético guardado en el directorio de datos aislado.');
   }
 }
 
@@ -139,11 +158,11 @@ try {
   for (let iteration = 1; iteration <= 2; iteration += 1) {
     startRuntime();
     await assertRunningAndReady();
-    await stopRuntime();
+    await stopRuntime(iteration === 1 ? 'SIGINT' : 'SIGTERM');
     await assertStoppedAndReleased();
     console.log(`Runtime lifecycle iteration ${iteration}/2 passed.`);
   }
-  console.log('Runtime lifecycle OK: readiness, graceful SIGTERM, port release, restart and persistent-data snapshot verified.');
+  console.log('Runtime lifecycle OK: SIGINT/SIGTERM, readiness, port release, restart and isolated preference snapshot verified.');
 } catch (error) {
   process.stderr.write((error instanceof Error ? error.message : String(error)) + '\n');
   process.exitCode = 1;
