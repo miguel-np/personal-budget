@@ -89,7 +89,7 @@ npm run test:runtime:lifecycle
 rm .env
 ~~~
 
-La prueba verifica que la UI y la API arrancan, que readiness comunica el estado `not_configured`, que el runtime termina tras `SIGTERM` y que los endpoints dejan de responder. No sustituye la validación de reinicios de Windows/WSL2 ni verifica por sí sola todas las variantes de cierre de terminal.
+La prueba arranca el runtime dos veces con un directorio temporal aislado y un presupuesto deliberadamente no configurado. Comprueba que UI/API responden, que `/ready` devuelve `503` con `not_configured`, que se leen preferencias sintéticas persistidas, que `SIGINT` y `SIGTERM` producen un cierre limpio, que ambos puertos quedan libres y que el contenido del directorio temporal no cambia. No conecta con un presupuesto real ni prueba la integridad del almacén de datos de Actual; tampoco sustituye la aceptación de instalación y recuperación en Windows + WSL2.
 
 ## Privacidad
 
