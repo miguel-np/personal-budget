@@ -78,7 +78,6 @@ export function calculateSummary(
     );
     if (conversion.amountMinor === null) {
       unconvertedTransactionCount += 1;
-      if (conversion.warning) warnings.add(conversion.warning);
       continue;
     }
     const amountMinor = conversion.amountMinor;
