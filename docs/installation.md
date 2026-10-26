@@ -163,9 +163,9 @@ npm run audit:production
 
 Antes del smoke de runtime, detén otras instancias de la aplicación y comprueba que los puertos 3000 y 4173 estén libres. La prueba arranca/parada la aplicación dos veces con un presupuesto sintético no configurado y un directorio temporal; no debe conectarse a una cuenta de Actual ni modificar datos financieros reales.
 
-Después, valida el contenedor y la API con las secciones anteriores. Registra el resultado de la prueba de aceptación real solo con un presupuesto de prueba. No uses datos financieros reales para una importación de validación.
+Después, valida el contenedor y la API con las secciones anteriores. Registra las pruebas manuales con un presupuesto exclusivamente sintético; no uses datos financieros reales para una importación de validación.
 
-**Estado de validación:** la CI automatizada cubre Linux, instalación nativa en Windows y el arranque del contenedor Actual, pero no crea ni configura un presupuesto de prueba. Estos resultados no equivalen a una instalación en una distribución WSL2 concreta ni a una prueba de importación/edición contra un presupuesto real. Esta matriz sigue pendiente hasta ejecutar y registrar la aceptación en ambos entornos; no marques la issue de instalación como terminada antes de hacerlo.
+**Estado de validación:** la CI automatizada crea un servidor Actual aislado con contraseña exclusiva de CI y un presupuesto sintético; verifica la cuenta, las categorías, los identificadores, las fechas y los importes de las transacciones después de parar y volver a arrancar el contenedor, además de cubrir actualización y recuperación. Esto prueba la persistencia en el entorno de aceptación automatizado, pero no demuestra que la instalación se haya ejecutado en una distribución WSL2 concreta ni valida una instancia de Actual local del usuario. La aceptación manual de Windows + WSL2 sigue pendiente hasta ejecutar y registrar el flujo en ese entorno; no marques la issue de instalación como terminada antes de hacerlo.
 
 ## 7. Resolución de problemas
 
