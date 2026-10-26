@@ -44,7 +44,7 @@ jobs:
           mkdir -p .local
           cp .env.example .env
           trap 'rm -f .env' EXIT
-          node scripts/runtime-lifecycle-smoke.mjs
+          npm run test:runtime:lifecycle
       - name: Unit and integration tests with coverage
         run: npm run test:coverage
       - name: Production dependency audit
