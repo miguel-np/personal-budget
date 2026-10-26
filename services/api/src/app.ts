@@ -343,7 +343,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     try {
       const [accounts, preference] = await Promise.all([repository.listAccounts(), accountScopePreference()]);
       const resolved = resolveAccountScope(accounts, preference);
-      return { data: { ...preference, ...resolved.metadata } };
+      return { data: { ...preference, label: resolved.metadata.label, activeAccountIds: resolved.metadata.accountIds, accountNames: resolved.metadata.accountNames } };
     } catch (error) {
       const normalized = sanitizedErrorResponse(error);
       return reply.code(normalized.statusCode).send(normalized.body);
@@ -355,7 +355,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       const accounts = await repository.listAccounts();
       const resolved = resolveAccountScope(accounts, preference);
       await writeAccountScope(config.actualDataDir, preference);
-      return { data: { ...preference, ...resolved.metadata } };
+      return { data: { ...preference, label: resolved.metadata.label, activeAccountIds: resolved.metadata.accountIds, accountNames: resolved.metadata.accountNames } };
     } catch (error) {
       const normalized = sanitizedErrorResponse(error);
       return reply.code(normalized.statusCode).send(normalized.body);
