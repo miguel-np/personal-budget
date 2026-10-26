@@ -3,6 +3,7 @@ import { MovementTools } from './MovementTools.js';
 import { BudgetPanel } from './BudgetPanel.js';
 import { AssistantPanel } from './AssistantPanel.js';
 import { PlanningPanel } from './PlanningPanel.js';
+import { formatCivilDate, formatMoney as sharedFormatMoney, formatUnconvertedMoney as sharedFormatUnconvertedMoney } from './finance-format.js';
 
 type ConnectionState = 'checking' | 'connected' | 'unconfigured' | 'error';
 type PeriodMode = 'day' | 'month' | 'year' | 'custom';
@@ -185,21 +186,9 @@ async function apiData<T>(url: string, signal?: AbortSignal): Promise<T> {
   const payload = await apiResponse<T>(url, signal);
   return payload.data === undefined ? payload as T : payload.data;
 }
-function formatMoney(amountMinor: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat('es-ES', { style: 'currency', currency, maximumFractionDigits: 2 }).format(amountMinor / 100);
-  } catch {
-    return (amountMinor / 100).toFixed(2) + ' ' + currency;
-  }
-}
-function formatUnconvertedMoney(amountMinor: number, currency: string | null | undefined): string {
-  if (currency) return formatMoney(amountMinor, currency);
-  return new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amountMinor / 100) + ' (divisa desconocida)';
-}
-function displayDate(value: string): string {
-  const parsed = new Date(value + 'T12:00:00');
-  return Number.isNaN(parsed.getTime()) ? value : new Intl.DateTimeFormat('es-ES', { dateStyle: 'medium' }).format(parsed);
-}
+function formatMoney(amountMinor: number, currency: string): string { return sharedFormatMoney(amountMinor, currency); }
+function formatUnconvertedMoney(amountMinor: number, currency: string | null | undefined): string { return sharedFormatUnconvertedMoney(amountMinor, currency); }
+function displayDate(value: string): string { return formatCivilDate(value); }
 function transactionDescription(transaction: Transaction): string {
   return transaction.payee_name?.trim() || transaction.imported_payee?.trim() || transaction.notes?.trim() || 'Movimiento sin concepto';
 }
