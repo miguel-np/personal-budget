@@ -511,12 +511,17 @@ export function App() {
                     : accounts.filter((account) => !account.closed).map((account) => (
                       <label className="check-field" key={account.id}>
                         <input type="checkbox" checked={accountScopeDraft.accountIds.includes(account.id)}
-                          onChange={(event) => setAccountScopeDraft((previous) => {
-                            const ids = event.currentTarget.checked
-                              ? [...previous.accountIds, account.id]
-                              : previous.accountIds.filter((id) => id !== account.id);
-                            return { mode: 'selected', accountIds: ids };
-                          })} />
+                          onChange={(event) => {
+                            const checked = event.currentTarget.checked;
+                            const openIds = accounts.filter((candidate) => !candidate.closed).map((candidate) => candidate.id);
+                            setAccountScopeDraft((previous) => {
+                              const validIds = previous.accountIds.filter((id) => openIds.includes(id));
+                              const ids = checked
+                                ? [...validIds.filter((id) => id !== account.id), account.id]
+                                : validIds.filter((id) => id !== account.id);
+                              return { mode: 'selected', accountIds: ids };
+                            });
+                          }} />
                         {account.name}
                       </label>
                     ))}
