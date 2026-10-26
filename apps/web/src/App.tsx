@@ -3,7 +3,7 @@ import { MovementTools } from './MovementTools.js';
 import { BudgetPanel } from './BudgetPanel.js';
 import { AssistantPanel } from './AssistantPanel.js';
 import { PlanningPanel } from './PlanningPanel.js';
-import { formatCivilDate, formatMoney as sharedFormatMoney, formatUnconvertedMoney as sharedFormatUnconvertedMoney } from './finance-format.js';
+import { formatAccountBalance, formatCivilDate, formatMoney as sharedFormatMoney, formatUnconvertedMoney as sharedFormatUnconvertedMoney } from './finance-format.js';
 
 type ConnectionState = 'checking' | 'connected' | 'unconfigured' | 'error';
 type PeriodMode = 'day' | 'month' | 'year' | 'custom';
@@ -795,7 +795,7 @@ export function App() {
                   {currencySaveError ? <p role="alert" className="form-alert error">{currencySaveError}</p> : null}
                   {currencySaveNotice ? <p role="status" className="form-alert success">{currencySaveNotice}</p> : null}
                 </article>
-                <div className="panel account-list-panel"><div className="panel-heading"><div><p className="eyebrow">CUENTAS</p><h3>Saldo original y saldo convertido</h3></div></div>{accounts.length ? accounts.map((account) => <div className="detail-line" key={account.id}><span>{account.name}{account.closed ? ' · Cerrada' : ''}{account.offBudget ? ' · Fuera de presupuesto' : ''}<small>{account.balanceConversion?.warning ? account.balanceConversion.warning : 'El saldo convertido usa la tasa más reciente aplicable.'}</small></span><strong>{account.displayBalanceMinor !== null && account.displayBalanceMinor !== undefined ? formatMoney(account.displayBalanceMinor, account.displayCurrency ?? currency) : formatUnconvertedMoney(account.currentBalanceMinor ?? 0, account.currencyCode)}</strong></div>) : <p className="muted-copy">No hay cuentas para mostrar.</p>}</div>
+                <div className="panel account-list-panel"><div className="panel-heading"><div><p className="eyebrow">CUENTAS</p><h3>Saldo original y saldo convertido</h3></div></div>{accounts.length ? accounts.map((account) => <div className="detail-line" key={account.id}><span>{account.name}{account.closed ? ' · Cerrada' : ''}{account.offBudget ? ' · Fuera de presupuesto' : ''}<small>{account.balanceConversion?.warning ? account.balanceConversion.warning : 'El saldo convertido usa la tasa más reciente aplicable.'}</small></span><strong>{formatAccountBalance(account.currentBalanceMinor, account.displayBalanceMinor, account.displayCurrency ?? currency, account.currencyCode)}</strong></div>) : <p className="muted-copy">No hay cuentas para mostrar.</p>}</div>
               </section>
             )}
 

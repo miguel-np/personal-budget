@@ -36,3 +36,17 @@ export function formatCivilDate(value: string): string {
   if (parsed.getFullYear() !== year || parsed.getMonth() !== month - 1 || parsed.getDate() !== day) return value;
   return new Intl.DateTimeFormat('es-ES', { dateStyle: 'medium' }).format(parsed);
 }
+
+/** Keeps unknown balances distinct from a true zero and labels raw values when conversion is unavailable. */
+export function formatAccountBalance(
+  originalBalanceMinor: number | null,
+  displayBalanceMinor: number | null | undefined,
+  displayCurrency: string,
+  sourceCurrency: string | null | undefined,
+): string {
+  if (originalBalanceMinor === null) return 'Saldo desconocido';
+  if (displayBalanceMinor !== null && displayBalanceMinor !== undefined) {
+    return formatMoney(displayBalanceMinor, displayCurrency);
+  }
+  return formatUnconvertedMoney(originalBalanceMinor, sourceCurrency);
+}
