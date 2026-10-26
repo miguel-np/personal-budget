@@ -10,6 +10,8 @@ import { LocalAiClient, LocalAiUnavailableError } from './local-ai.js';
 import type { AssistantContext } from './local-ai.js';
 import { CurrencyPreferencesSchema, readCurrencyPreferences, writeCurrencyPreferences } from './currency-preferences.js';
 import type { CurrencyPreferences } from './currency-preferences.js';
+import { AccountScopeError, AccountScopePreferenceSchema, readAccountScope, resolveAccountScope, writeAccountScope } from './account-scope.js';
+import type { AccountScopePreference, AccountScopeMetadata } from './account-scope.js';
 
 const TransactionQuerySchema = z.object({
   accountId: z.string().trim().min(1).max(128).optional(),
@@ -93,6 +95,9 @@ function isWithinMaximumPeriod(startDate: string, endDate: string): boolean {
 }
 
 function sanitizedErrorResponse(error: unknown): { statusCode: number; body: { error: { code: string; message: string } } } {
+  if (error instanceof AccountScopeError) {
+    return { statusCode: 400, body: { error: { code: error.code, message: error.message } } };
+  }
   if (error instanceof ZodError) {
     return { statusCode: 400, body: { error: { code: 'INVALID_REQUEST', message: 'Request parameters are invalid.' } } };
   }
@@ -163,6 +168,10 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
 
   async function currencyPreferences(): Promise<CurrencyPreferences> {
     return readCurrencyPreferences(config.actualDataDir, config.budgetCurrency);
+  }
+
+  async function accountScopePreference(): Promise<AccountScopePreference> {
+    return readAccountScope(config.actualDataDir);
   }
 
   function accountNativeCurrency(
@@ -262,12 +271,11 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       if (status.status !== 'available') {
         return reply.code(503).send({ error: { code: 'AI_UNAVAILABLE', message: 'Ollama o el modelo configurado no están disponibles en local.' } });
       }
-      const [allAccounts, categories, preferences] = await Promise.all([repository.listAccounts(), repository.listCategories(), currencyPreferences()]);
-      const accounts = allAccounts.filter((account) => !account.closed &&
-        (query.accountId === undefined || account.id === query.accountId));
-      if (query.accountId && accounts.length === 0) {
-        return reply.code(400).send({ error: { code: 'INVALID_ACCOUNT', message: 'Elige una cuenta abierta del presupuesto local.' } });
-      }
+      const [allAccounts, categories, preferences, preference] = await Promise.all([
+        repository.listAccounts(), repository.listCategories(), currencyPreferences(), accountScopePreference(),
+      ]);
+      const scope = resolveAccountScope(allAccounts, preference, query.accountId);
+      const accounts = scope.accounts;
       const summarize = async (startDate: string, endDate: string) => {
         const transactions = await transactionsForAccounts(accounts, startDate, endDate, preferences);
         return calculateSummary(normalizeTransactions(transactions), categories, {
@@ -295,7 +303,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         } } : {}),
       };
       const answer = await localAi.explain(context);
-      return { data: { summary, ...(comparison ? { comparison } : {}), answer, answerKind: 'qualitative_explanation' } };
+      return { data: { summary, ...(comparison ? { comparison } : {}), answer, answerKind: 'qualitative_explanation', accountScope: scope.metadata } };
     } catch (error) {
       if (error instanceof LocalAiUnavailableError) {
         return reply.code(503).send({ error: { code: 'AI_UNAVAILABLE', message: 'Ollama no ha podido completar la explicación local.' } });
@@ -331,6 +339,40 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     try { return { data: await repository.listCategories() }; }
     catch (error) { const normalized = sanitizedErrorResponse(error); return reply.code(normalized.statusCode).send(normalized.body); }
   });
+  app.get('/api/v1/preferences/accounts', async (_request, reply) => {
+    try {
+      const [accounts, preference] = await Promise.all([repository.listAccounts(), accountScopePreference()]);
+      try {
+        const resolved = resolveAccountScope(accounts, preference);
+        return { data: { ...preference, label: resolved.metadata.label, activeAccountIds: resolved.metadata.accountIds, accountNames: resolved.metadata.accountNames } };
+      } catch (error) {
+        if (!(error instanceof AccountScopeError) || error.code !== 'INVALID_ACCOUNT_SCOPE') throw error;
+        // Preserve access to settings so a user can repair a persisted scope after an account was closed or removed.
+        return { data: {
+          ...preference,
+          label: 'Configuración pendiente: revisa las cuentas seleccionadas',
+          activeAccountIds: [],
+          accountNames: [],
+          warning: error.message,
+        } };
+      }
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+  app.put('/api/v1/preferences/accounts', async (request, reply) => {
+    try {
+      const preference = AccountScopePreferenceSchema.parse(request.body);
+      const accounts = await repository.listAccounts();
+      const resolved = resolveAccountScope(accounts, preference);
+      await writeAccountScope(config.actualDataDir, preference);
+      return { data: { ...preference, label: resolved.metadata.label, activeAccountIds: resolved.metadata.accountIds, accountNames: resolved.metadata.accountNames } };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
   app.get('/api/v1/preferences/currency', async (_request, reply) => {
     try { return { data: { ...(await currencyPreferences()), budgetCurrency: config.budgetCurrency } }; }
     catch (error) { const normalized = sanitizedErrorResponse(error); return reply.code(normalized.statusCode).send(normalized.body); }
@@ -359,13 +401,11 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     try {
       const query = TransactionQuerySchema.parse(request.query);
       assertPeriod(query.startDate, query.endDate);
-      const [allAccounts, preferences] = await Promise.all([repository.listAccounts(), currencyPreferences()]);
-      const accounts = allAccounts.filter((account) =>
-        !account.closed && (query.accountId === undefined || account.id === query.accountId),
-      );
-      if (query.accountId !== undefined && accounts.length === 0) {
-        return reply.code(400).send({ error: { code: 'INVALID_ACCOUNT', message: 'Choose an open account from the configured budget.' } });
-      }
+      const [allAccounts, preferences, preference] = await Promise.all([
+        repository.listAccounts(), currencyPreferences(), accountScopePreference(),
+      ]);
+      const scope = resolveAccountScope(allAccounts, preference, query.accountId);
+      const accounts = scope.accounts;
       const groups = await Promise.all(accounts.map(async (account) => {
         const nativeCurrency = accountNativeCurrency(account, preferences);
         const transactions = await repository.listTransactions(account.id, query.startDate, query.endDate);
@@ -444,7 +484,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
           },
         };
       });
-      return { data: page, pagination: { total, limit: query.limit, offset: query.offset, sortBy: query.sortBy, order: query.order } };
+      return { data: page, pagination: { total, limit: query.limit, offset: query.offset, sortBy: query.sortBy, order: query.order }, accountScope: scope.metadata };
     } catch (error) {
       const normalized = sanitizedErrorResponse(error);
       return reply.code(normalized.statusCode).send(normalized.body);
@@ -621,15 +661,15 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     try {
       const query = SummaryQuerySchema.parse(request.query);
       assertPeriod(query.startDate, query.endDate);
-      const [accounts, categories, preferences] = await Promise.all([repository.listAccounts(), repository.listCategories(), currencyPreferences()]);
-      const activeAccounts = accounts.filter((account) => !account.closed);
-      const transactions = await transactionsForAccounts(activeAccounts, query.startDate, query.endDate, preferences);
-      const entries = normalizeTransactions(transactions);
-      return {
-        data: calculateSummary(entries, categories, {
-          startDate: query.startDate, endDate: query.endDate, currency: preferences.displayCurrency, exchangeRates: preferences.exchangeRates,
-        }),
-      };
+      const [accounts, categories, preferences, preference] = await Promise.all([
+        repository.listAccounts(), repository.listCategories(), currencyPreferences(), accountScopePreference(),
+      ]);
+      const scope = resolveAccountScope(accounts, preference);
+      const transactions = await transactionsForAccounts(scope.accounts, query.startDate, query.endDate, preferences);
+      const summary = calculateSummary(normalizeTransactions(transactions), categories, {
+        startDate: query.startDate, endDate: query.endDate, currency: preferences.displayCurrency, exchangeRates: preferences.exchangeRates,
+      });
+      return { data: { ...summary, accountScope: scope.metadata } };
     } catch (error) {
       const normalized = sanitizedErrorResponse(error);
       return reply.code(normalized.statusCode).send(normalized.body);
@@ -640,15 +680,17 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     accountId: string | undefined,
     startDate: string,
     endDate: string,
-  ): Promise<{ readonly accounts: readonly { readonly id: string; readonly name: string }[]; readonly transactions: readonly BudgetTransaction[] }> {
-    const [allAccounts, preferences] = await Promise.all([repository.listAccounts(), currencyPreferences()]);
-    const accounts = allAccounts.filter((account) =>
-      !account.closed && (accountId === undefined || account.id === accountId));
-    if (accountId !== undefined && accounts.length === 0) {
-      throw new ActualAdapterError('INVALID_INPUT', 'Choose an open account from the configured budget.');
-    }
-    const transactions = await transactionsForAccounts(accounts, startDate, endDate, preferences);
-    return { accounts, transactions };
+  ): Promise<{
+    readonly accounts: readonly { readonly id: string; readonly name: string; readonly closed: boolean; readonly currencyCode?: string | null }[];
+    readonly transactions: readonly BudgetTransaction[];
+    readonly scope: AccountScopeMetadata;
+  }> {
+    const [allAccounts, preferences, preference] = await Promise.all([
+      repository.listAccounts(), currencyPreferences(), accountScopePreference(),
+    ]);
+    const resolved = resolveAccountScope(allAccounts, preference, accountId);
+    const transactions = await transactionsForAccounts(resolved.accounts, startDate, endDate, preferences);
+    return { accounts: resolved.accounts, transactions, scope: resolved.metadata };
   }
 
   function monthsBefore(date: string, months: number): string {
@@ -662,7 +704,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     try {
       const query = InsightsQuerySchema.parse(request.query);
       assertPeriod(query.startDate, query.endDate);
-      const { transactions } = await openAccountTransactions(query.accountId, query.startDate, query.endDate);
+      const { transactions, scope } = await openAccountTransactions(query.accountId, query.startDate, query.endDate);
       const preferences = await currencyPreferences();
       const converted = convertTransactionsForAnalysis(transactions, preferences);
       const candidates = detectRecurringCandidates(converted.transactions, {
@@ -670,6 +712,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       });
       return {
         data: candidates,
+        accountScope: scope,
         notes: [
           'Los candidatos se detectan con señales deterministas (beneficiario, frecuencia, importe y fechas) y no garantizan que el gasto se repita.',
           'Este endpoint no modifica Actual Budget; la confirmación de sugerencias usa un flujo separado con previsualización.',
@@ -687,23 +730,21 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       const query = InsightsQuerySchema.parse(request.query);
       assertPeriod(query.startDate, query.endDate);
       const evidenceStart = monthsBefore(query.startDate, 12);
-      const [accounts, categories, preferences] = await Promise.all([
+      const [accounts, categories, preferences, preference] = await Promise.all([
         repository.listAccounts(),
         repository.listCategories(),
         currencyPreferences(),
+        accountScopePreference(),
       ]);
-      const activeAccounts = accounts.filter((account) =>
-        !account.closed && (query.accountId === undefined || account.id === query.accountId));
-      if (query.accountId !== undefined && activeAccounts.length === 0) {
-        return reply.code(400).send({ error: { code: 'INVALID_ACCOUNT', message: 'Choose an open account from the configured budget.' } });
-      }
-      const groups = await transactionsForAccounts(activeAccounts, evidenceStart, query.endDate, preferences);
+      const scope = resolveAccountScope(accounts, preference, query.accountId);
+      const groups = await transactionsForAccounts(scope.accounts, evidenceStart, query.endDate, preferences);
       const converted = convertTransactionsForAnalysis(groups, preferences);
       const suggestions = suggestCategories(converted.transactions, categories, {
         startDate: query.startDate, endDate: query.endDate,
       });
       return {
         data: suggestions,
+        accountScope: scope.metadata,
         notes: [
           'Las sugerencias usan reglas deterministas sobre el historial local de los últimos 12 meses y no aprenden ni almacenan reglas nuevas.',
           'Nada se modifica en Actual Budget sin revisión y confirmación explícita.',
@@ -757,9 +798,11 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     try {
       const parsed = ForecastRequestSchema.parse(request.body);
       assertPeriod(parsed.startDate, parsed.endDate);
-      const [accounts, categories, preferences] = await Promise.all([repository.listAccounts(), repository.listCategories(), currencyPreferences()]);
-      const activeAccounts = accounts.filter((account) => !account.closed);
-      const transactions = await transactionsForAccounts(activeAccounts, parsed.startDate, parsed.endDate, preferences);
+      const [accounts, categories, preferences, preference] = await Promise.all([
+        repository.listAccounts(), repository.listCategories(), currencyPreferences(), accountScopePreference(),
+      ]);
+      const scope = resolveAccountScope(accounts, preference);
+      const transactions = await transactionsForAccounts(scope.accounts, parsed.startDate, parsed.endDate, preferences);
       const converted = convertTransactionsForAnalysis(transactions, preferences);
       const result = projectSavings(
         converted.transactions,
@@ -772,7 +815,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
           endDate: parsed.endDate,
         },
       );
-      return { data: { ...result, warnings: [...result.warnings, ...converted.warnings] } };
+      return { data: { ...result, warnings: [...result.warnings, ...converted.warnings], accountScope: scope.metadata } };
     } catch (error) {
       const normalized = sanitizedErrorResponse(error);
       return reply.code(normalized.statusCode).send(normalized.body);

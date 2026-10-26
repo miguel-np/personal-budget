@@ -46,3 +46,6 @@ Esta documentación describe el diseño objetivo de `personal-budget`, una aplic
 
 
 - [Divisas, conversión y trazabilidad](multi-currency.md)
+
+
+- [Ámbito global de cuentas](account-scope.md)

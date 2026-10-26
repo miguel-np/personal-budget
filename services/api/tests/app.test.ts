@@ -792,4 +792,218 @@ describe('local API', () => {
     });
   });
 
+
+  it('persists a global account scope and applies it consistently to reports and movements', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'budget-account-scope-api-'));
+    temporaryDirectories.push(directory);
+    const scopedAccounts: readonly BudgetAccount[] = [
+      { id: 'account-1', name: 'Cuenta corriente', currencyCode: 'EUR', closed: false, offBudget: false, currentBalanceMinor: 200_000 },
+      { id: 'account-2', name: 'Ahorro', currencyCode: 'EUR', closed: false, offBudget: false, currentBalanceMinor: 45_000 },
+      { id: 'account-closed', name: 'Cuenta cerrada', currencyCode: 'EUR', closed: true, offBudget: false, currentBalanceMinor: 0 },
+    ];
+    const txByAccount: Record<string, readonly BudgetTransaction[]> = {
+      'account-1': [
+        { id: 'main-income', account: 'account-1', currencyCode: 'EUR', date: '2026-10-01', amount: 200_000, category: 'salary' },
+        { id: 'main-expense', account: 'account-1', currencyCode: 'EUR', date: '2026-10-02', amount: -10_000, category: 'food' },
+        { id: 'internal-transfer', account: 'account-1', currencyCode: 'EUR', date: '2026-10-03', amount: -50_000, transfer_id: 'transfer-1' },
+      ],
+      'account-2': [
+        { id: 'savings-income', account: 'account-2', currencyCode: 'EUR', date: '2026-10-04', amount: 50_000, category: 'salary' },
+        { id: 'savings-expense', account: 'account-2', currencyCode: 'EUR', date: '2026-10-05', amount: -5_000, category: 'food' },
+        { id: 'transfer-to-savings', account: 'account-2', currencyCode: 'EUR', date: '2026-10-03', amount: 50_000, transfer_id: 'transfer-1' },
+      ],
+    };
+    const listTransactions = vi.fn(async (accountId: string) => txByAccount[accountId] ?? []);
+    const repository = createRepository({
+      listAccounts: vi.fn(async () => scopedAccounts),
+      listTransactions,
+    });
+    const app = await createTestApp(repository, { ...config, actualDataDir: directory });
+
+    const initial = await app.inject({ method: 'GET', url: '/api/v1/preferences/accounts' });
+    expect(initial.statusCode).toBe(200);
+    expect(initial.json().data).toMatchObject({
+      mode: 'all', accountIds: [], activeAccountIds: ['account-1', 'account-2'],
+      label: 'Todas las cuentas abiertas (2)',
+    });
+
+    const allSummary = await app.inject({
+      method: 'GET', url: '/api/v1/reports/summary?startDate=2026-10-01&endDate=2026-10-31',
+    });
+    expect(allSummary.statusCode).toBe(200);
+    expect(allSummary.json().data).toMatchObject({
+      incomeMinor: 250_000, expenseMinor: 15_000, savingsMinor: 235_000, excludedTransferCount: 2,
+      accountScope: { mode: 'all', accountIds: ['account-1', 'account-2'] },
+    });
+
+    const selected = await app.inject({
+      method: 'PUT', url: '/api/v1/preferences/accounts',
+      payload: { mode: 'selected', accountIds: ['account-2'] },
+    });
+    expect(selected.statusCode).toBe(200);
+    expect(selected.json().data).toMatchObject({
+      mode: 'selected', accountIds: ['account-2'], activeAccountIds: ['account-2'], label: 'Cuentas seleccionadas: Ahorro',
+    });
+
+    listTransactions.mockClear();
+    const report = await app.inject({
+      method: 'GET', url: '/api/v1/reports/summary?startDate=2026-10-01&endDate=2026-10-31',
+    });
+    expect(report.statusCode).toBe(200);
+    expect(report.json().data).toMatchObject({
+      incomeMinor: 50_000, expenseMinor: 5_000, savingsMinor: 45_000, excludedTransferCount: 1,
+      accountScope: { mode: 'selected', accountIds: ['account-2'], accountNames: ['Ahorro'] },
+    });
+    expect(listTransactions).toHaveBeenCalledTimes(1);
+    expect(listTransactions).toHaveBeenCalledWith('account-2', '2026-10-01', '2026-10-31');
+
+    listTransactions.mockClear();
+    const movements = await app.inject({
+      method: 'GET', url: '/api/v1/transactions?startDate=2026-10-01&endDate=2026-10-31',
+    });
+    expect(movements.statusCode).toBe(200);
+    expect(movements.json().data.map((transaction: { id: string }) => transaction.id)).toEqual(['savings-expense', 'savings-income', 'transfer-to-savings']);
+    expect(movements.json().accountScope).toMatchObject({ accountIds: ['account-2'], label: 'Cuentas seleccionadas: Ahorro' });
+    expect(listTransactions).toHaveBeenCalledTimes(1);
+    expect(listTransactions).toHaveBeenCalledWith('account-2', '2026-10-01', '2026-10-31');
+
+    const attemptsToExpand = await app.inject({
+      method: 'GET', url: '/api/v1/transactions?accountId=account-1&startDate=2026-10-01&endDate=2026-10-31',
+    });
+    const multiScope = await app.inject({
+      method: 'PUT', url: '/api/v1/preferences/accounts',
+      payload: { mode: 'selected', accountIds: ['account-1', 'account-2'] },
+    });
+    expect(multiScope.statusCode).toBe(200);
+    const multiReport = await app.inject({
+      method: 'GET', url: '/api/v1/reports/summary?startDate=2026-10-01&endDate=2026-10-31',
+    });
+    expect(multiReport.json().data).toMatchObject({
+      incomeMinor: 250_000, expenseMinor: 15_000, excludedTransferCount: 2,
+      accountScope: { mode: 'selected', accountIds: ['account-1', 'account-2'] },
+    });
+
+    expect(attemptsToExpand.statusCode).toBe(400);
+    expect(attemptsToExpand.json().error.code).toBe('ACCOUNT_OUTSIDE_SCOPE');
+    expect(attemptsToExpand.json().error.message).toMatch(/no puede ampliar/i);
+  });
+
+  it('rejects unknown or closed accounts and treats an empty selection as zero accounts, not all', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'budget-empty-account-scope-'));
+    temporaryDirectories.push(directory);
+    const scopedAccounts: readonly BudgetAccount[] = [
+      { id: 'account-1', name: 'Cuenta corriente', currencyCode: 'EUR', closed: false, offBudget: false, currentBalanceMinor: 200_000 },
+      { id: 'account-closed', name: 'Cuenta cerrada', currencyCode: 'EUR', closed: true, offBudget: false, currentBalanceMinor: 0 },
+    ];
+    const repository = createRepository({
+      listAccounts: vi.fn(async () => scopedAccounts),
+      listTransactions: vi.fn(async () => transactions),
+    });
+    const app = await createTestApp(repository, { ...config, actualDataDir: directory });
+
+    for (const accountId of ['account-closed', 'not-in-budget']) {
+      const invalid = await app.inject({
+        method: 'PUT', url: '/api/v1/preferences/accounts',
+        payload: { mode: 'selected', accountIds: [accountId] },
+      });
+      expect(invalid.statusCode).toBe(400);
+      expect(invalid.json().error.code).toBe('INVALID_ACCOUNT_SCOPE');
+    }
+
+    const empty = await app.inject({
+      method: 'PUT', url: '/api/v1/preferences/accounts',
+      payload: { mode: 'selected', accountIds: [] },
+    });
+    expect(empty.statusCode).toBe(200);
+    const report = await app.inject({
+      method: 'GET', url: '/api/v1/reports/summary?startDate=2026-10-01&endDate=2026-10-31',
+    });
+    expect(report.statusCode).toBe(200);
+    expect(report.json().data).toMatchObject({
+      incomeMinor: 0, expenseMinor: 0, savingsMinor: 0, transactionCount: 0,
+      accountScope: { mode: 'selected', accountIds: [], accountNames: [], label: 'Ninguna cuenta seleccionada' },
+    });
+    const movementResult = await app.inject({
+      method: 'GET', url: '/api/v1/transactions?startDate=2026-10-01&endDate=2026-10-31',
+    });
+    expect(movementResult.statusCode).toBe(200);
+    expect(movementResult.json().data).toEqual([]);
+    expect(movementResult.json().pagination.total).toBe(0);
+  });
+
+  it('applies the selected scope to the assistant, recurring insights, suggestions and forecasts', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'budget-account-scope-all-surfaces-'));
+    temporaryDirectories.push(directory);
+    const ollama = await createOllamaFixture();
+    const scopedAccounts: readonly BudgetAccount[] = [
+      { id: 'account-1', name: 'Cuenta corriente', currencyCode: 'EUR', closed: false, offBudget: false, currentBalanceMinor: 200_000 },
+      { id: 'account-2', name: 'Ahorro', currencyCode: 'EUR', closed: false, offBudget: false, currentBalanceMinor: 45_000 },
+    ];
+    const txByAccount: Record<string, readonly BudgetTransaction[]> = {
+      'account-1': transactions,
+      'account-2': [
+        { id: 'scoped-income', account: 'account-2', currencyCode: 'EUR', date: '2026-10-04', amount: 50_000, category: 'salary' },
+        { id: 'scoped-expense', account: 'account-2', currencyCode: 'EUR', date: '2026-10-05', amount: -5_000, category: 'food' },
+        { id: 'scoped-expense-old', account: 'account-2', currencyCode: 'EUR', date: '2026-09-05', amount: -5_000, category: 'food' },
+      ],
+    };
+    const listTransactions = vi.fn(async (accountId: string) => txByAccount[accountId] ?? []);
+    const repository = createRepository({
+      listAccounts: vi.fn(async () => scopedAccounts),
+      listTransactions,
+    });
+    const app = await createTestApp(repository, {
+      ...config, actualDataDir: directory, aiEnabled: true, ollamaBaseURL: ollama.url, ollamaModel: 'synthetic-model',
+    });
+    try {
+      const saved = await app.inject({
+        method: 'PUT', url: '/api/v1/preferences/accounts',
+        payload: { mode: 'selected', accountIds: ['account-2'] },
+      });
+      expect(saved.statusCode).toBe(200);
+
+      const assistant = await app.inject({
+        method: 'POST', url: '/api/v1/assistant/chat',
+        payload: {
+          question: 'Resume octubre', startDate: '2026-10-01', endDate: '2026-10-31',
+          previousStartDate: '2026-09-01', previousEndDate: '2026-09-30',
+        },
+      });
+      expect(assistant.statusCode).toBe(200);
+      expect(assistant.json().data.summary).toMatchObject({ incomeMinor: 50_000, expenseMinor: 5_000 });
+      expect(assistant.json().data.accountScope).toMatchObject({ accountIds: ['account-2'] });
+      expect(listTransactions.mock.calls.every((call) => call[0] === 'account-2')).toBe(true);
+
+      listTransactions.mockClear();
+      const recurring = await app.inject({
+        method: 'GET', url: '/api/v1/insights/recurring?startDate=2026-01-01&endDate=2026-10-31',
+      });
+      expect(recurring.statusCode).toBe(200);
+      expect(recurring.json().accountScope).toMatchObject({ accountIds: ['account-2'] });
+      expect(listTransactions.mock.calls.every((call) => call[0] === 'account-2')).toBe(true);
+
+      listTransactions.mockClear();
+      const suggestions = await app.inject({
+        method: 'GET', url: '/api/v1/insights/category-suggestions?startDate=2026-10-01&endDate=2026-10-31',
+      });
+      expect(suggestions.statusCode).toBe(200);
+      expect(suggestions.json().accountScope).toMatchObject({ accountIds: ['account-2'] });
+      expect(listTransactions.mock.calls.every((call) => call[0] === 'account-2')).toBe(true);
+
+      listTransactions.mockClear();
+      const forecast = await app.inject({
+        method: 'POST', url: '/api/v1/forecasts/simulate',
+        payload: {
+          startDate: '2026-06-01', endDate: '2026-10-31', horizonMonths: 3,
+          scenario: { type: 'income_change', percent: 0 },
+        },
+      });
+      expect(forecast.statusCode).toBe(200);
+      expect(forecast.json().data.accountScope).toMatchObject({ accountIds: ['account-2'] });
+      expect(listTransactions.mock.calls.every((call) => call[0] === 'account-2')).toBe(true);
+    } finally {
+      await ollama.close();
+    }
+  });
+
 });
