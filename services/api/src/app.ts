@@ -301,12 +301,13 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       const [accounts, preferences] = await Promise.all([repository.listAccounts(), currencyPreferences()]);
       const today = new Date().toISOString().slice(0, 10);
       return { data: accounts.map((account) => {
+        const nativeCurrencyCode = normalizeCurrencyCode(account.currencyCode);
         const currencyCode = accountNativeCurrency(account, preferences);
         const conversion = account.currentBalanceMinor === null || currencyCode === null
           ? null
           : convertAmountMinor(account.currentBalanceMinor, currencyCode, preferences.displayCurrency, today, preferences.exchangeRates);
         return {
-          ...account, currencyCode, displayCurrency: preferences.displayCurrency,
+          ...account, nativeCurrencyCode, currencyCode, displayCurrency: preferences.displayCurrency,
           displayBalanceMinor: conversion?.amountMinor ?? null,
           balanceConversion: conversion ? {
             fromCurrency: conversion.fromCurrency, toCurrency: conversion.toCurrency, rate: conversion.rate,
