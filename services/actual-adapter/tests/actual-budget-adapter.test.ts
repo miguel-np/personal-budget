@@ -26,7 +26,7 @@ describe('ActualBudgetAdapter', () => {
 
   it('maps absent optional Actual fields to explicit defaults', () => {
     expect(mapActualAccount({ id: 'account-2', name: 'Ahorro' })).toEqual({
-      id: 'account-2', name: 'Ahorro', closed: false, offBudget: false, currentBalanceMinor: null,
+      id: 'account-2', name: 'Ahorro', currencyCode: null, closed: false, offBudget: false, currentBalanceMinor: null,
     });
     expect(mapActualCategory({ id: 'other', name: 'Otros', group_id: 'expenses' })).toEqual({
       id: 'other', name: 'Otros', groupId: 'expenses', isIncome: false,
@@ -127,7 +127,7 @@ describe('ActualBudgetAdapter', () => {
   it('initializes lazily once, maps records and shuts down cleanly', async () => {
     const api = createApi();
     const adapter = new ActualBudgetAdapter(config, api);
-    await expect(adapter.listAccounts()).resolves.toEqual([{ id: 'account-1', name: 'Cuenta', closed: false, offBudget: false, currentBalanceMinor: 1200 }]);
+    await expect(adapter.listAccounts()).resolves.toEqual([{ id: 'account-1', name: 'Cuenta', currencyCode: null, closed: false, offBudget: false, currentBalanceMinor: 1200 }]);
     await expect(adapter.listCategories()).resolves.toEqual([{ id: 'food', name: 'Alimentación', groupId: 'expenses', isIncome: false }]);
     expect(api.init).toHaveBeenCalledTimes(1);
     expect(api.downloadBudget).toHaveBeenCalledWith('budget-uuid');

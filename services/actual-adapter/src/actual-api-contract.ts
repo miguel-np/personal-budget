@@ -37,6 +37,8 @@ export interface ActualAccountRecord {
   readonly closed?: boolean;
   readonly offbudget?: boolean;
   readonly balance_current?: number | null;
+  readonly currency?: string | null;
+  readonly currency_code?: string | null;
 }
 
 export interface ActualCategoryRecord {
@@ -98,6 +100,7 @@ export function mapActualAccount(account: ActualAccountRecord): BudgetAccount {
   return {
     id: account.id,
     name: account.name,
+    currencyCode: account.currency !== undefined ? account.currency : account.currency_code ?? null,
     closed: account.closed ?? false,
     offBudget: account.offbudget ?? false,
     currentBalanceMinor: account.balance_current ?? null,

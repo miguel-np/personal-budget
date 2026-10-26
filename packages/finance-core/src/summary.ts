@@ -1,8 +1,10 @@
 import type { BudgetCategory, CategoryTotal, FinancialSummary, LedgerEntry, Period } from './domain.js';
+import { convertAmountMinor, type ExchangeRate, type ExchangeRateUsage } from './currency.js';
 import { validatePeriod } from './date-range.js';
 
 export interface SummaryOptions extends Period {
   readonly currency: string;
+  readonly exchangeRates?: readonly ExchangeRate[];
 }
 
 interface MutableCategoryTotal {
@@ -54,6 +56,9 @@ export function calculateSummary(
   let unclassifiedInflowMinor = 0;
   let excludedTransferCount = 0;
   let transactionCount = 0;
+  let unconvertedTransactionCount = 0;
+  const warnings = new Set<string>();
+  const rateUsage = new Map<string, ExchangeRateUsage>();
 
   for (const entry of entries) {
     if (!Number.isSafeInteger(entry.amountMinor)) throw new RangeError('Transaction amount must be a safe integer in minor units.');
@@ -64,34 +69,55 @@ export function calculateSummary(
     }
 
     transactionCount += 1;
+    const conversion = convertAmountMinor(
+      entry.amountMinor,
+      entry.currencyCode ?? null,
+      options.currency,
+      entry.date,
+      options.exchangeRates ?? [],
+    );
+    if (conversion.amountMinor === null) {
+      unconvertedTransactionCount += 1;
+      continue;
+    }
+    const amountMinor = conversion.amountMinor;
+    if (conversion.fromCurrency && conversion.fromCurrency !== conversion.toCurrency && conversion.rate && conversion.effectiveDate && conversion.source) {
+      const key = [conversion.fromCurrency, conversion.toCurrency, conversion.rate, conversion.effectiveDate, conversion.source, String(conversion.inverseRate)].join('|');
+      const current = rateUsage.get(key);
+      rateUsage.set(key, {
+        fromCurrency: conversion.fromCurrency, toCurrency: conversion.toCurrency, rate: conversion.rate,
+        effectiveDate: conversion.effectiveDate, source: conversion.source, inverseRate: conversion.inverseRate,
+        transactionCount: (current?.transactionCount ?? 0) + 1,
+      });
+    }
     const category = entry.categoryId ? categoryById.get(entry.categoryId) : undefined;
     const categoryName = category?.name ?? 'Sin categoría';
 
     if (category?.isIncome) {
-      incomeMinor = ensureSafeInteger(incomeMinor + entry.amountMinor, 'Income total');
-      addTotal(incomeByCategory, category.id, category.name, entry.amountMinor);
+      incomeMinor = ensureSafeInteger(incomeMinor + amountMinor, 'Income total');
+      addTotal(incomeByCategory, category.id, category.name, amountMinor);
       continue;
     }
 
-    if (entry.amountMinor > 0 && entry.categoryId === null) {
-      unclassifiedInflowMinor = ensureSafeInteger(unclassifiedInflowMinor + entry.amountMinor, 'Unclassified inflow total');
+    if (amountMinor > 0 && entry.categoryId === null) {
+      unclassifiedInflowMinor = ensureSafeInteger(unclassifiedInflowMinor + amountMinor, 'Unclassified inflow total');
       continue;
     }
 
-    const netOutflow = -entry.amountMinor;
+    const netOutflow = -amountMinor;
     expenseMinor = ensureSafeInteger(expenseMinor + netOutflow, 'Expense total');
     addTotal(expensesByCategory, entry.categoryId, categoryName, netOutflow);
-    if (entry.categoryId === null && entry.amountMinor < 0) {
+    if (entry.categoryId === null && amountMinor < 0) {
       uncategorizedOutflowMinor = ensureSafeInteger(uncategorizedOutflowMinor + netOutflow, 'Uncategorized outflow total');
     }
   }
 
   const savingsMinor = ensureSafeInteger(incomeMinor - expenseMinor, 'Savings total');
   const savingsRatePercent = incomeMinor > 0 ? (savingsMinor / incomeMinor) * 100 : null;
-  const warnings: string[] = [];
-  if (unclassifiedInflowMinor !== 0) warnings.push('Hay entradas positivas sin categoría; no se contabilizan como ingresos hasta clasificarlas.');
-  if (uncategorizedOutflowMinor !== 0) warnings.push('Hay gastos sin categoría que conviene revisar.');
-  if (incomeMinor <= 0) warnings.push('La tasa de ahorro no se calcula porque los ingresos del periodo no son positivos.');
+  if (unclassifiedInflowMinor !== 0) warnings.add('Hay entradas positivas sin categoría; no se contabilizan como ingresos hasta clasificarlas.');
+  if (uncategorizedOutflowMinor !== 0) warnings.add('Hay gastos sin categoría que conviene revisar.');
+  if (unconvertedTransactionCount > 0) warnings.add('Hay movimientos excluidos de los totales porque falta divisa nativa o un tipo de cambio válido.');
+  if (incomeMinor <= 0) warnings.add('La tasa de ahorro no se calcula porque los ingresos del periodo no son positivos.');
 
   return {
     currency: options.currency,
@@ -107,6 +133,8 @@ export function calculateSummary(
     transactionCount,
     expensesByCategory: sortTotals(expensesByCategory),
     incomeByCategory: sortTotals(incomeByCategory),
-    warnings,
+    warnings: [...warnings],
+    unconvertedTransactionCount,
+    exchangeRatesUsed: [...rateUsage.values()],
   };
 }

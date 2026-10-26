@@ -3,6 +3,7 @@ import { MovementTools } from './MovementTools.js';
 import { BudgetPanel } from './BudgetPanel.js';
 import { AssistantPanel } from './AssistantPanel.js';
 import { PlanningPanel } from './PlanningPanel.js';
+import { formatCivilDate, formatMoney as sharedFormatMoney, formatUnconvertedMoney as sharedFormatUnconvertedMoney } from './finance-format.js';
 
 type ConnectionState = 'checking' | 'connected' | 'unconfigured' | 'error';
 type PeriodMode = 'day' | 'month' | 'year' | 'custom';
@@ -14,6 +15,11 @@ interface Account {
   closed: boolean;
   offBudget: boolean;
   currentBalanceMinor: number | null;
+  currencyCode?: string | null;
+  nativeCurrencyCode?: string | null;
+  displayBalanceMinor?: number | null;
+  displayCurrency?: string;
+  balanceConversion?: { warning?: string };
 }
 interface Category {
   id: string;
@@ -26,6 +32,10 @@ interface Transaction {
   account: string;
   date: string;
   amount: number;
+  currencyCode?: string | null;
+  displayCurrency?: string;
+  displayAmountMinor?: number | null;
+  conversion?: { warning?: string; rate?: string | null; effectiveDate?: string | null; source?: string | null };
   category?: string | null;
   transfer_id?: string | null;
   payee_id?: string | null;
@@ -56,9 +66,24 @@ interface Summary {
   unclassifiedInflowMinor: number;
   excludedTransferCount: number;
   transactionCount: number;
+  unconvertedTransactionCount: number;
+  exchangeRatesUsed: readonly { fromCurrency: string; toCurrency: string; rate: string; effectiveDate: string; source: string; inverseRate: boolean; transactionCount: number }[];
   expensesByCategory: CategoryTotal[];
   incomeByCategory: CategoryTotal[];
   warnings: string[];
+}
+interface CurrencyRate {
+  fromCurrency: string;
+  toCurrency: string;
+  rate: string;
+  effectiveDate: string;
+  source: string;
+}
+interface CurrencyPreferences {
+  displayCurrency: string;
+  accountCurrencyOverrides: Record<string, string>;
+  exchangeRates: CurrencyRate[];
+  budgetCurrency?: string;
 }
 interface Period {
   startDate: string;
@@ -161,17 +186,9 @@ async function apiData<T>(url: string, signal?: AbortSignal): Promise<T> {
   const payload = await apiResponse<T>(url, signal);
   return payload.data === undefined ? payload as T : payload.data;
 }
-function formatMoney(amountMinor: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat('es-ES', { style: 'currency', currency, maximumFractionDigits: 2 }).format(amountMinor / 100);
-  } catch {
-    return (amountMinor / 100).toFixed(2) + ' ' + currency;
-  }
-}
-function displayDate(value: string): string {
-  const parsed = new Date(value + 'T12:00:00');
-  return Number.isNaN(parsed.getTime()) ? value : new Intl.DateTimeFormat('es-ES', { dateStyle: 'medium' }).format(parsed);
-}
+function formatMoney(amountMinor: number, currency: string): string { return sharedFormatMoney(amountMinor, currency); }
+function formatUnconvertedMoney(amountMinor: number, currency: string | null | undefined): string { return sharedFormatUnconvertedMoney(amountMinor, currency); }
+function displayDate(value: string): string { return formatCivilDate(value); }
 function transactionDescription(transaction: Transaction): string {
   return transaction.payee_name?.trim() || transaction.imported_payee?.trim() || transaction.notes?.trim() || 'Movimiento sin concepto';
 }
@@ -223,6 +240,12 @@ export function App() {
   const [page, setPage] = useState(1);
   const [sortKey, setSortKey] = useState<SortKey>('date');
   const [sortAscending, setSortAscending] = useState(false);
+  const [currencyPreferences, setCurrencyPreferences] = useState<CurrencyPreferences>({
+    displayCurrency: 'EUR', accountCurrencyOverrides: {}, exchangeRates: [],
+  });
+  const [currencySaving, setCurrencySaving] = useState(false);
+  const [currencySaveError, setCurrencySaveError] = useState('');
+  const [currencySaveNotice, setCurrencySaveNotice] = useState('');
 
   const route = window.location.pathname.replace(/\/+$/, '') || '/';
   const pageTitle = NAV_ITEMS.find((item) => item.href === route)?.label ?? 'Resumen';
@@ -236,13 +259,20 @@ export function App() {
     void (async () => {
       try {
         await apiData<{ status: string }>('/ready', controller.signal);
-        const [accountsResult, categoriesResult] = await Promise.all([
+        const [accountsResult, categoriesResult, currencyResult] = await Promise.all([
           apiData<Account[]>('/api/v1/accounts', controller.signal),
           apiData<Category[]>('/api/v1/categories', controller.signal),
+          apiData<CurrencyPreferences>('/api/v1/preferences/currency', controller.signal),
         ]);
         if (controller.signal.aborted) return;
         setAccounts(accountsResult);
         setCategories(categoriesResult);
+        setCurrencyPreferences({
+          displayCurrency: currencyResult.displayCurrency,
+          accountCurrencyOverrides: currencyResult.accountCurrencyOverrides ?? {},
+          exchangeRates: currencyResult.exchangeRates ?? [],
+          budgetCurrency: currencyResult.budgetCurrency ?? 'EUR',
+        });
         setConnection('connected');
       } catch (error) {
         if (controller.signal.aborted) return;
@@ -351,7 +381,13 @@ export function App() {
     setMode(nextMode);
     setPage(1);
   }
-  const currency = summary?.currency ?? 'EUR';
+  const currency = summary?.currency ?? currencyPreferences.displayCurrency ?? 'EUR';
+  function updateExchangeRate(index: number, field: keyof CurrencyRate, value: string): void {
+    setCurrencyPreferences((previous) => ({
+      ...previous,
+      exchangeRates: previous.exchangeRates.map((item, i) => i === index ? { ...item, [field]: value } : item),
+    }));
+  }
 
   return (
     <div className="app-shell">
@@ -444,10 +480,20 @@ export function App() {
                       </article>
                       <article className="panel"><div className="panel-heading"><div><p className="eyebrow">SEÑALES</p><h3>Aspectos a revisar</h3></div></div>
                         {summary.warnings.length ? <ul className="warning-list">{summary.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : <EmptyState title="Sin alertas de clasificación" body="No hay avisos que requieran revisión en este periodo." />}
-                        <div className="detail-line"><span>Movimientos incluidos</span><strong>{summary.transactionCount}</strong></div>
+                        <div className="detail-line"><span>Movimientos consolidados</span><strong>{summary.transactionCount - summary.unconvertedTransactionCount}</strong></div>
+                        {summary.unconvertedTransactionCount > 0 ? <div className="detail-line"><span>Movimientos sin conversión</span><strong>{summary.unconvertedTransactionCount}</strong></div> : null}
                         <div className="detail-line"><span>Traspasos excluidos del consolidado</span><strong>{summary.excludedTransferCount}</strong></div>
                       </article>
                     </div>
+                    {summary.exchangeRatesUsed.length > 0 ? <details className="panel exchange-rate-details">
+                      <summary>Tipos de cambio utilizados ({summary.exchangeRatesUsed.length})</summary>
+                      <div className="comparison-rows">{summary.exchangeRatesUsed.map((rate) => (
+                        <div className="comparison-row" key={[rate.fromCurrency, rate.toCurrency, rate.rate, rate.effectiveDate, rate.source, rate.inverseRate].join('|')}>
+                          <div><span>{rate.fromCurrency} → {rate.toCurrency}</span><strong>{rate.rate}{rate.inverseRate ? ' (tasa inversa)' : ''}</strong></div>
+                          <div className="comparison-meta"><span>Aplicable desde {rate.effectiveDate} · fuente: {rate.source}</span><span>{rate.transactionCount} movimientos</span></div>
+                        </div>
+                      ))}</div>
+                    </details> : null}
                     <MonthlyTrendPanel points={trendPoints} currency={currency} loading={trendLoading} error={trendError} />
                     <div className="section-footnote">Importes calculados con reglas deterministas en el backend. Los movimientos divididos se normalizan antes de agregarse; no se suman divisas distintas.</div>
                   </>
@@ -488,7 +534,12 @@ export function App() {
                               <td><strong className="transaction-name">{transactionDescription(transaction)}</strong>{transaction.notes ? <small className="transaction-note">{transaction.notes}</small> : null}</td>
                               <td>{accountsById.get(transaction.account)?.name ?? 'Cuenta desconocida'}</td>
                               <td>{category?.name ?? <span className="uncategorized">Sin categoría</span>}</td>
-                              <td className={'amount-cell ' + (transaction.amount < 0 ? 'expense' : 'income')}>{formatMoney(transaction.amount, currency)}</td>
+                              <td className={'amount-cell ' + (transaction.amount < 0 ? 'expense' : 'income')}>{transaction.displayAmountMinor !== null && transaction.displayAmountMinor !== undefined
+                                  ? formatMoney(transaction.displayAmountMinor, transaction.displayCurrency ?? currency)
+                                  : <span title={transaction.conversion?.warning ?? 'No hay conversión válida'}>
+                                      {formatUnconvertedMoney(transaction.amount, transaction.currencyCode)}
+                                      <small className="warning-text">{transaction.conversion?.warning ?? 'Sin divisa de análisis'}</small>
+                                    </span>}</td>
                               <td><span className={'cleared-badge ' + (transaction.cleared ? 'cleared' : '')}>{transaction.cleared ? 'Conciliado' : 'Pendiente'}</span></td>
                             </tr>;
                           })}</tbody>
@@ -529,7 +580,7 @@ export function App() {
             )}
 
             {route === '/budgets' && (
-              <BudgetPanel currency={currency} onBudgetUpdated={() => { setRefreshKey((value) => value + 1); }} />
+              <BudgetPanel currency={currencyPreferences.budgetCurrency ?? 'EUR'} onBudgetUpdated={() => { setRefreshKey((value) => value + 1); }} />
             )}
 
             {route === '/assistant' && <AssistantPanel currency={currency} />}
@@ -539,10 +590,77 @@ export function App() {
               <section className="content-section">
                 <div className="section-heading"><div><p className="eyebrow">ESTADO DEL SERVICIO</p><h2>Configuración local</h2></div></div>
                 <div className="settings-grid">
-                  <article className="panel settings-panel"><p className="eyebrow">CONEXIÓN</p><h3>Actual Budget</h3><div className="detail-line"><span>Estado de API</span><strong>{connection === 'connected' ? 'Disponible' : connection}</strong></div><div className="detail-line"><span>Cuentas visibles</span><strong>{accounts.length}</strong></div><div className="detail-line"><span>Categorías cargadas</span><strong>{categories.length}</strong></div><div className="detail-line"><span>Divisa del presupuesto</span><strong>{currency}</strong></div></article>
+                  <article className="panel settings-panel"><p className="eyebrow">CONEXIÓN</p><h3>Actual Budget</h3><div className="detail-line"><span>Estado de API</span><strong>{connection === 'connected' ? 'Disponible' : connection}</strong></div><div className="detail-line"><span>Cuentas visibles</span><strong>{accounts.length}</strong></div><div className="detail-line"><span>Categorías cargadas</span><strong>{categories.length}</strong></div><div className="detail-line"><span>Divisa del presupuesto</span><strong>{currencyPreferences.budgetCurrency ?? 'EUR'}</strong></div><div className="detail-line"><span>Divisa de análisis</span><strong>{currencyPreferences.displayCurrency}</strong></div></article>
                   <article className="panel settings-panel"><p className="eyebrow">PRIVACIDAD</p><h3>Diseño local-first</h3><ul className="privacy-list"><li>No se solicitan credenciales bancarias.</li><li>El navegador llama únicamente a la API local de la aplicación.</li><li>No hay telemetría ni analítica de terceros.</li><li>Los errores de API se saneanean antes de mostrarse.</li></ul><p className="setting-hint">Configura servidor y presupuesto en el archivo .env. Esta pantalla no muestra contraseñas ni identificadores privados de configuración.</p></article>
                 </div>
-                <div className="panel account-list-panel"><div className="panel-heading"><div><p className="eyebrow">CUENTAS</p><h3>Cuentas disponibles</h3></div></div>{accounts.length ? accounts.map((account) => <div className="detail-line" key={account.id}><span>{account.name}{account.closed ? ' · Cerrada' : ''}{account.offBudget ? ' · Fuera de presupuesto' : ''}</span><strong>{account.currentBalanceMinor === null ? 'Saldo desconocido' : formatMoney(account.currentBalanceMinor, currency)}</strong></div>) : <p className="muted-copy">No hay cuentas para mostrar.</p>}</div>
+                <article className="panel settings-panel currency-settings">
+                  <p className="eyebrow">PRESENTACIÓN FINANCIERA</p>
+                  <h3>Divisa de análisis y conversiones</h3>
+                  <p className="setting-hint">La divisa de análisis solo cambia la presentación y los agregados locales; nunca reescribe movimientos en Actual Budget. Si se desconoce la divisa de origen o falta una tasa, el importe no se consolida.</p>
+                  <label className="field-label">Divisa de análisis (código ISO de 3 letras)
+                    <input value={currencyPreferences.displayCurrency} maxLength={3} pattern="[A-Za-z]{3}" onChange={(event) => setCurrencyPreferences((previous) => ({ ...previous, displayCurrency: event.currentTarget.value.toUpperCase() }))} />
+                  </label>
+                  <h4>Divisa nativa por cuenta</h4>
+                  {accounts.filter((account) => !account.closed).map((account) => (
+                    <div className="detail-line currency-account-row" key={account.id}>
+                      <span>{account.name}<small>{account.nativeCurrencyCode ? 'Divisa nativa informada por Actual' : 'Se requiere indicar la divisa si se conoce'}</small></span>
+                      <label className="field-label currency-code-field">
+                        <span className="visually-hidden">Divisa nativa de {account.name}</span>
+                        <input value={account.nativeCurrencyCode ?? currencyPreferences.accountCurrencyOverrides[account.id] ?? ''} disabled={Boolean(account.nativeCurrencyCode)} placeholder="Desconocida" maxLength={3} pattern="[A-Za-z]{3}" onChange={(event) => {
+                          const value = event.currentTarget.value.toUpperCase();
+                          setCurrencyPreferences((previous) => {
+                            const next = { ...previous.accountCurrencyOverrides };
+                            if (value.trim() === '') delete next[account.id];
+                            else next[account.id] = value;
+                            return { ...previous, accountCurrencyOverrides: next };
+                          });
+                        }} />
+                      </label>
+                    </div>
+                  ))}
+                  <h4>Tipos de cambio manuales</h4>
+                  <p className="setting-hint">La tasa se interpreta como unidades de la divisa destino por 1 unidad de origen y se aplica desde la fecha indicada. Añade tasas históricas para informes reproducibles.</p>
+                  {currencyPreferences.exchangeRates.map((rate, index) => (
+                    <div className="currency-rate-row" key={rate.fromCurrency + '-' + rate.toCurrency + '-' + index}>
+                      <label className="field-label">Origen<input maxLength={3} value={rate.fromCurrency} onChange={(event) => updateExchangeRate(index, 'fromCurrency', event.currentTarget.value.toUpperCase())} /></label>
+                      <label className="field-label">Destino<input maxLength={3} value={rate.toCurrency} onChange={(event) => updateExchangeRate(index, 'toCurrency', event.currentTarget.value.toUpperCase())} /></label>
+                      <label className="field-label">Tasa<input inputMode="decimal" value={rate.rate} onChange={(event) => updateExchangeRate(index, 'rate', event.currentTarget.value)} /></label>
+                      <label className="field-label">Aplicable desde<input type="date" value={rate.effectiveDate} onChange={(event) => updateExchangeRate(index, 'effectiveDate', event.currentTarget.value)} /></label>
+                      <label className="field-label">Fuente<input maxLength={100} value={rate.source} onChange={(event) => updateExchangeRate(index, 'source', event.currentTarget.value)} /></label>
+                      <button className="button small" type="button" onClick={() => setCurrencyPreferences((previous) => ({ ...previous, exchangeRates: previous.exchangeRates.filter((_item, i) => i !== index) }))}>Eliminar tasa</button>
+                    </div>
+                  ))}
+                  <div className="button-row">
+                    <button className="button secondary" type="button" onClick={() => setCurrencyPreferences((previous) => ({ ...previous, exchangeRates: [...previous.exchangeRates, { fromCurrency: 'USD', toCurrency: 'EUR', rate: '', effectiveDate: currentDate(), source: 'manual' }] }))}>Añadir tasa</button>
+                    <button className="button primary" type="button" disabled={currencySaving} onClick={() => {
+                      void (async () => {
+                        setCurrencySaving(true); setCurrencySaveError(''); setCurrencySaveNotice('');
+                        try {
+                          const payload = {
+                            displayCurrency: currencyPreferences.displayCurrency.trim().toUpperCase(),
+                            accountCurrencyOverrides: currencyPreferences.accountCurrencyOverrides,
+                            exchangeRates: currencyPreferences.exchangeRates.filter((rate) => rate.rate.trim() !== ''),
+                          };
+                          const response = await fetch('/api/v1/preferences/currency', {
+                            method: 'PUT', headers: { 'content-type': 'application/json', Accept: 'application/json' },
+                            body: JSON.stringify(payload),
+                          });
+                          const result = await response.json() as ApiPayload<CurrencyPreferences>;
+                          if (!response.ok || !result.data) throw new Error(result.error?.message ?? 'No se pudieron guardar las preferencias monetarias.');
+                          setCurrencyPreferences(result.data);
+                          setAccounts(await apiData<Account[]>('/api/v1/accounts'));
+                          setCurrencySaveNotice('Preferencias monetarias guardadas localmente.');
+                          setRefreshKey((previous) => previous + 1);
+                        } catch (error) {
+                          setCurrencySaveError(error instanceof Error ? error.message : 'No se pudieron guardar las preferencias monetarias.');
+                        } finally { setCurrencySaving(false); }
+                      })();
+                    }}>{currencySaving ? 'Guardando…' : 'Guardar preferencias'}</button>
+                  </div>
+                  {currencySaveError ? <p role="alert" className="form-alert error">{currencySaveError}</p> : null}
+                  {currencySaveNotice ? <p role="status" className="form-alert success">{currencySaveNotice}</p> : null}
+                </article>
+                <div className="panel account-list-panel"><div className="panel-heading"><div><p className="eyebrow">CUENTAS</p><h3>Saldo original y saldo convertido</h3></div></div>{accounts.length ? accounts.map((account) => <div className="detail-line" key={account.id}><span>{account.name}{account.closed ? ' · Cerrada' : ''}{account.offBudget ? ' · Fuera de presupuesto' : ''}<small>{account.balanceConversion?.warning ? account.balanceConversion.warning : 'El saldo convertido usa la tasa más reciente aplicable.'}</small></span><strong>{account.displayBalanceMinor !== null && account.displayBalanceMinor !== undefined ? formatMoney(account.displayBalanceMinor, account.displayCurrency ?? currency) : formatUnconvertedMoney(account.currentBalanceMinor ?? 0, account.currencyCode)}</strong></div>) : <p className="muted-copy">No hay cuentas para mostrar.</p>}</div>
               </section>
             )}
 

@@ -1,6 +1,10 @@
+import type { ExchangeRateUsage } from './currency.js';
+
 export interface BudgetAccount {
   readonly id: string;
   readonly name: string;
+  /** ISO currency code supplied by Actual when available; null means unknown. */
+  readonly currencyCode?: string | null;
   readonly closed: boolean;
   readonly offBudget: boolean;
   readonly currentBalanceMinor: number | null;
@@ -17,6 +21,10 @@ export interface BudgetCategory {
 export interface BudgetTransaction {
   readonly id: string;
   readonly account: string;
+  /** Native transaction currency when the upstream API exposes it. */
+  readonly currencyCode?: string | null;
+  /** Compatibility with the raw snake_case Actual API shape. */
+  readonly currency_code?: string | null;
   readonly date: string;
   readonly amount: number;
   readonly category?: string | null;
@@ -35,6 +43,8 @@ export interface BudgetTransaction {
 export interface LedgerEntry {
   readonly id: string;
   readonly accountId: string;
+  /** null means the native currency could not be identified. */
+  readonly currencyCode?: string | null;
   readonly date: string;
   readonly amountMinor: number;
   readonly categoryId: string | null;
@@ -72,6 +82,8 @@ export interface FinancialSummary {
   readonly expensesByCategory: readonly CategoryTotal[];
   readonly incomeByCategory: readonly CategoryTotal[];
   readonly warnings: readonly string[];
+  readonly unconvertedTransactionCount: number;
+  readonly exchangeRatesUsed: readonly ExchangeRateUsage[];
 }
 
 export interface BudgetRepository {

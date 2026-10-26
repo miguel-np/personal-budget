@@ -17,6 +17,8 @@ export interface AssistantContext {
     readonly savingsRatePercent: number | null;
     readonly transactionCount: number;
     readonly excludedTransferCount: number;
+    readonly unconvertedTransactionCount: number;
+    readonly warnings: readonly string[];
   };
   readonly expensesByCategory: readonly {
     readonly categoryName: string;

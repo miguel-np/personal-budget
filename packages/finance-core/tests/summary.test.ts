@@ -8,14 +8,14 @@ const categories: readonly BudgetCategory[] = [
   { id: 'utilities', name: 'Suministros', groupId: 'expenses', isIncome: false },
 ];
 const entries: readonly LedgerEntry[] = [
-  { id: 'salary-1', accountId: 'checking', date: '2026-10-01', amountMinor: 200_000, categoryId: 'salary', transferId: null, isTransfer: false },
-  { id: 'food-1', accountId: 'checking', date: '2026-10-02', amountMinor: -5_000, categoryId: 'groceries', transferId: null, isTransfer: false },
-  { id: 'utility-1', accountId: 'checking', date: '2026-10-03', amountMinor: -3_000, categoryId: 'utilities', transferId: null, isTransfer: false },
-  { id: 'refund-1', accountId: 'checking', date: '2026-10-04', amountMinor: 2_000, categoryId: 'groceries', transferId: null, isTransfer: false },
-  { id: 'uncat-outflow', accountId: 'checking', date: '2026-10-05', amountMinor: -1_000, categoryId: null, transferId: null, isTransfer: false },
-  { id: 'uncat-inflow', accountId: 'checking', date: '2026-10-06', amountMinor: 500, categoryId: null, transferId: null, isTransfer: false },
-  { id: 'transfer-1', accountId: 'checking', date: '2026-10-06', amountMinor: -100_000, categoryId: null, transferId: 'transfer-leg', isTransfer: true },
-  { id: 'outside-period', accountId: 'checking', date: '2026-09-30', amountMinor: -10_000, categoryId: 'groceries', transferId: null, isTransfer: false },
+  { id: 'salary-1', accountId: 'checking', currencyCode: 'EUR', date: '2026-10-01', amountMinor: 200_000, categoryId: 'salary', transferId: null, isTransfer: false },
+  { id: 'food-1', accountId: 'checking', currencyCode: 'EUR', date: '2026-10-02', amountMinor: -5_000, categoryId: 'groceries', transferId: null, isTransfer: false },
+  { id: 'utility-1', accountId: 'checking', currencyCode: 'EUR', date: '2026-10-03', amountMinor: -3_000, categoryId: 'utilities', transferId: null, isTransfer: false },
+  { id: 'refund-1', accountId: 'checking', currencyCode: 'EUR', date: '2026-10-04', amountMinor: 2_000, categoryId: 'groceries', transferId: null, isTransfer: false },
+  { id: 'uncat-outflow', accountId: 'checking', currencyCode: 'EUR', date: '2026-10-05', amountMinor: -1_000, categoryId: null, transferId: null, isTransfer: false },
+  { id: 'uncat-inflow', accountId: 'checking', currencyCode: 'EUR', date: '2026-10-06', amountMinor: 500, categoryId: null, transferId: null, isTransfer: false },
+  { id: 'transfer-1', accountId: 'checking', currencyCode: 'EUR', date: '2026-10-06', amountMinor: -100_000, categoryId: null, transferId: 'transfer-leg', isTransfer: true },
+  { id: 'outside-period', accountId: 'checking', currencyCode: 'EUR', date: '2026-09-30', amountMinor: -10_000, categoryId: 'groceries', transferId: null, isTransfer: false },
 ];
 
 describe('calculateSummary', () => {

@@ -14,7 +14,7 @@ function assertNonEmpty(value: string, field: string): void {
 
 function toEntry(
   transaction: BudgetTransaction,
-  inherited?: { readonly account?: string; readonly date?: string; readonly transfer_id?: string | null },
+  inherited?: { readonly account?: string; readonly date?: string; readonly transfer_id?: string | null; readonly currencyCode?: string | null },
 ): LedgerEntry {
   const accountId = transaction.account || inherited?.account;
   const date = transaction.date || inherited?.date;
@@ -35,6 +35,7 @@ function toEntry(
     id: transaction.id,
     accountId,
     date,
+    ...(transaction.currencyCode !== undefined ? { currencyCode: transaction.currencyCode } : transaction.currency_code !== undefined ? { currencyCode: transaction.currency_code } : inherited?.currencyCode === undefined ? {} : { currencyCode: inherited.currencyCode }),
     amountMinor: transaction.amount,
     categoryId: transaction.category ?? null,
     transferId,
@@ -57,6 +58,7 @@ export function normalizeTransactions(transactions: readonly BudgetTransaction[]
             account: transaction.account,
             date: transaction.date,
             ...(transaction.transfer_id === undefined ? {} : { transfer_id: transaction.transfer_id }),
+            ...(transaction.currencyCode !== undefined ? { currencyCode: transaction.currencyCode } : transaction.currency_code !== undefined ? { currencyCode: transaction.currency_code } : {}),
           },
         ));
       }

@@ -43,3 +43,6 @@ Esta documentación describe el diseño objetivo de `personal-budget`, una aplic
 - [ADR-0001: diseño local-first](decisions/0001-local-first.md)
 - [ADR-0002: Actual Budget como motor financiero](decisions/0002-actual-budget.md)
 - [ADR-0003: MCP con permisos limitados](decisions/0003-mcp-permissions.md)
+
+
+- [Divisas, conversión y trazabilidad](multi-currency.md)

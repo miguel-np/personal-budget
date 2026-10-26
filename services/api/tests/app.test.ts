@@ -1,4 +1,7 @@
 import { createServer } from 'node:http';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BudgetAccount, BudgetCategory, BudgetRepository, BudgetTransaction } from '@personal-budget/finance-core';
@@ -8,16 +11,16 @@ import { buildApp } from '../src/app.js';
 import type { AppConfig } from '../src/config.js';
 
 const accounts: readonly BudgetAccount[] = [
-  { id: 'account-1', name: 'Cuenta corriente', closed: false, offBudget: false, currentBalanceMinor: 200_000 },
+  { id: 'account-1', name: 'Cuenta corriente', currencyCode: 'EUR', closed: false, offBudget: false, currentBalanceMinor: 200_000 },
 ];
 const categories: readonly BudgetCategory[] = [
   { id: 'salary', name: 'Salario', groupId: 'income', isIncome: true },
   { id: 'food', name: 'Alimentación', groupId: 'spend', isIncome: false },
 ];
 const transactions: readonly BudgetTransaction[] = [
-  { id: 'income-1', account: 'account-1', date: '2026-10-01', amount: 200_000, category: 'salary' },
-  { id: 'expense-1', account: 'account-1', date: '2026-10-02', amount: -10_000, category: 'food' },
-  { id: 'transfer-1', account: 'account-1', date: '2026-10-02', amount: -50_000, transfer_id: 'transfer-pair' },
+  { id: 'income-1', account: 'account-1', currencyCode: 'EUR', date: '2026-10-01', amount: 200_000, category: 'salary' },
+  { id: 'expense-1', account: 'account-1', currencyCode: 'EUR', date: '2026-10-02', amount: -10_000, category: 'food' },
+  { id: 'transfer-1', account: 'account-1', currencyCode: 'EUR', date: '2026-10-02', amount: -50_000, transfer_id: 'transfer-pair' },
 ];
 
 function createRepository(overrides: Partial<BudgetRepository> = {}): BudgetRepository {
@@ -37,6 +40,7 @@ const config: AppConfig = {
   budgetCurrency: 'EUR', allowedOrigins: ['http://127.0.0.1:5173', 'http://localhost:5173'],
 };
 const openApps: Array<{ close: () => Promise<void> }> = [];
+const temporaryDirectories: string[] = [];
 
 async function createOllamaFixture(chatStatus = 200, narrative = 'Los gastos parecen estables.') {
   const server = createServer((request, response) => {
@@ -70,7 +74,10 @@ async function createOllamaFixture(chatStatus = 200, narrative = 'Los gastos par
   };
 }
 
-afterEach(async () => { await Promise.all(openApps.splice(0).map((app) => app.close())); });
+afterEach(async () => {
+  await Promise.all(openApps.splice(0).map((app) => app.close()));
+  await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
+});
 
 async function createTestApp(repository: BudgetRepository = createRepository(), appConfig: AppConfig = config) {
   const app = await buildApp({ repository, config: appConfig, logger: false });
@@ -193,7 +200,8 @@ describe('local API', () => {
     const accountsResponse = await app.inject({ method: 'GET', url: '/api/v1/accounts' });
     const categoriesResponse = await app.inject({ method: 'GET', url: '/api/v1/categories' });
     expect(accountsResponse.statusCode).toBe(200);
-    expect(accountsResponse.json().data).toEqual(accounts);
+    expect(accountsResponse.json().data).toMatchObject(accounts);
+    expect(accountsResponse.json().data[0]).toMatchObject({ currencyCode: 'EUR', nativeCurrencyCode: 'EUR', displayCurrency: 'EUR', displayBalanceMinor: 200_000 });
     expect(categoriesResponse.statusCode).toBe(200);
     expect(categoriesResponse.json().data).toEqual(categories);
     expect(repository.listAccounts).toHaveBeenCalledTimes(1);
@@ -528,7 +536,7 @@ describe('local API', () => {
       url: '/api/v1/transactions?accountId=account-1&startDate=2026-10-01&endDate=2026-10-31',
     });
     expect(response.statusCode).toBe(200);
-    expect(response.json().data).toEqual([transactions[1], transactions[2], transactions[0]]);
+    expect(response.json().data).toMatchObject([transactions[1], transactions[2], transactions[0]]);
     expect(response.json().pagination).toMatchObject({ total: 3, limit: 50, offset: 0, sortBy: 'date', order: 'desc' });
     expect(repository.listTransactions).toHaveBeenCalledWith('account-1', '2026-10-01', '2026-10-31');
   });
@@ -716,4 +724,72 @@ describe('local API', () => {
     expect(invalid.statusCode).toBe(400);
     expect(listTransactions).toHaveBeenCalledTimes(2);
   });
+  it('converts foreign currency with a dated manual rate and preserves conversion provenance', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'budget-currency-api-'));
+    temporaryDirectories.push(directory);
+    const foreignAccount: BudgetAccount = { ...accounts[0]!, currencyCode: null };
+    const foreignTransactions: readonly BudgetTransaction[] = [
+      { id: 'usd-income', account: 'account-1', currencyCode: 'USD', date: '2026-10-01', amount: 10_000, category: 'salary' },
+      { id: 'usd-expense', account: 'account-1', currencyCode: 'USD', date: '2026-10-02', amount: -2_500, category: 'food' },
+    ];
+    const repository = createRepository({
+      listAccounts: vi.fn(async () => [foreignAccount]),
+      listTransactions: vi.fn(async () => foreignTransactions),
+    });
+    const app = await createTestApp(repository, { ...config, actualDataDir: directory });
+    const saved = await app.inject({
+      method: 'PUT', url: '/api/v1/preferences/currency',
+      payload: {
+        displayCurrency: 'EUR',
+        accountCurrencyOverrides: { 'account-1': 'USD' },
+        exchangeRates: [{ fromCurrency: 'USD', toCurrency: 'EUR', rate: '0.9', effectiveDate: '2026-01-01', source: 'manual statement rate' }],
+      },
+    });
+    expect(saved.statusCode).toBe(200);
+    const report = await app.inject({
+      method: 'GET', url: '/api/v1/reports/summary?startDate=2026-10-01&endDate=2026-10-31',
+    });
+    expect(report.statusCode).toBe(200);
+    expect(report.json().data).toMatchObject({
+      currency: 'EUR', incomeMinor: 9_000, expenseMinor: 2_250, savingsMinor: 6_750,
+      unconvertedTransactionCount: 0,
+      exchangeRatesUsed: [{ fromCurrency: 'USD', toCurrency: 'EUR', rate: '0.9', effectiveDate: '2026-01-01', source: 'manual statement rate', inverseRate: false, transactionCount: 2 }],
+    });
+    const preferences = await app.inject({ method: 'GET', url: '/api/v1/preferences/currency' });
+    expect(preferences.json().data).toMatchObject({
+      displayCurrency: 'EUR', budgetCurrency: 'EUR', accountCurrencyOverrides: { 'account-1': 'USD' },
+    });
+  });
+
+  it('does not create a consolidated total when native currency is unknown', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'budget-currency-unknown-'));
+    temporaryDirectories.push(directory);
+    const unknownAccount: BudgetAccount = { ...accounts[0]!, currencyCode: null };
+    const unknownTransactions: readonly BudgetTransaction[] = [
+      { id: 'unknown-income', account: 'account-1', date: '2026-10-01', amount: 10_000, category: 'salary' },
+      { id: 'unknown-expense', account: 'account-1', date: '2026-10-02', amount: -2_500, category: 'food' },
+    ];
+    const repository = createRepository({
+      listAccounts: vi.fn(async () => [unknownAccount]),
+      listTransactions: vi.fn(async () => unknownTransactions),
+    });
+    const app = await createTestApp(repository, { ...config, actualDataDir: directory });
+    const report = await app.inject({
+      method: 'GET', url: '/api/v1/reports/summary?startDate=2026-10-01&endDate=2026-10-31',
+    });
+    expect(report.statusCode).toBe(200);
+    expect(report.json().data).toMatchObject({
+      currency: 'EUR', incomeMinor: 0, expenseMinor: 0, savingsMinor: 0, unconvertedTransactionCount: 2,
+    });
+    expect(report.json().data.warnings.join(' ')).toMatch(/divisa nativa o un tipo de cambio válido/i);
+    const movements = await app.inject({
+      method: 'GET', url: '/api/v1/transactions?startDate=2026-10-01&endDate=2026-10-31',
+    });
+    expect(movements.statusCode).toBe(200);
+    expect(movements.json().data[0]).toMatchObject({
+      currencyCode: null, displayCurrency: 'EUR', displayAmountMinor: null,
+      conversion: { warning: expect.stringMatching(/desconocida/i) },
+    });
+  });
+
 });
