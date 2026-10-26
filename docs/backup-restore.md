@@ -16,11 +16,11 @@ BACKUP_RETENTION_DAYS controla la retención (1–3650 días; por defecto 30). A
 
 ## Restaurar
 
-    npm run restore:actual -- .local/backups/actual-server-YYYYMMDDTHHMMSSZ.tar.gz.enc
+    npm run restore:actual -- .local/backups/actual-server-YYYYMMDDTHHMMSSZ.tar.gz.enc --confirm-data-restore
 
 Antes de parar Actual, el script verifica el checksum, descifra a una carpeta temporal con permisos restringidos, valida el formato del archivo y rechaza rutas inseguras, enlaces y tipos especiales. Solo entonces detiene el servicio, extrae en staging y conserva el directorio actual como copia pre-restore. Si el arranque de la nueva instancia falla, intenta recuperar el directorio anterior. La carpeta temporal se elimina en ambos casos.
 
-Clave incorrecta, archivo truncado, contenido alterado o copia sin una etiqueta de autenticación válida provocan un fallo antes de la restauración; nunca se intenta abrir la copia parcialmente descifrada. Las operaciones de restauración sustituyen datos y deben tratarse como destructivas. No borres la copia pre-restore hasta validar la instancia.
+Clave incorrecta, archivo truncado, contenido alterado o copia sin una etiqueta de autenticación válida provocan un fallo antes de la restauración; nunca se intenta abrir la copia parcialmente descifrada. Las operaciones de restauración sustituyen datos y deben tratarse como destructivas; el comando exige --confirm-data-restore. Antes de confirmar, acepta explícitamente que se perderán los cambios hechos después de la copia. No borres la copia pre-restore hasta validar la instancia.
 
 ## Integridad, cifrado y rotación de claves
 

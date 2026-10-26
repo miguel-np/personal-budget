@@ -52,3 +52,5 @@ La interfaz compilada se abre en `http://127.0.0.1:4173` y la API en `http://127
 - `npm run doctor` diferencia requisitos inválidos de servicios no iniciados. No imprime variables sensibles, credenciales ni datos financieros.
 - La UI financiera básica sigue disponible cuando Ollama está desactivado; solo el asistente local queda no disponible.
 - Los tests E2E usan fixtures sintéticos aislados y no tocan el directorio `.local`, el presupuesto real ni backups.
+
+La actualización del servidor está automatizada de forma conservadora en [Actualizaciones seguras](safe-updates.md). Las versiones deben estar fijadas y la transición exacta debe estar validada; la restauración de datos requiere confirmación explícita.

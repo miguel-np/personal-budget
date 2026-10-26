@@ -33,7 +33,9 @@
     "start:local": "npm run build && node scripts/local-runtime.mjs",
     "start:built": "node scripts/local-runtime.mjs",
     "doctor": "tsx scripts/doctor.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "update:actual": "tsx scripts/safe-update.ts",
+    "test:update:acceptance": "tsx scripts/actual-update-acceptance.ts"
   },
   "dependencies": {
     "@actual-app/api": "26.10.0",
