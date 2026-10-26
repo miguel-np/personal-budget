@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { formatMoney as sharedFormatMoney } from './finance-format.js';
 
 interface Account { id: string; name: string; closed: boolean; }
 interface Category { id: string; name: string; groupId: string; isIncome: boolean; }
@@ -50,9 +51,7 @@ interface ForecastResult {
 }
 interface ApiPayload<T> { data?: T; notes?: readonly string[]; error?: { code?: string; message?: string } }
 
-function money(value: number, currency: string): string {
-  return new Intl.NumberFormat('es-ES', { style: 'currency', currency }).format(value / 100);
-}
+function money(value: number, currency: string): string { return sharedFormatMoney(value, currency); }
 function isoDate(date: Date): string { return date.toISOString().slice(0, 10); }
 function monthOffset(months: number): { startDate: string; endDate: string } {
   const now = new Date();
