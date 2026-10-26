@@ -24,6 +24,17 @@ process.env.APP_PORT = '3000';
 function start(name, args, cwd = root) {
   const child = spawn(process.execPath, args, { cwd, env: process.env, stdio: 'inherit', windowsHide: true });
   children.push({ name, child });
+  child.once('spawn', () => {
+    // shutdown() can run before an asynchronous spawn has received its PID.
+    if (stopping) {
+      child.kill('SIGTERM');
+      const forceTimer = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      }, 5_000);
+      forceTimer.unref();
+      child.once('close', () => clearTimeout(forceTimer));
+    }
+  });
   child.once('error', () => { process.stderr.write('No se pudo iniciar ' + name + '. Comprueba las dependencias y ejecuta npm ci.\n'); void shutdown(1); });
   child.once('exit', (code, signal) => {
     if (!stopping) { process.stderr.write(name + ' terminó inesperadamente (' + (signal || code) + '). Se detendrán los demás procesos.\n'); void shutdown(code === 0 ? 1 : code ?? 1); }
@@ -41,15 +52,24 @@ async function waitFor(url, name, timeoutMs = 30_000) {
 async function shutdown(code = 0) {
   if (stopping) return;
   stopping = true; exitCode = code;
-  const live = children.filter(({ child }) => child.exitCode === null && !child.killed);
+  // A failed spawn may emit "error" without ever receiving a PID or an "exit" event.
+  const live = children.filter(({ child }) => child.pid !== undefined && child.exitCode === null && child.signalCode === null);
   if (live.length) {
-    const forceTimer = setTimeout(() => { for (const { child } of live) if (child.exitCode === null) child.kill('SIGKILL'); }, 5_000);
+    // Subscribe before sending signals so fast exits cannot be missed between kill() and listener registration.
+    const closed = live.map(({ child }) => new Promise((done) => {
+      if (child.exitCode !== null || child.signalCode !== null) return done();
+      child.once('close', done);
+    }));
+    const forceTimer = setTimeout(() => {
+      for (const { child } of live) {
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      }
+    }, 5_000);
     forceTimer.unref();
-    for (const { child } of live) child.kill('SIGTERM');
-    await Promise.all(live.map(({ child }) => new Promise((done) => {
-      if (child.exitCode !== null) return done();
-      child.once('exit', done);
-    })));
+    for (const { child } of live) {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
+    }
+    await Promise.all(closed);
     clearTimeout(forceTimer);
   }
   process.exitCode = exitCode;
@@ -67,6 +87,8 @@ try {
     console.log('El estado de Actual y del asistente se muestra por separado en la interfaz.');
   }
 } catch (error) {
-  process.stderr.write((error instanceof Error ? error.message : 'No se pudo iniciar la aplicación local.') + '\n');
-  await shutdown(1);
+  if (!stopping) {
+    process.stderr.write((error instanceof Error ? error.message : 'No se pudo iniciar la aplicación local.') + '\n');
+    await shutdown(1);
+  }
 }
