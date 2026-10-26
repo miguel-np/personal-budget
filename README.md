@@ -2,7 +2,7 @@
 
 Aplicación local de finanzas personales con una única interfaz web para gastos, presupuestos, ahorro e informes. Un asistente con IA local será una ampliación opcional.
 
-> **Estado: roadmap P0–P3 completo (25-oct-2026).** La aplicación incluye shell web local, dashboard e informes comparativos, consultas paginadas de movimientos, registro manual, importación CSV con previsualización y conciliación oficial de Actual, presupuestos por categoría, planificación P3 (pagos recurrentes, sugerencias de categoría y previsiones explicables), asistente local con Ollama, MCP de solo lectura y backup/restore verificados. Todo validado en vivo en el entorno objetivo Windows + WSL2 con datos sintéticos; CI verde en Linux y Windows.
+> **Estado: roadmap P0–P3 completo (25-oct-2026).** La aplicación incluye shell web local, dashboard e informes comparativos, consultas paginadas de movimientos, registro manual, importación CSV con previsualización y conciliación oficial de Actual, presupuestos por categoría, planificación P3 (pagos recurrentes, sugerencias de categoría y previsiones explicables), asistente local con Ollama, MCP de solo lectura y backup/restore verificados. La CI valida Linux y Windows. La aceptación manual de Windows + WSL2 y el ciclo completo de parada/reinicio deben confirmarse en el entorno objetivo; no se consideran demostrados únicamente por CI.
 
 ## Arquitectura
 
@@ -69,10 +69,6 @@ Para probar la API oficial contra un presupuesto local de prueba sin modificar t
 ~~~bash
 npm run doctor
 npm run test:e2e
-~~~
-
-
-~~~bash
 npm run lint
 npm run typecheck
 npm run test:coverage
@@ -80,6 +76,20 @@ npm run build
 npm run audit
 npm run audit:production
 ~~~
+
+### Comprobar parada limpia del runtime
+
+En WSL2, con los puertos locales 3000 y 4173 libres, ejecuta una comprobación sintética del runtime compilado. No necesita conectar un presupuesto real ni escribir datos financieros:
+
+~~~bash
+cp .env.example .env
+npm ci
+npm run build
+npm run test:runtime:lifecycle
+rm .env
+~~~
+
+La prueba verifica que la UI y la API arrancan, que readiness comunica el estado `not_configured`, que el runtime termina tras `SIGTERM` y que los endpoints dejan de responder. No sustituye la validación de reinicios de Windows/WSL2 ni verifica por sí sola todas las variantes de cierre de terminal.
 
 ## Privacidad
 
