@@ -34,13 +34,33 @@ async function waitUntil(check, timeoutMs, message) {
   throw new Error(message);
 }
 
+async function waitForRuntimeExit(timeoutMs) {
+  if (runtime.exitCode !== null || runtime.signalCode !== null) return;
+  await new Promise((resolveExit, reject) => {
+    const timer = setTimeout(() => {
+      runtime.off('exit', onExit);
+      reject(new Error(`El proceso principal no terminó en ${timeoutMs / 1_000} segundos.`));
+    }, timeoutMs);
+    const onExit = () => {
+      clearTimeout(timer);
+      resolveExit();
+    };
+    runtime.once('exit', onExit);
+  });
+}
+
 async function stopRuntime() {
-  if (runtime.exitCode !== null) return;
+  if (runtime.exitCode !== null || runtime.signalCode !== null) return;
   runtime.kill('SIGTERM');
-  await Promise.race([
-    new Promise((resolveExit) => runtime.once('exit', resolveExit)),
-    delay(8_000).then(() => { throw new Error('El proceso principal no terminó en 8 segundos tras SIGTERM.'); }),
-  ]);
+  try {
+    await waitForRuntimeExit(8_000);
+  } catch (error) {
+    if (runtime.exitCode === null && runtime.signalCode === null) {
+      runtime.kill('SIGKILL');
+      await waitForRuntimeExit(2_000);
+    }
+    throw error;
+  }
 }
 
 try {
@@ -50,7 +70,7 @@ try {
     return ui.ok && health.ok;
   }, 40_000, 'La UI compilada y la API no quedaron disponibles dentro del tiempo límite.');
 
-  const readiness = await request('http://127.0.0.1:3000/ready');
+  const readiness = await request('http://127.0.0.1:4173/ready');
   if (!readiness.ok) throw new Error('El endpoint de readiness no respondió correctamente.');
   const readinessBody = await readiness.response.json();
   if (readinessBody.status !== 'not_configured') {
@@ -69,9 +89,8 @@ try {
   }
   console.log('Runtime lifecycle OK: producción disponible, readiness explícito, SIGTERM limpio y puertos liberados.');
 } catch (error) {
-  if (runtime.exitCode === null) {
-    runtime.kill('SIGKILL');
-    await Promise.race([new Promise((resolveExit) => runtime.once('exit', resolveExit)), delay(2_000)]);
+  if (runtime.exitCode === null && runtime.signalCode === null) {
+    try { await stopRuntime(); } catch { /* Preserve the original failure; stopRuntime attempted forced termination. */ }
   }
   process.stderr.write((error instanceof Error ? error.message : String(error)) + '\n');
   process.exitCode = 1;
