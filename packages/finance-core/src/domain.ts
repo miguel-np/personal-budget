@@ -1,3 +1,5 @@
+import type { ExchangeRateUsage } from './currency.js';
+
 export interface BudgetAccount {
   readonly id: string;
   readonly name: string;
@@ -81,7 +83,7 @@ export interface FinancialSummary {
   readonly incomeByCategory: readonly CategoryTotal[];
   readonly warnings: readonly string[];
   readonly unconvertedTransactionCount: number;
-  readonly exchangeRatesUsed: readonly import('./currency.js').ExchangeRateUsage[];
+  readonly exchangeRatesUsed: readonly ExchangeRateUsage[];
 }
 
 export interface BudgetRepository {
