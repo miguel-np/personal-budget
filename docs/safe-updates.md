@@ -2,7 +2,7 @@
 
 ## Política de actualización
 
-El servicio Actual está fijado por defecto a actualbudget/actual-server:26.10.0. Compose admite una etiqueta opcional ACTUAL_IMAGE, definida en el archivo local .env. No se aceptan latest, etiquetas flotantes, repositorios diferentes ni actualizaciones que no estén en docs/update-compatibility.json.
+El servicio Actual está fijado por defecto a actualbudget/actual-server:26.10.0. Compose admite una etiqueta opcional ACTUAL_IMAGE, definida en el archivo local .env. No se aceptan latest, etiquetas flotantes, repositorios diferentes ni actualizaciones que no estén en docs/update-compatibility.json. Los ejemplos de esta guía validan la transición desde una instalación existente en 26.9.0 hacia 26.10.0; el archivo .env y el contenedor en ejecución deben reflejar esa versión de origen. Si ya usas 26.10.0, no ejecutes esa actualización: no hay transición que aplicar.
 
 La matriz enumera transiciones concretas validadas por una prueba de aceptación aislada. No se infiere compatibilidad porque una versión sea numéricamente más reciente. Para introducir otra transición hay que añadir una prueba real desde la versión origen a la destino, pasar la CI y revisar el impacto de migraciones. En una actualización fallida después de arrancar el nuevo contenedor, no se promete que volver a una imagen antigua sea seguro.
 
