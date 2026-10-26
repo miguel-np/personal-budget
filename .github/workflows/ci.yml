@@ -150,3 +150,71 @@ jobs:
         run: npm run test:coverage
       - name: Production dependency audit
         run: npm run audit:production
+
+
+  actual-update-acceptance:
+    runs-on: ubuntu-latest
+    env:
+      ACTUAL_SERVER_PASSWORD: ci-only-password-for-synthetic-acceptance
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Set up Node.js LTS
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+      - name: Install exact dependency graph
+        run: npm ci
+      - name: Start the pinned previous Actual version
+        run: |
+          printf 'ACTUAL_IMAGE=actualbudget/actual-server:26.9.0\n' > .env
+          mkdir -p .local/actual-server-data
+          docker compose config --quiet
+          docker compose up -d actual
+      - name: Wait for previous Actual version
+        run: |
+          for attempt in $(seq 1 45); do
+            if curl --silent --show-error --fail --max-time 3 http://127.0.0.1:5006/ -o /dev/null; then exit 0; fi
+            sleep 2
+          done
+          docker compose logs actual
+          exit 1
+      - name: Bootstrap the isolated Actual test server with a CI-only password
+        run: |
+          curl --silent --show-error --fail --retry 5 --retry-delay 1 -X POST http://127.0.0.1:5006/account/bootstrap -H 'content-type: application/json' --data "$(node -e 'process.stdout.write(JSON.stringify({password:process.env.ACTUAL_SERVER_PASSWORD}))')"
+      - name: Install Actual API matching the previous server version
+        run: npm install --prefix "$RUNNER_TEMP/actual-api-269" --no-save --no-package-lock @actual-app/api@26.9.0
+      - name: Seed synthetic financial inventory
+        env:
+          ACTUAL_API_PACKAGE_DIR: ${{ runner.temp }}/actual-api-269
+        run: npm run test:update:acceptance -- seed
+      - name: Verify update preflight
+        run: npm run update:actual -- preflight --to actualbudget/actual-server:26.10.0
+      - name: Update from 26.9.0 to 26.10.0
+        run: npm run update:actual -- update --to actualbudget/actual-server:26.10.0 --confirm
+      - name: Compare synthetic inventory after update
+        run: npm run test:update:acceptance -- verify
+      - name: Explicitly restore the pre-update synthetic backup
+        run: |
+          BACKUP_PATH="$(node -e "const s=require('./.local/update-state.json');process.stdout.write(s.backupArchive)")"
+          npm run update:actual -- restore-backup --backup "$BACKUP_PATH" --to-image actualbudget/actual-server:26.9.0 --confirm-data-restore
+      - name: Verify inventory after explicit recovery
+        run: npm run test:update:acceptance -- verify
+      - name: Inject a failure after the target container starts
+        run: |
+          if NODE_ENV=test PERSONAL_BUDGET_TEST_FAIL_AFTER_SWITCH=1 npm run update:actual -- update --to actualbudget/actual-server:26.10.0 --confirm; then
+            echo "The injected update failure did not occur." >&2
+            exit 1
+          else
+            echo "Injected failure observed; proceeding through explicit data recovery."
+          fi
+      - name: Explicitly restore after the injected failure
+        run: |
+          BACKUP_PATH="$(node -e "const s=require('./.local/update-state.json');process.stdout.write(s.backupArchive)")"
+          npm run update:actual -- restore-backup --backup "$BACKUP_PATH" --to-image actualbudget/actual-server:26.9.0 --confirm-data-restore
+      - name: Compare recovered synthetic inventory
+        run: npm run test:update:acceptance -- verify
+      - name: Stop Actual test service
+        if: always()
+        run: docker compose down --remove-orphans

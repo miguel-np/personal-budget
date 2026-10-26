@@ -1,0 +1,10 @@
+{
+  "testedTransitions": [
+    {
+      "from": "26.9.0",
+      "to": "26.10.0",
+      "status": "verified",
+      "evidence": "The actual-update-acceptance CI job upgrades an isolated synthetic Actual Budget instance and checks its account and transaction inventory."
+    }
+  ]
+}

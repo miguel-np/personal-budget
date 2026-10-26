@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { chmod, mkdtemp, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { dirname, basename, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -101,8 +101,9 @@ async function backup(): Promise<string> {
   await pruneOldBackups();
   return archive;
 }
-async function restore(archiveInput: string): Promise<{ safetyCopy?: string }> {
-  if (!archiveInput) throw new Error('Pass the encrypted archive path: npm run restore:actual -- /path/to/backup.tar.gz.enc');
+async function restore(archiveInput: string, confirmed: boolean): Promise<{ safetyCopy?: string }> {
+  if (!confirmed) throw new Error('Restoration replaces the current Actual data directory. Pass --confirm-data-restore explicitly after reviewing the backup and accepting possible loss of later data.');
+  if (!archiveInput) throw new Error('Pass the encrypted archive path: npm run restore:actual -- /path/to/backup.tar.gz.enc --confirm-data-restore');
   const archive = resolve(root, archiveInput);
   if (!archive.endsWith('.tar.gz.enc')) throw new Error('Restore accepts encrypted .tar.gz.enc backups only.');
   const key = await readBackupKey(keyFile);
@@ -153,7 +154,7 @@ async function main(): Promise<void> {
     return;
   }
   if (action === 'restore') {
-    const result = await restore(process.argv[3] ?? '');
+    const result = await restore(process.argv[3] ?? '', process.argv.includes('--confirm-data-restore'));
     process.stdout.write('Restore completed from an authenticated encrypted backup; verify account, category, and transaction counts before use.\n');
     if (result.safetyCopy) process.stdout.write('Previous data directory preserved at: ' + result.safetyCopy + '\n');
     return;
