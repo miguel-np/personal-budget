@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { formatNullableMoney } from './finance-format.js';
 
 interface BudgetCategory {
   categoryId: string;
@@ -36,14 +37,7 @@ function localMonth(): string {
   const now = new Date();
   return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
 }
-function money(amountMinor: number | null, currency: string): string {
-  if (amountMinor === null || !Number.isFinite(amountMinor)) return 'Desconocido';
-  try {
-    return new Intl.NumberFormat('es-ES', { style: 'currency', currency, maximumFractionDigits: 2 }).format(amountMinor / 100);
-  } catch {
-    return (amountMinor / 100).toFixed(2) + ' ' + currency;
-  }
-}
+function money(amountMinor: number | null, currency: string): string { return amountMinor === null ? 'Desconocido' : formatNullableMoney(amountMinor, currency); }
 function parseAllocation(raw: string): number | null {
   let value = raw.trim().replace(/[\s€$£]/g, '');
   if (!value) return null;
