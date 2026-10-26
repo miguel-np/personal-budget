@@ -50,3 +50,7 @@ coverage/
 Thumbs.db
 .vscode/
 .idea/
+
+# Browser acceptance artifacts
+playwright-report/
+test-results/

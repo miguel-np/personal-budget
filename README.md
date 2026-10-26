@@ -21,7 +21,24 @@ Aplicación local de finanzas personales con una única interfaz web para gastos
 
 Consulta [baseline de versiones y política de auditoría](docs/version-baseline.md). Ninguna selección de versiones garantiza ausencia permanente de vulnerabilidades; CI ejecuta auditorías sobre el árbol de dependencias.
 
-## Inicio local
+## Uso diario (frontend compilado)
+
+Desde WSL, en la raíz del repositorio:
+
+~~~bash
+nvm install
+nvm use
+npm ci
+cp .env.example .env
+mkdir -p .local/actual-server-data .local/actual-api .local/backups
+docker compose up -d actual
+npm run doctor
+npm run start:local
+~~~
+
+Abre http://127.0.0.1:4173. El comando compila y administra la API y el frontend compilado; Ctrl+C detiene ambos procesos. Si Actual no está preparado o Ollama está desactivado, la shell muestra el estado sin ocultar la incidencia. Ejecuta `npm run doctor` para revisar requisitos sin mostrar secretos.
+
+## Desarrollo local
 
 Desde WSL, en la raíz del repositorio:
 
@@ -48,6 +65,12 @@ Abre http://127.0.0.1:5173. La aplicación incluye Resumen, Movimientos, Informe
 Para probar la API oficial contra un presupuesto local de prueba sin modificar transacciones, sigue [la guía de instalación](docs/installation.md#9-prueba-de-aceptación-con-un-presupuesto-local-existente-opcional). Esa prueba se omite en CI si no se habilita explícitamente y no usa datos financieros en pipelines normales.
 
 ## Calidad
+
+~~~bash
+npm run doctor
+npm run test:e2e
+~~~
+
 
 ~~~bash
 npm run lint

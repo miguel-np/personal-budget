@@ -28,6 +28,11 @@ Esta documentación describe el diseño objetivo de `personal-budget`, una aplic
 - [Operación local](operations.md)
 - [Resolución de problemas](troubleshooting.md)
 
+## Diseño de interfaz y calidad
+
+- [Sistema de diseño](design-system.md)
+- [Pruebas E2E de navegador](browser-testing.md)
+
 ## Desarrollo y gobernanza
 
 - [Entorno de desarrollo](development.md)

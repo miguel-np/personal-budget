@@ -214,3 +214,18 @@ Si el servidor tiene contraseña, añade `ACTUAL_SERVER_PASSWORD` en el entorno 
 ## Datos privados
 
 Usa primero un presupuesto de prueba. Nunca añadas extractos, bases de datos, backups, .env ni logs sensibles al repositorio. No introduzcas credenciales bancarias en Actual, Ollama, MCP ni personal-budget.
+
+
+## Modo diario y diagnóstico
+
+Tras completar la configuración inicial, utiliza el siguiente flujo en WSL2:
+
+~~~bash
+npm ci
+npm run doctor
+npm run start:local
+~~~
+
+Abre `http://127.0.0.1:4173`. El comando compila la aplicación, inicia la API y sirve el frontend de producción. Ctrl+C realiza el apagado coordinado. Si Actual aún no está listo o falta el presupuesto, la shell presenta un estado accionable sin inventar datos; Ollama es opcional.
+
+`npm run doctor` revisa la baseline de Node/npm, la configuración, Docker/Actual y la disponibilidad de API, web y asistente. Identifica variables que necesitan corrección sin imprimir valores sensibles. Consulta [Operación local](operations.md) para comprobar readiness, recuperación tras reiniciar WSL2 y procedimientos de parada.

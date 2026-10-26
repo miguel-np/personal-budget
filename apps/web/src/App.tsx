@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type MouseEvent } from 'react';
 import { MovementTools } from './MovementTools.js';
 import { BudgetPanel } from './BudgetPanel.js';
 import { AssistantPanel } from './AssistantPanel.js';
@@ -265,7 +265,24 @@ export function App() {
   const [accountScopeSaveError, setAccountScopeSaveError] = useState('');
   const [accountScopeSaveNotice, setAccountScopeSaveNotice] = useState('');
 
-  const route = window.location.pathname.replace(/\/+$/, '') || '/';
+  const [route, setRoute] = useState(() => window.location.pathname.replace(/\/+$/, '') || '/');
+
+  useEffect(() => {
+    const syncRoute = () => setRoute(window.location.pathname.replace(/\/+$/, '') || '/');
+    window.addEventListener('popstate', syncRoute);
+    return () => window.removeEventListener('popstate', syncRoute);
+  }, []);
+
+  function navigate(event: MouseEvent<HTMLAnchorElement>, href: string): void {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (event.currentTarget.origin !== window.location.origin) return;
+    event.preventDefault();
+    if (window.location.pathname !== href) {
+      window.history.pushState(null, '', href);
+      setRoute(href);
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    }
+  }
   const pageTitle = NAV_ITEMS.find((item) => item.href === route)?.label ?? 'Resumen';
   const period = useMemo(() => periodFor(mode, anchor, customStart, customEnd), [mode, anchor, customStart, customEnd]);
   const previous = useMemo(() => previousPeriod(mode, period), [mode, period]);
@@ -447,13 +464,13 @@ export function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar" aria-label="Navegación principal">
-        <a className="brand" href="/" aria-label="personal-budget, ir al resumen">
+        <a className="brand" href="/" onClick={(event) => navigate(event, '/')} aria-label="personal-budget, ir al resumen">
           <span className="brand-mark" aria-hidden="true">pb</span>
           <span><strong>personal-budget</strong><small>FINANZAS LOCALES</small></span>
         </a>
         <nav className="nav-list" aria-label="Secciones de la aplicación">
           {NAV_ITEMS.map((item) => (
-            <a className={'nav-item' + (item.href === route ? ' active' : '')} href={item.href}
+            <a className={'nav-item' + (item.href === route ? ' active' : '')} href={item.href} onClick={(event) => navigate(event, item.href)}
               aria-current={item.href === route ? 'page' : undefined} key={item.href}>
               <span className="nav-icon" aria-hidden="true">{item.icon}</span><span>{item.label}</span>
             </a>
@@ -499,7 +516,7 @@ export function App() {
                   Todas las cuentas abiertas
                 </label>
                 <label className="check-field">
-                  <input type="radio" name="account-scope-mode" checked={accountScopeDraft.mode === 'selected'}
+                  <input type="radio" name="account-scope-mode" aria-label="Seleccionar cuentas" checked={accountScopeDraft.mode === 'selected'}
                     onChange={() => setAccountScopeDraft((previous) => ({ mode: 'selected', accountIds: previous.mode === 'selected' ? previous.accountIds : [] }))} />
                   Seleccionar cuentas
                 </label>
@@ -713,7 +730,10 @@ export function App() {
                   <h3>Divisa de análisis y conversiones</h3>
                   <p className="setting-hint">La divisa de análisis solo cambia la presentación y los agregados locales; nunca reescribe movimientos en Actual Budget. Si se desconoce la divisa de origen o falta una tasa, el importe no se consolida.</p>
                   <label className="field-label">Divisa de análisis (código ISO de 3 letras)
-                    <input value={currencyPreferences.displayCurrency} maxLength={3} pattern="[A-Za-z]{3}" onChange={(event) => setCurrencyPreferences((previous) => ({ ...previous, displayCurrency: event.currentTarget.value.toUpperCase() }))} />
+                    <input value={currencyPreferences.displayCurrency} maxLength={3} pattern="[A-Za-z]{3}" onChange={(event) => {
+                      const displayCurrency = event.currentTarget.value.toUpperCase();
+                      setCurrencyPreferences((previous) => ({ ...previous, displayCurrency }));
+                    }} />
                   </label>
                   <h4>Divisa nativa por cuenta</h4>
                   {accounts.filter((account) => !account.closed).map((account) => (
