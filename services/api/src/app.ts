@@ -10,6 +10,8 @@ import { LocalAiClient, LocalAiUnavailableError } from './local-ai.js';
 import type { AssistantContext } from './local-ai.js';
 import { CurrencyPreferencesSchema, readCurrencyPreferences, writeCurrencyPreferences } from './currency-preferences.js';
 import type { CurrencyPreferences } from './currency-preferences.js';
+import { AccountScopeError, AccountScopePreferenceSchema, readAccountScope, resolveAccountScope, writeAccountScope } from './account-scope.js';
+import type { AccountScopePreference, AccountScopeMetadata } from './account-scope.js';
 
 const TransactionQuerySchema = z.object({
   accountId: z.string().trim().min(1).max(128).optional(),
@@ -93,6 +95,9 @@ function isWithinMaximumPeriod(startDate: string, endDate: string): boolean {
 }
 
 function sanitizedErrorResponse(error: unknown): { statusCode: number; body: { error: { code: string; message: string } } } {
+  if (error instanceof AccountScopeError) {
+    return { statusCode: 400, body: { error: { code: error.code, message: error.message } } };
+  }
   if (error instanceof ZodError) {
     return { statusCode: 400, body: { error: { code: 'INVALID_REQUEST', message: 'Request parameters are invalid.' } } };
   }
@@ -163,6 +168,10 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
 
   async function currencyPreferences(): Promise<CurrencyPreferences> {
     return readCurrencyPreferences(config.actualDataDir, config.budgetCurrency);
+  }
+
+  async function accountScopePreference(): Promise<AccountScopePreference> {
+    return readAccountScope(config.actualDataDir);
   }
 
   function accountNativeCurrency(
@@ -330,6 +339,28 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   app.get('/api/v1/categories', async (_request, reply) => {
     try { return { data: await repository.listCategories() }; }
     catch (error) { const normalized = sanitizedErrorResponse(error); return reply.code(normalized.statusCode).send(normalized.body); }
+  });
+  app.get('/api/v1/preferences/accounts', async (_request, reply) => {
+    try {
+      const [accounts, preference] = await Promise.all([repository.listAccounts(), accountScopePreference()]);
+      const resolved = resolveAccountScope(accounts, preference);
+      return { data: { ...preference, ...resolved.metadata } };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+  app.put('/api/v1/preferences/accounts', async (request, reply) => {
+    try {
+      const preference = AccountScopePreferenceSchema.parse(request.body);
+      const accounts = await repository.listAccounts();
+      const resolved = resolveAccountScope(accounts, preference);
+      await writeAccountScope(config.actualDataDir, preference);
+      return { data: { ...preference, ...resolved.metadata } };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
   });
   app.get('/api/v1/preferences/currency', async (_request, reply) => {
     try { return { data: { ...(await currencyPreferences()), budgetCurrency: config.budgetCurrency } }; }
