@@ -390,7 +390,13 @@ export function App() {
     setMode(nextMode);
     setPage(1);
   }
-  const currency = summary?.currency ?? 'EUR';
+  const currency = summary?.currency ?? currencyPreferences.displayCurrency ?? 'EUR';
+  function updateExchangeRate(index: number, field: keyof CurrencyRate, value: string): void {
+    setCurrencyPreferences((previous) => ({
+      ...previous,
+      exchangeRates: previous.exchangeRates.map((item, i) => i === index ? { ...item, [field]: value } : item),
+    }));
+  }
 
   return (
     <div className="app-shell">
@@ -573,7 +579,7 @@ export function App() {
             )}
 
             {route === '/budgets' && (
-              <BudgetPanel currency={currency} onBudgetUpdated={() => { setRefreshKey((value) => value + 1); }} />
+              <BudgetPanel currency={currencyPreferences.budgetCurrency ?? 'EUR'} onBudgetUpdated={() => { setRefreshKey((value) => value + 1); }} />
             )}
 
             {route === '/assistant' && <AssistantPanel currency={currency} />}
@@ -615,11 +621,11 @@ export function App() {
                   <p className="setting-hint">La tasa se interpreta como unidades de la divisa destino por 1 unidad de origen y se aplica desde la fecha indicada. Añade tasas históricas para informes reproducibles.</p>
                   {currencyPreferences.exchangeRates.map((rate, index) => (
                     <div className="currency-rate-row" key={rate.fromCurrency + '-' + rate.toCurrency + '-' + index}>
-                      <label className="field-label">Origen<input maxLength={3} value={rate.fromCurrency} onChange={(event) => setCurrencyPreferences((previous) => ({ ...previous, exchangeRates: previous.exchangeRates.map((item, i) => i === index ? { ...item, fromCurrency: event.currentTarget.value.toUpperCase() } : item) }))} /></label>
-                      <label className="field-label">Destino<input maxLength={3} value={rate.toCurrency} onChange={(event) => setCurrencyPreferences((previous) => ({ ...previous, exchangeRates: previous.exchangeRates.map((item, i) => i === index ? { ...item, toCurrency: event.currentTarget.value.toUpperCase() } : item) }))} /></label>
-                      <label className="field-label">Tasa<input inputMode="decimal" value={rate.rate} onChange={(event) => setCurrencyPreferences((previous) => ({ ...previous, exchangeRates: previous.exchangeRates.map((item, i) => i === index ? { ...item, rate: event.currentTarget.value } : item) }))} /></label>
-                      <label className="field-label">Aplicable desde<input type="date" value={rate.effectiveDate} onChange={(event) => setCurrencyPreferences((previous) => ({ ...previous, exchangeRates: previous.exchangeRates.map((item, i) => i === index ? { ...item, effectiveDate: event.currentTarget.value } : item) }))} /></label>
-                      <label className="field-label">Fuente<input maxLength={100} value={rate.source} onChange={(event) => setCurrencyPreferences((previous) => ({ ...previous, exchangeRates: previous.exchangeRates.map((item, i) => i === index ? { ...item, source: event.currentTarget.value } : item) }))} /></label>
+                      <label className="field-label">Origen<input maxLength={3} value={rate.fromCurrency} onChange={(event) => updateExchangeRate(index, 'fromCurrency', event.currentTarget.value.toUpperCase())} /></label>
+                      <label className="field-label">Destino<input maxLength={3} value={rate.toCurrency} onChange={(event) => updateExchangeRate(index, 'toCurrency', event.currentTarget.value.toUpperCase())} /></label>
+                      <label className="field-label">Tasa<input inputMode="decimal" value={rate.rate} onChange={(event) => updateExchangeRate(index, 'rate', event.currentTarget.value)} /></label>
+                      <label className="field-label">Aplicable desde<input type="date" value={rate.effectiveDate} onChange={(event) => updateExchangeRate(index, 'effectiveDate', event.currentTarget.value)} /></label>
+                      <label className="field-label">Fuente<input maxLength={100} value={rate.source} onChange={(event) => updateExchangeRate(index, 'source', event.currentTarget.value)} /></label>
                       <button className="button small" type="button" onClick={() => setCurrencyPreferences((previous) => ({ ...previous, exchangeRates: previous.exchangeRates.filter((_item, i) => i !== index) }))}>Eliminar tasa</button>
                     </div>
                   ))}
