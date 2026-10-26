@@ -37,6 +37,30 @@ jobs:
         run: npm run lint
       - name: Typecheck and build
         run: npm run typecheck && npm run build
+      - name: Smoke the compiled local runtime (synthetic, unconfigured budget)
+        shell: bash
+        run: |
+          mkdir -p .local
+          cp .env.example .env
+          node scripts/local-runtime.mjs > .local/runtime.log 2>&1 &
+          runtime_pid=$!
+          trap 'kill -TERM "$runtime_pid" 2>/dev/null || true; wait "$runtime_pid" 2>/dev/null || true; rm -f .env' EXIT
+          for attempt in $(seq 1 40); do
+            if curl --silent --show-error --fail http://127.0.0.1:4173/ -o /dev/null &&
+               curl --silent --show-error --fail http://127.0.0.1:4173/health -o /dev/null; then
+              curl --silent --show-error http://127.0.0.1:4173/ready -o .local/readiness.json || true
+              if grep -q '"status":"not_configured"' .local/readiness.json; then
+                echo "Production UI/API answered; missing budget is surfaced without blocking startup."
+                exit 0
+              fi
+              echo "Expected the smoke setup to report an unconfigured budget."
+              cat .local/readiness.json
+              exit 1
+            fi
+            sleep 1
+          done
+          cat .local/runtime.log
+          exit 1
       - name: Unit and integration tests with coverage
         run: npm run test:coverage
       - name: Production dependency audit
@@ -69,6 +93,35 @@ jobs:
       - name: Stop Actual Budget test service
         if: always()
         run: docker compose down --remove-orphans
+
+  browser-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Set up Node.js LTS
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+      - name: Install exact dependency graph
+        run: npm ci
+      - name: Build production frontend
+        run: npm run build
+      - name: Install Chromium and system dependencies
+        run: npx playwright install --with-deps chromium
+      - name: Run synthetic production-browser acceptance
+        run: npm run test:e2e
+      - name: Upload sanitized browser diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: personal-budget-playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
 
   windows-quality:
     runs-on: windows-latest

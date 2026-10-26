@@ -11,6 +11,7 @@
   "include": [
     "packages/**/*.test.ts",
     "services/**/*.test.ts",
-    "vitest.config.ts"
+    "vitest.config.ts",
+    "scripts/**/*.test.ts"
   ]
 }
