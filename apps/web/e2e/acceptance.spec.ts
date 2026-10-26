@@ -97,18 +97,29 @@ test('category suggestions preview is read-only until confirmed; cancel is safe'
   await page.goto('/planning');
   await expect(page.getByRole('heading', { name: 'Planificación', level: 2 })).toBeVisible();
   await expect(page.getByText('Cafetería sin categoría sintética')).toBeVisible();
+
+  const category = page.getByLabel('Categoría').first();
+  await category.selectOption('synthetic-restaurants');
+  await expect(category).toHaveValue('synthetic-restaurants');
   await page.getByRole('button', { name: 'Previsualizar', exact: true }).click();
   await expect(page.getByRole('group', { name: 'Confirmación de categorización' })).toBeVisible();
-  await expect(page.getByLabel('Categoría').first()).toBeDisabled();
-  expect((await (await request.get(fixtureApi + '/__test__/state')).json()).categoryWrites).toBe(0);
+  await expect(category).toBeDisabled();
+
+  let state = await (await request.get(fixtureApi + '/__test__/state')).json();
+  expect(state.categoryWrites).toBe(0);
+  expect(state.lastPreviewChanges).toEqual([{ transactionId: 'synthetic-tx-3', categoryId: 'synthetic-restaurants' }]);
+
   await page.getByRole('button', { name: 'Cancelar', exact: true }).click();
   expect((await (await request.get(fixtureApi + '/__test__/state')).json()).categoryWrites).toBe(0);
+
   await page.getByRole('button', { name: 'Previsualizar', exact: true }).click();
   await page.getByRole('button', { name: 'Confirmar aplicación' }).click();
-  await expect(page.getByText(/confirmación explícita/)).toBeVisible();
-  expect((await (await request.get(fixtureApi + '/__test__/state')).json()).categoryWrites).toBe(1);
-});
+  await expect(page.locator('.planning-panel').getByRole('status')).toContainText('confirmación explícita');
 
+  state = await (await request.get(fixtureApi + '/__test__/state')).json();
+  expect(state.categoryWrites).toBe(1);
+  expect(state.lastCommittedChanges).toEqual([{ transactionId: 'synthetic-tx-3', categoryId: 'synthetic-restaurants' }]);
+});
 test('discarding a category suggestion never sends a write', async ({ page, request }) => {
   await page.goto('/planning');
   await expect(page.getByText('Cafetería sin categoría sintética')).toBeVisible();
@@ -151,7 +162,7 @@ test('analysis currency preference persists and is applied to dashboard display'
   const saveCurrencyPreferences = page.locator('.currency-settings').getByRole('button', { name: 'Guardar preferencias', exact: true });
   await expect(saveCurrencyPreferences).toBeVisible();
   await saveCurrencyPreferences.click();
-  await expect(page.getByRole('status')).toContainText('Preferencias monetarias guardadas localmente.');
+  await expect(page.locator('.currency-settings').getByRole('status')).toContainText('Preferencias monetarias guardadas localmente.');
   const state = await (await request.get(fixtureApi + '/__test__/state')).json();
   expect(state.currencyPreferences.displayCurrency).toBe('GBP');
   await page.goto('/');

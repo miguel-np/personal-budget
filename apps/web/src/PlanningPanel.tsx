@@ -210,7 +210,10 @@ export function PlanningPanel({ currency }: { currency: string }) {
                     <select
                       disabled={busy || pendingChanges.length > 0}
                       value={chosenCategory[suggestion.transactionId] ?? suggestion.suggestedCategoryId}
-                      onChange={(event) => setChosenCategory((previous) => ({ ...previous, [suggestion.transactionId]: event.currentTarget.value }))}
+                      onChange={(event) => {
+                      const categoryId = event.currentTarget.value;
+                      setChosenCategory((previous) => ({ ...previous, [suggestion.transactionId]: categoryId }));
+                    }}
                     >
                       {expenseCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
                     </select>

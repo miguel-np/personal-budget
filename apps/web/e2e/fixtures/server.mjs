@@ -4,6 +4,8 @@ let readiness = 'configured';
 let failImportPreview = false;
 let commitCount = 0;
 let categoryWrites = 0;
+let lastPreviewChanges = [];
+let lastCommittedChanges = [];
 let budgetedMinor = 50_000;
 let currencyPreferences = { displayCurrency: 'EUR', accountCurrencyOverrides: {}, exchangeRates: [] };
 let accountScope = { mode: 'all', accountIds: [] };
@@ -15,6 +17,7 @@ const secondaryAccount = { id: 'synthetic-account-2', name: 'Cuenta sintética s
 const accounts = [account, secondaryAccount];
 const categories = [
   { id: 'synthetic-food', name: 'Alimentación sintética', groupId: 'synthetic-group', isIncome: false },
+  { id: 'synthetic-restaurants', name: 'Restaurantes sintéticos', groupId: 'synthetic-group', isIncome: false },
   { id: 'synthetic-income', name: 'Ingresos sintéticos', groupId: 'synthetic-income-group', isIncome: true },
 ];
 const transactions = Array.from({ length: 22 }, (_, index) => {
@@ -111,7 +114,7 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url || '/', 'http://127.0.0.1:3000');
   try {
     if (req.method === 'POST' && url.pathname === '/__test__/reset') {
-      readiness = 'configured'; failImportPreview = false; commitCount = 0; categoryWrites = 0; budgetedMinor = 50_000; currencyPreferences = { displayCurrency: 'EUR', accountCurrencyOverrides: {}, exchangeRates: [] }; accountScope = { mode: 'all', accountIds: [] };
+      readiness = 'configured'; failImportPreview = false; commitCount = 0; categoryWrites = 0; lastPreviewChanges = []; lastCommittedChanges = []; budgetedMinor = 50_000; currencyPreferences = { displayCurrency: 'EUR', accountCurrencyOverrides: {}, exchangeRates: [] }; accountScope = { mode: 'all', accountIds: [] };
       return send(res, 200, { ok: true });
     }
     if (req.method === 'POST' && url.pathname === '/__test__/mode') {
@@ -120,7 +123,7 @@ const server = createServer(async (req, res) => {
       failImportPreview = body.failImportPreview === true;
       return send(res, 200, { ok: true });
     }
-    if (req.method === 'GET' && url.pathname === '/__test__/state') return send(res, 200, { commitCount, categoryWrites, budgetedMinor, currencyPreferences, accountScope });
+    if (req.method === 'GET' && url.pathname === '/__test__/state') return send(res, 200, { commitCount, categoryWrites, lastPreviewChanges, lastCommittedChanges, budgetedMinor, currencyPreferences, accountScope });
     if (req.method === 'GET' && url.pathname === '/health') return send(res, 200, { status: 'ok', service: 'synthetic-fixture-api' });
     if (req.method === 'GET' && url.pathname === '/ready') {
       if (readiness !== 'configured') return send(res, 503, { status: 'not_configured', error: { code: 'NOT_CONFIGURED', message: 'El presupuesto sintético no está configurado.' } });
@@ -207,7 +210,12 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/v1/insights/category-suggestions') return send(res, 200, { data: suggestions });
     if (req.method === 'POST' && url.pathname === '/api/v1/insights/categorize') {
       const body = await readBody(req);
-      if (body.commit === true) categoryWrites += body.transactions?.length ?? 0;
+      if (body.commit === true) {
+        categoryWrites += body.transactions?.length ?? 0;
+        lastCommittedChanges = body.transactions ?? [];
+      } else {
+        lastPreviewChanges = body.transactions ?? [];
+      }
       return send(res, 200, { data: { preview: body.commit !== true, requested: body.transactions?.length ?? 0, changes: body.transactions?.length ?? 0 } });
     }
     if (req.method === 'GET' && url.pathname === '/api/v1/assistant/status') return send(res, 200, { enabled: false, status: 'disabled' });
