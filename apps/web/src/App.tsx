@@ -65,6 +65,8 @@ interface Summary {
   unclassifiedInflowMinor: number;
   excludedTransferCount: number;
   transactionCount: number;
+  unconvertedTransactionCount: number;
+  exchangeRatesUsed: readonly { fromCurrency: string; toCurrency: string; rate: string; effectiveDate: string; source: string; inverseRate: boolean; transactionCount: number }[];
   expensesByCategory: CategoryTotal[];
   incomeByCategory: CategoryTotal[];
   warnings: string[];
@@ -489,10 +491,20 @@ export function App() {
                       </article>
                       <article className="panel"><div className="panel-heading"><div><p className="eyebrow">SEÑALES</p><h3>Aspectos a revisar</h3></div></div>
                         {summary.warnings.length ? <ul className="warning-list">{summary.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : <EmptyState title="Sin alertas de clasificación" body="No hay avisos que requieran revisión en este periodo." />}
-                        <div className="detail-line"><span>Movimientos incluidos</span><strong>{summary.transactionCount}</strong></div>
+                        <div className="detail-line"><span>Movimientos consolidados</span><strong>{summary.transactionCount - summary.unconvertedTransactionCount}</strong></div>
+                        {summary.unconvertedTransactionCount > 0 ? <div className="detail-line"><span>Movimientos sin conversión</span><strong>{summary.unconvertedTransactionCount}</strong></div> : null}
                         <div className="detail-line"><span>Traspasos excluidos del consolidado</span><strong>{summary.excludedTransferCount}</strong></div>
                       </article>
                     </div>
+                    {summary.exchangeRatesUsed.length > 0 ? <details className="panel exchange-rate-details">
+                      <summary>Tipos de cambio utilizados ({summary.exchangeRatesUsed.length})</summary>
+                      <div className="comparison-rows">{summary.exchangeRatesUsed.map((rate) => (
+                        <div className="comparison-row" key={[rate.fromCurrency, rate.toCurrency, rate.rate, rate.effectiveDate, rate.source, rate.inverseRate].join('|')}>
+                          <div><span>{rate.fromCurrency} → {rate.toCurrency}</span><strong>{rate.rate}{rate.inverseRate ? ' (tasa inversa)' : ''}</strong></div>
+                          <div className="comparison-meta"><span>Aplicable desde {rate.effectiveDate} · fuente: {rate.source}</span><span>{rate.transactionCount} movimientos</span></div>
+                        </div>
+                      ))}</div>
+                    </details> : null}
                     <MonthlyTrendPanel points={trendPoints} currency={currency} loading={trendLoading} error={trendError} />
                     <div className="section-footnote">Importes calculados con reglas deterministas en el backend. Los movimientos divididos se normalizan antes de agregarse; no se suman divisas distintas.</div>
                   </>
