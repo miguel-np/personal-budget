@@ -342,8 +342,20 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   app.get('/api/v1/preferences/accounts', async (_request, reply) => {
     try {
       const [accounts, preference] = await Promise.all([repository.listAccounts(), accountScopePreference()]);
-      const resolved = resolveAccountScope(accounts, preference);
-      return { data: { ...preference, label: resolved.metadata.label, activeAccountIds: resolved.metadata.accountIds, accountNames: resolved.metadata.accountNames } };
+      try {
+        const resolved = resolveAccountScope(accounts, preference);
+        return { data: { ...preference, label: resolved.metadata.label, activeAccountIds: resolved.metadata.accountIds, accountNames: resolved.metadata.accountNames } };
+      } catch (error) {
+        if (!(error instanceof AccountScopeError) || error.code !== 'INVALID_ACCOUNT_SCOPE') throw error;
+        // Preserve access to settings so a user can repair a persisted scope after an account was closed or removed.
+        return { data: {
+          ...preference,
+          label: 'Configuración pendiente: revisa las cuentas seleccionadas',
+          activeAccountIds: [],
+          accountNames: [],
+          warning: error.message,
+        } };
+      }
     } catch (error) {
       const normalized = sanitizedErrorResponse(error);
       return reply.code(normalized.statusCode).send(normalized.body);
