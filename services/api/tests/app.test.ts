@@ -862,7 +862,7 @@ describe('local API', () => {
       method: 'GET', url: '/api/v1/transactions?startDate=2026-10-01&endDate=2026-10-31',
     });
     expect(movements.statusCode).toBe(200);
-    expect(movements.json().data.map((transaction: { id: string }) => transaction.id)).toEqual(['savings-expense', 'savings-income']);
+    expect(movements.json().data.map((transaction: { id: string }) => transaction.id)).toEqual(['savings-expense', 'savings-income', 'transfer-to-savings']);
     expect(movements.json().accountScope).toMatchObject({ accountIds: ['account-2'], label: 'Cuentas seleccionadas: Ahorro' });
     expect(listTransactions).toHaveBeenCalledTimes(1);
     expect(listTransactions).toHaveBeenCalledWith('account-2', '2026-10-01', '2026-10-31');
