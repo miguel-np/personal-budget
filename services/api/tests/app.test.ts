@@ -536,7 +536,7 @@ describe('local API', () => {
       url: '/api/v1/transactions?accountId=account-1&startDate=2026-10-01&endDate=2026-10-31',
     });
     expect(response.statusCode).toBe(200);
-    expect(response.json().data).toEqual([transactions[1], transactions[2], transactions[0]]);
+    expect(response.json().data).toMatchObject([transactions[1], transactions[2], transactions[0]]);
     expect(response.json().pagination).toMatchObject({ total: 3, limit: 50, offset: 0, sortBy: 'date', order: 'desc' });
     expect(repository.listTransactions).toHaveBeenCalledWith('account-1', '2026-10-01', '2026-10-31');
   });

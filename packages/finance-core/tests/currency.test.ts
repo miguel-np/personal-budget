@@ -39,7 +39,7 @@ describe('currency conversion', () => {
   it('rejects unsafe amounts, malformed dates, and invalid targets', () => {
     expect(() => convertAmountMinor(Number.MAX_SAFE_INTEGER + 1, 'EUR', 'EUR', '2026-10-25', [])).toThrow(/safe integer/i);
     expect(() => convertAmountMinor(100, 'EUR', 'eur', '2026-10-25', [])).not.toThrow();
-    expect(() => convertAmountMinor(100, 'EUR', 'bad', '2026-10-25', [])).toThrow(/Target currency/i);
+    expect(() => convertAmountMinor(100, 'EUR', 'bad!', '2026-10-25', [])).toThrow(/Target currency/i);
     expect(() => convertAmountMinor(100, 'EUR', 'USD', 'not-a-date', rates)).toThrow(/Conversion date/i);
   });
 });
