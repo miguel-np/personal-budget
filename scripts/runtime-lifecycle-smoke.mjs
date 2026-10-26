@@ -14,10 +14,14 @@ const initialDataSnapshot = await snapshotDirectory(dataDir);
 let runtime;
 let runtimeExit;
 let runtimeSpawnError;
+let runtimeReady = false;
+let runtimeOutput = '';
 
 function startRuntime() {
   runtimeExit = undefined;
   runtimeSpawnError = undefined;
+  runtimeReady = false;
+  runtimeOutput = '';
   runtime = spawn(process.execPath, ['scripts/local-runtime.mjs'], {
     cwd: root,
     env: {
@@ -32,9 +36,20 @@ function startRuntime() {
       AI_ENABLED: 'false',
       MCP_ENABLED: 'false',
     },
-    stdio: 'inherit',
+    stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
     detached: process.platform !== 'win32',
+  });
+  runtime.stdout.on('data', (chunk) => {
+    const output = chunk.toString();
+    process.stdout.write(output);
+    runtimeOutput = (runtimeOutput + output).slice(-10_000);
+    if (runtimeOutput.includes('personal-budget listo en http://127.0.0.1:4173')) runtimeReady = true;
+  });
+  runtime.stderr.on('data', (chunk) => {
+    const output = chunk.toString();
+    process.stderr.write(output);
+    runtimeOutput = (runtimeOutput + output).slice(-10_000);
   });
   runtime.once('error', (error) => { runtimeSpawnError = error; });
   runtime.once('exit', (code, signal) => { runtimeExit = { code, signal }; });
@@ -107,7 +122,7 @@ async function assertRunningAndReady() {
   await waitUntil(async () => {
     const ui = await request('http://127.0.0.1:4173/');
     const health = await request('http://127.0.0.1:3000/health');
-    return ui.ok && health.ok;
+    return runtimeReady && ui.ok && health.ok;
   }, 40_000, 'La UI compilada y la API no quedaron disponibles dentro del tiempo límite.');
 
   const readiness = await request('http://127.0.0.1:4173/ready');
