@@ -12,7 +12,7 @@ const syntheticContext: AssistantContext = {
   summary: {
     currency: 'EUR', startDate: '2026-10-01', endDate: '2026-10-31',
     incomeMinor: 200_000, expenseMinor: 82_500, savingsMinor: 117_500,
-    savingsRatePercent: 58.75, transactionCount: 6, excludedTransferCount: 1,
+    savingsRatePercent: 58.75, transactionCount: 6, excludedTransferCount: 1, unconvertedTransactionCount: 0, warnings: [],
   },
   expensesByCategory: [
     { categoryName: 'Alimentación sintética', amountMinor: 42_500, transactionCount: 3 },
