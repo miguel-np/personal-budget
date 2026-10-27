@@ -191,6 +191,7 @@ export function estimatePlanningCashFlow(
   });
   const monthlyIncomeMinor = stableMedian(monthlyHistory.map((row) => row.incomeMinor)) ?? 0;
   const monthlyExpenseMinor = stableMedian(monthlyHistory.map((row) => row.expenseMinor)) ?? 0;
+  const nonTransferCount = entries.filter((entry) => !entry.isTransfer).length;
   const emptyMonths = monthlyHistory.filter((row) => row.transactionCount === 0).length;
   const warnings: string[] = [];
   if (monthlyHistory.length < 3) {
@@ -202,7 +203,7 @@ export function estimatePlanningCashFlow(
   if (monthlyIncomeMinor <= 0) {
     warnings.push('Los ingresos mensuales observados son cero o negativos; no se puede asumir capacidad de ahorro positiva.');
   }
-  if (entries.length === 0) warnings.push('No hay movimientos en el periodo; los importes observados se tratan como cero, no como datos confirmados de ingresos o gastos.');
+  if (nonTransferCount === 0) warnings.push('No hay movimientos no transferidos en el periodo; los importes observados se tratan como cero, no como datos confirmados de ingresos o gastos.');
   return {
     currency: options.currency,
     startDate: options.startDate,
