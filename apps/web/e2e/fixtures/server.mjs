@@ -205,7 +205,7 @@ const server = createServer(async (req, res) => {
       const offset = Number(url.searchParams.get('offset') || 0);
       return send(res, 200, { data: filtered.slice(offset, offset + limit), pagination: { total: filtered.length, limit, offset, sortBy, order } });
     }
-    const transactionUpdateMatch = url.pathname.match(/^\\/api\\/v1\\/transactions\\/([^/]+)$/);
+    const transactionUpdateMatch = url.pathname.match(/^\/api\/v1\/transactions\/([^/]+)$/);
     if (req.method === 'PUT' && transactionUpdateMatch) {
       const id = decodeURIComponent(transactionUpdateMatch[1]);
       const body = await readBody(req);
