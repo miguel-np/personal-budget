@@ -353,7 +353,7 @@ test('movement editor previews validated changes before writing to Actual', asyn
   expect((await (await request.get(fixtureApi + '/__test__/state')).json()).transactionWrites).toBe(0);
   await dialog.getByRole('button', { name: 'Confirmar y guardar' }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(page.locator('.movement-manager').getByRole('status')).toContainText('Cambios validados y guardados en Actual Budget');
+  await expect(page.locator('.movement-operation-notice')).toContainText('Cambios validados y guardados en Actual Budget');
   const state = await (await request.get(fixtureApi + '/__test__/state')).json();
   expect(state.transactionWrites).toBe(1);
   expect(state.lastTransactionUpdate).toMatchObject({
@@ -372,7 +372,7 @@ test('bulk categorization previews all eligible rows and confirms a reported out
   expect((await (await request.get(fixtureApi + '/__test__/state')).json()).categoryWrites).toBe(0);
   page.once('dialog', (dialog) => { void dialog.accept(); });
   await page.getByRole('button', { name: 'Confirmar lote' }).click();
-  await expect(page.locator('.movement-actions-toolbar').getByRole('status')).toContainText('Se han guardado y sincronizado 1 cambios de categoría');
+  await expect(page.locator('.movement-operation-notice')).toContainText('Se han guardado y sincronizado 1 cambios de categoría');
   const state = await (await request.get(fixtureApi + '/__test__/state')).json();
   expect(state.categoryWrites).toBe(1);
   expect(state.lastCommittedChanges).toEqual([{ transactionId: 'synthetic-tx-1', categoryId: 'synthetic-restaurants' }]);
@@ -405,7 +405,7 @@ test('settings persist theme and regional formatting and reset only local prefer
 
   page.once('dialog', (dialog) => { void dialog.accept(); });
   await page.getByRole('button', { name: 'Restablecer preferencias locales' }).click();
-  await expect(page.locator('.settings-center').getByRole('status')).toContainText('Preferencias locales restablecidas');
+  await expect(page.locator('.settings-center').getByRole('status').filter({ hasText: 'Preferencias locales restablecidas' })).toBeVisible();
   await expect.poll(async () => {
     const state = await (await request.get(fixtureApi + '/__test__/state')).json();
     return state.appPreferences;
