@@ -590,9 +590,9 @@ export function MovementTools({ accounts, categories, currency, onImported, quic
               ? <button className="button secondary" type="button" disabled={transferBusy} onClick={() => { setTransferResult(null); setTransferMessage('Previsualización cancelada. Actual no se ha modificado.'); setTransferError(''); }}>Cancelar previsualización</button>
               : null}
           </div>
-          {transferResult ? <FormAlert>{transferResult.dryRun
+          {transferResult ? <FormAlert>{(transferResult.dryRun
             ? 'Previsualización: ' + transferResult.added + ' nueva(s), ' + transferResult.updated + ' actualizable(s), ' + transferResult.errors + ' error(es).'
-            : 'Resultado confirmado por Actual: ' + transferResult.added + ' añadida(s), ' + transferResult.updated + ' actualizada(s).'} {transferResult.linkedTransfer ? 'Vinculación de transferencia identificada.' : 'No se ha confirmado una pareja vinculada.'}</FormAlert> : null}
+            : 'Resultado confirmado por Actual: ' + transferResult.added + ' añadida(s), ' + transferResult.updated + ' actualizada(s).') + ' ' + (transferResult.linkedTransfer ? 'Vinculación de transferencia identificada.' : 'No se ha confirmado una pareja vinculada.')}</FormAlert> : null}
           {transferMessage ? <FormAlert>{transferMessage}</FormAlert> : null}
           {transferError ? <FormAlert error>{transferError}</FormAlert> : null}
         </form>
