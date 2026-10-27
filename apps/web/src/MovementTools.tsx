@@ -405,8 +405,9 @@ export function MovementTools({ accounts, categories, currency, onImported, quic
     setOfxCurrencyAcknowledged(false);
     if (!file) return;
 
-    const isCsvFile = /\.csv$/i.test(file.name) || file.type === 'text/csv' || file.type === 'application/vnd.ms-excel';
-    const isOfxFile = /\.ofx$/i.test(file.name) || file.type === 'application/x-ofx' || file.type === 'application/ofx';
+    const hasExtension = /\.[^.]+$/i.test(file.name);
+    const isCsvFile = /\.csv$/i.test(file.name) || (!hasExtension && (file.type === 'text/csv' || file.type === 'application/vnd.ms-excel'));
+    const isOfxFile = /\.ofx$/i.test(file.name) || (!hasExtension && (file.type === 'application/x-ofx' || file.type === 'application/ofx'));
     if (!isCsvFile && !isOfxFile) {
       setCsvError('Selecciona un archivo .csv o .ofx. No se admiten QFX, QIF ni CAMT.');
       input.value = '';
