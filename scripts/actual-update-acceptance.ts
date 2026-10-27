@@ -316,10 +316,7 @@ async function verifyLinkedTransactionEditing(): Promise<void> {
   try {
     await api.downloadBudget(expected.syncId);
     await api.sync();
-    const [accounts, sourceRows] = await Promise.all([
-      api.getAccounts(),
-      api.getTransactions(expected.accountId, '2026-09-01', '2026-09-30'),
-    ]);
+    const sourceRows = await api.getTransactions(expected.accountId, '2026-09-01', '2026-09-30');
     const counterpartRows = await api.getTransactions(counterpartAccountId, '2026-09-01', '2026-09-30');
     const source = sourceRows.find((item) => item.id === sourceId);
     const counterpart = counterpartRows.find((item) => item.id === counterpartId);
