@@ -282,8 +282,16 @@ export function App() {
     setFinanceLocale(appPreferences.locale);
     const root = document.documentElement;
     root.lang = appPreferences.locale;
-    if (appPreferences.theme === 'system') root.removeAttribute('data-theme');
-    else root.dataset.theme = appPreferences.theme;
+    const preference = appPreferences.theme;
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const applyTheme = () => {
+      root.dataset.theme = preference === 'system' ? (media.matches ? 'dark' : 'light') : preference;
+    };
+    applyTheme();
+    if (preference === 'system') {
+      media.addEventListener('change', applyTheme);
+      return () => media.removeEventListener('change', applyTheme);
+    }
   }, [appPreferences]);
 
   useEffect(() => {
