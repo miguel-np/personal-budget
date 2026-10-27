@@ -1,4 +1,4 @@
-import type { BudgetCategory, BudgetTransaction, LedgerEntry } from './domain.js';
+import type { BudgetCategory, BudgetTransaction } from './domain.js';
 import { isIsoDate, validatePeriod } from './date-range.js';
 import { normalizeTransactions } from './ledger.js';
 import { stableMedian } from './recurring.js';
@@ -64,6 +64,7 @@ export interface SavingsGoalMonthlyRow {
   readonly commitmentExpenseMinor: number;
   readonly availableCashMinor: number;
   readonly plannedContributionMinor: number;
+  readonly actualContributionMinor: number;
   readonly projectedBalanceMinor: number;
 }
 
@@ -88,8 +89,6 @@ export interface SavingsGoalProjection {
   readonly assumptions: readonly string[];
   readonly warnings: readonly string[];
 }
-
-const DAY_MS = 86_400_000;
 
 function safeMinor(value: number, label: string, allowNegative = false): void {
   if (!Number.isSafeInteger(value) || (!allowNegative && value < 0)) {
