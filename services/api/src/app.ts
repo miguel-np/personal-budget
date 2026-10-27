@@ -42,6 +42,14 @@ const ImportRequestSchema = z.object({
   accountId: z.string().trim().min(1).max(128),
   records: z.array(ImportRecordSchema).min(1).max(2_000),
 }).strict();
+const TransferRequestSchema = z.object({
+  sourceAccountId: z.string().trim().min(1).max(128),
+  destinationAccountId: z.string().trim().min(1).max(128),
+  date: z.string().refine(isIsoDate, 'date must be a valid YYYY-MM-DD date.'),
+  amountMinor: z.number().int().refine(Number.isSafeInteger, 'amount must be a safe integer.').positive().max(Number.MAX_SAFE_INTEGER),
+  notes: z.string().max(2_000).optional(),
+  importedId: z.string().trim().min(1).max(500),
+}).strict();
 const BudgetMonthSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'month must use YYYY-MM.');
 const BudgetAmountSchema = z.object({ amountMinor: z.number().int().refine(Number.isSafeInteger, 'amount must be a safe integer.').min(0) }).strict();
 const InsightsQuerySchema = z.object({
@@ -550,6 +558,110 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   };
   app.post('/api/v1/import/preview', async (request, reply) => handleImport(request, reply, true));
   app.post('/api/v1/import/commit', async (request, reply) => handleImport(request, reply, false));
+
+  const handleTransfer = async (request: FastifyRequest, reply: FastifyReply, dryRun: boolean) => {
+    try {
+      const parsed = TransferRequestSchema.parse(request.body);
+      const transferRepository = repository as BudgetRepository & {
+        importTransactions?: (
+          accountId: string,
+          records: readonly ActualImportRecord[],
+          options?: { readonly dryRun?: boolean },
+        ) => Promise<ActualImportResult>;
+        listTransferPayees?: () => Promise<readonly { readonly name: string; readonly accountId: string }[]>;
+      };
+      if (typeof transferRepository.importTransactions !== 'function' || typeof transferRepository.listTransferPayees !== 'function') {
+        return reply.code(503).send({
+          error: { code: 'TRANSFER_NOT_SUPPORTED', message: 'The configured Actual Budget adapter does not support safe linked transfers.' },
+        });
+      }
+
+      const [allAccounts, preference, preferences] = await Promise.all([
+        repository.listAccounts(),
+        accountScopePreference(),
+        currencyPreferences(),
+      ]);
+      const scope = resolveAccountScope(allAccounts, preference);
+      const scopeIds = new Set(scope.accounts.map((account) => account.id));
+      const source = allAccounts.find((account) => account.id === parsed.sourceAccountId);
+      const destination = allAccounts.find((account) => account.id === parsed.destinationAccountId);
+
+      if (!source || source.closed || !destination || destination.closed) {
+        return reply.code(400).send({
+          error: { code: 'INVALID_TRANSFER_ACCOUNT', message: 'El origen y el destino deben ser cuentas abiertas del presupuesto configurado.' },
+        });
+      }
+      if (source.id === destination.id) {
+        return reply.code(400).send({
+          error: { code: 'INVALID_TRANSFER_ACCOUNTS', message: 'El origen y el destino de una transferencia deben ser distintos.' },
+        });
+      }
+      if (!scopeIds.has(source.id) || !scopeIds.has(destination.id)) {
+        return reply.code(400).send({
+          error: { code: 'ACCOUNT_OUTSIDE_SCOPE', message: 'Ambas cuentas deben estar incluidas en el ámbito global de análisis. Revisa Configuración antes de transferir.' },
+        });
+      }
+      if (source.offBudget !== destination.offBudget) {
+        return reply.code(422).send({
+          error: { code: 'TRANSFER_BUDGET_SCOPE_MISMATCH', message: 'Esta versión no transfiere entre cuentas dentro y fuera de presupuesto porque Actual puede requerir una categoría presupuestaria explícita. No se ha escrito ningún cambio.' },
+        });
+      }
+
+      const sourceCurrency = accountNativeCurrency(source, preferences);
+      const destinationCurrency = accountNativeCurrency(destination, preferences);
+      if (!sourceCurrency || !destinationCurrency) {
+        return reply.code(422).send({
+          error: { code: 'TRANSFER_CURRENCY_UNKNOWN', message: 'No se puede confirmar la divisa de ambas cuentas. Configura sus divisas antes de transferir.' },
+        });
+      }
+      if (sourceCurrency !== destinationCurrency) {
+        return reply.code(422).send({
+          error: { code: 'TRANSFER_CURRENCY_MISMATCH', message: 'La transferencia automática solo admite cuentas en la misma divisa. No se convierte ni se inventa un tipo de cambio.' },
+        });
+      }
+
+      const transferPayees = await transferRepository.listTransferPayees();
+      const transferPayee = transferPayees.find((payee) => payee.accountId === destination.id && payee.name.trim().length > 0);
+      if (!transferPayee) {
+        return reply.code(422).send({
+          error: { code: 'TRANSFER_PAYEE_NOT_FOUND', message: 'Actual no ha devuelto un beneficiario de transferencia verificable para la cuenta destino. No se ha escrito ningún cambio.' },
+        });
+      }
+
+      const record: ActualImportRecord = {
+        date: parsed.date,
+        amount: -parsed.amountMinor,
+        payee_name: transferPayee.name,
+        imported_payee: transferPayee.name,
+        imported_id: parsed.importedId,
+        ...(parsed.notes?.trim() ? { notes: parsed.notes.trim() } : {}),
+      };
+      const result = await transferRepository.importTransactions(source.id, [record], { dryRun });
+      if (result.errors.length > 0) {
+        return reply.code(409).send({
+          error: { code: 'TRANSFER_RECONCILIATION_FAILED', message: 'Actual Budget no ha podido validar la transferencia. Comprueba las cuentas en Actual antes de reintentar.' },
+          result: { added: result.added.length, updated: result.updated.length, errors: result.errors.length, dryRun },
+        });
+      }
+      return {
+        data: {
+          added: result.added.length,
+          updated: result.updated.length,
+          errors: 0,
+          submitted: 1,
+          dryRun,
+          sourceAccountId: source.id,
+          destinationAccountId: destination.id,
+          linkedTransfer: true,
+        },
+      };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  };
+  app.post('/api/v1/transfers/preview', async (request, reply) => handleTransfer(request, reply, true));
+  app.post('/api/v1/transfers/commit', async (request, reply) => handleTransfer(request, reply, false));
 
   app.get('/api/v1/budgets/:month', async (request, reply) => {
     try {
