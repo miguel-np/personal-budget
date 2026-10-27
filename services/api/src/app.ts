@@ -1,7 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import Fastify, { LogController, type FastifyInstance, type FastifyReply, type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import helmet from '@fastify/helmet';
-import { calculateSummary, convertAmountMinor, detectRecurringCandidates, isIsoDate, normalizeCurrencyCode, normalizeTransactions, projectSavings, suggestCategories, validatePeriod } from '@personal-budget/finance-core';
-import type { BudgetRepository, BudgetTransaction, ForecastScenario, TransactionCategoryBatchChange, TransactionStructureUpdate } from '@personal-budget/finance-core';
+import { calculateSummary, convertAmountMinor, detectRecurringCandidates, estimatePlanningCashFlow, expandCommitmentOccurrences, isIsoDate, normalizeCurrencyCode, normalizeTransactions, projectSavings, projectSavingsGoal, suggestCategories, validatePeriod } from '@personal-budget/finance-core';
+import type { BudgetRepository, BudgetTransaction, ForecastScenario, PlanningCommitment, TransactionCategoryBatchChange, TransactionStructureUpdate } from '@personal-budget/finance-core';
 import { ActualAdapterError } from '@personal-budget/actual-adapter';
 import type { ActualBudgetMonthRecord, ActualImportRecord, ActualImportResult } from '@personal-budget/actual-adapter';
 import { z, ZodError } from 'zod';
@@ -13,6 +14,8 @@ import type { CurrencyPreferences } from './currency-preferences.js';
 import { AccountScopeError, AccountScopePreferenceSchema, defaultAccountScope, readAccountScope, resolveAccountScope, writeAccountScope } from './account-scope.js';
 import { AppPreferencesSchema, defaultAppPreferences, readAppPreferences, writeAppPreferences } from './app-preferences.js';
 import type { AccountScopePreference, AccountScopeMetadata } from './account-scope.js';
+import { PlanningCommitmentInputSchema, PlanningGoalInputSchema, readPlanningData, resetPlanningData, updatePlanningData, StoredPlanningCommitmentSchema, StoredPlanningGoalSchema } from './planning-store.js';
+import type { StoredPlanningCommitment, StoredPlanningGoal } from './planning-store.js';
 
 const TransactionQuerySchema = z.object({
   accountId: z.string().trim().min(1).max(128).optional(),
@@ -110,6 +113,9 @@ const ForecastRequestSchema = z.object({
   horizonMonths: z.number().int().min(1).max(60),
   scenario: ForecastScenarioSchema,
 }).strict();
+const PlanningMonthSchema = z.string().regex(/^\\d{4}-(0[1-9]|1[0-2])$/, 'month must use YYYY-MM.');
+const PlanningStatusRequestSchema = z.object({ status: z.enum(['active', 'paused']) }).strict();
+const DeletePlanningDataRequestSchema = z.object({ confirmation: z.literal('DELETE_PLANNING_DATA') }).strict();
 const AssistantRequestSchema = z.object({
   question: z.string().trim().min(1).max(2_000),
   startDate: z.string().refine(isIsoDate, 'startDate must be a valid YYYY-MM-DD date.'),
@@ -1309,6 +1315,350 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         },
       );
       return { data: { ...result, warnings: [...result.warnings, ...converted.warnings], accountScope: scope.metadata } };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+
+  function shiftPlanningMonth(month: string, offset: number): string {
+    const year = Number(month.slice(0, 4));
+    const monthNumber = Number(month.slice(5, 7));
+    const shifted = new Date(Date.UTC(year, monthNumber - 1 + offset, 1));
+    return shifted.toISOString().slice(0, 7);
+  }
+
+  function planningMonthPeriod(month: string): { readonly startDate: string; readonly endDate: string } {
+    const year = Number(month.slice(0, 4));
+    const monthNumber = Number(month.slice(5, 7));
+    const lastDay = new Date(Date.UTC(year, monthNumber, 0)).toISOString().slice(0, 10);
+    return { startDate: month + '-01', endDate: lastDay };
+  }
+
+  function planningScopeMatches(saved: AccountScopePreference, current: AccountScopePreference): boolean {
+    if (saved.mode !== current.mode) return false;
+    if (saved.mode === 'all') return true;
+    const left = [...saved.accountIds].sort();
+    const right = [...current.accountIds].sort();
+    return left.length === right.length && left.every((id, index) => id === right[index]);
+  }
+
+  function validateGoalWindow(targetDate: string, asOfDate: string): void {
+    if (!isIsoDate(targetDate) || targetDate <= asOfDate) {
+      throw new RangeError('La fecha objetivo debe ser posterior a hoy.');
+    }
+    const currentMonth = Number(asOfDate.slice(0, 4)) * 12 + Number(asOfDate.slice(5, 7)) - 1;
+    const targetMonth = Number(targetDate.slice(0, 4)) * 12 + Number(targetDate.slice(5, 7)) - 1;
+    if (targetMonth - currentMonth > 120) throw new RangeError('La fecha objetivo no puede superar diez años desde hoy.');
+  }
+
+  app.get('/api/v1/planning', async (request, reply) => {
+    try {
+      const query = z.object({ month: PlanningMonthSchema.optional() }).strict().parse(request.query);
+      const asOfDate = new Date().toISOString().slice(0, 10);
+      const month = query.month ?? asOfDate.slice(0, 7);
+      const monthPeriod = planningMonthPeriod(month);
+      const [stored, accounts, categories, preferences, preference] = await Promise.all([
+        readPlanningData(config.actualDataDir), repository.listAccounts(), repository.listCategories(),
+        currencyPreferences(), accountScopePreference(),
+      ]);
+      const scope = resolveAccountScope(accounts, preference);
+      const historyStartDate = shiftPlanningMonth(asOfDate.slice(0, 7), -11) + '-01';
+      const historyTransactions = await transactionsForAccounts(scope.accounts, historyStartDate, asOfDate, preferences);
+      const convertedHistory = convertTransactionsForAnalysis(historyTransactions, preferences);
+      const estimate = estimatePlanningCashFlow(convertedHistory.transactions, categories, {
+        currency: preferences.displayCurrency, startDate: historyStartDate, endDate: asOfDate,
+      });
+      const eligibleCommitments = stored.commitments.filter((item) =>
+        item.status === 'active' && item.currency === preferences.displayCurrency &&
+        planningScopeMatches(item.scope, preference),
+      );
+      const goals = stored.goals.map((goal) => {
+        const scopeMatches = planningScopeMatches(goal.scope, preference);
+        const currencyMatches = goal.currency === preferences.displayCurrency;
+        const planningWarnings: string[] = [];
+        if (!scopeMatches) planningWarnings.push('El ámbito de cuentas guardado ha cambiado. Edita el objetivo para revisar y confirmar el nuevo ámbito antes de recalcularlo.');
+        if (!currencyMatches) planningWarnings.push('La divisa de análisis ha cambiado. Edita el objetivo y revisa los importes antes de recalcularlo en la nueva divisa.');
+        if (goal.targetDate <= asOfDate) planningWarnings.push('La fecha objetivo ya ha pasado; edita el objetivo para establecer una nueva fecha.');
+        const projection = goal.status === 'active' && scopeMatches && currencyMatches && goal.targetDate > asOfDate
+          ? projectSavingsGoal({
+              asOfDate, targetDate: goal.targetDate, targetAmountMinor: goal.targetAmountMinor,
+              initialAmountMinor: goal.initialAmountMinor, monthlyContributionMinor: goal.monthlyContributionMinor,
+              currency: preferences.displayCurrency,
+              monthlyIncomeMinor: goal.monthlyIncomeMinor ?? estimate.monthlyIncomeMinor,
+              monthlyExpenseMinor: goal.monthlyExpenseMinor ?? estimate.monthlyExpenseMinor,
+              commitments: eligibleCommitments,
+            })
+          : null;
+        return { ...goal, scopeMatches, currencyMatches, projection, planningWarnings };
+      });
+
+      const manualOccurrences = expandCommitmentOccurrences(eligibleCommitments, monthPeriod.startDate, monthPeriod.endDate)
+        .map((item) => ({
+          id: item.id + '@' + item.occurrenceDate, source: 'manual_commitment' as const,
+          title: item.title, date: item.occurrenceDate, amountMinor: item.amountMinor,
+          direction: item.direction, frequency: item.frequency, currency: item.currency,
+          status: item.status, notes: item.notes ?? '',
+        }));
+
+      let actualItems: Array<Record<string, unknown>> = [];
+      let actualItemWarnings: string[] = [];
+      const scheduledTransactions = await transactionsForAccounts(scope.accounts, monthPeriod.startDate, monthPeriod.endDate, preferences);
+      const convertedScheduled = convertTransactionsForAnalysis(scheduledTransactions, preferences);
+      actualItemWarnings = [...convertedScheduled.warnings];
+      const categoriesById = new Map(categories.map((category) => [category.id, category]));
+      actualItems = normalizeTransactions(convertedScheduled.transactions)
+        .filter((entry) => entry.date > asOfDate && entry.date >= monthPeriod.startDate && entry.date <= monthPeriod.endDate && !entry.isTransfer)
+        .filter((entry) => entry.amountMinor < 0 || (entry.amountMinor > 0 && Boolean(entry.categoryId && categoriesById.get(entry.categoryId)?.isIncome)))
+        .map((entry) => ({
+          id: 'actual:' + entry.id, source: 'actual_transaction', title: entry.payeeLabel || 'Movimiento registrado',
+          date: entry.date, amountMinor: Math.abs(entry.amountMinor),
+          direction: entry.amountMinor < 0 ? 'expense' : 'income', frequency: 'once',
+          frequencyLabel: 'Único · registrado en Actual', currency: preferences.displayCurrency,
+          status: 'registered', notes: 'Movimiento ya registrado en Actual Budget; esta vista no lo modifica.',
+        }));
+
+      const recurringCandidates = detectRecurringCandidates(convertedHistory.transactions, {
+        startDate: historyStartDate, endDate: asOfDate,
+      });
+      const candidateItems: Array<Record<string, unknown>> = [];
+      for (const candidate of recurringCandidates) {
+        const interval = candidate.estimatedIntervalDays;
+        if (!interval || interval < 1 || !candidate.lastDate || candidate.meanAbsoluteAmountMinor <= 0) continue;
+        let nextDate = new Date(candidate.lastDate + 'T00:00:00.000Z');
+        nextDate.setUTCDate(nextDate.getUTCDate() + Math.round(interval));
+        let attempts = 0;
+        while (nextDate.toISOString().slice(0, 10) <= asOfDate && attempts < 100) {
+          nextDate.setUTCDate(nextDate.getUTCDate() + Math.round(interval));
+          attempts += 1;
+        }
+        const date = nextDate.toISOString().slice(0, 10);
+        if (date < monthPeriod.startDate || date > monthPeriod.endDate || date <= asOfDate) continue;
+        candidateItems.push({
+          id: 'candidate:' + candidate.payee + '@' + date, source: 'recurring_candidate',
+          title: candidate.payeeVariants[0] ?? candidate.payee, date,
+          amountMinor: Math.round(candidate.meanAbsoluteAmountMinor), direction: 'expense',
+          frequency: candidate.estimatedFrequency ?? 'estimated', frequencyLabel: 'Candidato · ' + (candidate.estimatedFrequency ?? 'cadencia estimada'),
+          currency: preferences.displayCurrency, status: 'candidate',
+          notes: 'Estimación estadística sin confirmar. No se añade a las proyecciones ni crea un compromiso automáticamente.',
+        });
+      }
+
+      const calendarItems: Array<Record<string, unknown>> = [
+        ...manualOccurrences.map((item) => ({ ...item, frequencyLabel: item.frequency, scopeMatches: true })),
+        ...actualItems,
+        ...candidateItems,
+      ];
+      calendarItems.sort((left, right) =>
+        String(left.date).localeCompare(String(right.date)) ||
+        String(left.source).localeCompare(String(right.source)) ||
+        String(left.title).localeCompare(String(right.title)),
+      );
+      return {
+        data: {
+          asOfDate, month, currency: preferences.displayCurrency,
+          accountScope: scope.metadata,
+          history: estimate,
+          goals,
+          commitments: stored.commitments.map((item) => ({
+            ...item,
+            scopeMatches: planningScopeMatches(item.scope, preference),
+            currencyMatches: item.currency === preferences.displayCurrency,
+          })),
+          calendarItems,
+          warnings: [...convertedHistory.warnings, ...estimate.warnings, ...actualItemWarnings],
+          notes: [
+            'Los datos de objetivos y compromisos se guardan localmente en planning-data.json, separados de las transacciones de Actual Budget.',
+            'Los compromisos manuales activos y compatibles con la divisa y el ámbito se incluyen en las proyecciones; los candidatos y los movimientos reales futuros se muestran en la agenda con su origen y no se convierten automáticamente en compromisos manuales.',
+            'El ámbito de cuentas y la divisa usados para crear cada registro se guardan como referencia. Si cambian, el registro se excluye de la proyección hasta que se edite y confirme de nuevo.',
+          ],
+        },
+      };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.post('/api/v1/planning/goals', async (request, reply) => {
+    try {
+      const body = PlanningGoalInputSchema.parse(request.body);
+      const asOfDate = new Date().toISOString().slice(0, 10);
+      validateGoalWindow(body.targetDate, asOfDate);
+      const [preferences, scope] = await Promise.all([currencyPreferences(), accountScopePreference()]);
+      const now = new Date().toISOString();
+      const goal = StoredPlanningGoalSchema.parse({
+        ...body,
+        monthlyIncomeMinor: body.monthlyIncomeMinor ?? null,
+        monthlyExpenseMinor: body.monthlyExpenseMinor ?? null,
+        id: randomUUID(), currency: preferences.displayCurrency,
+        scope: { mode: scope.mode, accountIds: [...scope.accountIds].sort() },
+        status: 'active', createdAt: now, updatedAt: now,
+      });
+      const saved = await updatePlanningData(config.actualDataDir, (current) => {
+        if (current.goals.length >= 100) throw new RangeError('No se pueden guardar más de 100 objetivos.');
+        return { data: { ...current, goals: [...current.goals, goal] }, result: goal };
+      });
+      return reply.code(201).send({ data: saved });
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.put('/api/v1/planning/goals/:id', async (request, reply) => {
+    try {
+      const params = z.object({ id: z.string().uuid() }).strict().parse(request.params);
+      const body = PlanningGoalInputSchema.parse(request.body);
+      const asOfDate = new Date().toISOString().slice(0, 10);
+      validateGoalWindow(body.targetDate, asOfDate);
+      const [preferences, scope] = await Promise.all([currencyPreferences(), accountScopePreference()]);
+      const now = new Date().toISOString();
+      const result = await updatePlanningData(config.actualDataDir, (current) => {
+        const index = current.goals.findIndex((item) => item.id === params.id);
+        if (index < 0) return { data: current, result: null };
+        const existing = current.goals[index]!;
+        const updated = StoredPlanningGoalSchema.parse({
+          ...body,
+          monthlyIncomeMinor: body.monthlyIncomeMinor ?? null,
+          monthlyExpenseMinor: body.monthlyExpenseMinor ?? null,
+          id: existing.id, currency: preferences.displayCurrency,
+          scope: { mode: scope.mode, accountIds: [...scope.accountIds].sort() },
+          status: existing.status, createdAt: existing.createdAt, updatedAt: now,
+        });
+        const goals = [...current.goals];
+        goals[index] = updated;
+        return { data: { ...current, goals }, result: updated };
+      });
+      if (!result) return reply.code(404).send({ error: { code: 'PLANNING_GOAL_NOT_FOUND', message: 'No existe ese objetivo de planificación local.' } });
+      return { data: result };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.patch('/api/v1/planning/goals/:id/status', async (request, reply) => {
+    try {
+      const params = z.object({ id: z.string().uuid() }).strict().parse(request.params);
+      const body = PlanningStatusRequestSchema.parse(request.body);
+      const result = await updatePlanningData(config.actualDataDir, (current) => {
+        const existing = current.goals.find((item) => item.id === params.id);
+        if (!existing) return { data: current, result: null };
+        const updated = StoredPlanningGoalSchema.parse({ ...existing, status: body.status, updatedAt: new Date().toISOString() });
+        return { data: { ...current, goals: current.goals.map((item) => item.id === params.id ? updated : item) }, result: updated };
+      });
+      if (!result) return reply.code(404).send({ error: { code: 'PLANNING_GOAL_NOT_FOUND', message: 'No existe ese objetivo de planificación local.' } });
+      return { data: result };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.delete('/api/v1/planning/goals/:id', async (request, reply) => {
+    try {
+      const params = z.object({ id: z.string().uuid() }).strict().parse(request.params);
+      const result = await updatePlanningData(config.actualDataDir, (current) => {
+        const exists = current.goals.some((item) => item.id === params.id);
+        return { data: { ...current, goals: current.goals.filter((item) => item.id !== params.id) }, result: exists };
+      });
+      if (!result) return reply.code(404).send({ error: { code: 'PLANNING_GOAL_NOT_FOUND', message: 'No existe ese objetivo de planificación local.' } });
+      return { data: { id: params.id, deleted: true } };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.post('/api/v1/planning/commitments', async (request, reply) => {
+    try {
+      const body = PlanningCommitmentInputSchema.parse(request.body);
+      const asOfDate = new Date().toISOString().slice(0, 10);
+      if (body.frequency === 'once' && body.date <= asOfDate) throw new RangeError('Un compromiso puntual debe tener una fecha futura.');
+      const [preferences, scope] = await Promise.all([currencyPreferences(), accountScopePreference()]);
+      const now = new Date().toISOString();
+      const commitment = StoredPlanningCommitmentSchema.parse({
+        ...body, id: randomUUID(), currency: preferences.displayCurrency,
+        scope: { mode: scope.mode, accountIds: [...scope.accountIds].sort() },
+        status: 'active', createdAt: now, updatedAt: now,
+      });
+      const saved = await updatePlanningData(config.actualDataDir, (current) => {
+        if (current.commitments.length >= 500) throw new RangeError('No se pueden guardar más de 500 compromisos.');
+        return { data: { ...current, commitments: [...current.commitments, commitment] }, result: commitment };
+      });
+      return reply.code(201).send({ data: saved });
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.put('/api/v1/planning/commitments/:id', async (request, reply) => {
+    try {
+      const params = z.object({ id: z.string().uuid() }).strict().parse(request.params);
+      const body = PlanningCommitmentInputSchema.parse(request.body);
+      const asOfDate = new Date().toISOString().slice(0, 10);
+      if (body.frequency === 'once' && body.date <= asOfDate) throw new RangeError('Un compromiso puntual debe tener una fecha futura.');
+      const [preferences, scope] = await Promise.all([currencyPreferences(), accountScopePreference()]);
+      const now = new Date().toISOString();
+      const result = await updatePlanningData(config.actualDataDir, (current) => {
+        const existing = current.commitments.find((item) => item.id === params.id);
+        if (!existing) return { data: current, result: null };
+        const updated = StoredPlanningCommitmentSchema.parse({
+          ...body, id: existing.id, currency: preferences.displayCurrency,
+          scope: { mode: scope.mode, accountIds: [...scope.accountIds].sort() },
+          status: existing.status, createdAt: existing.createdAt, updatedAt: now,
+        });
+        return { data: { ...current, commitments: current.commitments.map((item) => item.id === params.id ? updated : item) }, result: updated };
+      });
+      if (!result) return reply.code(404).send({ error: { code: 'PLANNING_COMMITMENT_NOT_FOUND', message: 'No existe ese compromiso de planificación local.' } });
+      return { data: result };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.patch('/api/v1/planning/commitments/:id/status', async (request, reply) => {
+    try {
+      const params = z.object({ id: z.string().uuid() }).strict().parse(request.params);
+      const body = PlanningStatusRequestSchema.parse(request.body);
+      const result = await updatePlanningData(config.actualDataDir, (current) => {
+        const existing = current.commitments.find((item) => item.id === params.id);
+        if (!existing) return { data: current, result: null };
+        const updated = StoredPlanningCommitmentSchema.parse({ ...existing, status: body.status, updatedAt: new Date().toISOString() });
+        return { data: { ...current, commitments: current.commitments.map((item) => item.id === params.id ? updated : item) }, result: updated };
+      });
+      if (!result) return reply.code(404).send({ error: { code: 'PLANNING_COMMITMENT_NOT_FOUND', message: 'No existe ese compromiso de planificación local.' } });
+      return { data: result };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.delete('/api/v1/planning/commitments/:id', async (request, reply) => {
+    try {
+      const params = z.object({ id: z.string().uuid() }).strict().parse(request.params);
+      const result = await updatePlanningData(config.actualDataDir, (current) => {
+        const exists = current.commitments.some((item) => item.id === params.id);
+        return { data: { ...current, commitments: current.commitments.filter((item) => item.id !== params.id) }, result: exists };
+      });
+      if (!result) return reply.code(404).send({ error: { code: 'PLANNING_COMMITMENT_NOT_FOUND', message: 'No existe ese compromiso de planificación local.' } });
+      return { data: { id: params.id, deleted: true } };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.post('/api/v1/planning/reset', async (request, reply) => {
+    try {
+      DeletePlanningDataRequestSchema.parse(request.body);
+      await resetPlanningData(config.actualDataDir);
+      return { data: { deleted: true, goals: 0, commitments: 0 } };
     } catch (error) {
       const normalized = sanitizedErrorResponse(error);
       return reply.code(normalized.statusCode).send(normalized.body);
