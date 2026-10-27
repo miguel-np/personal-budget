@@ -579,12 +579,17 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         return reply.code(409).send({ error: { code: 'SPLIT_EDIT_NOT_SUPPORTED', message: 'Split transactions are protected here to avoid losing or duplicating child entries.' } });
       }
       const categories = await repository.listCategories();
-      if (parsed.changes.category !== undefined && parsed.changes.category !== null) {
-        const category = categories.find((item) => item.id === parsed.changes.category);
-        if (!category) return reply.code(400).send({ error: { code: 'INVALID_CATEGORY', message: 'Choose a category from the configured budget.' } });
+      if (parsed.changes.category !== undefined || parsed.changes.amount !== undefined) {
+        const resultingCategoryId = Object.hasOwn(parsed.changes, 'category')
+          ? parsed.changes.category ?? null
+          : transaction.category ?? null;
         const resultingAmount = parsed.changes.amount ?? transaction.amount;
-        if ((resultingAmount > 0) !== category.isIncome) {
-          return reply.code(400).send({ error: { code: 'CATEGORY_AMOUNT_MISMATCH', message: 'Income movements require an income category and expense movements require an expense category.' } });
+        if (resultingCategoryId) {
+          const category = categories.find((item) => item.id === resultingCategoryId);
+          if (!category) return reply.code(400).send({ error: { code: 'INVALID_CATEGORY', message: 'Choose a category from the configured budget.' } });
+          if ((resultingAmount > 0) !== category.isIncome) {
+            return reply.code(400).send({ error: { code: 'CATEGORY_AMOUNT_MISMATCH', message: 'Income movements require an income category and expense movements require an expense category.' } });
+          }
         }
       }
       await updater.updateTransaction!(params.transactionId, parsed.changes);
