@@ -116,6 +116,12 @@ function monthStart(month: string): string {
   return month + '-01';
 }
 
+function monthEnd(month: string): string {
+  const year = Number(month.slice(0, 4));
+  const monthIndex = Number(month.slice(5, 7)) - 1;
+  return dateInMonth(month, lastDayOfMonth(year, monthIndex));
+}
+
 function lastDayOfMonth(year: number, monthIndex: number): number {
   return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
 }
@@ -287,7 +293,9 @@ export function projectSavingsGoal(input: SavingsGoalInput): SavingsGoalProjecti
   const goalReachedInitially = initialBalance >= input.targetAmountMinor;
   const currentMonthNumber = monthNumber(input.asOfDate.slice(0, 7));
   const targetMonthNumber = monthNumber(input.targetDate.slice(0, 7));
-  const months = Math.max(0, targetMonthNumber - currentMonthNumber);
+  const targetMonthEnd = monthEnd(input.targetDate.slice(0, 7));
+  // Only count a target-month contribution when the deadline allows the full calendar month.
+  const months = Math.max(0, targetMonthNumber - currentMonthNumber - (input.targetDate === targetMonthEnd ? 0 : 1));
   if (months > 120) throw new RangeError('Savings goal horizon cannot exceed 120 months.');
   const projectedMonths = Array.from({ length: months }, (_item, index) => monthKeyFromNumber(currentMonthNumber + index + 1));
   const windowStart = projectedMonths.length ? monthStart(projectedMonths[0]!) : input.targetDate;
@@ -318,7 +326,7 @@ export function projectSavingsGoal(input: SavingsGoalInput): SavingsGoalProjecti
     safeMinor(balance, 'projected balance');
     safeMinor(maximumBalance, 'maximum achievable balance');
     if (!projectedCompletionDate && balance >= input.targetAmountMinor) {
-      projectedCompletionDate = month + '-01';
+      projectedCompletionDate = monthEnd(month);
     }
     monthlyProjection.push({
       month,
