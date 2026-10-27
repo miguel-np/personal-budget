@@ -6,6 +6,7 @@ La sección **Objetivos** complementa Planificación con metas de ahorro y una a
 
 - CRUD de objetivos con nombre, importe objetivo, saldo inicial, aportación mensual deseada y fecha límite.
 - Supuestos de ingreso y gasto mensual por objetivo. Si se dejan vacíos, se utiliza la mediana del historial local de los últimos doce meses naturales.
+- Comparador de escenario personalizado por objetivo: permite probar otra aportación e ingresos/gastos alternativos contra el objetivo guardado; la simulación es efímera y no modifica el registro.
 - Compromisos manuales puntuales o recurrentes (mensuales, trimestrales y anuales), con fecha ancla, importe, entrada/salida y notas. Se pueden editar, pausar, reanudar y borrar.
 - Agenda con vistas de lista y calendario, generadas desde el mismo conjunto de elementos. La interfaz distingue compromisos manuales, movimientos futuros ya registrados en Actual y candidatos recurrentes no confirmados.
 - Resumen de objetivos en el dashboard, tabla mensual por objetivo, avisos de alcanzabilidad y acción explícita para borrar la planificación local.
@@ -34,6 +35,7 @@ Las cifras son estimaciones deterministas, no asesoramiento financiero ni garant
 
 - GET /api/v1/planning?month=YYYY-MM: devuelve ámbito/divisa, estimación histórica, objetivos con proyecciones/avisos, compromisos y elementos de agenda para el mes.
 - POST /api/v1/planning/goals, PUT /api/v1/planning/goals/:id, PATCH /api/v1/planning/goals/:id/status, DELETE /api/v1/planning/goals/:id.
+- POST /api/v1/planning/goals/:id/simulate: calcula otro escenario con aportación/ingreso/gasto explícitos sin persistirlo.
 - POST /api/v1/planning/commitments, PUT /api/v1/planning/commitments/:id, PATCH /api/v1/planning/commitments/:id/status, DELETE /api/v1/planning/commitments/:id.
 - POST /api/v1/planning/reset: requiere confirmación exacta.
 
