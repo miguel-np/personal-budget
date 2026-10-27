@@ -16,8 +16,9 @@ const now = new Date();
 const iso = (date) => date.toISOString().slice(0, 10);
 const currentMonthStart = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-01';
 const account = { id: 'synthetic-account-1', name: 'Cuenta sintética', closed: false, offBudget: false, currentBalanceMinor: 123456, currencyCode: 'EUR', nativeCurrencyCode: 'EUR', displayBalanceMinor: 123456, displayCurrency: 'EUR', balanceConversion: { fromCurrency: 'EUR', toCurrency: 'EUR', rate: '1', effectiveDate: iso(now), source: 'synthetic-identity', inverseRate: false } };
+const transferAccount = { id: 'synthetic-account-transfer-eur', name: 'Cuenta de transferencia sintética', closed: false, offBudget: false, currentBalanceMinor: 40000, currencyCode: 'EUR', nativeCurrencyCode: 'EUR', displayBalanceMinor: 40000, displayCurrency: 'EUR', balanceConversion: { fromCurrency: 'EUR', toCurrency: 'EUR', rate: '1', effectiveDate: iso(now), source: 'synthetic-identity', inverseRate: false } };
 const secondaryAccount = { id: 'synthetic-account-2', name: 'Cuenta sintética secundaria', closed: false, offBudget: false, currentBalanceMinor: 65432, currencyCode: 'GBP', nativeCurrencyCode: 'GBP', displayBalanceMinor: null, displayCurrency: 'EUR', balanceConversion: { warning: 'No existe tipo de cambio sintético para GBP/EUR.' } };
-const accounts = [account, secondaryAccount];
+const accounts = [account, transferAccount, secondaryAccount];
 const categories = [
   { id: 'synthetic-food', name: 'Alimentación sintética', groupId: 'synthetic-group', isIncome: false },
   { id: 'synthetic-restaurants', name: 'Restaurantes sintéticos', groupId: 'synthetic-group', isIncome: false },
@@ -190,6 +191,12 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === 'POST' && url.pathname === '/api/v1/transfers/preview') {
       const body = await readBody(req);
+      const source = accounts.find((entry) => entry.id === body.sourceAccountId && !entry.closed);
+      const destination = accounts.find((entry) => entry.id === body.destinationAccountId && !entry.closed);
+      if (!source || !destination || source.id === destination.id) return send(res, 400, { error: { code: 'INVALID_TRANSFER_ACCOUNT', message: 'Selecciona dos cuentas abiertas y distintas.' } });
+      if (!['all', 'selected'].includes(accountScope.mode) || (accountScope.mode === 'selected' && (!accountScope.accountIds.includes(source.id) || !accountScope.accountIds.includes(destination.id)))) return send(res, 400, { error: { code: 'ACCOUNT_OUTSIDE_SCOPE', message: 'Ambas cuentas deben pertenecer al ámbito.' } });
+      if (source.currencyCode !== destination.currencyCode) return send(res, 422, { error: { code: 'TRANSFER_CURRENCY_MISMATCH', message: 'Las cuentas deben tener la misma divisa.' } });
+      if (source.offBudget !== destination.offBudget) return send(res, 422, { error: { code: 'TRANSFER_BUDGET_SCOPE_MISMATCH', message: 'Las cuentas deben tener el mismo ámbito de presupuesto.' } });
       transferPreviewCount += 1;
       lastTransferPayload = body;
       return send(res, 200, { data: {
@@ -199,6 +206,12 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === 'POST' && url.pathname === '/api/v1/transfers/commit') {
       const body = await readBody(req);
+      const source = accounts.find((entry) => entry.id === body.sourceAccountId && !entry.closed);
+      const destination = accounts.find((entry) => entry.id === body.destinationAccountId && !entry.closed);
+      if (!source || !destination || source.id === destination.id) return send(res, 400, { error: { code: 'INVALID_TRANSFER_ACCOUNT', message: 'Selecciona dos cuentas abiertas y distintas.' } });
+      if (accountScope.mode === 'selected' && (!accountScope.accountIds.includes(source.id) || !accountScope.accountIds.includes(destination.id))) return send(res, 400, { error: { code: 'ACCOUNT_OUTSIDE_SCOPE', message: 'Ambas cuentas deben pertenecer al ámbito.' } });
+      if (source.currencyCode !== destination.currencyCode) return send(res, 422, { error: { code: 'TRANSFER_CURRENCY_MISMATCH', message: 'Las cuentas deben tener la misma divisa.' } });
+      if (source.offBudget !== destination.offBudget) return send(res, 422, { error: { code: 'TRANSFER_BUDGET_SCOPE_MISMATCH', message: 'Las cuentas deben tener el mismo ámbito de presupuesto.' } });
       transferCommitCount += 1;
       lastTransferPayload = body;
       return send(res, 200, { data: {
