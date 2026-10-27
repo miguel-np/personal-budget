@@ -1429,11 +1429,16 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       const convertedScheduled = convertTransactionsForAnalysis(scheduledTransactions, preferences);
       actualItemWarnings = [...convertedScheduled.warnings];
       const categoriesById = new Map(categories.map((category) => [category.id, category]));
+      const originalPayees = new Map(convertedScheduled.transactions.map((transaction) => [
+        transaction.id,
+        typeof transaction.payee_name === 'string' ? transaction.payee_name.trim() : '',
+      ]));
       actualItems = normalizeTransactions(convertedScheduled.transactions)
         .filter((entry) => entry.date > asOfDate && entry.date >= monthPeriod.startDate && entry.date <= monthPeriod.endDate && !entry.isTransfer)
         .filter((entry) => entry.amountMinor < 0 || (entry.amountMinor > 0 && Boolean(entry.categoryId && categoriesById.get(entry.categoryId)?.isIncome)))
         .map((entry) => ({
-          id: 'actual:' + entry.id, source: 'actual_transaction', title: entry.payeeLabel || 'Movimiento registrado',
+          id: 'actual:' + entry.id, source: 'actual_transaction',
+          title: originalPayees.get(entry.id) || entry.payeeLabel || 'Movimiento registrado',
           date: entry.date, amountMinor: Math.abs(entry.amountMinor),
           direction: entry.amountMinor < 0 ? 'expense' : 'income', frequency: 'once',
           frequencyLabel: 'Único · registrado en Actual', currency: preferences.displayCurrency,
