@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import Fastify, { LogController, type FastifyInstance, type FastifyReply, type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import helmet from '@fastify/helmet';
 import { calculateSummary, convertAmountMinor, detectRecurringCandidates, estimatePlanningCashFlow, expandCommitmentOccurrences, isIsoDate, normalizeCurrencyCode, normalizeTransactions, projectSavings, projectSavingsGoal, suggestCategories, validatePeriod } from '@personal-budget/finance-core';
-import type { BudgetRepository, BudgetTransaction, ForecastScenario, TransactionCategoryBatchChange, TransactionStructureUpdate } from '@personal-budget/finance-core';
+import type { BudgetRepository, BudgetTransaction, ForecastScenario, PlanningCommitment, TransactionCategoryBatchChange, TransactionStructureUpdate } from '@personal-budget/finance-core';
 import { ActualAdapterError } from '@personal-budget/actual-adapter';
 import type { ActualBudgetMonthRecord, ActualImportRecord, ActualImportResult } from '@personal-budget/actual-adapter';
 import { z, ZodError } from 'zod';
@@ -15,6 +15,7 @@ import { AccountScopeError, AccountScopePreferenceSchema, defaultAccountScope, r
 import { AppPreferencesSchema, defaultAppPreferences, readAppPreferences, writeAppPreferences } from './app-preferences.js';
 import type { AccountScopePreference, AccountScopeMetadata } from './account-scope.js';
 import { PlanningCommitmentInputSchema, PlanningGoalInputSchema, readPlanningData, resetPlanningData, updatePlanningData, StoredPlanningCommitmentSchema, StoredPlanningGoalSchema } from './planning-store.js';
+import type { StoredPlanningCommitment } from './planning-store.js';
 
 
 const TransactionQuerySchema = z.object({
@@ -1350,6 +1351,20 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     return left.length === right.length && left.every((id, index) => id === right[index]);
   }
 
+  function toPlanningCommitment(item: StoredPlanningCommitment): PlanningCommitment {
+    return {
+      id: item.id,
+      title: item.title,
+      amountMinor: item.amountMinor,
+      date: item.date,
+      direction: item.direction,
+      frequency: item.frequency,
+      currency: item.currency,
+      status: item.status,
+      ...(item.notes === undefined ? {} : { notes: item.notes }),
+    };
+  }
+
   function validateGoalWindow(targetDate: string, asOfDate: string): void {
     if (!isIsoDate(targetDate) || targetDate <= asOfDate) {
       throw new RangeError('La fecha objetivo debe ser posterior a hoy.');
@@ -1379,7 +1394,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       const eligibleCommitments = stored.commitments.filter((item) =>
         item.status === 'active' && item.currency === preferences.displayCurrency &&
         planningScopeMatches(item.scope, preference),
-      );
+      ).map(toPlanningCommitment);
       const goals = stored.goals.map((goal) => {
         const scopeMatches = planningScopeMatches(goal.scope, preference);
         const currencyMatches = goal.currency === preferences.displayCurrency;
@@ -1562,7 +1577,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       validateGoalWindow(goal.targetDate, asOfDate);
       const commitments = stored.commitments.filter((item) =>
         item.status === 'active' && item.currency === goal.currency && planningScopeMatches(item.scope, currentScope),
-      );
+      ).map(toPlanningCommitment);
       const projection = projectSavingsGoal({
         asOfDate, targetDate: goal.targetDate, targetAmountMinor: goal.targetAmountMinor,
         initialAmountMinor: goal.initialAmountMinor, currency: goal.currency,
