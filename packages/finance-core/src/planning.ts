@@ -322,7 +322,8 @@ export function projectSavingsGoal(input: SavingsGoalInput): SavingsGoalProjecti
   for (const month of projectedMonths) {
     const commitment = byMonth.get(month) ?? { income: 0, expense: 0 };
     const availableCashMinor = input.monthlyIncomeMinor - input.monthlyExpenseMinor + commitment.income - commitment.expense;
-    const contribution = Math.min(input.monthlyContributionMinor, Math.max(0, availableCashMinor));
+    const remainingGoalAmount = Math.max(0, input.targetAmountMinor - balance);
+    const contribution = Math.min(remainingGoalAmount, input.monthlyContributionMinor, Math.max(0, availableCashMinor));
     balance += contribution;
     maximumBalance += Math.max(0, availableCashMinor);
     safeMinor(balance, 'projected balance');
