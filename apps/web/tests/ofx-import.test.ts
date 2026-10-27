@@ -159,7 +159,7 @@ describe('parseOfx', () => {
   });
 
   it('rejects statements above the 2,000 transaction bound before deduplicating', () => {
-    const repeated = Array.from({ length: 2_001 }, () => transaction()).join('\\n');
+    const repeated = Array.from({ length: 2_001 }, () => transaction()).join('\n');
     expect(() => parseOfx(sgml(repeated))).toThrow(/máximo de 2.000 operaciones/);
   });
 
