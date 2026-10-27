@@ -579,3 +579,195 @@ textarea::placeholder {
   }
 }
 
+
+
+/* Issue #41 — accessible movement actions and safe edit confirmation. */
+.movement-manager { display: grid; gap: var(--space-4, 16px); margin-top: var(--space-4, 16px); }
+.movement-actions-toolbar { display: grid; gap: 12px; }
+.movement-actions-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.movement-actions-heading h3 { margin: 0; font-size: 15px; }
+.movement-actions-controls { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(0, 2fr); align-items: end; gap: 14px; }
+.movement-actions-controls .field-label { min-width: 0; }
+.movement-actions-controls .button-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.movement-actions-controls .button { min-height: 44px; }
+.transactions-table input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent, #7da7e8); }
+.transactions-table td:last-child, .transactions-table th:last-child { white-space: nowrap; }
+.transactions-table td .button.small { min-height: 44px; min-width: 64px; }
+.movement-export-note { margin: 0; }
+.transaction-edit-backdrop { position: fixed; z-index: 1000; inset: 0; display: flex; align-items: center; justify-content: center; overflow-y: auto; padding: 20px; background: rgb(3 9 18 / 78%); }
+.transaction-edit-dialog { width: min(760px, 100%); max-height: min(90vh, 900px); overflow-y: auto; padding: 22px; box-shadow: 0 18px 64px rgb(0 0 0 / 32%); }
+.transaction-edit-dialog .section-heading { align-items: center; }
+.transaction-edit-dialog .section-heading h2 { margin: 0; }
+.transaction-edit-dialog .field-label small { display: block; margin-top: 5px; color: var(--text-tertiary, #91a4bb); line-height: 1.5; }
+.edit-fields-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
+.edit-fields-grid > * { min-width: 0; }
+.edit-fields-grid .edit-full-width { grid-column: 1 / -1; }
+.transaction-edit-dialog .button-row { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 9px; margin-top: 16px; }
+.transaction-edit-dialog .confirmation-panel { margin-top: 16px; border: 1px solid var(--border-strong); border-radius: 10px; padding: 14px; background: var(--surface-recessed); }
+.transaction-edit-dialog .confirmation-panel p { overflow-wrap: anywhere; }
+.transaction-edit-dialog .form-alert { overflow-wrap: anywhere; }
+.transaction-edit-dialog input, .transaction-edit-dialog select, .transaction-edit-dialog textarea { width: 100%; min-width: 0; }
+
+/* Issue #44 — preference center, truthful service status, and local data handling. */
+.settings-center { display: grid; gap: 16px; }
+.settings-center > .section-heading { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+.settings-center > .section-heading h2 { margin: 0; }
+.settings-center .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.settings-center .settings-panel { min-width: 0; }
+.settings-center .settings-panel h3 { margin: 0 0 14px; font-size: 15px; }
+.settings-center .settings-panel h4 { margin: 20px 0 8px; font-size: 13px; }
+.settings-center .field-label { margin: 12px 0; }
+.settings-center .field-label select { width: 100%; }
+.settings-service-row { display: grid; grid-template-columns: 9px minmax(0, 1fr) auto; align-items: start; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--border-subtle); }
+.settings-service-row:last-of-type { border-bottom: 0; }
+.settings-service-row > div { display: grid; gap: 5px; min-width: 0; }
+.settings-service-row strong { font-size: 12px; }
+.settings-service-row small { color: var(--text-secondary); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.settings-service-dot { display: block; width: 8px; height: 8px; margin-top: 5px; border-radius: 99px; background: #8a9ab0; }
+.settings-service-dot.ok { background: #4aa982; }
+.settings-service-dot.warning { background: #d5a84f; }
+.settings-service-dot.error { background: #d96a6a; }
+.settings-service-state { align-self: start; border-radius: 6px; padding: 4px 7px; border: 1px solid var(--border-strong); font-size: 10px; white-space: nowrap; }
+.settings-service-state.ok { color: var(--positive, #83d8b0); }
+.settings-service-state.warning { color: var(--warning, #e5c18d); }
+.settings-service-state.error { color: var(--negative, #ffad9e); }
+.settings-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.settings-metrics > div { display: grid; gap: 8px; min-width: 0; border: 1px solid var(--border); border-radius: 9px; padding: 12px; }
+.settings-metrics span { color: var(--text-secondary); font-size: 10px; line-height: 1.45; }
+.settings-metrics strong { font-size: 15px; overflow-wrap: anywhere; }
+.settings-link-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.settings-center .privacy-list { display: grid; gap: 9px; padding-left: 20px; color: var(--text-secondary); font-size: 12px; line-height: 1.65; }
+.settings-center .privacy-list code, .settings-center .setting-hint code { overflow-wrap: anywhere; }
+.settings-reset-panel { border-color: var(--warning-border, var(--border-strong)); }
+.settings-center .setting-hint { overflow-wrap: anywhere; }
+.settings-center .button { min-height: 44px; }
+
+/* Explicit light theme. System mode resolves to a concrete theme in App.tsx. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --text-primary: #172335;
+  --text-secondary: #3e5065;
+  --text-tertiary: #61748a;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-recessed: #f4f7fb;
+  --border: #d8e0eb;
+  --border-strong: #a9b8cb;
+  --border-subtle: #e4eaf2;
+  --positive: #08784d;
+  --negative: #b33328;
+  --warning: #8a5b0c;
+  background: #f5f7fb;
+  color: var(--text-primary);
+}
+:root[data-theme="light"] body { background: #f5f7fb; color: var(--text-primary); }
+:root[data-theme="light"] .app-shell,
+:root[data-theme="light"] .main-content { background: #f5f7fb; color: var(--text-primary); }
+:root[data-theme="light"] .sidebar,
+:root[data-theme="light"] .panel,
+:root[data-theme="light"] .period-panel,
+:root[data-theme="light"] .filters-panel,
+:root[data-theme="light"] .account-scope-panel,
+:root[data-theme="light"] .settings-panel,
+:root[data-theme="light"] .settings-center .settings-panel,
+:root[data-theme="light"] .stat-card,
+:root[data-theme="light"] .tool-panel,
+:root[data-theme="light"] .movement-actions-toolbar,
+:root[data-theme="light"] .transaction-edit-dialog {
+  background: #ffffff;
+  color: var(--text-primary);
+  border-color: var(--border);
+  box-shadow: 0 2px 10px rgb(20 40 70 / 5%);
+}
+:root[data-theme="light"] .brand,
+:root[data-theme="light"] .page-header h1,
+:root[data-theme="light"] .section-heading h2,
+:root[data-theme="light"] .panel h3,
+:root[data-theme="light"] .settings-panel h3,
+:root[data-theme="light"] .stat-card > strong,
+:root[data-theme="light"] .transactions-table td,
+:root[data-theme="light"] .transaction-name,
+:root[data-theme="light"] .settings-service-row strong { color: #172335; }
+:root[data-theme="light"] .nav-item,
+:root[data-theme="light"] .page-subtitle,
+:root[data-theme="light"] .field-label,
+:root[data-theme="light"] .setting-hint,
+:root[data-theme="light"] .section-footnote,
+:root[data-theme="light"] .muted-copy,
+:root[data-theme="light"] .privacy-list,
+:root[data-theme="light"] .settings-service-row small,
+:root[data-theme="light"] .transactions-table td small { color: #4f6177; }
+:root[data-theme="light"] .nav-item:hover,
+:root[data-theme="light"] .nav-item.active { background: #e9f1fb; color: #183c68; }
+:root[data-theme="light"] .nav-item.active { border-color: #b6cce7; }
+:root[data-theme="light"] input:not([type="checkbox"]):not([type="radio"]),
+:root[data-theme="light"] select,
+:root[data-theme="light"] textarea,
+:root[data-theme="light"] .allocation-input input {
+  background: #ffffff;
+  color: #172335;
+  border-color: #a9b8cb;
+}
+:root[data-theme="light"] input::placeholder,
+:root[data-theme="light"] textarea::placeholder { color: #687c92; opacity: 1; }
+:root[data-theme="light"] input:disabled,
+:root[data-theme="light"] select:disabled,
+:root[data-theme="light"] textarea:disabled { background: #eef2f7; color: #53667a; }
+:root[data-theme="light"] .transactions-table th,
+:root[data-theme="light"] .budget-table th,
+:root[data-theme="light"] .trend-table th,
+:root[data-theme="light"] .csv-preview-table th { background: #edf2f8; color: #344861; border-color: #d3deeb; }
+:root[data-theme="light"] .transactions-table td,
+:root[data-theme="light"] .budget-table td,
+:root[data-theme="light"] .trend-table td,
+:root[data-theme="light"] .csv-preview-table td { border-color: #e1e7f0; color: #344861; }
+:root[data-theme="light"] .transactions-table tbody tr:hover,
+:root[data-theme="light"] .budget-table tbody tr:hover,
+:root[data-theme="light"] .trend-table tbody tr:hover { background: #f1f6fc; }
+:root[data-theme="light"] .table-wrap,
+:root[data-theme="light"] .csv-preview-table-wrap,
+:root[data-theme="light"] .csv-preview-result,
+:root[data-theme="light"] .csv-sample { background: #ffffff; border-color: #d8e0eb; }
+:root[data-theme="light"] .sort-button,
+:root[data-theme="light"] .sort-button:hover { color: #284666; }
+:root[data-theme="light"] .cleared-badge { background: #f1f4f8; color: #596d82; border-color: #cbd6e3; }
+:root[data-theme="light"] .cleared-badge.cleared { background: #e2f5ea; color: #17643e; border-color: #9acdaf; }
+:root[data-theme="light"] .button.secondary { background: #ffffff; color: #29435f; border-color: #aabbd0; }
+:root[data-theme="light"] .button.secondary:hover:not(:disabled) { background: #edf4fc; }
+:root[data-theme="light"] .button.primary { background: #225b9b; color: #ffffff; border-color: #225b9b; }
+:root[data-theme="light"] .date-badge,
+:root[data-theme="light"] .budget-state { background: #eef3f9; color: #3c526b; border-color: #c5d3e3; }
+:root[data-theme="light"] .empty-state { background: #f8fafd; border-color: #d4deea; color: #364a61; }
+:root[data-theme="light"] .warning-list li { background: #fff8e8; color: #704b07; border-color: #efd49b; }
+:root[data-theme="light"] .connection-indicator.connected,
+:root[data-theme="light"] .status-dot.connected { background: #13885a; }
+:root[data-theme="light"] .app-footer { color: #53677d; border-color: #d8e0eb; }
+:root[data-theme="light"] .section-footnote { border-color: #d6e0ed; }
+:root[data-theme="light"] .transaction-edit-backdrop { background: rgb(26 39 55 / 45%); }
+:root[data-theme="light"] .transaction-edit-dialog .confirmation-panel { background: #f4f7fb; border-color: #c7d5e5; }
+:root[data-theme="light"] .settings-service-state { border-color: #c9d6e5; background: #f2f6fb; }
+:root[data-theme="light"] .settings-service-state.ok { color: #17643e; }
+:root[data-theme="light"] .settings-service-state.warning { color: #774e05; }
+:root[data-theme="light"] .settings-service-state.error { color: #9a302a; }
+:root[data-theme="light"] .settings-reset-panel { border-color: #dbbc77; }
+
+@media (max-width: 760px) {
+  .movement-actions-controls { grid-template-columns: minmax(0, 1fr); }
+  .movement-actions-controls .button-row { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .movement-actions-controls .button { width: 100%; }
+  .settings-center .settings-grid { grid-template-columns: minmax(0, 1fr); }
+  .settings-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 480px) {
+  .transaction-edit-backdrop { align-items: flex-start; padding: 8px; }
+  .transaction-edit-dialog { max-height: calc(100dvh - 16px); padding: 14px; }
+  .edit-fields-grid { grid-template-columns: minmax(0, 1fr); }
+  .edit-fields-grid .edit-full-width { grid-column: auto; }
+  .transaction-edit-dialog .button-row { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .settings-center > .section-heading { align-items: stretch; }
+  .settings-center > .section-heading .button { width: 100%; }
+  .settings-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .settings-service-row { grid-template-columns: 8px minmax(0, 1fr); }
+  .settings-service-state { grid-column: 2; justify-self: start; }
+  .settings-link-row { display: grid; grid-template-columns: minmax(0, 1fr); }
+}

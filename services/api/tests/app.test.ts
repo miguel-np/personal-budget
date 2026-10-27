@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { BudgetAccount, BudgetCategory, BudgetRepository, BudgetTransaction } from '@personal-budget/finance-core';
+import type { BudgetAccount, BudgetCategory, BudgetRepository, BudgetTransaction, TransactionCategoryBatchChange, TransactionCategoryBatchResult, TransactionUpdate } from '@personal-budget/finance-core';
 import { ActualAdapterError } from '@personal-budget/actual-adapter';
 import type { ActualImportRecord, ActualImportResult } from '@personal-budget/actual-adapter';
 import { buildApp } from '../src/app.js';
@@ -1004,6 +1004,165 @@ describe('local API', () => {
     } finally {
       await ollama.close();
     }
+  });
+
+  it('edits only validated ordinary transactions and rejects a resulting amount/category mismatch', async () => {
+    const listTransactions = vi.fn(async () => transactions);
+    const updateTransaction = vi.fn(async (_id: string, _fields: TransactionUpdate) => undefined);
+    const repository = Object.assign(createRepository({ listTransactions }), { updateTransaction }) as BudgetRepository;
+    const appConfig = { ...config, actualDataDir: await mkdtemp(join(tmpdir(), 'personal-budget-edit-test-')) };
+    temporaryDirectories.push(appConfig.actualDataDir);
+    const app = await createTestApp(repository, appConfig);
+
+    const response = await app.inject({
+      method: 'PUT', url: '/api/v1/transactions/expense-1',
+      payload: {
+        accountId: 'account-1', startDate: '2026-10-01', endDate: '2026-10-31',
+        changes: { date: '2026-10-04', amount: -12_000, category: 'food', notes: 'Updated locally', cleared: true },
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toMatchObject({ transactionId: 'expense-1', persisted: true });
+    expect(updateTransaction).toHaveBeenCalledWith('expense-1', {
+      date: '2026-10-04', amount: -12_000, category: 'food', notes: 'Updated locally', cleared: true,
+    });
+
+    const mismatch = await app.inject({
+      method: 'PUT', url: '/api/v1/transactions/expense-1',
+      payload: {
+        accountId: 'account-1', startDate: '2026-10-01', endDate: '2026-10-31',
+        changes: { amount: 12_000 },
+      },
+    });
+    expect(mismatch.statusCode).toBe(400);
+    expect(mismatch.json().error.code).toBe('CATEGORY_AMOUNT_MISMATCH');
+    expect(updateTransaction).toHaveBeenCalledTimes(1);
+
+    const transfer = await app.inject({
+      method: 'PUT', url: '/api/v1/transactions/transfer-1',
+      payload: {
+        accountId: 'account-1', startDate: '2026-10-01', endDate: '2026-10-31',
+        changes: { notes: 'Do not split transfer pair' },
+      },
+    });
+    expect(transfer.statusCode).toBe(409);
+    expect(transfer.json().error.code).toBe('TRANSFER_EDIT_NOT_SUPPORTED');
+    expect(updateTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns explicit partial outcomes for category batches and prevalidates transfer rows', async () => {
+    const batchTransactions: readonly BudgetTransaction[] = [
+      ...transactions,
+      { id: 'expense-2', account: 'account-1', currencyCode: 'EUR', date: '2026-10-03', amount: -3_000, category: null },
+    ];
+    const listTransactions = vi.fn(async () => batchTransactions);
+    const updateTransactionCategoriesBatch = vi.fn(async (changes: readonly TransactionCategoryBatchChange[]): Promise<TransactionCategoryBatchResult> => ({
+      requested: changes.length,
+      updatedTransactionIds: [changes[0]!.transactionId],
+      ...(changes[1] ? { failedTransactionId: changes[1].transactionId } : {}),
+      persisted: true,
+    }));
+    const repository = Object.assign(createRepository({ listTransactions }), { updateTransactionCategoriesBatch }) as BudgetRepository;
+    const batchDataDirectory = await mkdtemp(join(tmpdir(), 'personal-budget-batch-test-'));
+    temporaryDirectories.push(batchDataDirectory);
+    const app = await createTestApp(repository, { ...config, actualDataDir: batchDataDirectory });
+
+    const partial = await app.inject({
+      method: 'POST', url: '/api/v1/insights/categorize',
+      payload: {
+        startDate: '2026-10-01', endDate: '2026-10-31', commit: true,
+        transactions: [
+          { transactionId: 'expense-1', categoryId: 'food' },
+          { transactionId: 'expense-2', categoryId: 'food' },
+        ],
+      },
+    });
+    expect(partial.statusCode).toBe(207);
+    expect(partial.json().data).toMatchObject({
+      requested: 2, applied: 1, appliedTransactionIds: ['expense-1'],
+      failedTransactionId: 'expense-2', persisted: true, partial: true,
+    });
+
+    const callsBeforeInvalidRequest = updateTransactionCategoriesBatch.mock.calls.length;
+    const transfer = await app.inject({
+      method: 'POST', url: '/api/v1/insights/categorize',
+      payload: {
+        startDate: '2026-10-01', endDate: '2026-10-31', commit: true,
+        transactions: [{ transactionId: 'transfer-1', categoryId: 'food' }],
+      },
+    });
+    expect(transfer.statusCode).toBe(409);
+    expect(updateTransactionCategoriesBatch).toHaveBeenCalledTimes(callsBeforeInvalidRequest);
+
+    const duplicate = await app.inject({
+      method: 'POST', url: '/api/v1/insights/categorize',
+      payload: {
+        startDate: '2026-10-01', endDate: '2026-10-31', commit: true,
+        transactions: [
+          { transactionId: 'expense-1', categoryId: 'food' },
+          { transactionId: 'expense-1', categoryId: 'food' },
+        ],
+      },
+    });
+    expect(duplicate.statusCode).toBe(400);
+    expect(updateTransactionCategoriesBatch).toHaveBeenCalledTimes(callsBeforeInvalidRequest);
+  });
+
+  it('persists app preferences locally and scopes reset to app-owned preference files', async () => {
+    const dataDirectory = await mkdtemp(join(tmpdir(), 'personal-budget-preferences-api-test-'));
+    temporaryDirectories.push(dataDirectory);
+    const app = await createTestApp(createRepository(), { ...config, actualDataDir: dataDirectory });
+
+    const initial = await app.inject({ method: 'GET', url: '/api/v1/preferences/app' });
+    expect(initial.statusCode).toBe(200);
+    expect(initial.json().data).toEqual({ theme: 'system', locale: 'es-ES' });
+
+    const saved = await app.inject({
+      method: 'PUT', url: '/api/v1/preferences/app',
+      payload: { theme: 'dark', locale: 'en-GB' },
+    });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json().data).toEqual({ theme: 'dark', locale: 'en-GB' });
+
+    const invalid = await app.inject({
+      method: 'PUT', url: '/api/v1/preferences/app',
+      payload: { theme: 'light', locale: 'es-ES', password: 'must-not-be-accepted' },
+    });
+    expect(invalid.statusCode).toBe(400);
+
+    const currency = await app.inject({
+      method: 'PUT', url: '/api/v1/preferences/currency',
+      payload: { displayCurrency: 'GBP', accountCurrencyOverrides: {}, exchangeRates: [] },
+    });
+    expect(currency.statusCode).toBe(200);
+    const scope = await app.inject({
+      method: 'PUT', url: '/api/v1/preferences/accounts',
+      payload: { mode: 'selected', accountIds: ['account-1'] },
+    });
+    expect(scope.statusCode).toBe(200);
+
+    const unconfirmedReset = await app.inject({
+      method: 'POST', url: '/api/v1/preferences/reset', payload: { confirmation: 'RESET' },
+    });
+    expect(unconfirmedReset.statusCode).toBe(400);
+
+    const reset = await app.inject({
+      method: 'POST', url: '/api/v1/preferences/reset',
+      payload: { confirmation: 'RESET_APP_PREFERENCES' },
+    });
+    expect(reset.statusCode).toBe(200);
+    expect(reset.json().data).toMatchObject({
+      reset: true,
+      app: { theme: 'system', locale: 'es-ES' },
+      currency: { displayCurrency: 'EUR', accountCurrencyOverrides: {}, exchangeRates: [] },
+      accountScope: { mode: 'all', accountIds: [] },
+    });
+
+    const unchangedTransactions = await app.inject({
+      method: 'GET', url: '/api/v1/transactions?startDate=2026-10-01&endDate=2026-10-31&limit=20',
+    });
+    expect(unchangedTransactions.statusCode).toBe(200);
+    expect(unchangedTransactions.json().pagination.total).toBe(transactions.length);
   });
 
 });

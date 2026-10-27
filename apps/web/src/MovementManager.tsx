@@ -190,22 +190,6 @@ export function MovementManager(props: MovementManagerProps) {
     if (event.key === 'Escape' && !editBusy) {
       event.preventDefault();
       closeEditor();
-      return;
-    }
-    if (event.key === 'Tab') {
-      const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      )).filter((element) => element.getClientRects().length > 0);
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (!first || !last) return;
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
     }
   }
   function changeDraft<K extends keyof EditDraft>(field: K, value: EditDraft[K]): void {
@@ -417,6 +401,7 @@ export function MovementManager(props: MovementManagerProps) {
         {batchNotice ? <p className="form-alert" role="status">{batchNotice}</p> : null}
         {exportMessage ? <p className="form-alert" role="status">{exportMessage}</p> : null}
       </div>
+      {editNotice ? <p className="form-alert" role="status">{editNotice}</p> : null}
       {transactions.length === 0 ? <div className="empty-state"><span className="empty-symbol" aria-hidden="true">◇</span><h3>No se han encontrado movimientos</h3><p>Cambia el periodo o los filtros. Esta vista no inventa datos cuando Actual no devuelve resultados.</p></div> : (
         <div className="table-wrap" role="region" aria-label="Movimientos paginados; desplázate horizontalmente para ver todas las columnas" tabIndex={0}>
           <table className="transactions-table">

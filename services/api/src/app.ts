@@ -1,16 +1,17 @@
 import Fastify, { LogController, type FastifyInstance, type FastifyReply, type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import helmet from '@fastify/helmet';
 import { calculateSummary, convertAmountMinor, detectRecurringCandidates, isIsoDate, normalizeCurrencyCode, normalizeTransactions, projectSavings, suggestCategories, validatePeriod } from '@personal-budget/finance-core';
-import type { BudgetRepository, BudgetTransaction, ForecastScenario } from '@personal-budget/finance-core';
+import type { BudgetRepository, BudgetTransaction, ForecastScenario, TransactionCategoryBatchChange, TransactionUpdate } from '@personal-budget/finance-core';
 import { ActualAdapterError } from '@personal-budget/actual-adapter';
 import type { ActualBudgetMonthRecord, ActualImportRecord, ActualImportResult } from '@personal-budget/actual-adapter';
 import { z, ZodError } from 'zod';
 import type { AppConfig } from './config.js';
 import { LocalAiClient, LocalAiUnavailableError } from './local-ai.js';
 import type { AssistantContext } from './local-ai.js';
-import { CurrencyPreferencesSchema, readCurrencyPreferences, writeCurrencyPreferences } from './currency-preferences.js';
+import { CurrencyPreferencesSchema, defaultCurrencyPreferences, readCurrencyPreferences, writeCurrencyPreferences } from './currency-preferences.js';
 import type { CurrencyPreferences } from './currency-preferences.js';
-import { AccountScopeError, AccountScopePreferenceSchema, readAccountScope, resolveAccountScope, writeAccountScope } from './account-scope.js';
+import { AccountScopeError, AccountScopePreferenceSchema, defaultAccountScope, readAccountScope, resolveAccountScope, writeAccountScope } from './account-scope.js';
+import { AppPreferencesSchema, defaultAppPreferences, readAppPreferences, writeAppPreferences } from './app-preferences.js';
 import type { AccountScopePreference, AccountScopeMetadata } from './account-scope.js';
 
 const TransactionQuerySchema = z.object({
@@ -56,8 +57,28 @@ const CategorizeRequestSchema = z.object({
   transactions: z.array(z.object({
     transactionId: z.string().trim().min(1).max(128),
     categoryId: z.string().trim().min(1).max(128),
-  }).strict()).min(1).max(200),
+  }).strict()).min(1).max(200).superRefine((changes, context) => {
+    const seen = new Set<string>();
+    changes.forEach((change, index) => {
+      if (seen.has(change.transactionId)) context.addIssue({ code: 'custom', path: [index, 'transactionId'], message: 'Transaction ids must be unique.' });
+      seen.add(change.transactionId);
+    });
+  }),
 }).strict();
+const TransactionUpdateRequestSchema = z.object({
+  accountId: z.string().trim().min(1).max(128),
+  startDate: z.string().refine(isIsoDate, 'startDate must be a valid YYYY-MM-DD date.'),
+  endDate: z.string().refine(isIsoDate, 'endDate must be a valid YYYY-MM-DD date.'),
+  changes: z.object({
+    date: z.string().refine(isIsoDate, 'date must be a valid YYYY-MM-DD date.').optional(),
+    amount: z.number().int().refine(Number.isSafeInteger, 'amount must be a safe integer.').refine((amount) => amount !== 0, 'amount cannot be zero.').optional(),
+    imported_payee: z.string().max(500).transform((value) => value.trim()).optional(),
+    category: z.string().trim().min(1).max(128).nullable().optional(),
+    notes: z.string().max(2_000).optional(),
+    cleared: z.boolean().optional(),
+  }).strict().refine((fields) => Object.keys(fields).length > 0, 'At least one supported field must change.'),
+}).strict();
+const ResetPreferencesRequestSchema = z.object({ confirmation: z.literal('RESET_APP_PREFERENCES') }).strict();
 const ForecastScenarioSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('category_reduction'), categoryId: z.string().trim().min(1).max(128), percent: z.number().min(0).max(100) }).strict(),
   z.object({ type: z.literal('income_change'), percent: z.number().min(-100).max(1000) }).strict(),
@@ -397,6 +418,46 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       return reply.code(normalized.statusCode).send(normalized.body);
     }
   });
+  app.get('/api/v1/preferences/app', async (_request, reply) => {
+    try { return { data: await readAppPreferences(config.actualDataDir) }; }
+    catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+  app.put('/api/v1/preferences/app', async (request, reply) => {
+    try {
+      const preferences = AppPreferencesSchema.parse(request.body);
+      await writeAppPreferences(config.actualDataDir, preferences);
+      return { data: await readAppPreferences(config.actualDataDir) };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+  app.post('/api/v1/preferences/reset', async (request, reply) => {
+    try {
+      ResetPreferencesRequestSchema.parse(request.body);
+      // Reset only app-owned JSON preferences. Never remove Actual's data directory, backups or browser downloads.
+      await Promise.all([
+        writeAppPreferences(config.actualDataDir, defaultAppPreferences()),
+        writeCurrencyPreferences(config.actualDataDir, defaultCurrencyPreferences(config.budgetCurrency)),
+        writeAccountScope(config.actualDataDir, defaultAccountScope()),
+      ]);
+      return {
+        data: {
+          reset: true,
+          app: await readAppPreferences(config.actualDataDir),
+          currency: { ...(await readCurrencyPreferences(config.actualDataDir, config.budgetCurrency)), budgetCurrency: config.budgetCurrency },
+          accountScope: await readAccountScope(config.actualDataDir),
+        },
+      };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
   app.get('/api/v1/transactions', async (request, reply) => {
     try {
       const query = TransactionQuerySchema.parse(request.query);
@@ -414,6 +475,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       type PresentedTransaction = BudgetTransaction & {
         readonly payee_name?: string | null;
         readonly imported_payee?: string | null;
+        readonly is_split_child?: boolean;
       };
       const flattened: PresentedTransaction[] = groups.flat().flatMap((source): PresentedTransaction[] => {
         const transaction = source as PresentedTransaction;
@@ -435,6 +497,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
               ...(importedPayee === undefined ? {} : { imported_payee: importedPayee }),
               is_child: false,
               parent_id: null,
+              is_split_child: true,
             };
           });
         }
@@ -490,6 +553,53 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       return reply.code(normalized.statusCode).send(normalized.body);
     }
   });
+  app.put('/api/v1/transactions/:transactionId', async (request, reply) => {
+    try {
+      const params = z.object({ transactionId: z.string().trim().min(1).max(128) }).strict().parse(request.params);
+      const parsed = TransactionUpdateRequestSchema.parse(request.body);
+      assertPeriod(parsed.startDate, parsed.endDate);
+      const updater = repository as BudgetRepository & {
+        updateTransaction?: (transactionId: string, fields: TransactionUpdate) => Promise<void>;
+      };
+      if (typeof updater.updateTransaction !== 'function') {
+        return reply.code(503).send({ error: { code: 'TRANSACTION_UPDATE_NOT_SUPPORTED', message: 'The configured local adapter does not support these transaction edits.' } });
+      }
+      const { transactions, accounts } = await openAccountTransactions(parsed.accountId, parsed.startDate, parsed.endDate);
+      if (!accounts.some((account) => account.id === parsed.accountId && !account.closed)) {
+        return reply.code(400).send({ error: { code: 'INVALID_ACCOUNT', message: 'Choose an open account from the configured account scope.' } });
+      }
+      const transaction = transactions.find((item) => item.id === params.transactionId && item.account === parsed.accountId);
+      if (!transaction) {
+        return reply.code(404).send({ error: { code: 'INVALID_TRANSACTION', message: 'The transaction does not belong to the selected account and date range.' } });
+      }
+      if (transaction.transfer_id) {
+        return reply.code(409).send({ error: { code: 'TRANSFER_EDIT_NOT_SUPPORTED', message: 'Transfers are protected here to preserve both sides of the transfer.' } });
+      }
+      if (transaction.is_child || transaction.parent_id || transaction.is_parent || (transaction.subtransactions?.length ?? 0) > 0) {
+        return reply.code(409).send({ error: { code: 'SPLIT_EDIT_NOT_SUPPORTED', message: 'Split transactions are protected here to avoid losing or duplicating child entries.' } });
+      }
+      const categories = await repository.listCategories();
+      if (parsed.changes.category !== undefined || parsed.changes.amount !== undefined) {
+        const resultingCategoryId = Object.hasOwn(parsed.changes, 'category')
+          ? parsed.changes.category ?? null
+          : transaction.category ?? null;
+        const resultingAmount = parsed.changes.amount ?? transaction.amount;
+        if (resultingCategoryId) {
+          const category = categories.find((item) => item.id === resultingCategoryId);
+          if (!category) return reply.code(400).send({ error: { code: 'INVALID_CATEGORY', message: 'Choose a category from the configured budget.' } });
+          if ((resultingAmount > 0) !== category.isIncome) {
+            return reply.code(400).send({ error: { code: 'CATEGORY_AMOUNT_MISMATCH', message: 'Income movements require an income category and expense movements require an expense category.' } });
+          }
+        }
+      }
+      await updater.updateTransaction!(params.transactionId, parsed.changes);
+      return { data: { transactionId: params.transactionId, updatedFields: Object.keys(parsed.changes), persisted: true } };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
   const handleImport = async (
     request: FastifyRequest,
     reply: FastifyReply,
@@ -763,17 +873,27 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       assertPeriod(parsed.startDate, parsed.endDate);
       const categorizer = repository as BudgetRepository & {
         updateTransactionCategory?: (transactionId: string, categoryId: string) => Promise<void>;
+        updateTransactionCategoriesBatch?: (changes: readonly TransactionCategoryBatchChange[]) => Promise<{
+          requested: number; updatedTransactionIds: readonly string[]; failedTransactionId?: string; persisted: boolean;
+        }>;
       };
-      if (typeof categorizer.updateTransactionCategory !== 'function') {
-        return reply.code(503).send({ error: { code: 'TRANSACTION_UPDATE_NOT_SUPPORTED', message: 'The configured local adapter does not support transaction updates.' } });
-      }
       const { transactions } = await openAccountTransactions(undefined, parsed.startDate, parsed.endDate);
       const transactionById = new Map(transactions
         .filter((transaction) => !transaction.is_child && !transaction.parent_id)
         .map((transaction) => [transaction.id, transaction]));
       for (const change of parsed.transactions) {
-        if (!transactionById.has(change.transactionId)) {
+        const transaction = transactionById.get(change.transactionId);
+        if (!transaction) {
           return reply.code(400).send({ error: { code: 'INVALID_TRANSACTION', message: 'One or more transaction ids do not belong to an open account in the period.' } });
+        }
+        if (transaction.amount >= 0) {
+          return reply.code(400).send({ error: { code: 'CATEGORY_AMOUNT_MISMATCH', message: 'Bulk categorization is limited to ordinary expense movements.' } });
+        }
+        if (transaction.transfer_id) {
+          return reply.code(409).send({ error: { code: 'TRANSFER_EDIT_NOT_SUPPORTED', message: 'Transfer transactions are protected from bulk category changes.' } });
+        }
+        if (transaction.is_parent || (transaction.subtransactions?.length ?? 0) > 0) {
+          return reply.code(409).send({ error: { code: 'SPLIT_EDIT_NOT_SUPPORTED', message: 'Split transactions are protected from bulk category changes.' } });
         }
       }
       const categories = await repository.listCategories();
@@ -784,10 +904,34 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       if (!parsed.commit) {
         return { data: { preview: true, requested: parsed.transactions.length, changes: parsed.transactions.length } };
       }
-      for (const change of parsed.transactions) {
-        await categorizer.updateTransactionCategory!(change.transactionId, change.categoryId);
+      if (typeof categorizer.updateTransactionCategoriesBatch === 'function') {
+        const outcome = await categorizer.updateTransactionCategoriesBatch(parsed.transactions);
+        const applied = outcome.updatedTransactionIds.length;
+        const complete = applied === outcome.requested && outcome.persisted;
+        if (!complete) {
+          return reply.code(207).send({
+            data: {
+              preview: false, requested: outcome.requested, applied, changes: applied,
+              appliedTransactionIds: outcome.updatedTransactionIds,
+              ...(outcome.failedTransactionId ? { failedTransactionId: outcome.failedTransactionId } : {}),
+              persisted: outcome.persisted, partial: true,
+              message: outcome.persisted
+                ? 'Some changes were applied and synced before the batch stopped. Review the indicated transaction id in Actual; no automatic undo was attempted.'
+                : 'The adapter could not verify persistence. Review Actual before retrying; no automatic undo was attempted.',
+            },
+          });
+        }
+        return { data: { preview: false, requested: outcome.requested, applied, changes: applied, appliedTransactionIds: outcome.updatedTransactionIds, persisted: true, partial: false } };
       }
-      return { data: { preview: false, requested: parsed.transactions.length, changes: parsed.transactions.length } };
+      if (parsed.transactions.length > 1) {
+        return reply.code(503).send({ error: { code: 'TRANSACTION_BATCH_UPDATE_NOT_SUPPORTED', message: 'The configured adapter cannot report safe batch outcomes; no transaction was changed.' } });
+      }
+      if (typeof categorizer.updateTransactionCategory !== 'function') {
+        return reply.code(503).send({ error: { code: 'TRANSACTION_UPDATE_NOT_SUPPORTED', message: 'The configured local adapter does not support transaction updates.' } });
+      }
+      const change = parsed.transactions[0]!;
+      await categorizer.updateTransactionCategory(change.transactionId, change.categoryId);
+      return { data: { preview: false, requested: 1, applied: 1, changes: 1, appliedTransactionIds: [change.transactionId], persisted: true, partial: false } };
     } catch (error) {
       const normalized = sanitizedErrorResponse(error);
       return reply.code(normalized.statusCode).send(normalized.body);

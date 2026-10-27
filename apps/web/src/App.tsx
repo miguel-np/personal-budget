@@ -3,7 +3,9 @@ import { MovementTools } from './MovementTools.js';
 import { BudgetPanel } from './BudgetPanel.js';
 import { AssistantPanel } from './AssistantPanel.js';
 import { PlanningPanel } from './PlanningPanel.js';
-import { formatAccountBalance, formatCivilDate, formatMoney as sharedFormatMoney, formatUnconvertedMoney as sharedFormatUnconvertedMoney } from './finance-format.js';
+import { MovementManager } from './MovementManager.js';
+import { SettingsCenter, type AppPreferences } from './SettingsCenter.js';
+import { formatAccountBalance, formatCivilDate, formatMoney as sharedFormatMoney, formatUnconvertedMoney as sharedFormatUnconvertedMoney, setFinanceLocale } from './finance-format.js';
 
 type ConnectionState = 'checking' | 'connected' | 'unconfigured' | 'error';
 type PeriodMode = 'day' | 'month' | 'year' | 'custom';
@@ -45,6 +47,7 @@ interface Transaction {
   cleared?: boolean;
   is_parent?: boolean;
   is_child?: boolean;
+  is_split_child?: boolean;
   parent_id?: string | null;
   subtransactions?: readonly Transaction[];
 }
@@ -259,6 +262,14 @@ export function App() {
   const [currencySaving, setCurrencySaving] = useState(false);
   const [currencySaveError, setCurrencySaveError] = useState('');
   const [currencySaveNotice, setCurrencySaveNotice] = useState('');
+  const [appPreferences, setAppPreferences] = useState<AppPreferences>({ theme: 'system', locale: 'es-ES' });
+  const [, setFormattingRevision] = useState(0);
+  const [appPreferencesSaving, setAppPreferencesSaving] = useState(false);
+  const [appPreferencesError, setAppPreferencesError] = useState('');
+  const [appPreferencesNotice, setAppPreferencesNotice] = useState('');
+  const [preferencesResetting, setPreferencesResetting] = useState(false);
+  const [preferencesResetError, setPreferencesResetError] = useState('');
+  const [preferencesResetNotice, setPreferencesResetNotice] = useState('');
   const [accountScope, setAccountScope] = useState<AccountScopePreference | null>(null);
   const [accountScopeDraft, setAccountScopeDraft] = useState<AccountScopeDraft>({ mode: 'all', accountIds: [] });
   const [accountScopeSaving, setAccountScopeSaving] = useState(false);
@@ -267,6 +278,23 @@ export function App() {
 
   const [route, setRoute] = useState(() => window.location.pathname.replace(/\/+$/, '') || '/');
   const previousRoute = useRef(route);
+
+  useEffect(() => {
+    setFinanceLocale(appPreferences.locale);
+    setFormattingRevision((value) => value + 1);
+    const root = document.documentElement;
+    root.lang = appPreferences.locale;
+    const preference = appPreferences.theme;
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const applyTheme = () => {
+      root.dataset.theme = preference === 'system' ? (media.matches ? 'dark' : 'light') : preference;
+    };
+    applyTheme();
+    if (preference === 'system') {
+      media.addEventListener('change', applyTheme);
+      return () => media.removeEventListener('change', applyTheme);
+    }
+  }, [appPreferences]);
 
   useEffect(() => {
     const syncRoute = () => setRoute(window.location.pathname.replace(/\/+$/, '') || '/');
@@ -301,11 +329,12 @@ export function App() {
     void (async () => {
       try {
         await apiData<{ status: string }>('/ready', controller.signal);
-        const [accountsResult, categoriesResult, currencyResult, accountScopeResult] = await Promise.all([
+        const [accountsResult, categoriesResult, currencyResult, accountScopeResult, appPreferencesResult] = await Promise.all([
           apiData<Account[]>('/api/v1/accounts', controller.signal),
           apiData<Category[]>('/api/v1/categories', controller.signal),
           apiData<CurrencyPreferences>('/api/v1/preferences/currency', controller.signal),
           apiData<AccountScopePreference>('/api/v1/preferences/accounts', controller.signal),
+          apiData<AppPreferences>('/api/v1/preferences/app', controller.signal),
         ]);
         if (controller.signal.aborted) return;
         setAccounts(accountsResult);
@@ -318,6 +347,7 @@ export function App() {
         });
         setAccountScope(accountScopeResult);
         setAccountScopeDraft({ mode: accountScopeResult.mode, accountIds: [...(accountScopeResult.accountIds ?? [])] });
+        setAppPreferences(appPreferencesResult);
         setConnection('connected');
       } catch (error) {
         if (controller.signal.aborted) return;
@@ -443,6 +473,63 @@ export function App() {
     } finally {
       setAccountScopeSaving(false);
     }
+  }
+
+  async function saveAppPreferences(): Promise<void> {
+    if (appPreferencesSaving) return;
+    setAppPreferencesSaving(true); setAppPreferencesError(''); setAppPreferencesNotice('');
+    try {
+      const response = await fetch('/api/v1/preferences/app', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(appPreferences),
+      });
+      const result = await response.json() as ApiPayload<AppPreferences>;
+      if (!response.ok || !result.data) throw new Error(result.error?.message ?? 'No se pudieron guardar las preferencias de interfaz.');
+      setAppPreferences(result.data);
+      setAppPreferencesNotice('Preferencias de interfaz guardadas localmente.');
+    } catch (error) {
+      setAppPreferencesError(error instanceof Error ? error.message : 'No se pudieron guardar las preferencias de interfaz.');
+    } finally { setAppPreferencesSaving(false); }
+  }
+
+  async function resetApplicationPreferences(): Promise<void> {
+    if (preferencesResetting) return;
+    const confirmed = window.confirm('Se restablecerán solo el tema, el formato regional, la divisa de análisis y el ámbito de cuentas. No se borrará ni modificará ningún movimiento, categoría, presupuesto, backup o archivo descargado. ¿Continuar?');
+    if (!confirmed) return;
+    setPreferencesResetting(true); setPreferencesResetError(''); setPreferencesResetNotice('');
+    try {
+      const response = await fetch('/api/v1/preferences/reset', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ confirmation: 'RESET_APP_PREFERENCES' }),
+      });
+      const result = await response.json() as ApiPayload<{
+        reset: boolean; app: AppPreferences; currency: CurrencyPreferences;
+        accountScope: AccountScopePreference;
+      }>;
+      if (!response.ok || !result.data) throw new Error(result.error?.message ?? 'No se pudieron restablecer las preferencias locales.');
+      setAppPreferences(result.data.app);
+      setCurrencyPreferences({
+        displayCurrency: result.data.currency.displayCurrency,
+        accountCurrencyOverrides: result.data.currency.accountCurrencyOverrides ?? {},
+        exchangeRates: result.data.currency.exchangeRates ?? [],
+        budgetCurrency: result.data.currency.budgetCurrency ?? 'EUR',
+      });
+      const openAccounts = accounts.filter((account) => !account.closed);
+      setAccountScope({
+        ...result.data.accountScope,
+        label: 'Todas las cuentas abiertas',
+        activeAccountIds: openAccounts.map((account) => account.id),
+        accountNames: openAccounts.map((account) => account.name),
+      });
+      setAccountScopeDraft({ mode: 'all', accountIds: [] });
+      setAccountFilter('all'); setCategoryFilter('all'); setUncategorizedOnly(false); setSearchText(''); setPage(1);
+      setRefreshKey((value) => value + 1);
+      setPreferencesResetNotice('Preferencias locales restablecidas. El presupuesto y sus movimientos no se han modificado.');
+    } catch (error) {
+      setPreferencesResetError(error instanceof Error ? error.message : 'No se pudieron restablecer las preferencias locales.');
+    } finally { setPreferencesResetting(false); }
   }
 
   function retryBoot() {
@@ -609,7 +696,7 @@ export function App() {
                       <StatCard label="Ingresos" value={formatMoney(summary.incomeMinor, currency)} detail="Ingresos clasificados en el periodo" tone="positive" />
                       <StatCard label="Gastos" value={formatMoney(summary.expenseMinor, currency)} detail="Traspasos internos excluidos" tone="negative" />
                       <StatCard label="Ahorro neto" value={formatMoney(summary.savingsMinor, currency)} detail="Ingresos menos gastos" tone={summary.savingsMinor >= 0 ? 'positive' : 'negative'} />
-                      <StatCard label="Tasa de ahorro" value={summary.savingsRatePercent === null ? 'No aplicable' : new Intl.NumberFormat('es-ES', { maximumFractionDigits: 1 }).format(summary.savingsRatePercent) + ' %'} detail={summary.incomeMinor > 0 ? 'Ahorro neto / ingresos' : 'No hay ingresos positivos clasificados'} />
+                      <StatCard label="Tasa de ahorro" value={summary.savingsRatePercent === null ? 'No aplicable' : new Intl.NumberFormat(appPreferences.locale, { maximumFractionDigits: 1 }).format(summary.savingsRatePercent) + ' %'} detail={summary.incomeMinor > 0 ? 'Ahorro neto / ingresos' : 'No hay ingresos positivos clasificados'} />
                     </div>
                     <div className="two-column">
                       <article className="panel"><div className="panel-heading"><div><p className="eyebrow">DISTRIBUCIÓN</p><h3>Gastos por categoría</h3></div><span className="muted-label">{summary.expensesByCategory.length} categorías</span></div>
@@ -655,35 +742,26 @@ export function App() {
                       <label className="field-label">Categoría<select value={categoryFilter} onChange={(event) => { setCategoryFilter(event.currentTarget.value); setUncategorizedOnly(false); setPage(1); }}><option value="all">Todas las categorías</option>{categories.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
                       <label className="check-field"><input type="checkbox" checked={uncategorizedOnly} onChange={(event) => { setUncategorizedOnly(event.currentTarget.checked); setCategoryFilter('all'); setPage(1); }} /> Sin categoría</label>
                     </div>
-                    {visibleTransactions.length === 0 ? <EmptyState title="No se han encontrado movimientos" body="Cambia el periodo o los filtros. Esta vista no inventa datos cuando Actual no devuelve resultados." /> : (
-                      <div className="table-wrap" role="region" aria-label="Movimientos paginados; desplázate horizontalmente para ver todas las columnas" tabIndex={0}>
-                        <table className="transactions-table">
-                          <thead><tr>
-                            <th scope="col"><button type="button" className="sort-button" onClick={() => changeSort('date')}>Fecha{sortKey === 'date' ? (sortAscending ? ' ↑' : ' ↓') : ''}</button></th>
-                            <th scope="col"><button type="button" className="sort-button" onClick={() => changeSort('description')}>Descripción{sortKey === 'description' ? (sortAscending ? ' ↑' : ' ↓') : ''}</button></th>
-                            <th scope="col">Cuenta</th><th scope="col">Categoría</th>
-                            <th scope="col"><button type="button" className="sort-button" onClick={() => changeSort('amount')}>Importe{sortKey === 'amount' ? (sortAscending ? ' ↑' : ' ↓') : ''}</button></th><th scope="col">Estado</th>
-                          </tr></thead>
-                          <tbody>{visibleTransactions.map((transaction) => {
-                            const category = categoriesById.get(transaction.category ?? '');
-                            return <tr key={transaction.id}>
-                              <td>{displayDate(transaction.date)}</td>
-                              <td><strong className="transaction-name">{transactionDescription(transaction)}</strong>{transaction.notes ? <small className="transaction-note">{transaction.notes}</small> : null}</td>
-                              <td>{accountsById.get(transaction.account)?.name ?? 'Cuenta desconocida'}</td>
-                              <td>{category?.name ?? <span className="uncategorized">Sin categoría</span>}</td>
-                              <td className={'amount-cell ' + (transaction.amount < 0 ? 'expense' : 'income')}>{transaction.displayAmountMinor !== null && transaction.displayAmountMinor !== undefined
-                                  ? formatMoney(transaction.displayAmountMinor, transaction.displayCurrency ?? currency)
-                                  : <span title={transaction.conversion?.warning ?? 'No hay conversión válida'}>
-                                      {formatUnconvertedMoney(transaction.amount, transaction.currencyCode)}
-                                      <small className="warning-text">{transaction.conversion?.warning ?? 'Sin divisa de análisis'}</small>
-                                    </span>}</td>
-                              <td><span className={'cleared-badge ' + (transaction.cleared ? 'cleared' : '')}>{transaction.cleared ? 'Conciliado' : 'Pendiente'}</span></td>
-                            </tr>;
-                          })}</tbody>
-                        </table>
-                      </div>
-                    )}
-                    <div className="table-footer"><span>Página {currentPage} de {pageCount} · {transactionTotal} movimientos</span><div className="pagination"><button className="button secondary" type="button" disabled={currentPage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>Anterior</button><button className="button secondary" type="button" disabled={currentPage >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>Siguiente</button></div></div>
+                    <MovementManager
+                      transactions={visibleTransactions}
+                      total={transactionTotal}
+                      accounts={accounts}
+                      categories={categories}
+                      currency={currency}
+                      locale={appPreferences.locale}
+                      startDate={period.startDate}
+                      endDate={period.endDate}
+                      accountFilter={accountFilter}
+                      categoryFilter={categoryFilter}
+                      searchText={searchText}
+                      uncategorizedOnly={uncategorizedOnly}
+                      sortKey={sortKey}
+                      sortAscending={sortAscending}
+                      filterKey={[period.startDate, period.endDate, accountFilter, categoryFilter, searchText, uncategorizedOnly, page, sortKey, sortAscending].join('|')}
+                      onSort={changeSort}
+                      onUpdated={() => setRefreshKey((value) => value + 1)}
+                    />
+                                        <div className="table-footer"><span>Página {currentPage} de {pageCount} · {transactionTotal} movimientos</span><div className="pagination"><button className="button secondary" type="button" disabled={currentPage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>Anterior</button><button className="button secondary" type="button" disabled={currentPage >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>Siguiente</button></div></div>
                     <p className="section-footnote">La API limita los periodos de consulta a cinco años. Los importes conservan el signo de Actual; los traspasos se muestran en el registro, pero se excluyen de los totales consolidados.</p>
                   </>
                 )}
@@ -728,11 +806,22 @@ export function App() {
 
             {route === '/settings' && (
               <section className="content-section">
-                <div className="section-heading"><div><p className="eyebrow">ESTADO DEL SERVICIO</p><h2>Configuración local</h2></div></div>
-                <div className="settings-grid">
-                  <article className="panel settings-panel"><p className="eyebrow">CONEXIÓN</p><h3>Actual Budget</h3><div className="detail-line"><span>Estado de API</span><strong>{connection === 'connected' ? 'Disponible' : connection}</strong></div><div className="detail-line"><span>Cuentas visibles</span><strong>{accounts.length}</strong></div><div className="detail-line"><span>Categorías cargadas</span><strong>{categories.length}</strong></div><div className="detail-line"><span>Divisa del presupuesto</span><strong>{currencyPreferences.budgetCurrency ?? 'EUR'}</strong></div><div className="detail-line"><span>Divisa de análisis</span><strong>{currencyPreferences.displayCurrency}</strong></div></article>
-                  <article className="panel settings-panel"><p className="eyebrow">PRIVACIDAD</p><h3>Diseño local-first</h3><ul className="privacy-list"><li>No se solicitan credenciales bancarias.</li><li>El navegador llama únicamente a la API local de la aplicación.</li><li>No hay telemetría ni analítica de terceros.</li><li>Los errores de API se saneanean antes de mostrarse.</li></ul><p className="setting-hint">Configura servidor y presupuesto en el archivo .env. Esta pantalla no muestra contraseñas ni identificadores privados de configuración.</p></article>
-                </div>
+                <SettingsCenter
+                  preferences={appPreferences}
+                  onChange={setAppPreferences}
+                  onSave={() => { void saveAppPreferences(); }}
+                  onReset={() => { void resetApplicationPreferences(); }}
+                  saving={appPreferencesSaving}
+                  saveError={appPreferencesError}
+                  saveNotice={appPreferencesNotice}
+                  resetting={preferencesResetting}
+                  resetError={preferencesResetError}
+                  resetNotice={preferencesResetNotice}
+                  currency={currencyPreferences.displayCurrency}
+                  budgetCurrency={currencyPreferences.budgetCurrency ?? 'EUR'}
+                  accountCount={accounts.length}
+                  categoryCount={categories.length}
+                />
                 <article className="panel settings-panel currency-settings">
                   <p className="eyebrow">PRESENTACIÓN FINANCIERA</p>
                   <h3>Divisa de análisis y conversiones</h3>
