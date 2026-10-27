@@ -295,7 +295,7 @@ export function App() {
     setRoute(href);
     window.scrollTo({ top: 0, behavior: 'auto' });
   }
-  function quickRegister(kind: 'income' | 'expense'): void {
+  function quickRegister(kind: 'income' | 'expense' | 'transfer'): void {
     setManualQuickRequest((previous) => ({ key: (previous?.key ?? 0) + 1, kind }));
     setAccountFilter('all');
     setPage(1);
