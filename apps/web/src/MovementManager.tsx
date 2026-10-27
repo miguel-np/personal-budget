@@ -290,6 +290,7 @@ export function MovementManager(props: MovementManagerProps) {
         persisted: boolean;
         partial?: boolean;
         counterpartTransactionId?: string;
+        updatedTransactionIds?: string[];
         parentTransactionId?: string;
         parentAmount?: number;
         failedTransactionId?: string;
@@ -307,8 +308,11 @@ export function MovementManager(props: MovementManagerProps) {
         onUpdated(warning);
         throw new Error(warning);
       }
+      const transferUpdatedBothLegs = (payload.data.updatedTransactionIds?.length ?? 0) === 2;
       const notice = editing.transfer_id
-        ? 'Transferencia actualizada y verificada en sus dos cuentas de Actual Budget.'
+        ? transferUpdatedBothLegs
+          ? 'Fecha e importe de la transferencia sincronizados y verificados en sus dos cuentas de Actual Budget. Notas y conciliación solo afectan a este lado.'
+          : 'Esta parte de la transferencia se ha actualizado y verificado. La otra parte no se ha modificado; las notas y la conciliación solo afectan a este lado.'
         : editing.is_split_child
           ? 'Parte del desglose actualizada; el conjunto completo se ha conservado y verificado en Actual Budget.'
           : 'Cambios validados y verificados en Actual Budget.';
