@@ -13,7 +13,6 @@ const categories: readonly BudgetCategory[] = [
   { id: 'salary', name: 'Salario', groupId: 'income', isIncome: true },
   { id: 'food', name: 'Alimentación', groupId: 'spend', isIncome: false },
 ];
-const today = () => new Date().toISOString().slice(0, 10);
 function futureMonth(months: number, day = 15): string {
   const now = new Date();
   const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + months, 1));
@@ -112,6 +111,34 @@ describe('local planning API', () => {
     expect(repository.updateTransaction).not.toHaveBeenCalled();
     expect(repository.updateTransactionSafely).not.toHaveBeenCalled();
     expect(repository.updateTransactionCategory).not.toHaveBeenCalled();
+  });
+
+
+  it('supports editing, pausing, resuming and deleting a savings goal', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'personal-budget-planning-'));
+    temporaryDirectories.push(directory);
+    const app = await createTestApp(directory);
+    const created = await app.inject({ method: 'POST', url: '/api/v1/planning/goals', payload: validGoal() });
+    expect(created.statusCode).toBe(201);
+    const id = created.json().data.id as string;
+
+    const updated = await app.inject({
+      method: 'PUT', url: '/api/v1/planning/goals/' + id,
+      payload: validGoal({ name: 'Fondo revisado', targetAmountMinor: 1_500_000 }),
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json().data).toMatchObject({ id, name: 'Fondo revisado', targetAmountMinor: 1_500_000 });
+
+    const paused = await app.inject({ method: 'PATCH', url: '/api/v1/planning/goals/' + id + '/status', payload: { status: 'paused' } });
+    expect(paused.statusCode).toBe(200);
+    const readPaused = await app.inject({ method: 'GET', url: '/api/v1/planning' });
+    expect(readPaused.json().data.goals.find((goal: { id: string }) => goal.id === id).projection).toBeNull();
+
+    const resumed = await app.inject({ method: 'PATCH', url: '/api/v1/planning/goals/' + id + '/status', payload: { status: 'active' } });
+    expect(resumed.statusCode).toBe(200);
+    const deleted = await app.inject({ method: 'DELETE', url: '/api/v1/planning/goals/' + id });
+    expect(deleted.statusCode).toBe(200);
+    expect(deleted.json().data.deleted).toBe(true);
   });
 
   it('creates, expands, pauses, resumes and deletes commitments without importing them into Actual', async () => {
