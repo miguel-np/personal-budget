@@ -616,7 +616,7 @@ export function GoalsDashboardSummary({ currency, onNavigate, reloadKey = 0 }: {
           <strong>{goal.projection ? money(goal.projection.projectedBalanceMinor, goal.projection.currency) + ' estimados' : 'Revisar supuestos'}</strong>
         </div>
       ))}
-      {upcoming ? <p className="section-context">Próximo: {upcoming.title} · {upcoming.direction === 'expense' ? 'Salida' : 'Entrada'} {money(upcoming.amountMinor, summary.currency)} · {upcoming.source === 'actual_transaction' ? 'registrado en Actual' : upcoming.source === 'recurring_candidate' ? 'candidato no confirmado' : 'compromiso manual'}.</p> : <p className="muted-copy">No se han detectado vencimientos futuros en el mes actual.</p>}
+      {upcoming ? <p className="section-context">Próximo: {upcoming.title} · {upcoming.direction === 'expense' ? 'Salida' : 'Entrada'} {money(upcoming.amountMinor, summary.currency || currency)} · {upcoming.source === 'actual_transaction' ? 'registrado en Actual' : upcoming.source === 'recurring_candidate' ? 'candidato no confirmado' : 'compromiso manual'}.</p> : <p className="muted-copy">No se han detectado vencimientos futuros en el mes actual.</p>}
       <div className="button-row"><button className="button secondary" type="button" onClick={() => onNavigate('/goals')}>Gestionar objetivos y compromisos</button></div>
     </section>
   );
