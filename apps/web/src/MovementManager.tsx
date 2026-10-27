@@ -307,7 +307,7 @@ export function MovementManager(props: MovementManagerProps) {
       );
       if (!response.ok || !payload.data) throw new Error(payload.error?.message ?? 'No se han podido guardar los cambios.');
       if (payload.data.partial) {
-        const warning = 'Actual Budget solo confirmó una parte de la transferencia enlazada. Se ha actualizado un lado; verifica ambos movimientos en Actual antes de volver a intentarlo.';
+        const warning = 'Actual Budget confirmó una parte de la transferencia, pero no se pudo verificar la otra. La segunda parte puede haberse actualizado automáticamente; revisa ambas cuentas en Actual antes de volver a intentarlo.';
         onUpdated(warning);
         throw new Error(warning);
       }
