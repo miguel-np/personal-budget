@@ -294,7 +294,6 @@ export function MovementTools({ accounts, categories, currency, onImported, quic
         ...(transferNotes.trim() ? { notes: transferNotes.trim() } : {}),
       });
       setTransferResult(result);
-      setTransferMessage('Actual ha confirmado la operación. La transferencia se registra como pareja vinculada, no como ingreso y gasto independientes.');
       setTransferAmount('');
       setTransferNotes('');
       setTransferImportId(newIdentifier());
@@ -365,7 +364,6 @@ export function MovementTools({ accounts, categories, currency, onImported, quic
       const result = await sendImport('/api/v1/import/commit', accountId, manualRecords);
       setManualResult(result);
       setManualRecords(null);
-      setManualMessage('Resultado confirmado por Actual: ' + result.added + ' añadidos, ' + result.updated + ' actualizados y ' + result.errors + ' errores.');
       setAmount('');
       setPayee('');
       setNotes('');
@@ -521,7 +519,6 @@ export function MovementTools({ accounts, categories, currency, onImported, quic
       const result = await sendImport('/api/v1/import/commit', csvAccountId, csvRecords);
       setCsvResult(result);
       setCsvRecords(null);
-      setCsvMessage('Importación confirmada por Actual: ' + result.added + ' añadidos, ' + result.updated + ' actualizados y ' + result.errors + ' errores. Los movimientos conciliados no se duplican por su identificador importado.');
       onImported('Importación confirmada por Actual: ' + result.added + ' añadido(s), ' + result.updated + ' actualizado(s) y ' + result.errors + ' error(es). Los movimientos conciliados no se duplican por su identificador importado.');
     } catch (error) {
       setCsvError(error instanceof Error ? error.message : 'No se ha podido importar el CSV.');
