@@ -728,7 +728,7 @@ export function MovementTools({ accounts, categories, currency, onImported, quic
                   {ofxParsed.rejected.length > 8 ? <p className="tool-hint">Se muestran los primeros 8 de {ofxParsed.rejected.length} errores de formato. El contenido del extracto no se registra en logs.</p> : null}
                 </div>
               ) : null}
-              {ofxCurrencyMismatch ? <FormAlert error>La divisa declarada ({ofxParsed.currencyCode}) no coincide con la divisa de la cuenta destino ({selectedImportCurrency}). La importación está bloqueada y no se realizará ninguna conversión.</FormAlert> : null}
+              {ofxCurrencyMismatch ? <FormAlert error>{'La divisa declarada (' + ofxParsed.currencyCode + ') no coincide con la divisa de la cuenta destino (' + selectedImportCurrency + '). La importación está bloqueada y no se realizará ninguna conversión.'}</FormAlert> : null}
               {csvAccountId && ofxNeedsCurrencyAcknowledgement ? (
                 <label className="field-label ofx-currency-ack">
                   <input type="checkbox" checked={ofxCurrencyAcknowledged} onChange={(event) => { setOfxCurrencyAcknowledged(event.currentTarget.checked); setCsvRecords(null); setCsvResult(null); setCsvError(''); }} />
