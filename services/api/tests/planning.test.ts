@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -271,6 +271,23 @@ describe('local planning API', () => {
     const appPreferences = await app.inject({ method: 'GET', url: '/api/v1/preferences/app' });
     expect(appPreferences.statusCode).toBe(200);
     expect(appPreferences.json().data).toEqual({ theme: 'system', locale: 'es-ES' });
+  });
+
+
+  it('allows an explicit reset to clear a corrupt planning file without touching app preferences', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'personal-budget-planning-'));
+    temporaryDirectories.push(directory);
+    await writeFile(join(directory, 'planning-data.json'), '{"version":1,"goals":[', { mode: 0o600 });
+    const app = await createTestApp(directory);
+    const denied = await app.inject({ method: 'POST', url: '/api/v1/planning/reset', payload: { confirmation: 'yes' } });
+    expect(denied.statusCode).toBe(400);
+
+    const reset = await app.inject({ method: 'POST', url: '/api/v1/planning/reset', payload: { confirmation: 'DELETE_PLANNING_DATA' } });
+    expect(reset.statusCode).toBe(200);
+    const read = await app.inject({ method: 'GET', url: '/api/v1/planning' });
+    expect(read.statusCode).toBe(200);
+    expect(read.json().data.goals).toEqual([]);
+    expect(read.json().data.commitments).toEqual([]);
   });
 
   it('suspends projections when the saved account scope or analysis currency changes', async () => {
