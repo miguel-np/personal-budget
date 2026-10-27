@@ -115,6 +115,12 @@ const ForecastRequestSchema = z.object({
 }).strict();
 const PlanningMonthSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'month must use YYYY-MM.');
 const PlanningStatusRequestSchema = z.object({ status: z.enum(['active', 'paused']) }).strict();
+const SafeMinorAmountSchema = z.number().int().refine(Number.isSafeInteger, 'Amounts must be safe integers in minor currency units.');
+const PlanningScenarioRequestSchema = z.object({
+  monthlyContributionMinor: SafeMinorAmountSchema.nonnegative(),
+  monthlyIncomeMinor: SafeMinorAmountSchema,
+  monthlyExpenseMinor: SafeMinorAmountSchema.nonnegative(),
+}).strict();
 const DeletePlanningDataRequestSchema = z.object({ confirmation: z.literal('DELETE_PLANNING_DATA') }).strict();
 const AssistantRequestSchema = z.object({
   question: z.string().trim().min(1).max(2_000),
@@ -1533,6 +1539,39 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       });
       if (!result) return reply.code(404).send({ error: { code: 'PLANNING_GOAL_NOT_FOUND', message: 'No existe ese objetivo de planificación local.' } });
       return { data: result };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.post('/api/v1/planning/goals/:id/simulate', async (request, reply) => {
+    try {
+      const params = z.object({ id: z.string().uuid() }).strict().parse(request.params);
+      const scenario = PlanningScenarioRequestSchema.parse(request.body);
+      const [stored, preferences, currentScope] = await Promise.all([
+        readPlanningData(config.actualDataDir), currencyPreferences(), accountScopePreference(),
+      ]);
+      const goal = stored.goals.find((item) => item.id === params.id);
+      if (!goal) return reply.code(404).send({ error: { code: 'PLANNING_GOAL_NOT_FOUND', message: 'No existe ese objetivo de planificación local.' } });
+      const asOfDate = new Date().toISOString().slice(0, 10);
+      if (goal.status !== 'active') return reply.code(409).send({ error: { code: 'PLANNING_GOAL_PAUSED', message: 'Reanuda el objetivo antes de comparar escenarios.' } });
+      if (!planningScopeMatches(goal.scope, currentScope) || goal.currency !== preferences.displayCurrency) {
+        return reply.code(409).send({ error: { code: 'PLANNING_CONTEXT_CHANGED', message: 'El ámbito de cuentas o la divisa ha cambiado. Edita el objetivo y confirma el contexto actual antes de simular.' } });
+      }
+      validateGoalWindow(goal.targetDate, asOfDate);
+      const commitments: PlanningCommitment[] = stored.commitments.filter((item) =>
+        item.status === 'active' && item.currency === goal.currency && planningScopeMatches(item.scope, currentScope),
+      );
+      const projection = projectSavingsGoal({
+        asOfDate, targetDate: goal.targetDate, targetAmountMinor: goal.targetAmountMinor,
+        initialAmountMinor: goal.initialAmountMinor, currency: goal.currency,
+        monthlyContributionMinor: scenario.monthlyContributionMinor,
+        monthlyIncomeMinor: scenario.monthlyIncomeMinor,
+        monthlyExpenseMinor: scenario.monthlyExpenseMinor,
+        commitments,
+      });
+      return { data: { saved: false, label: 'Escenario personalizado (no guardado)', inputs: scenario, projection } };
     } catch (error) {
       const normalized = sanitizedErrorResponse(error);
       return reply.code(normalized.statusCode).send(normalized.body);
