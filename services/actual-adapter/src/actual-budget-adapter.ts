@@ -136,7 +136,15 @@ export class ActualBudgetAdapter implements BudgetRepository {
       throw new ActualAdapterError('UPSTREAM_FAILURE', 'The configured Actual API client does not support transaction updates.');
     }
     await this.enqueue(async () => {
-      await this.api.updateTransaction!(parsedTransactionId.data, parsedFields.data);
+      const update: TransactionUpdate = {
+        ...(parsedFields.data.date === undefined ? {} : { date: parsedFields.data.date }),
+        ...(parsedFields.data.amount === undefined ? {} : { amount: parsedFields.data.amount }),
+        ...(parsedFields.data.imported_payee === undefined ? {} : { imported_payee: parsedFields.data.imported_payee }),
+        ...(parsedFields.data.category === undefined ? {} : { category: parsedFields.data.category }),
+        ...(parsedFields.data.notes === undefined ? {} : { notes: parsedFields.data.notes }),
+        ...(parsedFields.data.cleared === undefined ? {} : { cleared: parsedFields.data.cleared }),
+      };
+      await this.api.updateTransaction!(parsedTransactionId.data, update);
       await this.api.sync();
     });
   }
