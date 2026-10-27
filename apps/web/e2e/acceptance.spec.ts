@@ -436,7 +436,7 @@ test('bulk categorization previews all eligible rows and confirms a reported out
   expect((await (await request.get(fixtureApi + '/__test__/state')).json()).categoryWrites).toBe(0);
   page.once('dialog', (dialog) => { void dialog.accept(); });
   await page.getByRole('button', { name: 'Confirmar lote' }).click();
-  await expect(page.locator('.movement-operation-notice')).toContainText('Se han guardado y sincronizado 1 cambios de categoría');
+  await expect(page.locator('.movement-operation-notice')).toContainText('Se ha confirmado la categoría de 1 movimiento en Actual Budget');
   const state = await (await request.get(fixtureApi + '/__test__/state')).json();
   expect(state.categoryWrites).toBe(1);
   expect(state.lastCommittedChanges).toEqual([{ transactionId: 'synthetic-tx-1', categoryId: 'synthetic-restaurants' }]);
@@ -464,7 +464,7 @@ test('bulk category commit rejects a stale preview and requires a refreshed base
   await page.getByRole('button', { name: 'Previsualizar lote' }).click();
   page.once('dialog', (dialog) => { void dialog.accept(); });
   await page.getByRole('button', { name: 'Confirmar lote' }).click();
-  await expect(page.locator('.movement-operation-notice')).toContainText('Se han confirmado 1 estados de categoría');
+  await expect(page.locator('.movement-operation-notice')).toContainText('Se ha confirmado la categoría de 1 movimiento');
   const state = await (await request.get(fixtureApi + '/__test__/state')).json();
   expect(state.categoryWrites).toBe(0); // the concurrent change already satisfied the requested final state
   expect(state.lastCommittedChanges).toEqual([{ transactionId: 'synthetic-tx-1', categoryId: 'synthetic-restaurants' }]);
@@ -494,7 +494,7 @@ test('bulk category partial result keeps only pending rows selected for a fresh 
   await expect(page.locator('.movement-actions-toolbar').getByRole('status')).toContainText('1 movimientos de gasto');
   page.once('dialog', (dialog) => { void dialog.accept(); });
   await page.getByRole('button', { name: 'Confirmar lote' }).click();
-  await expect(page.locator('.movement-operation-notice')).toContainText('Se han confirmado 1 estados de categoría');
+  await expect(page.locator('.movement-operation-notice')).toContainText('Se ha confirmado la categoría de 1 movimiento');
   state = await (await request.get(fixtureApi + '/__test__/state')).json();
   expect(state.categoryWrites).toBe(2);
   expect(state.lastCommittedChanges).toEqual([{ transactionId: 'synthetic-tx-3', categoryId: 'synthetic-restaurants' }]);

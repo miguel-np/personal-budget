@@ -391,7 +391,9 @@ export function MovementManager(props: MovementManagerProps) {
           (outcome.conflictTransactionId ? 'La categoría cambió después de la previsualización. ' : '') +
           (outcome.persisted === false ? 'La persistencia no se ha podido verificar. ' : '') +
           (outcome.message ?? 'Revisa Actual antes de volver a intentarlo; no se ha ejecutado ninguna deshacer automática.')
-        : 'Se han confirmado ' + outcome.changes + ' estados de categoría en Actual Budget.';
+        : outcome.changes === 1
+          ? 'Se ha confirmado la categoría de 1 movimiento en Actual Budget.'
+          : 'Se han confirmado las categorías de ' + outcome.changes + ' movimientos en Actual Budget.';
       if (outcome.partial || outcome.applied !== outcome.requested || outcome.persisted === false) {
         setSelectedIds((previous) => previous.filter((id) => !appliedIds.has(id)));
         setBatchPreview(false);
