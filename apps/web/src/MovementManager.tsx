@@ -456,6 +456,7 @@ export function MovementManager(props: MovementManagerProps) {
                   <p><strong>{transactionDescription(editing)}</strong> · {formatCivilDate(editing.date, locale)} · {formatMoney(editing.amount, editing.currencyCode ?? currency, locale)}</p>
                   <p>Nuevo valor: <strong>{draft.concept.trim() || 'Sin concepto'}</strong> · {formatCivilDate(draft.date, locale)} · {parseAmountInput(draft.amount) === null ? 'Importe inválido' : formatMoney(parseAmountInput(draft.amount) as number, editing.currencyCode ?? currency, locale)}</p>
                   <p>Categoría: {categoryNames.get(editing.category ?? '') ?? 'Sin categoría'} → {categoryNames.get(draft.categoryId) ?? 'Sin categoría'}; estado: {editing.cleared ? 'Conciliado' : 'Pendiente'} → {draft.cleared ? 'Conciliado' : 'Pendiente'}.</p>
+                  <p>Notas: <strong>{editing.notes?.trim() || 'Sin notas'}</strong> → <strong>{draft.notes.trim() || 'Sin notas'}</strong>.</p>
                 </section>
               ) : null}
               {editError ? <p className="form-alert error" role="alert">{editError}</p> : null}
