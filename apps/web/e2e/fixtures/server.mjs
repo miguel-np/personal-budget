@@ -305,15 +305,16 @@ const server = createServer(async (req, res) => {
         const counterpart = rawTransactions.find((item) => item.id === transaction.transfer_id && item.transfer_id === transaction.id && item.account !== transaction.account);
         if (!counterpart || counterpart.amount !== -transaction.amount) return send(res, 409, { error: { code: 'TRANSFER_COUNTERPART_NOT_AVAILABLE', message: 'No se puede verificar la otra pata de la transferencia.' } });
         const nextAmount = fields.amount ?? transaction.amount;
+        const syncTransferDate = body.syncTransferDate === true;
         if (Math.sign(nextAmount) !== Math.sign(transaction.amount)) return send(res, 400, { error: { code: 'TRANSFER_DIRECTION_CHANGE_NOT_ALLOWED', message: 'No se puede invertir la dirección de la transferencia.' } });
         Object.assign(transaction, fields);
-        let writes = 1;
-        if (fields.date !== undefined) counterpart.date = fields.date;
+        if (fields.date !== undefined && syncTransferDate) counterpart.date = fields.date;
         if (fields.amount !== undefined) counterpart.amount = -nextAmount;
-        if (fields.date !== undefined || fields.amount !== undefined) writes += 1;
-        transactionWrites += writes;
-        lastTransactionUpdate = { transactionId: id, fields: Object.keys(fields), changes: fields, counterpartTransactionId: counterpart.id, paired: true };
-        const updatedTransactionIds = fields.date !== undefined || fields.amount !== undefined ? [id, counterpart.id] : [id];
+        if (fields.notes !== undefined) counterpart.notes = fields.notes;
+        const paired = fields.amount !== undefined || fields.notes !== undefined || (fields.date !== undefined && syncTransferDate);
+        transactionWrites += paired ? 2 : 1;
+        lastTransactionUpdate = { transactionId: id, fields: Object.keys(fields), changes: fields, syncTransferDate, counterpartTransactionId: counterpart.id, paired };
+        const updatedTransactionIds = paired ? [id, counterpart.id] : [id];
         return send(res, 200, { data: { transactionId: id, counterpartTransactionId: counterpart.id, updatedFields: Object.keys(fields), updatedTransactionIds, persisted: true, verified: true, partial: false } });
       }
       if (parent && child) {
