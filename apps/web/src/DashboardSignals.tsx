@@ -32,7 +32,7 @@ interface ApiPayload<T> {
   readonly error?: { readonly message?: string };
 }
 
-type QuickRegisterKind = 'income' | 'expense';
+type QuickRegisterKind = 'income' | 'expense' | 'transfer';
 
 interface DashboardSignalsProps {
   readonly accounts: readonly Account[];
@@ -192,9 +192,9 @@ export function DashboardSignals({
           <button className="button primary" type="button" onClick={() => onQuickRegister('income')}>Registrar ingreso</button>
           <button className="button secondary" type="button" onClick={() => onQuickRegister('expense')}>Registrar gasto</button>
           <button className="button secondary" type="button" onClick={() => onNavigate('/movements')}>Buscar y revisar movimientos</button>
-          <button className="button secondary" type="button" disabled aria-describedby="transfer-shortcut-note">Registrar transferencia</button>
+          <button className="button secondary" type="button" disabled={scopedOpenAccounts.length < 2} onClick={() => onQuickRegister('transfer')} aria-describedby="transfer-shortcut-note">Registrar transferencia</button>
         </div>
-        <p className="signal-note" id="transfer-shortcut-note">El registro seguro de transferencias entre cuentas no está disponible todavía. Se mantiene desactivado para no registrarlas por error como ingreso o gasto. Los ingresos y gastos requieren previsualización y confirmación antes de escribir en Actual.</p>
+        <p className="signal-note" id="transfer-shortcut-note">La transferencia requiere dos cuentas abiertas dentro del ámbito global, de la misma divisa y ambas dentro o ambas fuera de presupuesto. Se utiliza el beneficiario de transferencia verificado de Actual y se exige previsualización y confirmación; no se inventan tipos de cambio ni se crean dos movimientos ordinarios.</p>
       </article>
 
       <article className="panel planning-status-panel" aria-labelledby="planning-status-heading">
