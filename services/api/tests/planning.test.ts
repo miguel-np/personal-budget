@@ -60,7 +60,7 @@ function validGoal(overrides: Record<string, unknown> = {}) {
     targetAmountMinor: 1_000_000,
     initialAmountMinor: 100_000,
     monthlyContributionMinor: 50_000,
-    targetDate: futureMonth(6),
+    targetDate: futureMonth(6, 31),
     monthlyIncomeMinor: null,
     monthlyExpenseMinor: null,
     ...overrides,
