@@ -131,7 +131,7 @@ export function MovementManager(props: MovementManagerProps) {
   const [editNotice, setEditNotice] = useState('');
   const lastEditId = useRef<string | null>(null);
   const dateInput = useRef<HTMLInputElement>(null);
-  const visibleIds = useMemo(() => new Set(transactions.map((item) => item.id)), [transactions]);
+  const visibleIdKey = JSON.stringify(transactions.map((item) => item.id));
   const selectableTransactions = useMemo(() => transactions.filter(canBulkCategorize), [transactions]);
   const accountNames = useMemo(() => new Map(accounts.map((item) => [item.id, item.name])), [accounts]);
   const categoryNames = useMemo(() => new Map(categories.map((item) => [item.id, item.name])), [categories]);
@@ -153,32 +153,37 @@ export function MovementManager(props: MovementManagerProps) {
   }, [filterKey]);
 
   useEffect(() => {
+    // Keep the selection when a parent creates a new array with the same visible rows.
+    const visibleIds = new Set<string>(JSON.parse(visibleIdKey) as string[]);
     setSelectedIds((previous) => previous.filter((id) => visibleIds.has(id)));
-  }, [visibleIds]);
+  }, [visibleIdKey]);
 
   useEffect(() => {
-    if (editing) {
-      setDraft({
-        date: editing.date,
-        amount: amountInput(editing.amount, locale),
-        concept: editing.imported_payee?.trim() || editing.payee_name?.trim() || '',
-        categoryId: editing.category ?? '',
-        notes: editing.notes ?? '',
-        cleared: Boolean(editing.cleared),
-      });
-      setEditPreview(false);
-      setEditError('');
-      setEditNotice('');
-      return;
-    }
-    if (lastEditId.current) {
-      const id = lastEditId.current;
-      lastEditId.current = null;
-      const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-transaction-edit]'));
-      const target = buttons.find((button) => button.getAttribute('data-transaction-edit') === id);
-      target?.focus();
-    }
-  }, [editing?.id, locale]);
+    if (editing || !lastEditId.current) return;
+    const id = lastEditId.current;
+    lastEditId.current = null;
+    const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-transaction-edit]'));
+    const target = buttons.find((button) => button.getAttribute('data-transaction-edit') === id);
+    target?.focus();
+  }, [editing?.id]);
+
+  function openEditor(transaction: MovementTransaction): void {
+    // Initialize the draft in the same event as opening the dialog so the first
+    // render is complete; an effect must not overwrite input entered immediately.
+    lastEditId.current = transaction.id;
+    setDraft({
+      date: transaction.date,
+      amount: amountInput(transaction.amount, locale),
+      concept: transaction.imported_payee?.trim() || transaction.payee_name?.trim() || '',
+      categoryId: transaction.category ?? '',
+      notes: transaction.notes ?? '',
+      cleared: Boolean(transaction.cleared),
+    });
+    setEditPreview(false);
+    setEditError('');
+    setEditNotice('');
+    setEditing(transaction);
+  }
 
   function closeEditor(): void {
     setEditing(null);
@@ -428,7 +433,7 @@ export function MovementManager(props: MovementManagerProps) {
                   ? formatMoney(transaction.displayAmountMinor, transaction.displayCurrency ?? currency, locale)
                   : <span title="No hay conversión válida">{formatMoney(transaction.amount, transaction.currencyCode ?? currency, locale)}<small className="warning-text">Sin conversión de análisis</small></span>}</td>
                 <td><span className={'cleared-badge ' + (transaction.cleared ? 'cleared' : '')}>{transaction.cleared ? 'Conciliado' : 'Pendiente'}</span></td>
-                <td><button className="button small secondary" type="button" data-transaction-edit={transaction.id} disabled={!editable} title={!editable ? reason : 'Editar movimiento'} onClick={() => { lastEditId.current = transaction.id; setEditing(transaction); }}>Editar</button></td>
+                <td><button className="button small secondary" type="button" data-transaction-edit={transaction.id} disabled={!editable} title={!editable ? reason : 'Editar movimiento'} onClick={() => openEditor(transaction)>Editar</button></td>
               </tr>;
             })}</tbody>
           </table>
