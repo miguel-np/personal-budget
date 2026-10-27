@@ -58,7 +58,7 @@ En otra terminal WSL:
 npm run dev:web
 ~~~
 
-Abre http://127.0.0.1:5173. La aplicación incluye Resumen, Movimientos, Informes, Presupuestos, Planificación, Asistente y Configuración. Configura ACTUAL_BUDGET_ID con el Sync ID del presupuesto de Actual. En Movimientos puedes registrar un movimiento o importar CSV; ambas operaciones muestran una previsualización y exigen confirmar antes de escribir en Actual. Planificación detecta pagos recurrentes, sugiere categorías con confirmación y simula escenarios explicables. El Asistente es opcional (AI_ENABLED/OLLAMA_MODEL en .env) y funciona con Ollama local.
+Abre http://127.0.0.1:5173. La aplicación incluye Resumen, Movimientos, Informes, Presupuestos, Planificación, Asistente y Configuración. Configura ACTUAL_BUDGET_ID con el Sync ID del presupuesto de Actual. En Movimientos puedes registrar movimientos o importar CSV/OFX; ambas operaciones muestran una previsualización y exigen confirmar antes de escribir en Actual. OFX admite perfiles SGML 1.02/1.03 y XML OFX 2.x delimitados; consulta [la guía de importación OFX](docs/ofx-import.md). El fichero se procesa en el navegador; solo se envían a la API local los registros normalizados tras la revisión. Planificación detecta pagos recurrentes, sugiere categorías con confirmación y simula escenarios explicables. El Asistente es opcional (AI_ENABLED/OLLAMA_MODEL en .env) y funciona con Ollama local.
 
 ## Prueba opcional con un presupuesto de Actual existente
 
