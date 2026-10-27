@@ -302,7 +302,7 @@ export function parseOfx(input: string): OfxParseResult {
 
   const warnings: string[] = [];
   if (!currencyCode) warnings.push('El OFX no declara CURDEF; comprueba manualmente que la divisa coincide con la cuenta destino. No se aplicará conversión.');
-  if (!accountIdentity.replace(/\|/g, '')) warnings.push('El archivo no identifica de forma fiable la cuenta de origen; la cuenta destino debe seleccionarse manualmente.');
+  if (!sourceAccountId.trim()) warnings.push('El archivo no identifica de forma fiable la cuenta de origen; la cuenta destino debe seleccionarse manualmente.');
   if (recordsWithoutMemo > 0) warnings.push(`${recordsWithoutMemo} operación(es) no incluyen MEMO; se importará únicamente el concepto disponible.`);
   if (duplicateRecords > 0) warnings.push(`${duplicateRecords} operación(es) repetidas dentro del mismo archivo se han omitido.`);
 
