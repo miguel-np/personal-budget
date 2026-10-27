@@ -86,11 +86,39 @@ export interface FinancialSummary {
   readonly exchangeRatesUsed: readonly ExchangeRateUsage[];
 }
 
+/** Fields the official Actual API adapter allows us to edit without changing transfer/split structure. */
+export interface TransactionUpdate {
+  readonly date?: string;
+  /** Integer minor currency units; zero is not a valid transaction amount. */
+  readonly amount?: number;
+  readonly imported_payee?: string;
+  readonly category?: string | null;
+  readonly notes?: string;
+  readonly cleared?: boolean;
+}
+
+export interface TransactionCategoryBatchChange {
+  readonly transactionId: string;
+  readonly categoryId: string;
+}
+
+/** Explicit outcome of a non-atomic batch. A false persisted flag means sync could not be verified. */
+export interface TransactionCategoryBatchResult {
+  readonly requested: number;
+  readonly updatedTransactionIds: readonly string[];
+  readonly failedTransactionId?: string;
+  readonly persisted: boolean;
+}
+
 export interface BudgetRepository {
   readonly isConfigured: boolean;
   listAccounts(): Promise<readonly BudgetAccount[]>;
   listCategories(): Promise<readonly BudgetCategory[]>;
   listTransactions(accountId: string, startDate: string, endDate: string): Promise<readonly BudgetTransaction[]>;
-  /** Explicit transaction categorization; optional until the adapter supports it. */
+  /** Update only fields supported by the official adapter; structure/account/transfer linkage is not editable here. */
+  updateTransaction?(transactionId: string, fields: TransactionUpdate): Promise<void>;
+  /** Category-only batch using one serialized adapter operation and an explicit partial outcome. */
+  updateTransactionCategoriesBatch?(changes: readonly TransactionCategoryBatchChange[]): Promise<TransactionCategoryBatchResult>;
+  /** Backwards-compatible single category update for repositories without batch support. */
   updateTransactionCategory?(transactionId: string, categoryId: string): Promise<void>;
 }
