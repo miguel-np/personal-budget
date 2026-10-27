@@ -1190,7 +1190,7 @@ describe('local API', () => {
     const updated = await app.inject({
       method: 'PUT', url: '/api/v1/transactions/pair-out',
       payload: {
-        accountId: 'account-1', startDate: '2026-10-01', endDate: '2026-10-31',
+        accountId: 'account-1', startDate: '2026-10-01', endDate: '2026-10-31', syncTransferDate: true,
         changes: { date: '2026-10-04', amount: -60_000 },
       },
     });
@@ -1214,6 +1214,54 @@ describe('local API', () => {
     expect(reverse.statusCode).toBe(400);
     expect(reverse.json().error.code).toBe('TRANSFER_DIRECTION_CHANGE_NOT_ALLOWED');
     expect(updateTransaction).toHaveBeenCalledTimes(countBeforeReverse);
+  });
+
+  it('keeps transfer dates independent by default while verifying shared notes on both legs', async () => {
+    const pairAccounts: readonly BudgetAccount[] = [
+      ...accounts,
+      { id: 'account-2', name: 'Cuenta de ahorro', currencyCode: 'EUR', closed: false, offBudget: false, currentBalanceMinor: 50_000 },
+    ];
+    const pairTransactions: readonly BudgetTransaction[] = [
+      { id: 'pair-out', account: 'account-1', currencyCode: 'EUR', date: '2026-10-02', amount: -50_000, transfer_id: 'pair-in' },
+      { id: 'pair-in', account: 'account-2', currencyCode: 'EUR', date: '2026-10-03', amount: 50_000, transfer_id: 'pair-out' },
+    ];
+    const listTransactions = vi.fn(async (accountId: string) => pairTransactions.filter((item) => item.account === accountId));
+    const updateTransaction = vi.fn(async (id: string, fields: TransactionUpdate) => { void id; void fields; });
+    const updateTransactionSafely = vi.fn(async (
+      id: string,
+      _accountId: string,
+      _beforeDate: string,
+      fields: TransactionStructureUpdate,
+    ): Promise<TransactionWriteResult> => {
+      await updateTransaction(id, fields as TransactionUpdate);
+      return { persisted: true, verified: true };
+    });
+    const repository = createRepository({
+      listAccounts: vi.fn(async () => pairAccounts),
+      listTransactions,
+      updateTransaction,
+      updateTransactionSafely,
+    });
+    const directory = await mkdtemp(join(tmpdir(), 'personal-budget-transfer-date-semantics-'));
+    temporaryDirectories.push(directory);
+    const app = await createTestApp(repository, { ...config, actualDataDir: directory });
+
+    const response = await app.inject({
+      method: 'PUT', url: '/api/v1/transactions/pair-out',
+      payload: {
+        accountId: 'account-1', startDate: '2026-10-01', endDate: '2026-10-31',
+        changes: { date: '2026-10-04', notes: 'Nota compartida', cleared: true },
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toMatchObject({
+      updatedTransactionIds: ['pair-out', 'pair-in'], verified: true, partial: false,
+    });
+    expect(updateTransaction).toHaveBeenNthCalledWith(1, 'pair-out', {
+      date: '2026-10-04', notes: 'Nota compartida', cleared: true,
+    });
+    expect(updateTransaction).toHaveBeenNthCalledWith(2, 'pair-in', { notes: 'Nota compartida' });
+    expect(updateTransactionSafely).toHaveBeenCalledTimes(2);
   });
 
   it('updates a split child through its parent while preserving all child IDs and the parent sum', async () => {
