@@ -961,3 +961,14 @@ textarea::placeholder {
 @media (prefers-reduced-motion: reduce) {
   .goal-progress { scroll-behavior: auto; }
 }
+
+.goals-commitment-management { display: grid; gap: 12px; min-width: 0; }
+.goals-commitment-management > .panel-heading { margin-bottom: 0; }
+.commitment-management-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.commitment-card { display: grid; align-content: start; gap: 12px; min-width: 0; }
+.commitment-card h4 { margin: 2px 0 0; color: var(--text-primary); font-size: 14px; overflow-wrap: anywhere; }
+.commitment-card .goal-amount-row strong { font-size: 20px; }
+.commitment-card .button-row { border-top: 1px solid var(--border-subtle); padding-top: 10px; }
+@media (max-width: 900px) {
+  .commitment-management-list { grid-template-columns: minmax(0, 1fr); }
+}
