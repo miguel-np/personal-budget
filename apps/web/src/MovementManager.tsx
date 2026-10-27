@@ -43,7 +43,7 @@ interface MovementManagerProps {
   sortAscending: boolean;
   filterKey: string;
   onSort: (key: SortKey) => void;
-  onUpdated: () => void;
+  onUpdated: (notice: string) => void;
 }
 interface ApiResult<T> {
   data?: T;
@@ -259,13 +259,14 @@ export function MovementManager(props: MovementManagerProps) {
         },
       );
       if (!response.ok || !payload.data) throw new Error(payload.error?.message ?? 'No se han podido guardar los cambios.');
-      setEditNotice('Cambios validados y guardados en Actual Budget.');
+      const notice = 'Cambios validados y guardados en Actual Budget.';
+      setEditNotice(notice);
       lastEditId.current = editing.id;
       setEditing(null);
       setDraft(null);
       setEditPreview(false);
       setSelectedIds([]);
-      onUpdated();
+      onUpdated(notice);
     } catch (error) {
       setEditError(error instanceof Error ? error.message : 'No se han podido guardar los cambios.');
     } finally {
@@ -307,18 +308,17 @@ export function MovementManager(props: MovementManagerProps) {
       });
       if (!response.ok || !payload.data) throw new Error(payload.error?.message ?? 'La API no pudo aplicar el lote.');
       const outcome = payload.data;
-      if (outcome.partial || outcome.applied !== outcome.requested || outcome.persisted === false) {
-        setBatchNotice('Resultado parcial: ' + (outcome.applied ?? outcome.changes) + ' de ' + outcome.requested + ' cambios intentados. ' +
+      const batchMessage = outcome.partial || outcome.applied !== outcome.requested || outcome.persisted === false
+        ? 'Resultado parcial: ' + (outcome.applied ?? outcome.changes) + ' de ' + outcome.requested + ' cambios intentados. ' +
           (outcome.failedTransactionId ? 'Revisa el ID técnico ' + outcome.failedTransactionId + '. ' : '') +
           (outcome.persisted === false ? 'La persistencia no se ha podido verificar. ' : '') +
-          (outcome.message ?? 'Revisa Actual antes de volver a intentarlo; no se ha ejecutado ninguna deshacer automática.'));
-      } else {
-        setBatchNotice('Se han guardado y sincronizado ' + outcome.changes + ' cambios de categoría.');
-      }
+          (outcome.message ?? 'Revisa Actual antes de volver a intentarlo; no se ha ejecutado ninguna deshacer automática.')
+        : 'Se han guardado y sincronizado ' + outcome.changes + ' cambios de categoría.';
+      setBatchNotice(batchMessage);
       setSelectedIds([]);
       setBatchPreview(false);
       setBatchCategoryId('');
-      onUpdated();
+      onUpdated(batchMessage);
     } catch (error) {
       setBatchError(error instanceof Error ? error.message : 'No se ha podido completar el lote.');
     } finally { setBatchBusy(false); }
@@ -406,7 +406,7 @@ export function MovementManager(props: MovementManagerProps) {
         <div className="table-wrap" role="region" aria-label="Movimientos paginados; desplázate horizontalmente para ver todas las columnas" tabIndex={0}>
           <table className="transactions-table">
             <thead><tr>
-              <th scope="col"><input type="checkbox" aria-label="Seleccionar todos los gastos ordinarios de esta página" checked={allSelectableSelected} onChange={(event) => setSelectedIds(event.currentTarget.checked ? selectableTransactions.map((item) => item.id) : [])} /></th>
+              <th scope="col"><input type="checkbox" aria-label="Seleccionar todos los gastos ordinarios de esta página" checked={allSelectableSelected} onChange={(event) => { const checked = event.currentTarget.checked; setSelectedIds(checked ? selectableTransactions.map((item) => item.id) : []); setBatchPreview(false); setBatchNotice(''); }} /></th>
               <th scope="col"><button type="button" className="sort-button" onClick={() => onSort('date')}>Fecha{sortKey === 'date' ? (sortAscending ? ' ↑' : ' ↓') : ''}</button></th>
               <th scope="col"><button type="button" className="sort-button" onClick={() => onSort('description')}>Descripción{sortKey === 'description' ? (sortAscending ? ' ↑' : ' ↓') : ''}</button></th>
               <th scope="col">Cuenta</th><th scope="col">Categoría</th>
@@ -419,7 +419,7 @@ export function MovementManager(props: MovementManagerProps) {
               const description = transactionDescription(transaction);
               const reason = transaction.transfer_id ? 'Las transferencias deben editarse juntas en Actual Budget.' : 'Los movimientos divididos se protegen para evitar perder o duplicar apuntes.';
               return <tr key={transaction.id}>
-                <td><input type="checkbox" aria-label={'Seleccionar ' + description} checked={selectedIds.includes(transaction.id)} disabled={!bulkSelectable} title={!bulkSelectable ? (editable ? 'La categorización en lote está limitada a gastos.' : reason) : undefined} onChange={(event) => { setSelectedIds((previous) => event.currentTarget.checked ? [...previous.filter((id) => id !== transaction.id), transaction.id] : previous.filter((id) => id !== transaction.id)); setBatchPreview(false); setBatchNotice(''); }} /></td>
+                <td><input type="checkbox" aria-label={'Seleccionar ' + description} checked={selectedIds.includes(transaction.id)} disabled={!bulkSelectable} title={!bulkSelectable ? (editable ? 'La categorización en lote está limitada a gastos.' : reason) : undefined} onChange={(event) => { const checked = event.currentTarget.checked; setSelectedIds((previous) => checked ? [...previous.filter((id) => id !== transaction.id), transaction.id] : previous.filter((id) => id !== transaction.id)); setBatchPreview(false); setBatchNotice(''); }} /></td>
                 <td>{formatCivilDate(transaction.date, locale)}</td>
                 <td><strong className="transaction-name">{description}</strong>{transaction.notes ? <small className="transaction-note">{transaction.notes}</small> : null}</td>
                 <td>{accountNames.get(transaction.account) ?? 'Cuenta desconocida'}</td>
