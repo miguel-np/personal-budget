@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { assessNetWorth } from './financial-signals.js';
-import { formatAccountBalance, formatMoney as sharedFormatMoney, formatUnconvertedMoney } from './finance-format.js';
+import { formatAccountBalance, formatUnconvertedMoney } from './finance-format.js';
 
 interface Account {
   readonly id: string;
@@ -12,6 +12,7 @@ interface Account {
   readonly nativeCurrencyCode?: string | null;
   readonly displayBalanceMinor?: number | null;
   readonly displayCurrency?: string;
+  readonly classification?: 'asset' | 'liability' | null;
   readonly balanceConversion?: { readonly warning?: string };
 }
 
@@ -20,10 +21,6 @@ interface AccountsPanelProps {
   readonly currency: string;
   readonly activeAccountIds: readonly string[];
   readonly onOpenMovements: (accountId: string) => void;
-}
-
-function formatMoney(amountMinor: number, currency: string): string {
-  return sharedFormatMoney(amountMinor, currency);
 }
 
 export function AccountsPanel({ accounts, currency, activeAccountIds, onOpenMovements }: AccountsPanelProps) {
@@ -57,10 +54,11 @@ export function AccountsPanel({ accounts, currency, activeAccountIds, onOpenMove
             <p className="eyebrow">RESUMEN PATRIMONIAL</p>
             <h3 id="net-worth-heading">Patrimonio neto</h3>
           </div>
-          <span className="status-chip">No disponible</span>
+          <span className="status-chip">{assessment.status === 'available' ? 'Completo' : assessment.status === 'incomplete' ? 'Incompleto' : 'No disponible'}</span>
         </div>
-        <div className="net-worth-value">No disponible</div>
-        <p>Actual Budget proporciona saldos de cuenta, pero el contrato de cuentas que consume esta aplicación no incluye una clasificación fiable de activo o pasivo. No se infiere una deuda a partir de un saldo negativo ni del nombre de la cuenta; por eso no se publica un total patrimonial que pudiera ser engañoso.</p>
+        <div className="net-worth-value">{assessment.amountMinor === null ? 'No disponible' : new Intl.NumberFormat('es-ES', { style: 'currency', currency, maximumFractionDigits: 2 }).format(assessment.amountMinor / 100)}</div>
+        <p>El patrimonio neto solo se calcula cuando cada cuenta incluida tiene una clasificación fiable de activo o pasivo y un saldo disponible convertido a la divisa de análisis. No se infiere una deuda a partir de un saldo negativo ni del nombre de la cuenta.</p>
+        {assessment.reasons.map((reason) => <p className="signal-note" key={reason}>{reason}</p>)}
         <label className="check-field net-worth-toggle">
           <input type="checkbox" checked={includeOffBudget} onChange={(event) => setIncludeOffBudget(event.currentTarget.checked)} />
           Incluir cuentas fuera de presupuesto en el ámbito patrimonial
