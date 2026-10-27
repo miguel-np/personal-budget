@@ -3,6 +3,9 @@ import { createServer } from 'node:http';
 let readiness = 'configured';
 let failImportPreview = false;
 let commitCount = 0;
+let transferPreviewCount = 0;
+let transferCommitCount = 0;
+let lastTransferPayload = null;
 let categoryWrites = 0;
 let lastPreviewChanges = [];
 let lastCommittedChanges = [];
@@ -118,7 +121,7 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url || '/', 'http://127.0.0.1:3000');
   try {
     if (req.method === 'POST' && url.pathname === '/__test__/reset') {
-      readiness = 'configured'; failImportPreview = false; commitCount = 0; categoryWrites = 0; lastPreviewChanges = []; lastCommittedChanges = []; budgetedMinor = 50_000; currencyPreferences = { displayCurrency: 'EUR', accountCurrencyOverrides: {}, exchangeRates: [] }; accountScope = { mode: 'all', accountIds: [] };
+      readiness = 'configured'; failImportPreview = false; commitCount = 0; transferPreviewCount = 0; transferCommitCount = 0; lastTransferPayload = null; categoryWrites = 0; lastPreviewChanges = []; lastCommittedChanges = []; budgetedMinor = 50_000; currencyPreferences = { displayCurrency: 'EUR', accountCurrencyOverrides: {}, exchangeRates: [] }; accountScope = { mode: 'all', accountIds: [] };
       return send(res, 200, { ok: true });
     }
     if (req.method === 'POST' && url.pathname === '/__test__/mode') {
@@ -127,7 +130,7 @@ const server = createServer(async (req, res) => {
       failImportPreview = body.failImportPreview === true;
       return send(res, 200, { ok: true });
     }
-    if (req.method === 'GET' && url.pathname === '/__test__/state') return send(res, 200, { commitCount, categoryWrites, lastPreviewChanges, lastCommittedChanges, budgetedMinor, currencyPreferences, accountScope });
+    if (req.method === 'GET' && url.pathname === '/__test__/state') return send(res, 200, { commitCount, transferPreviewCount, transferCommitCount, lastTransferPayload, categoryWrites, lastPreviewChanges, lastCommittedChanges, budgetedMinor, currencyPreferences, accountScope });
     if (req.method === 'GET' && url.pathname === '/health') return send(res, 200, { status: 'ok', service: 'synthetic-fixture-api' });
     if (req.method === 'GET' && url.pathname === '/ready') {
       if (readiness !== 'configured') return send(res, 503, { status: 'not_configured', error: { code: 'NOT_CONFIGURED', message: 'El presupuesto sintético no está configurado.' } });
@@ -184,6 +187,24 @@ const server = createServer(async (req, res) => {
       const limit = Number(url.searchParams.get('limit') || 20);
       const offset = Number(url.searchParams.get('offset') || 0);
       return send(res, 200, { data: filtered.slice(offset, offset + limit), pagination: { total: filtered.length, limit, offset, sortBy, order } });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/v1/transfers/preview') {
+      const body = await readBody(req);
+      transferPreviewCount += 1;
+      lastTransferPayload = body;
+      return send(res, 200, { data: {
+        added: 1, updated: 0, errors: 0, submitted: 1, dryRun: true,
+        sourceAccountId: body.sourceAccountId, destinationAccountId: body.destinationAccountId, linkedTransfer: true,
+      } });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/v1/transfers/commit') {
+      const body = await readBody(req);
+      transferCommitCount += 1;
+      lastTransferPayload = body;
+      return send(res, 200, { data: {
+        added: 1, updated: 0, errors: 0, submitted: 1, dryRun: false,
+        sourceAccountId: body.sourceAccountId, destinationAccountId: body.destinationAccountId, linkedTransfer: true,
+      } });
     }
     if (req.method === 'POST' && url.pathname === '/api/v1/import/preview') {
       const body = await readBody(req);
