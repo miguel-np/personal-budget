@@ -27,6 +27,19 @@ interface ImportResult {
   submitted: number;
   dryRun: boolean;
 }
+interface TransferRequestPayload {
+  readonly sourceAccountId: string;
+  readonly destinationAccountId: string;
+  readonly date: string;
+  readonly amountMinor: number;
+  readonly notes?: string;
+  readonly importedId: string;
+}
+interface TransferResult extends ImportResult {
+  readonly sourceAccountId: string;
+  readonly destinationAccountId: string;
+  readonly linkedTransfer: boolean;
+}
 interface ApiResponse<T> {
   data?: T;
   error?: { code?: string; message?: string };
@@ -36,7 +49,7 @@ interface MovementToolsProps {
   categories: readonly MovementCategory[];
   currency: string;
   onImported: () => void;
-  quickRequest?: { readonly key: number; readonly kind: 'income' | 'expense' } | null;
+  quickRequest?: { readonly key: number; readonly kind: 'income' | 'expense' | 'transfer' } | null;
 }
 
 function localToday(): string {
@@ -94,6 +107,17 @@ async function sendImport(path: '/api/v1/import/preview' | '/api/v1/import/commi
   if (!payload.data) throw new Error('La API local no devolvió un resultado verificable.');
   return payload.data;
 }
+async function sendTransfer(path: '/api/v1/transfers/preview' | '/api/v1/transfers/commit', request: TransferRequestPayload): Promise<TransferResult> {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(request),
+  });
+  const payload = await response.json().catch(() => ({})) as ApiResponse<TransferResult>;
+  if (!response.ok) throw new Error(payload.error?.message ?? 'La API local rechazó la transferencia.');
+  if (!payload.data) throw new Error('La API local no devolvió una previsualización verificable de la transferencia.');
+  return payload.data;
+}
 function FormAlert({ children, error = false }: { children: string; error?: boolean }) {
   return <p className={'form-alert' + (error ? ' error' : '')} role={error ? 'alert' : 'status'}>{children}</p>;
 }
@@ -113,6 +137,18 @@ export function MovementTools({ accounts, categories, currency, onImported, quic
   const [manualBusy, setManualBusy] = useState(false);
   const [manualMessage, setManualMessage] = useState('');
   const [manualError, setManualError] = useState('');
+
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferSourceId, setTransferSourceId] = useState(openAccounts[0]?.id ?? '');
+  const [transferDestinationId, setTransferDestinationId] = useState(openAccounts.find((account) => account.id !== openAccounts[0]?.id)?.id ?? '');
+  const [transferDate, setTransferDate] = useState(localToday);
+  const [transferAmount, setTransferAmount] = useState('');
+  const [transferNotes, setTransferNotes] = useState('');
+  const [transferImportId, setTransferImportId] = useState(newIdentifier);
+  const [transferResult, setTransferResult] = useState<TransferResult | null>(null);
+  const [transferBusy, setTransferBusy] = useState(false);
+  const [transferMessage, setTransferMessage] = useState('');
+  const [transferError, setTransferError] = useState('');
 
   const [csvOpen, setCsvOpen] = useState(false);
   const [csvAccountId, setCsvAccountId] = useState('');
@@ -136,8 +172,28 @@ export function MovementTools({ accounts, categories, currency, onImported, quic
   const [csvMessage, setCsvMessage] = useState('');
   const [csvError, setCsvError] = useState('');
 
+  function openTransferForm(): void {
+    const sourceId = openAccounts[0]?.id ?? '';
+    setTransferOpen(true);
+    setManualOpen(false);
+    setTransferSourceId(sourceId);
+    setTransferDestinationId(openAccounts.find((account) => account.id !== sourceId)?.id ?? '');
+    setTransferDate(localToday());
+    setTransferAmount('');
+    setTransferNotes('');
+    setTransferImportId(newIdentifier());
+    setTransferResult(null);
+    setTransferMessage('');
+    setTransferError('');
+  }
+
   useEffect(() => {
     if (!quickRequest) return;
+    if (quickRequest.kind === 'transfer') {
+      openTransferForm();
+      return;
+    }
+    setTransferOpen(false);
     setManualOpen(true);
     setManualKind(quickRequest.kind);
     setAmount('');
@@ -146,6 +202,92 @@ export function MovementTools({ accounts, categories, currency, onImported, quic
     setManualMessage('');
     setManualError('');
   }, [quickRequest]);
+
+  async function previewTransfer(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setTransferError('');
+    setTransferMessage('');
+    setTransferResult(null);
+    if (!transferSourceId || !openAccounts.some((account) => account.id === transferSourceId)) {
+      setTransferError('Selecciona una cuenta de origen abierta dentro del ámbito global.');
+      return;
+    }
+    if (!transferDestinationId || !openAccounts.some((account) => account.id === transferDestinationId)) {
+      setTransferError('Selecciona una cuenta de destino abierta dentro del ámbito global.');
+      return;
+    }
+    if (transferSourceId === transferDestinationId) {
+      setTransferError('El origen y el destino deben ser cuentas distintas.');
+      return;
+    }
+    if (!isValidIsoDate(transferDate)) {
+      setTransferError('Introduce una fecha válida.');
+      return;
+    }
+    const amountMinor = parseMoney(transferAmount);
+    if (amountMinor === null || amountMinor <= 0) {
+      setTransferError('Introduce un importe positivo distinto de cero con un máximo de dos decimales.');
+      return;
+    }
+    setTransferBusy(true);
+    try {
+      const result = await sendTransfer('/api/v1/transfers/preview', {
+        sourceAccountId: transferSourceId,
+        destinationAccountId: transferDestinationId,
+        date: transferDate,
+        amountMinor,
+        importedId: transferImportId,
+        ...(transferNotes.trim() ? { notes: transferNotes.trim() } : {}),
+      });
+      setTransferResult(result);
+      setTransferMessage(result.added === 0 && result.updated === 0
+        ? 'Actual no propone cambios para esta transferencia; no hay ninguna operación para confirmar.'
+        : 'Previsualización recibida de Actual. Todavía no se ha escrito ningún cambio; confirma solo si el origen, destino e importe son correctos.');
+    } catch (error) {
+      setTransferError(error instanceof Error ? error.message : 'No se ha podido previsualizar la transferencia.');
+    } finally {
+      setTransferBusy(false);
+    }
+  }
+
+  async function commitTransfer() {
+    const preview = transferResult;
+    if (!preview || !preview.dryRun || !preview.linkedTransfer || preview.errors !== 0 ||
+        preview.added + preview.updated === 0 ||
+        preview.sourceAccountId !== transferSourceId || preview.destinationAccountId !== transferDestinationId) {
+      setTransferError('Vuelve a previsualizar la transferencia antes de confirmarla.');
+      return;
+    }
+    const amountMinor = parseMoney(transferAmount);
+    if (amountMinor === null || amountMinor <= 0) {
+      setTransferError('El importe ha cambiado. Previsualiza de nuevo antes de confirmar.');
+      setTransferResult(null);
+      return;
+    }
+    setTransferBusy(true);
+    setTransferError('');
+    setTransferMessage('');
+    try {
+      const result = await sendTransfer('/api/v1/transfers/commit', {
+        sourceAccountId: transferSourceId,
+        destinationAccountId: transferDestinationId,
+        date: transferDate,
+        amountMinor,
+        importedId: transferImportId,
+        ...(transferNotes.trim() ? { notes: transferNotes.trim() } : {}),
+      });
+      setTransferResult(result);
+      setTransferMessage('Actual ha confirmado la operación. La transferencia se registra como pareja vinculada, no como ingreso y gasto independientes.');
+      setTransferAmount('');
+      setTransferNotes('');
+      setTransferImportId(newIdentifier());
+      onImported();
+    } catch (error) {
+      setTransferError(error instanceof Error ? error.message : 'No se ha podido confirmar la transferencia.');
+    } finally {
+      setTransferBusy(false);
+    }
+  }
 
   async function previewManual(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -380,7 +522,8 @@ export function MovementTools({ accounts, categories, currency, onImported, quic
       <div className="movement-tools-header">
         <div><p className="eyebrow">GESTIÓN DE MOVIMIENTOS</p><h3>Nuevo movimiento o importación</h3></div>
         <div className="tool-actions">
-          <button className="button secondary" type="button" onClick={() => { setManualOpen((open) => { if (!open) setManualKind('any'); return !open; }); setManualError(''); setManualRecords(null); }}>{manualOpen ? 'Cerrar formulario' : 'Registrar movimiento'}</button>
+          <button className="button secondary" type="button" onClick={() => { setManualOpen((open) => { if (!open) setManualKind('any'); return !open; }); setTransferOpen(false); setManualError(''); setManualRecords(null); }}>{manualOpen ? 'Cerrar formulario' : 'Registrar movimiento'}</button>
+          <button className="button secondary" type="button" disabled={openAccounts.length < 2} onClick={() => { if (transferOpen) { setTransferOpen(false); setTransferResult(null); setTransferMessage(''); setTransferError(''); } else openTransferForm(); }}>{transferOpen ? 'Cerrar transferencia' : 'Registrar transferencia'}</button>
           <button className="button secondary" type="button" onClick={() => { setCsvOpen((open) => !open); setCsvError(''); }}>{csvOpen ? 'Cerrar importación' : 'Importar CSV'}</button>
         </div>
       </div>
@@ -405,6 +548,36 @@ export function MovementTools({ accounts, categories, currency, onImported, quic
           {manualResult ? <FormAlert>{manualResult.dryRun ? 'Previsualización: ' + manualResult.added + ' nuevos, ' + manualResult.updated + ' actualizables, ' + manualResult.errors + ' errores.' : 'Resultado: ' + manualResult.added + ' añadidos, ' + manualResult.updated + ' actualizados.'}</FormAlert> : null}
           {manualMessage ? <FormAlert>{manualMessage}</FormAlert> : null}
           {manualError ? <FormAlert error>{manualError}</FormAlert> : null}
+        </form>
+      ) : null}
+
+
+      {transferOpen ? (
+        <form className="tool-panel" onSubmit={previewTransfer}>
+          <div className="panel-heading"><div><p className="eyebrow">TRANSFERENCIA VINCULADA</p><h4>Entre cuentas de Actual Budget</h4></div><span className="muted-label">Importe en moneda de las cuentas</span></div>
+          {openAccounts.length < 2 ? <FormAlert error>Necesitas al menos dos cuentas abiertas dentro del ámbito global para registrar una transferencia.</FormAlert> : null}
+          <div className="manual-form-grid">
+            <label className="field-label">Cuenta de origen<select value={transferSourceId} onChange={(event) => { const nextSource = event.currentTarget.value; setTransferSourceId(nextSource); if (nextSource === transferDestinationId) setTransferDestinationId(openAccounts.find((account) => account.id !== nextSource)?.id ?? ''); setTransferResult(null); setTransferMessage(''); setTransferError(''); }} required><option value="">Selecciona origen…</option>{openAccounts.map((account) => <option value={account.id} key={account.id}>{account.name}</option>)}</select></label>
+            <label className="field-label">Cuenta de destino<select value={transferDestinationId} onChange={(event) => { setTransferDestinationId(event.currentTarget.value); setTransferResult(null); setTransferMessage(''); setTransferError(''); }} required><option value="">Selecciona destino…</option>{openAccounts.filter((account) => account.id !== transferSourceId).map((account) => <option value={account.id} key={account.id}>{account.name}</option>)}</select></label>
+            <label className="field-label">Fecha<input type="date" value={transferDate} onChange={(event) => { setTransferDate(event.currentTarget.value); setTransferResult(null); setTransferMessage(''); setTransferError(''); }} required /></label>
+            <label className="field-label">Importe positivo ({currency})<input type="text" inputMode="decimal" autoComplete="off" placeholder="Por ejemplo, 125,00" value={transferAmount} onChange={(event) => { setTransferAmount(event.currentTarget.value); setTransferResult(null); setTransferMessage(''); setTransferError(''); }} required /></label>
+            <label className="field-label">Notas (opcional)<input type="text" maxLength={2000} value={transferNotes} onChange={(event) => { setTransferNotes(event.currentTarget.value); setTransferResult(null); setTransferMessage(''); setTransferError(''); }} /></label>
+          </div>
+          <p className="tool-hint">El importe se descuenta del origen y Actual crea la contrapartida vinculada en el destino a través del beneficiario de transferencia oficial. Solo se admiten dos cuentas abiertas del ámbito activo, de la misma divisa y ambas dentro o ambas fuera de presupuesto. No se guarda nada hasta confirmar.</p>
+          <div className="tool-actions">
+            <button className="button primary" type="submit" disabled={transferBusy || openAccounts.length < 2}>{transferBusy ? 'Comprobando…' : 'Previsualizar transferencia'}</button>
+            {transferResult?.dryRun && transferResult.linkedTransfer && transferResult.errors === 0 && transferResult.added + transferResult.updated > 0
+              ? <button className="button primary" type="button" disabled={transferBusy} onClick={() => void commitTransfer()}>{transferBusy ? 'Guardando…' : 'Confirmar transferencia'}</button>
+              : null}
+            {transferResult?.dryRun
+              ? <button className="button secondary" type="button" disabled={transferBusy} onClick={() => { setTransferResult(null); setTransferMessage('Previsualización cancelada. Actual no se ha modificado.'); setTransferError(''); }}>Cancelar previsualización</button>
+              : null}
+          </div>
+          {transferResult ? <FormAlert>{transferResult.dryRun
+            ? 'Previsualización: ' + transferResult.added + ' nueva(s), ' + transferResult.updated + ' actualizable(s), ' + transferResult.errors + ' error(es).'
+            : 'Resultado confirmado por Actual: ' + transferResult.added + ' añadida(s), ' + transferResult.updated + ' actualizada(s).'} {transferResult.linkedTransfer ? 'Vinculación de transferencia identificada.' : 'No se ha confirmado una pareja vinculada.'}</FormAlert> : null}
+          {transferMessage ? <FormAlert>{transferMessage}</FormAlert> : null}
+          {transferError ? <FormAlert error>{transferError}</FormAlert> : null}
         </form>
       ) : null}
 
