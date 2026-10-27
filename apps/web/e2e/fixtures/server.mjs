@@ -5,6 +5,9 @@ let readiness = 'configured';
 let failImportPreview = false;
 let batchFailAtTransactionId = null;
 let commitCount = 0;
+let importPreviewCount = 0;
+let lastImportPreview = null;
+let lastImportCommit = null;
 let transferPreviewCount = 0;
 let transferCommitCount = 0;
 let lastTransferPayload = null;
@@ -166,7 +169,7 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url || '/', 'http://127.0.0.1:3000');
   try {
     if (req.method === 'POST' && url.pathname === '/__test__/reset') {
-      readiness = 'configured'; failImportPreview = false; batchFailAtTransactionId = null; commitCount = 0; transferPreviewCount = 0; transferCommitCount = 0; lastTransferPayload = null; categoryWrites = 0; transactionWrites = 0; lastTransactionUpdate = null; appPreferences = { theme: 'system', locale: 'es-ES' }; lastPreviewChanges = []; lastCommittedChanges = []; budgetedMinor = 50_000; currencyPreferences = { displayCurrency: 'EUR', accountCurrencyOverrides: {}, exchangeRates: [] }; accountScope = { mode: 'all', accountIds: [] }; resetTransactions(); resetLinkedTransactions();
+      readiness = 'configured'; failImportPreview = false; batchFailAtTransactionId = null; commitCount = 0; importPreviewCount = 0; lastImportPreview = null; lastImportCommit = null; transferPreviewCount = 0; transferCommitCount = 0; lastTransferPayload = null; categoryWrites = 0; transactionWrites = 0; lastTransactionUpdate = null; appPreferences = { theme: 'system', locale: 'es-ES' }; lastPreviewChanges = []; lastCommittedChanges = []; budgetedMinor = 50_000; currencyPreferences = { displayCurrency: 'EUR', accountCurrencyOverrides: {}, exchangeRates: [] }; accountScope = { mode: 'all', accountIds: [] }; resetTransactions(); resetLinkedTransactions();
       return send(res, 200, { ok: true });
     }
     if (req.method === 'POST' && url.pathname === '/__test__/mode') {
@@ -185,7 +188,7 @@ const server = createServer(async (req, res) => {
       return send(res, 200, { data: { transactionId: transaction.id, categoryId: transaction.category } });
     }
     if (req.method === 'GET' && url.pathname === '/__test__/state') return send(res, 200, {
-      commitCount, transferPreviewCount, transferCommitCount, lastTransferPayload, categoryWrites,
+      commitCount, importPreviewCount, lastImportPreview, lastImportCommit, transferPreviewCount, transferCommitCount, lastTransferPayload, categoryWrites,
       transactionWrites, lastTransactionUpdate, appPreferences, lastPreviewChanges, lastCommittedChanges,
       budgetedMinor, currencyPreferences, accountScope,
       transferState: { source: { ...transferSource }, counterpart: { ...transferCounterpart } },
@@ -380,11 +383,14 @@ const server = createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/v1/import/preview') {
       const body = await readBody(req);
       if (failImportPreview) return send(res, 502, { error: { code: 'UPSTREAM_FAILURE', message: 'La previsualización sintética ha fallado; no se han escrito movimientos.' } });
+      importPreviewCount += 1;
+      lastImportPreview = { accountId: body.accountId, sourceFormat: body.sourceFormat ?? 'csv', sourceCurrencyCode: body.sourceCurrencyCode ?? null, records: body.records ?? [] };
       return send(res, 200, { data: { added: body.records?.length ?? 0, updated: 0, errors: 0, submitted: body.records?.length ?? 0, dryRun: true } });
     }
     if (req.method === 'POST' && url.pathname === '/api/v1/import/commit') {
       const body = await readBody(req);
       commitCount += body.records?.length ?? 0;
+      lastImportCommit = { accountId: body.accountId, sourceFormat: body.sourceFormat ?? 'csv', sourceCurrencyCode: body.sourceCurrencyCode ?? null, records: body.records ?? [] };
       return send(res, 200, { data: { added: body.records?.length ?? 0, updated: 0, errors: 0, submitted: body.records?.length ?? 0, dryRun: false } });
     }
     const monthMatch = url.pathname.match(/^\/api\/v1\/budgets\/(\d{4}-\d{2})$/);
