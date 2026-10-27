@@ -21,6 +21,7 @@ interface AcceptanceTransaction {
   readonly amount: number;
   readonly account?: string;
   readonly transfer_id?: string | null;
+  readonly imported_id?: string | null;
   readonly notes?: string | null;
   readonly cleared?: boolean;
   readonly is_parent?: boolean;
@@ -49,6 +50,12 @@ interface ActualApiClient {
   runImport(name: string, callback: () => Promise<void>): Promise<void>;
   createAccount(account: { readonly name: string; readonly offbudget?: boolean }): Promise<string>;
   addTransactions(accountId: string, transactions: readonly Record<string, unknown>[], runTransfers?: boolean, learnCategories?: boolean): Promise<readonly string[]>;
+  importTransactions(accountId: string, transactions: readonly Record<string, unknown>[], options?: {
+    readonly dryRun?: boolean;
+    readonly defaultCleared?: boolean;
+    readonly reimportDeleted?: boolean;
+    readonly payeeNameNormalization?: 'title-case' | 'original';
+  }): Promise<{ readonly errors: readonly unknown[]; readonly added: readonly string[]; readonly updated: readonly string[] }>;
   getBudgets(): Promise<readonly ActualBudgetListing[]>;
   downloadBudget(syncId: string): Promise<void>;
   getAccounts(): Promise<readonly { readonly id: string; readonly name: string }[]>;
@@ -192,14 +199,16 @@ async function verifyLinkedTransactionEditing(): Promise<void> {
     const transferPayee = (await api.getPayees()).find((payee) => payee.transfer_acct === counterpartAccountId);
     if (!transferPayee) throw new Error('Actual did not expose a transfer payee for the synthetic counterpart account.');
 
-    const addedTransferIds = await api.addTransactions(sourceAccount.id, [{
+    const transferImportId = 'synthetic-linked-transfer-' + randomUUID();
+    const importedTransfer = await api.importTransactions(sourceAccount.id, [{
       date: '2026-09-01',
       amount: -4_200,
-      payee: transferPayee.id,
+      payee_name: transferPayee.name,
+      imported_id: transferImportId,
       notes: 'Nota inicial sintética',
-    }], true);
-    sourceId = addedTransferIds[0] ?? '';
-    if (!sourceId) throw new Error('Actual did not return an ID for the synthetic transfer.');
+      cleared: false,
+    }], { dryRun: false, defaultCleared: false, reimportDeleted: false, payeeNameNormalization: 'original' });
+    if (importedTransfer.errors.length > 0) throw new Error('Actual rejected the synthetic transfer import.');
     await api.sync();
 
     const transferPair = async (): Promise<{ source: AcceptanceTransaction; counterpart: AcceptanceTransaction }> => {
@@ -207,8 +216,10 @@ async function verifyLinkedTransactionEditing(): Promise<void> {
         api.getTransactions(sourceAccount.id, '2026-09-01', '2026-09-30'),
         api.getTransactions(counterpartAccountId, '2026-09-01', '2026-09-30'),
       ]);
-      const source = sourceRows.find((item) => item.id === sourceId);
-      if (!source?.transfer_id) throw new Error('The synthetic transfer source is not linked after creation.');
+      const source = sourceRows.find((item) => item.imported_id === transferImportId);
+      if (!source?.id) throw new Error('Actual did not persist the imported synthetic transfer source.');
+      sourceId = source.id;
+      if (!source.transfer_id) throw new Error('Actual did not link the imported synthetic transfer to the counterpart account.');
       counterpartId = source.transfer_id;
       const counterpart = counterpartRows.find((item) => item.id === counterpartId && item.transfer_id === sourceId);
       if (!counterpart) throw new Error('The synthetic transfer counterpart is missing or not linked reciprocally.');
