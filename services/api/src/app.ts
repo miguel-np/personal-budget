@@ -113,7 +113,7 @@ const ForecastRequestSchema = z.object({
   horizonMonths: z.number().int().min(1).max(60),
   scenario: ForecastScenarioSchema,
 }).strict();
-const PlanningMonthSchema = z.string().regex(/^\\d{4}-(0[1-9]|1[0-2])$/, 'month must use YYYY-MM.');
+const PlanningMonthSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'month must use YYYY-MM.');
 const PlanningStatusRequestSchema = z.object({ status: z.enum(['active', 'paused']) }).strict();
 const DeletePlanningDataRequestSchema = z.object({ confirmation: z.literal('DELETE_PLANNING_DATA') }).strict();
 const AssistantRequestSchema = z.object({
