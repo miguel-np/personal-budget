@@ -347,6 +347,11 @@ test('movement editor previews validated changes before writing to Actual', asyn
   await page.getByRole('button', { name: 'Editar' }).first().click();
   const dialog = page.getByRole('dialog', { name: 'Revisar cambios' });
   await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Cerrar' }).focus();
+  await page.keyboard.press('Shift+Tab');
+  await expect(dialog.getByRole('button', { name: 'Previsualizar cambios' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(dialog.getByRole('button', { name: 'Cerrar' })).toBeFocused();
   await dialog.getByLabel('Importe (unidades principales)').fill('-30,00');
   await dialog.getByRole('button', { name: 'Previsualizar cambios' }).click();
   await expect(dialog.getByText(/Previsualización — todavía sin guardar/)).toBeVisible();
