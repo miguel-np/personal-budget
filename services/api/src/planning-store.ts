@@ -118,10 +118,7 @@ export async function writePlanningData(dataDirectory: string, data: PlanningDat
 }
 
 /** Serializes read/modify/write operations inside the API process to avoid lost updates. */
-export async function updatePlanningData<T>(
-  dataDirectory: string,
-  update: (current: PlanningData) => { readonly data: PlanningData; readonly result: T },
-): Promise<T> {
+async function withPlanningDataLock<T>(dataDirectory: string, action: () => Promise<T>): Promise<T> {
   const key = resolve(dataDirectory);
   const previous = locks.get(key) ?? Promise.resolve();
   let release!: () => void;
@@ -129,16 +126,26 @@ export async function updatePlanningData<T>(
   locks.set(key, gate);
   await previous;
   try {
-    const current = await readPlanningData(key);
-    const outcome = update(current);
-    await writePlanningData(key, outcome.data);
-    return outcome.result;
+    return await action();
   } finally {
     release();
     if (locks.get(key) === gate) locks.delete(key);
   }
 }
 
+export async function updatePlanningData<T>(
+  dataDirectory: string,
+  update: (current: PlanningData) => { readonly data: PlanningData; readonly result: T },
+): Promise<T> {
+  return withPlanningDataLock(dataDirectory, async () => {
+    const current = await readPlanningData(dataDirectory);
+    const outcome = update(current);
+    await writePlanningData(dataDirectory, outcome.data);
+    return outcome.result;
+  });
+}
+
+/** Explicit reset can clear a corrupt local file, but still serializes with all other mutations. */
 export async function resetPlanningData(dataDirectory: string): Promise<void> {
-  await updatePlanningData(dataDirectory, () => ({ data: emptyPlanningData(), result: undefined }));
+  await withPlanningDataLock(dataDirectory, () => writePlanningData(dataDirectory, emptyPlanningData()));
 }
