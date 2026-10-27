@@ -313,7 +313,8 @@ const server = createServer(async (req, res) => {
         if (fields.date !== undefined || fields.amount !== undefined) writes += 1;
         transactionWrites += writes;
         lastTransactionUpdate = { transactionId: id, fields: Object.keys(fields), changes: fields, counterpartTransactionId: counterpart.id, paired: true };
-        return send(res, 200, { data: { transactionId: id, counterpartTransactionId: counterpart.id, updatedFields: Object.keys(fields), persisted: true, verified: true, partial: false } });
+        const updatedTransactionIds = fields.date !== undefined || fields.amount !== undefined ? [id, counterpart.id] : [id];
+        return send(res, 200, { data: { transactionId: id, counterpartTransactionId: counterpart.id, updatedFields: Object.keys(fields), updatedTransactionIds, persisted: true, verified: true, partial: false } });
       }
       if (parent && child) {
         const totalBefore = parent.subtransactions.reduce((sum, item) => sum + item.amount, 0);
