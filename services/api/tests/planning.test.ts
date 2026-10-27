@@ -141,6 +141,33 @@ describe('local planning API', () => {
     expect(saved.monthlyExpenseMinor).toBeNull();
   });
 
+
+  it('compares custom scenario inputs without overwriting the saved goal', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'personal-budget-planning-'));
+    temporaryDirectories.push(directory);
+    const app = await createTestApp(directory);
+    const created = await app.inject({ method: 'POST', url: '/api/v1/planning/goals', payload: validGoal() });
+    expect(created.statusCode).toBe(201);
+    const id = created.json().data.id as string;
+
+    const simulation = await app.inject({
+      method: 'POST', url: '/api/v1/planning/goals/' + id + '/simulate',
+      payload: { monthlyContributionMinor: 120_000, monthlyIncomeMinor: 300_000, monthlyExpenseMinor: 80_000 },
+    });
+    expect(simulation.statusCode).toBe(200);
+    expect(simulation.json().data).toMatchObject({
+      saved: false, label: 'Escenario personalizado (no guardado)',
+      inputs: { monthlyContributionMinor: 120_000, monthlyIncomeMinor: 300_000, monthlyExpenseMinor: 80_000 },
+    });
+    expect(simulation.json().data.projection.isEstimate).toBe(true);
+
+    const read = await app.inject({ method: 'GET', url: '/api/v1/planning' });
+    const saved = read.json().data.goals.find((goal: { id: string }) => goal.id === id);
+    expect(saved.monthlyContributionMinor).toBe(50_000);
+    expect(saved.monthlyIncomeMinor).toBeNull();
+    expect(saved.monthlyExpenseMinor).toBeNull();
+  });
+
   it('supports editing, pausing, resuming and deleting a savings goal', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'personal-budget-planning-'));
     temporaryDirectories.push(directory);
