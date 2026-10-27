@@ -340,3 +340,76 @@ test('primary actions expose comfortable touch target sizes on mobile', async ({
   expect(undersized, 'Action targets below the 44px design target: ' + JSON.stringify(undersized)).toEqual([]);
 });
 
+
+test('movement editor previews validated changes before writing to Actual', async ({ page, request }) => {
+  await page.goto('/movements');
+  await expect(page.getByRole('heading', { name: 'Gestión de movimientos' })).toBeVisible();
+  await page.getByRole('button', { name: 'Editar' }).first().click();
+  const dialog = page.getByRole('dialog', { name: 'Revisar cambios' });
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel('Importe (unidades principales)').fill('-30,00');
+  await dialog.getByRole('button', { name: 'Previsualizar cambios' }).click();
+  await expect(dialog.getByText(/Previsualización — todavía sin guardar/)).toBeVisible();
+  expect((await (await request.get(fixtureApi + '/__test__/state')).json()).transactionWrites).toBe(0);
+  await dialog.getByRole('button', { name: 'Confirmar y guardar' }).click();
+  await expect(dialog).toHaveCount(0);
+  const state = await (await request.get(fixtureApi + '/__test__/state')).json();
+  expect(state.transactionWrites).toBe(1);
+  expect(state.lastTransactionUpdate).toMatchObject({
+    transactionId: 'synthetic-tx-1',
+    fields: ['amount'],
+    changes: { amount: -3000 },
+  });
+});
+
+test('bulk categorization previews all eligible rows and confirms a reported outcome', async ({ page, request }) => {
+  await page.goto('/movements');
+  await page.getByRole('checkbox', { name: 'Seleccionar Supermercado sintético' }).check();
+  await page.getByLabel('Categoría de gasto para el lote').selectOption('synthetic-restaurants');
+  await page.getByRole('button', { name: 'Previsualizar lote' }).click();
+  await expect(page.getByRole('status')).toContainText('Todavía no se ha escrito ningún cambio');
+  expect((await (await request.get(fixtureApi + '/__test__/state')).json()).categoryWrites).toBe(0);
+  page.once('dialog', (dialog) => { void dialog.accept(); });
+  await page.getByRole('button', { name: 'Confirmar lote' }).click();
+  await expect(page.getByRole('status')).toContainText('Se han guardado y sincronizado 1 cambios de categoría');
+  const state = await (await request.get(fixtureApi + '/__test__/state')).json();
+  expect(state.categoryWrites).toBe(1);
+  expect(state.lastCommittedChanges).toEqual([{ transactionId: 'synthetic-tx-1', categoryId: 'synthetic-restaurants' }]);
+});
+
+test('CSV export downloads every row matching the current filters', async ({ page }) => {
+  await page.goto('/movements');
+  await page.getByLabel('Buscar').fill('Supermercado sintético');
+  await expect(page.getByText('Supermercado sintético')).toBeVisible();
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Exportar CSV filtrado' }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^movimientos-filtrados-\d{4}-\d{2}-\d{2}\.csv$/);
+  await expect(page.getByRole('status')).toContainText('1 movimientos');
+});
+
+test('settings persist theme and regional formatting and reset only local preferences', async ({ page, request }) => {
+  await page.goto('/settings');
+  await expect(page.getByRole('heading', { name: 'Centro de configuración' })).toBeVisible();
+  await page.getByLabel('Tema').selectOption('light');
+  await page.getByLabel('Formato de fechas e importes').selectOption('en-GB');
+  await page.getByRole('button', { name: 'Guardar preferencias de interfaz' }).click();
+  await expect(page.getByRole('status')).toContainText('Preferencias de interfaz guardadas localmente');
+  await expect.poll(async () => {
+    const state = await (await request.get(fixtureApi + '/__test__/state')).json();
+    return state.appPreferences;
+  }).toEqual({ theme: 'light', locale: 'en-GB' });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en-GB');
+
+  page.once('dialog', (dialog) => { void dialog.accept(); });
+  await page.getByRole('button', { name: 'Restablecer preferencias locales' }).click();
+  await expect(page.getByRole('status')).toContainText('Preferencias locales restablecidas');
+  await expect.poll(async () => {
+    const state = await (await request.get(fixtureApi + '/__test__/state')).json();
+    return state.appPreferences;
+  }).toEqual({ theme: 'system', locale: 'es-ES' });
+  const finalState = await (await request.get(fixtureApi + '/__test__/state')).json();
+  expect(finalState.currencyPreferences.displayCurrency).toBe('EUR');
+  expect(finalState.accountScope).toEqual({ mode: 'all', accountIds: [] });
+});
