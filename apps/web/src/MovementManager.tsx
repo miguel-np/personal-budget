@@ -381,7 +381,7 @@ export function MovementManager(props: MovementManagerProps) {
       <div className="movement-actions-toolbar panel">
         <div className="movement-actions-heading">
           <div><p className="eyebrow">ACCIONES SEGURAS</p><h3>Selección y exportación</h3></div>
-          <span className="date-badge">{selectedIds.length} seleccionados</span>
+          <span className="date-badge">{total} resultados · {selectedIds.length} seleccionados</span>
         </div>
         <p className="setting-hint">La selección se limita a la página visible. La categorización por lote solo incluye gastos ordinarios; las transferencias, ingresos y movimientos divididos se protegen de acciones en lote.</p>
         <div className="movement-actions-controls">
