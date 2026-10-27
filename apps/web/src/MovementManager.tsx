@@ -130,6 +130,7 @@ export function MovementManager(props: MovementManagerProps) {
   const [editing, setEditing] = useState<MovementTransaction | null>(null);
   const [draft, setDraft] = useState<EditDraft | null>(null);
   const [editPreview, setEditPreview] = useState(false);
+  const [syncTransferDate, setSyncTransferDate] = useState(false);
   const [editBusy, setEditBusy] = useState(false);
   const [editError, setEditError] = useState('');
   const [editNotice, setEditNotice] = useState('');
@@ -186,6 +187,7 @@ export function MovementManager(props: MovementManagerProps) {
       cleared: Boolean(transaction.cleared),
     });
     setEditPreview(false);
+    setSyncTransferDate(false);
     setEditError('');
     setEditNotice('');
     setEditing(transaction);
@@ -195,6 +197,7 @@ export function MovementManager(props: MovementManagerProps) {
     setEditing(null);
     setDraft(null);
     setEditPreview(false);
+    setSyncTransferDate(false);
     setEditError('');
   }
   function onDialogKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
@@ -299,7 +302,7 @@ export function MovementManager(props: MovementManagerProps) {
         {
           method: 'PUT',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ accountId: editing.account, startDate, endDate, changes }),
+          body: JSON.stringify({ accountId: editing.account, startDate, endDate, syncTransferDate: Boolean(editing.transfer_id && syncTransferDate && changes.date !== undefined), changes }),
         },
       );
       if (!response.ok || !payload.data) throw new Error(payload.error?.message ?? 'No se han podido guardar los cambios.');
@@ -309,10 +312,25 @@ export function MovementManager(props: MovementManagerProps) {
         throw new Error(warning);
       }
       const transferUpdatedBothLegs = (payload.data.updatedTransactionIds?.length ?? 0) === 2;
+      const transferRequiresBothLegs = Boolean(editing.transfer_id) && (
+        changes.amount !== undefined || changes.notes !== undefined ||
+        (changes.date !== undefined && syncTransferDate)
+      );
+      if (editing.transfer_id && transferRequiresBothLegs && !transferUpdatedBothLegs) {
+        const warning = 'Actual Budget no confirmó ambas partes de la transferencia. Comprueba las dos cuentas antes de volver a intentarlo.';
+        onUpdated(warning);
+        throw new Error(warning);
+      }
+      const transferNotice = [
+        ...(changes.amount !== undefined ? ['El importe se ha sincronizado y verificado en ambas cuentas.'] : []),
+        ...(changes.notes !== undefined ? ['Las notas se han sincronizado y verificado en ambas partes.'] : []),
+        ...(changes.date !== undefined ? [syncTransferDate
+          ? 'La fecha se ha sincronizado en ambas cuentas.'
+          : 'La fecha solo se ha cambiado en esta cuenta; la otra conserva su fecha.'] : []),
+        ...(changes.cleared !== undefined ? ['La conciliación solo se ha cambiado en esta cuenta.'] : []),
+      ].join(' ');
       const notice = editing.transfer_id
-        ? transferUpdatedBothLegs
-          ? 'Fecha e importe de la transferencia sincronizados y verificados en sus dos cuentas de Actual Budget. Notas y conciliación solo afectan a este lado.'
-          : 'Esta parte de la transferencia se ha actualizado y verificado. La otra parte no se ha modificado; las notas y la conciliación solo afectan a este lado.'
+        ? 'Transferencia actualizada y verificada. ' + transferNotice
         : editing.is_split_child
           ? 'Parte del desglose actualizada; el conjunto completo se ha conservado y verificado en Actual Budget.'
           : 'Cambios validados y verificados en Actual Budget.';
@@ -321,6 +339,7 @@ export function MovementManager(props: MovementManagerProps) {
       setEditing(null);
       setDraft(null);
       setEditPreview(false);
+      setSyncTransferDate(false);
       setSelectedIds([]);
       onUpdated(notice);
     } catch (error) {
@@ -534,13 +553,23 @@ export function MovementManager(props: MovementManagerProps) {
           <div className="transaction-edit-dialog panel" role="dialog" aria-modal="true" aria-labelledby="transaction-edit-title" onKeyDown={onDialogKeyDown}>
             <div className="section-heading"><div><p className="eyebrow">EDICIÓN DE MOVIMIENTO</p><h2 id="transaction-edit-title">Revisar cambios</h2></div><button className="button secondary" type="button" disabled={editBusy} onClick={closeEditor}>Cerrar</button></div>
             <p className="setting-hint">{editing.transfer_id
-              ? 'La transferencia está enlazada: fecha e importe se aplican a las dos patas; notas y conciliación solo afectan a este lado. No se puede cambiar su dirección ni su categoría desde aquí.'
+              ? 'La transferencia está enlazada: el importe y las notas se aplican a las dos patas; la fecha solo cambia en esta cuenta salvo que elijas sincronizarla. La conciliación es independiente por cuenta. No se puede cambiar su dirección ni su categoría desde aquí.'
               : editing.is_split_child
                 ? 'Esta parte se guarda reenviando el desglose completo con todos sus IDs. Categoría y notas pertenecen a esta parte; fecha, concepto y conciliación afectan al movimiento padre. Cambiar el importe recalcula el total del padre.'
                 : 'La cuenta de origen la controla Actual Budget y no se puede cambiar aquí. Los campos se validan en servidor antes de guardar.'}</p>
             <form onSubmit={(event) => { void handleEditSubmit(event); }}>
               <div className="edit-fields-grid">
-                <label className="field-label">Fecha<input ref={dateInput} autoFocus type="date" required value={draft.date} onChange={(event) => changeDraft('date', event.currentTarget.value)} /></label>
+                <label className="field-label">Fecha<input ref={dateInput} autoFocus type="date" required value={draft.date} onChange={(event) => {
+                  const nextDate = event.currentTarget.value;
+                  changeDraft('date', nextDate);
+                  if (editing.transfer_id && nextDate === editing.date) setSyncTransferDate(false);
+                }} /></label>
+                {editing.transfer_id ? <label className="check-field edit-full-width"><input type="checkbox" checked={syncTransferDate} disabled={editBusy || draft.date === editing.date} onChange={(event) => {
+                  setSyncTransferDate(event.currentTarget.checked);
+                  setEditPreview(false);
+                  setEditError('');
+                  setEditNotice('');
+                }} /> Sincronizar también la fecha con la otra cuenta <small>Por defecto, cada cuenta conserva su propia fecha.</small></label> : null}
                 <label className="field-label">Importe (unidades principales)<input required inputMode="decimal" autoComplete="off" value={draft.amount} onChange={(event) => changeDraft('amount', event.currentTarget.value)} aria-describedby="edit-amount-hint" /><small id="edit-amount-hint">Ejemplo: 1234,56. No uses separadores de miles.</small></label>
                 <label className="field-label edit-full-width">Concepto importado<input maxLength={500} disabled={Boolean(editing.transfer_id)} value={draft.concept} onChange={(event) => changeDraft('concept', event.currentTarget.value)} /></label>
                 {editing.transfer_id ? <p className="setting-hint">El enlace y el beneficiario de transferencia están protegidos.</p> : <label className="field-label">Categoría<select value={draft.categoryId} onChange={(event) => changeDraft('categoryId', event.currentTarget.value)}><option value="">Sin categoría</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}{category.isIncome ? ' · Ingreso' : ' · Gasto'}</option>)}</select></label>}
@@ -553,6 +582,9 @@ export function MovementManager(props: MovementManagerProps) {
                   <h4>Previsualización — todavía sin guardar</h4>
                   <p><strong>{transactionDescription(editing)}</strong> · {formatCivilDate(editing.date, locale)} · {formatMoney(editing.amount, editing.currencyCode ?? currency, locale)}</p>
                   <p>Nuevo valor: <strong>{draft.concept.trim() || 'Sin concepto'}</strong> · {formatCivilDate(draft.date, locale)} · {parseAmountInput(draft.amount) === null ? 'Importe inválido' : formatMoney(parseAmountInput(draft.amount) as number, editing.currencyCode ?? currency, locale)}</p>
+                  {editing.transfer_id && draft.date !== editing.date ? <p>{syncTransferDate
+                    ? 'La nueva fecha se aplicará a ambas cuentas.'
+                    : 'La nueva fecha solo se aplicará a esta cuenta; la otra conservará su fecha.'}</p> : null}
                   <p>Categoría: {categoryNames.get(editing.category ?? '') ?? 'Sin categoría'} → {categoryNames.get(draft.categoryId) ?? 'Sin categoría'}; estado: {editing.cleared ? 'Conciliado' : 'Pendiente'} → {draft.cleared ? 'Conciliado' : 'Pendiente'}.</p>
                   <p>Notas: <strong>{editing.notes?.trim() || 'Sin notas'}</strong> → <strong>{draft.notes.trim() || 'Sin notas'}</strong>.</p>
                 </section>
