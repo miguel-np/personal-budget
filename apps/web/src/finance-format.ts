@@ -8,7 +8,7 @@ export function setFinanceLocale(locale: 'es-ES' | 'en-GB'): void {
 export function formatMoney(amountMinor: number, currency: string, locale: 'es-ES' | 'en-GB' = configuredLocale): string {
   const normalized = currency.trim().toUpperCase();
   if (!/^[A-Z]{3}$/.test(normalized)) {
-    return formatUnconvertedMoney(amountMinor, null);
+    return formatUnconvertedMoney(amountMinor, null, locale);
   }
   try {
     return new Intl.NumberFormat(locale, {
