@@ -29,3 +29,13 @@ Los controles deben tener reposo, hover, foco, activo y desactivado; los mensaje
 - No se oculta información financiera clave para ajustar el layout.
 
 La referencia viva es la propia aplicación con sus pruebas de navegador sintéticas; las capturas no sustituyen componentes funcionales.
+
+## Aplicación de accesibilidad y pruebas de aceptación (#36)
+
+- El primer elemento de la shell es un enlace visible al recibir foco para saltar la navegación; el destino principal es enfocable.
+- Al navegar entre secciones, el foco pasa al título principal actualizado, sin robar el foco durante la carga inicial.
+- Las regiones de tablas anchas tienen nombre accesible y pueden recibir foco para desplazamiento horizontal local; la página completa no debe desbordarse.
+- Los controles de acción frecuentes usan un objetivo de 44 × 44 CSS px cuando corresponde. Los campos visibles deben tener una etiqueta programática; los placeholders no sustituyen a una etiqueta.
+- El contraste se valida sobre los elementos textuales financieros prioritarios. La comprobación automatizada es una señal de regresión, no una certificación completa.
+- Se respetan las preferencias de movimiento reducido existentes. La revisión manual sigue comprobando teclado, foco, zoom, árbol de accesibilidad/lector de pantalla y tareas completas.
+- Los datos de las pruebas y capturas de aceptación son sintéticos.

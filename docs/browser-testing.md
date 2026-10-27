@@ -26,3 +26,9 @@ La suite levanta y detiene sus servidores automáticamente. Chromium se instala 
 - Los artefactos solo se guardan en fallos y contienen fixtures sintéticos.
 
 No se simulan OFX, cambio de divisa ni selección consolidada de varias cuentas hasta que esas funciones existan.
+
+### Accesibilidad y reflujo
+
+La suite también comprueba el enlace de salto y el enfoque del título tras la navegación, que los campos visibles tengan etiqueta programática, el contraste AA de textos financieros prioritarios y la ausencia de desbordamiento a nivel de documento en secciones principales a 1440 px, 768 px y 375 px. Los controles de acción frecuentes se verifican frente al objetivo táctil de 44 CSS px.
+
+Estas comprobaciones no sustituyen una auditoría manual: antes de cerrar #36 hay que recorrer los flujos esenciales con teclado y lector de pantalla/árbol de accesibilidad, comprobar foco no oculto, zoom y movimiento reducido, y registrar las limitaciones conocidas.

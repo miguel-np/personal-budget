@@ -142,7 +142,7 @@ export function BudgetPanel({ currency, onBudgetUpdated }: { currency: string; o
           <div className="panel budget-panel">
             <div className="panel-heading"><div><p className="eyebrow">DETALLE POR CATEGORÍA</p><h3>Asignado, gastado y desviación</h3></div><span className="muted-label">{expenseCategories.length} categorías de gasto</span></div>
             {expenseCategories.length === 0 ? <div className="empty-state"><h3>No hay categorías presupuestables en este mes</h3><p>Comprueba que el mes existe en el presupuesto de Actual Budget y que contiene categorías visibles de gasto.</p></div> : (
-              <div className="budget-table-wrap">
+              <div className="budget-table-wrap" role="region" aria-label="Presupuestos por categoría; desplázate horizontalmente para ver todas las columnas" tabIndex={0}>
                 <table className="budget-table">
                   <thead><tr><th scope="col">Categoría</th><th scope="col">Asignado</th><th scope="col">Gastado</th><th scope="col">Disponible</th><th scope="col">Consumo</th><th scope="col">Estado</th><th scope="col">Acción</th></tr></thead>
                   <tbody>{expenseCategories.map((category) => {

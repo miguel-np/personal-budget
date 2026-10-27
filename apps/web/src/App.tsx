@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type MouseEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { MovementTools } from './MovementTools.js';
 import { BudgetPanel } from './BudgetPanel.js';
 import { AssistantPanel } from './AssistantPanel.js';
@@ -266,12 +266,19 @@ export function App() {
   const [accountScopeSaveNotice, setAccountScopeSaveNotice] = useState('');
 
   const [route, setRoute] = useState(() => window.location.pathname.replace(/\/+$/, '') || '/');
+  const previousRoute = useRef(route);
 
   useEffect(() => {
     const syncRoute = () => setRoute(window.location.pathname.replace(/\/+$/, '') || '/');
     window.addEventListener('popstate', syncRoute);
     return () => window.removeEventListener('popstate', syncRoute);
   }, []);
+
+  useEffect(() => {
+    if (previousRoute.current === route) return;
+    previousRoute.current = route;
+    document.querySelector<HTMLHeadingElement>('.page-header h1')?.focus({ preventScroll: true });
+  }, [route]);
 
   function navigate(event: MouseEvent<HTMLAnchorElement>, href: string): void {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -463,6 +470,7 @@ export function App() {
 
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main-content">Saltar al contenido principal</a>
       <aside className="sidebar" aria-label="Navegación principal">
         <a className="brand" href="/" onClick={(event) => navigate(event, '/')} aria-label="personal-budget, ir al resumen">
           <span className="brand-mark" aria-hidden="true">pb</span>
@@ -483,11 +491,11 @@ export function App() {
         </div>
       </aside>
 
-      <main className="main-content">
+      <main id="main-content" className="main-content" tabIndex={-1}>
         <header className="page-header">
           <div>
             <p className="eyebrow">ÁREA PERSONAL / {pageTitle.toLocaleUpperCase('es')}</p>
-            <h1>{route === '/' ? 'Resumen financiero' : route === '/movements' ? 'Movimientos' : route === '/reports' ? 'Informes' : route === '/assistant' ? 'Asistente' : route === '/settings' ? 'Configuración' : pageTitle}</h1>
+            <h1 tabIndex={-1}>{route === '/' ? 'Resumen financiero' : route === '/movements' ? 'Movimientos' : route === '/reports' ? 'Informes' : route === '/assistant' ? 'Asistente' : route === '/settings' ? 'Configuración' : pageTitle}</h1>
             <p className="page-subtitle">Tus finanzas, con cálculos verificables y sin enviar datos a terceros.</p>
           </div>
           <div className="header-status" role="status"><span className={'status-dot ' + connection} />
@@ -648,7 +656,7 @@ export function App() {
                       <label className="check-field"><input type="checkbox" checked={uncategorizedOnly} onChange={(event) => { setUncategorizedOnly(event.currentTarget.checked); setCategoryFilter('all'); setPage(1); }} /> Sin categoría</label>
                     </div>
                     {visibleTransactions.length === 0 ? <EmptyState title="No se han encontrado movimientos" body="Cambia el periodo o los filtros. Esta vista no inventa datos cuando Actual no devuelve resultados." /> : (
-                      <div className="table-wrap">
+                      <div className="table-wrap" role="region" aria-label="Movimientos paginados; desplázate horizontalmente para ver todas las columnas" tabIndex={0}>
                         <table className="transactions-table">
                           <thead><tr>
                             <th scope="col"><button type="button" className="sort-button" onClick={() => changeSort('date')}>Fecha{sortKey === 'date' ? (sortAscending ? ' ↑' : ' ↓') : ''}</button></th>
@@ -835,7 +843,7 @@ function MonthlyTrendPanel({ points, currency, loading, error }: { points: reado
       {error ? <p className="form-alert error" role="alert">{error}</p> : null}
       {!loading && !error && points.length === 0 ? <EmptyState title="Tendencia no disponible" body="No hay meses para comparar en este momento." /> : null}
       {points.length ? (
-        <div className="trend-table-wrap">
+        <div className="trend-table-wrap" role="region" aria-label="Tabla de tendencia mensual; desplázate horizontalmente para ver todas las columnas" tabIndex={0}>
           <table className="trend-table">
             <thead><tr><th scope="col">Mes</th><th scope="col">Comparación visual</th><th scope="col">Ingresos</th><th scope="col">Gastos</th><th scope="col">Ahorro neto</th></tr></thead>
             <tbody>{points.map((point) => {
