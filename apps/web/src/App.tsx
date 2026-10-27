@@ -263,6 +263,7 @@ export function App() {
   const [currencySaveError, setCurrencySaveError] = useState('');
   const [currencySaveNotice, setCurrencySaveNotice] = useState('');
   const [appPreferences, setAppPreferences] = useState<AppPreferences>({ theme: 'system', locale: 'es-ES' });
+  const [, setFormattingRevision] = useState(0);
   const [appPreferencesSaving, setAppPreferencesSaving] = useState(false);
   const [appPreferencesError, setAppPreferencesError] = useState('');
   const [appPreferencesNotice, setAppPreferencesNotice] = useState('');
@@ -280,6 +281,7 @@ export function App() {
 
   useEffect(() => {
     setFinanceLocale(appPreferences.locale);
+    setFormattingRevision((value) => value + 1);
     const root = document.documentElement;
     root.lang = appPreferences.locale;
     const preference = appPreferences.theme;
