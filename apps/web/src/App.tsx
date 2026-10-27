@@ -492,7 +492,7 @@ export function App() {
     if (preferencesResetting) return;
     const confirmed = window.confirm('Se restablecerán solo el tema, el formato regional, la divisa de análisis y el ámbito de cuentas. No se borrará ni modificará ningún movimiento, categoría, presupuesto, backup o archivo descargado. ¿Continuar?');
     if (!confirmed) return;
-    setPreferencesResetting(true); setPreferencesResetError(''); setPreferencesResetNotice('');
+    setPreferencesResetting(true); setPreferencesResetError(''); setPreferencesResetNotice(''); setAppPreferencesError(''); setAppPreferencesNotice('');
     try {
       const response = await fetch('/api/v1/preferences/reset', {
         method: 'POST',
