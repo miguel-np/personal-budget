@@ -5,6 +5,9 @@ export interface MovementAccount {
   readonly id: string;
   readonly name: string;
   readonly closed: boolean;
+  readonly currencyCode?: string | null;
+  readonly nativeCurrencyCode?: string | null;
+  readonly offBudget?: boolean;
 }
 export interface MovementCategory {
   readonly id: string;
@@ -149,6 +152,8 @@ export function MovementTools({ accounts, categories, currency, onImported, quic
   const [transferBusy, setTransferBusy] = useState(false);
   const [transferMessage, setTransferMessage] = useState('');
   const [transferError, setTransferError] = useState('');
+  const selectedTransferSource = openAccounts.find((account) => account.id === transferSourceId);
+  const transferCurrency = selectedTransferSource?.currencyCode ?? selectedTransferSource?.nativeCurrencyCode ?? currency;
 
   const [csvOpen, setCsvOpen] = useState(false);
   const [csvAccountId, setCsvAccountId] = useState('');
@@ -172,12 +177,24 @@ export function MovementTools({ accounts, categories, currency, onImported, quic
   const [csvMessage, setCsvMessage] = useState('');
   const [csvError, setCsvError] = useState('');
 
+  function destinationFor(sourceId: string): string {
+    const source = openAccounts.find((account) => account.id === sourceId);
+    const sourceCurrency = source?.currencyCode ?? source?.nativeCurrencyCode;
+    if (!source || !sourceCurrency) return '';
+    return openAccounts.find((account) => {
+      if (account.id === sourceId) return false;
+      const destinationCurrency = account.currencyCode ?? account.nativeCurrencyCode;
+      return destinationCurrency === sourceCurrency &&
+        (source.offBudget === undefined || account.offBudget === undefined || source.offBudget === account.offBudget);
+    })?.id ?? '';
+  }
+
   function openTransferForm(): void {
     const sourceId = openAccounts[0]?.id ?? '';
     setTransferOpen(true);
     setManualOpen(false);
     setTransferSourceId(sourceId);
-    setTransferDestinationId(openAccounts.find((account) => account.id !== sourceId)?.id ?? '');
+    setTransferDestinationId(destinationFor(sourceId));
     setTransferDate(localToday());
     setTransferAmount('');
     setTransferNotes('');
@@ -557,13 +574,13 @@ export function MovementTools({ accounts, categories, currency, onImported, quic
           <div className="panel-heading"><div><p className="eyebrow">TRANSFERENCIA VINCULADA</p><h4>Entre cuentas de Actual Budget</h4></div><span className="muted-label">Importe en moneda de las cuentas</span></div>
           {openAccounts.length < 2 ? <FormAlert error>Necesitas al menos dos cuentas abiertas dentro del ámbito global para registrar una transferencia.</FormAlert> : null}
           <div className="manual-form-grid">
-            <label className="field-label">Cuenta de origen<select value={transferSourceId} onChange={(event) => { const nextSource = event.currentTarget.value; setTransferSourceId(nextSource); if (nextSource === transferDestinationId) setTransferDestinationId(openAccounts.find((account) => account.id !== nextSource)?.id ?? ''); setTransferResult(null); setTransferMessage(''); setTransferError(''); }} required><option value="">Selecciona origen…</option>{openAccounts.map((account) => <option value={account.id} key={account.id}>{account.name}</option>)}</select></label>
+            <label className="field-label">Cuenta de origen<select value={transferSourceId} onChange={(event) => { const nextSource = event.currentTarget.value; setTransferSourceId(nextSource); setTransferDestinationId(destinationFor(nextSource)); setTransferResult(null); setTransferMessage(''); setTransferError(''); }} required><option value="">Selecciona origen…</option>{openAccounts.map((account) => <option value={account.id} key={account.id}>{account.name}</option>)}</select></label>
             <label className="field-label">Cuenta de destino<select value={transferDestinationId} onChange={(event) => { setTransferDestinationId(event.currentTarget.value); setTransferResult(null); setTransferMessage(''); setTransferError(''); }} required><option value="">Selecciona destino…</option>{openAccounts.filter((account) => account.id !== transferSourceId).map((account) => <option value={account.id} key={account.id}>{account.name}</option>)}</select></label>
             <label className="field-label">Fecha<input type="date" value={transferDate} onChange={(event) => { setTransferDate(event.currentTarget.value); setTransferResult(null); setTransferMessage(''); setTransferError(''); }} required /></label>
-            <label className="field-label">Importe positivo ({currency})<input type="text" inputMode="decimal" autoComplete="off" placeholder="Por ejemplo, 125,00" value={transferAmount} onChange={(event) => { setTransferAmount(event.currentTarget.value); setTransferResult(null); setTransferMessage(''); setTransferError(''); }} required /></label>
+            <label className="field-label">Importe positivo ({transferCurrency})<input type="text" inputMode="decimal" autoComplete="off" placeholder="Por ejemplo, 125,00" value={transferAmount} onChange={(event) => { setTransferAmount(event.currentTarget.value); setTransferResult(null); setTransferMessage(''); setTransferError(''); }} required /></label>
             <label className="field-label">Notas (opcional)<input type="text" maxLength={2000} value={transferNotes} onChange={(event) => { setTransferNotes(event.currentTarget.value); setTransferResult(null); setTransferMessage(''); setTransferError(''); }} /></label>
           </div>
-          <p className="tool-hint">El importe se descuenta del origen y Actual crea la contrapartida vinculada en el destino a través del beneficiario de transferencia oficial. Solo se admiten dos cuentas abiertas del ámbito activo, de la misma divisa y ambas dentro o ambas fuera de presupuesto. No se guarda nada hasta confirmar.</p>
+          <p className="tool-hint">El importe se introduce en la divisa nativa del origen ({transferCurrency}); se descuenta del origen y Actual crea la contrapartida vinculada en el destino a través del beneficiario de transferencia oficial. Solo se admiten dos cuentas abiertas del ámbito activo, de la misma divisa y ambas dentro o ambas fuera de presupuesto. No se guarda nada hasta confirmar.</p>
           <div className="tool-actions">
             <button className="button primary" type="submit" disabled={transferBusy || openAccounts.length < 2}>{transferBusy ? 'Comprobando…' : 'Previsualizar transferencia'}</button>
             {transferResult?.dryRun && transferResult.linkedTransfer && transferResult.errors === 0 && transferResult.added + transferResult.updated > 0
