@@ -343,7 +343,7 @@ test('primary actions expose comfortable touch target sizes on mobile', async ({
 
 test('movement editor previews validated changes before writing to Actual', async ({ page, request }) => {
   await page.goto('/movements');
-  await expect(page.getByRole('heading', { name: 'Gestión de movimientos' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Transacciones' })).toBeVisible();
   await page.getByRole('button', { name: 'Editar' }).first().click();
   const dialog = page.getByRole('dialog', { name: 'Revisar cambios' });
   await expect(dialog).toBeVisible();
@@ -367,11 +367,11 @@ test('bulk categorization previews all eligible rows and confirms a reported out
   await page.getByRole('checkbox', { name: 'Seleccionar Supermercado sintético' }).check();
   await page.getByLabel('Categoría de gasto para el lote').selectOption('synthetic-restaurants');
   await page.getByRole('button', { name: 'Previsualizar lote' }).click();
-  await expect(page.getByRole('status')).toContainText('Todavía no se ha escrito ningún cambio');
+  await expect(page.locator('.movement-actions-toolbar').getByRole('status')).toContainText('Todavía no se ha escrito ningún cambio');
   expect((await (await request.get(fixtureApi + '/__test__/state')).json()).categoryWrites).toBe(0);
   page.once('dialog', (dialog) => { void dialog.accept(); });
   await page.getByRole('button', { name: 'Confirmar lote' }).click();
-  await expect(page.getByRole('status')).toContainText('Se han guardado y sincronizado 1 cambios de categoría');
+  await expect(page.locator('.movement-actions-toolbar').getByRole('status')).toContainText('Se han guardado y sincronizado 1 cambios de categoría');
   const state = await (await request.get(fixtureApi + '/__test__/state')).json();
   expect(state.categoryWrites).toBe(1);
   expect(state.lastCommittedChanges).toEqual([{ transactionId: 'synthetic-tx-1', categoryId: 'synthetic-restaurants' }]);
@@ -385,7 +385,7 @@ test('CSV export downloads every row matching the current filters', async ({ pag
   await page.getByRole('button', { name: 'Exportar CSV filtrado' }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/^movimientos-filtrados-\d{4}-\d{2}-\d{2}\.csv$/);
-  await expect(page.getByRole('status')).toContainText('1 movimientos');
+  await expect(page.locator('.movement-manager').getByRole('status')).toContainText('1 movimientos');
 });
 
 test('settings persist theme and regional formatting and reset only local preferences', async ({ page, request }) => {
@@ -394,7 +394,7 @@ test('settings persist theme and regional formatting and reset only local prefer
   await page.getByLabel('Tema').selectOption('light');
   await page.getByLabel('Formato de fechas e importes').selectOption('en-GB');
   await page.getByRole('button', { name: 'Guardar preferencias de interfaz' }).click();
-  await expect(page.getByRole('status')).toContainText('Preferencias de interfaz guardadas localmente');
+  await expect(page.locator('.settings-center').getByRole('status')).toContainText('Preferencias de interfaz guardadas localmente');
   await expect.poll(async () => {
     const state = await (await request.get(fixtureApi + '/__test__/state')).json();
     return state.appPreferences;
@@ -404,7 +404,7 @@ test('settings persist theme and regional formatting and reset only local prefer
 
   page.once('dialog', (dialog) => { void dialog.accept(); });
   await page.getByRole('button', { name: 'Restablecer preferencias locales' }).click();
-  await expect(page.getByRole('status')).toContainText('Preferencias locales restablecidas');
+  await expect(page.locator('.settings-center').getByRole('status')).toContainText('Preferencias locales restablecidas');
   await expect.poll(async () => {
     const state = await (await request.get(fixtureApi + '/__test__/state')).json();
     return state.appPreferences;
