@@ -383,6 +383,7 @@ test('editing a linked transfer verifies both legs and rejects reversing its dir
   yesterday.setDate(yesterday.getDate() - 1);
   const dateValue = yesterday.getFullYear() + '-' + String(yesterday.getMonth() + 1).padStart(2, '0') + '-' + String(yesterday.getDate()).padStart(2, '0');
   await dialog.getByLabel('Fecha').fill(dateValue);
+  await dialog.getByRole('checkbox', { name: /Sincronizar también la fecha con la otra cuenta/ }).check();
   await dialog.getByRole('button', { name: 'Previsualizar cambios' }).click();
   expect((await (await request.get(fixtureApi + '/__test__/state')).json()).transactionWrites).toBe(0);
   await dialog.getByRole('button', { name: 'Confirmar y guardar' }).click();
@@ -406,7 +407,37 @@ test('editing a linked transfer verifies both legs and rejects reversing its dir
   expect((await (await request.get(fixtureApi + '/__test__/state')).json()).transactionWrites).toBe(2);
 });
 
-test('editing only notes on a linked transfer reports that only one leg changed', async ({ page, request }) => {
+test('editing a linked transfer date keeps the other date unless explicitly synchronized', async ({ page, request }) => {
+  await request.post(fixtureApi + '/__test__/reset');
+  await page.goto('/movements');
+  const initialState = await (await request.get(fixtureApi + '/__test__/state')).json();
+  const counterpartDate = initialState.transferState.counterpart.date;
+  const sourceRow = page.locator('.transactions-table tbody tr')
+    .filter({ hasText: 'Transferencia sintética' })
+    .filter({ has: page.locator('.amount-cell.expense') })
+    .first();
+  await sourceRow.getByRole('button', { name: 'Editar' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Revisar cambios' });
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const dateValue = yesterday.getFullYear() + '-' + String(yesterday.getMonth() + 1).padStart(2, '0') + '-' + String(yesterday.getDate()).padStart(2, '0');
+  const syncDate = dialog.getByRole('checkbox', { name: /Sincronizar también la fecha con la otra cuenta/ });
+  await expect(syncDate).not.toBeChecked();
+  await dialog.getByLabel('Fecha').fill(dateValue);
+  await expect(syncDate).toBeEnabled();
+  await dialog.getByRole('button', { name: 'Previsualizar cambios' }).click();
+  expect((await (await request.get(fixtureApi + '/__test__/state')).json()).transactionWrites).toBe(0);
+  await dialog.getByRole('button', { name: 'Confirmar y guardar' }).click();
+
+  await expect(page.locator('.movement-operation-notice'))
+    .toContainText('La fecha solo se ha cambiado en esta cuenta; la otra conserva su fecha.');
+  const state = await (await request.get(fixtureApi + '/__test__/state')).json();
+  expect(state.transactionWrites).toBe(1);
+  expect(state.transferState.source.date).toBe(dateValue);
+  expect(state.transferState.counterpart.date).toBe(counterpartDate);
+});
+
+test('editing notes on a linked transfer synchronizes and verifies both legs', async ({ page, request }) => {
   await request.post(fixtureApi + '/__test__/reset');
   await page.goto('/movements');
   const sourceRow = page.locator('.transactions-table tbody tr')
@@ -416,19 +447,17 @@ test('editing only notes on a linked transfer reports that only one leg changed'
   await expect(sourceRow).toBeVisible();
   await sourceRow.getByRole('button', { name: 'Editar' }).click();
   const dialog = page.getByRole('dialog', { name: 'Revisar cambios' });
-  await dialog.getByLabel('Notas').fill('Nota exclusiva de esta parte');
+  await dialog.getByLabel('Notas').fill('Nota sincronizada');
   await dialog.getByRole('button', { name: 'Previsualizar cambios' }).click();
   expect((await (await request.get(fixtureApi + '/__test__/state')).json()).transactionWrites).toBe(0);
   await dialog.getByRole('button', { name: 'Confirmar y guardar' }).click();
 
   await expect(page.locator('.movement-operation-notice'))
-    .toContainText('Esta parte de la transferencia se ha actualizado y verificado');
-  await expect(page.locator('.movement-operation-notice'))
-    .toContainText('La otra parte no se ha modificado');
+    .toContainText('Las notas se han sincronizado y verificado en ambas partes.');
   const state = await (await request.get(fixtureApi + '/__test__/state')).json();
-  expect(state.transactionWrites).toBe(1);
-  expect(state.transferState.source.notes).toBe('Nota exclusiva de esta parte');
-  expect(state.transferState.counterpart.notes).toBe('Transferencia sintética');
+  expect(state.transactionWrites).toBe(2);
+  expect(state.transferState.source.notes).toBe('Nota sincronizada');
+  expect(state.transferState.counterpart.notes).toBe('Nota sincronizada');
 });
 
 test('editing a split child preserves every part and recalculates the parent total', async ({ page, request }) => {
