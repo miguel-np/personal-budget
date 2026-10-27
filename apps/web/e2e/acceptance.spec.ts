@@ -306,8 +306,20 @@ test('core sections reflow at desktop, tablet and mobile widths without page-lev
       const dimensions = await page.evaluate(() => ({
         viewport: window.innerWidth,
         document: document.documentElement.scrollWidth,
+        offenders: [...document.querySelectorAll('*')].map((element) => {
+          const rect = element.getBoundingClientRect();
+          return {
+            tag: element.tagName.toLowerCase(),
+            className: typeof element.className === 'string' ? element.className.slice(0, 80) : '',
+            left: Math.round(rect.left),
+            right: Math.round(rect.right),
+            width: Math.round(rect.width),
+            scrollWidth: element.scrollWidth,
+          };
+        }).filter((element) => element.right > window.innerWidth + 1 && element.width > 0)
+          .sort((a, b) => b.right - a.right).slice(0, 8),
       }));
-      expect(dimensions.document, 'Page overflow at ' + section.route + ' / ' + width + 'px').toBeLessThanOrEqual(dimensions.viewport + 1);
+      expect(dimensions.document, 'Page overflow at ' + section.route + ' / ' + width + 'px: ' + JSON.stringify(dimensions.offenders)).toBeLessThanOrEqual(dimensions.viewport + 1);
     }
   }
 });
