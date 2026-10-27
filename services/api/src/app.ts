@@ -592,7 +592,15 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
           }
         }
       }
-      await updater.updateTransaction!(params.transactionId, parsed.changes);
+      const update: TransactionUpdate = {
+        ...(parsed.changes.date === undefined ? {} : { date: parsed.changes.date }),
+        ...(parsed.changes.amount === undefined ? {} : { amount: parsed.changes.amount }),
+        ...(parsed.changes.imported_payee === undefined ? {} : { imported_payee: parsed.changes.imported_payee }),
+        ...(parsed.changes.category === undefined ? {} : { category: parsed.changes.category }),
+        ...(parsed.changes.notes === undefined ? {} : { notes: parsed.changes.notes }),
+        ...(parsed.changes.cleared === undefined ? {} : { cleared: parsed.changes.cleared }),
+      };
+      await updater.updateTransaction!(params.transactionId, update);
       return { data: { transactionId: params.transactionId, updatedFields: Object.keys(parsed.changes), persisted: true } };
     } catch (error) {
       const normalized = sanitizedErrorResponse(error);
