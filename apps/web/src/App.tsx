@@ -797,7 +797,7 @@ export function App() {
                       sortAscending={sortAscending}
                       filterKey={[period.startDate, period.endDate, accountFilter, categoryFilter, searchText, uncategorizedOnly, page, sortKey, sortAscending].join('|')}
                       onSort={changeSort}
-                      onUpdated={(notice) => { setMovementNotice(notice); setRefreshKey((value) => value + 1); }}
+                      onUpdated={(notice, refresh = true) => { setMovementNotice(notice); if (refresh) setRefreshKey((value) => value + 1); }}
                     />
                                         <div className="table-footer"><span>Página {currentPage} de {pageCount} · {transactionTotal} movimientos</span><div className="pagination"><button className="button secondary" type="button" disabled={currentPage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>Anterior</button><button className="button secondary" type="button" disabled={currentPage >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>Siguiente</button></div></div>
                     <p className="section-footnote">La API limita los periodos de consulta a cinco años. Los importes conservan el signo de Actual; los traspasos se muestran en el registro, pero se excluyen de los totales consolidados.</p>

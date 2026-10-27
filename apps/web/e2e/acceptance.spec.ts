@@ -358,7 +358,7 @@ test('movement editor previews validated changes before writing to Actual', asyn
   expect((await (await request.get(fixtureApi + '/__test__/state')).json()).transactionWrites).toBe(0);
   await dialog.getByRole('button', { name: 'Confirmar y guardar' }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(page.locator('.movement-operation-notice')).toContainText('Cambios validados y guardados en Actual Budget');
+  await expect(page.locator('.movement-operation-notice')).toContainText('Cambios validados y verificados en Actual Budget');
   const state = await (await request.get(fixtureApi + '/__test__/state')).json();
   expect(state.transactionWrites).toBe(1);
   expect(state.lastTransactionUpdate).toMatchObject({
@@ -432,7 +432,7 @@ test('bulk categorization previews all eligible rows and confirms a reported out
   await page.getByRole('checkbox', { name: 'Seleccionar Supermercado sintético' }).check();
   await page.getByLabel('Categoría de gasto para el lote').selectOption('synthetic-restaurants');
   await page.getByRole('button', { name: 'Previsualizar lote' }).click();
-  await expect(page.locator('.movement-actions-toolbar').getByRole('status')).toContainText('Todavía no se ha escrito ningún cambio');
+  await expect(page.locator('.movement-actions-toolbar').getByRole('status')).toContainText('todavía no se ha modificado ningún movimiento');
   expect((await (await request.get(fixtureApi + '/__test__/state')).json()).categoryWrites).toBe(0);
   page.once('dialog', (dialog) => { void dialog.accept(); });
   await page.getByRole('button', { name: 'Confirmar lote' }).click();

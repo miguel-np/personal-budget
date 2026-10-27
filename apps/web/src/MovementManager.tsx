@@ -45,7 +45,7 @@ interface MovementManagerProps {
   sortAscending: boolean;
   filterKey: string;
   onSort: (key: SortKey) => void;
-  onUpdated: (notice: string) => void;
+  onUpdated: (notice: string, refresh?: boolean) => void;
 }
 interface ApiResult<T> {
   data?: T;
@@ -396,7 +396,7 @@ export function MovementManager(props: MovementManagerProps) {
         setSelectedIds((previous) => previous.filter((id) => !appliedIds.has(id)));
         setBatchPreview(false);
         setBatchExpectedCategories({});
-        setBatchNotice(batchMessage + ' Solo quedan seleccionados los movimientos pendientes; previsualiza de nuevo antes de reintentar.');
+        setBatchNotice(batchMessage + ' Solo quedan seleccionados los movimientos pendientes; previsualiza de nuevo antes de reintentar. La tabla se mantiene para conservar la selección; los cambios confirmados ya están en Actual y la vista se recargará al completar el lote.');
       } else {
         setSelectedIds([]);
         setBatchPreview(false);
@@ -404,7 +404,7 @@ export function MovementManager(props: MovementManagerProps) {
         setBatchCategoryId('');
         setBatchNotice(batchMessage);
       }
-      onUpdated(batchMessage);
+      onUpdated(batchMessage, !(outcome.partial || outcome.applied !== outcome.requested || outcome.persisted === false));
     } catch (error) {
       setBatchPreview(false);
       setBatchExpectedCategories({});
