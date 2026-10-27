@@ -535,3 +535,47 @@ textarea::placeholder {
   overscroll-behavior-x: contain;
   -webkit-overflow-scrolling: touch;
 }
+
+/* Planning uses long payee names and explanatory copy; keep their min-content
+   width from creating document-level horizontal scrolling on small screens. */
+@media (max-width: 620px) {
+  .planning-panel,
+  .forecast-result,
+  .forecast-result .panel,
+  .suggestion-block,
+  .comparison-row,
+  .comparison-meta,
+  .form-grid {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .comparison-row > div {
+    min-width: 0;
+    flex-wrap: wrap;
+    overflow-wrap: anywhere;
+  }
+  .comparison-row > div > span,
+  .comparison-row > div > strong,
+  .comparison-meta > span {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+  .planning-panel .button-row {
+    display: flex;
+    flex-wrap: wrap;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .planning-panel .button {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .form-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+}
+
