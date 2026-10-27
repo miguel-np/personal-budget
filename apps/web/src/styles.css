@@ -972,3 +972,35 @@ textarea::placeholder {
 @media (max-width: 900px) {
   .commitment-management-list { grid-template-columns: minmax(0, 1fr); }
 }
+
+.goals-history-summary { display: grid; gap: 12px; }
+.goals-history-summary .panel-heading { margin-bottom: 0; }
+.goals-history-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.goals-history-metrics > div { display: grid; gap: 6px; min-width: 0; border: 1px solid var(--border-subtle); border-radius: 8px; padding: 11px; }
+.goals-history-metrics span { color: var(--text-tertiary); font-size: 10px; line-height: 1.5; }
+.goals-history-metrics strong { color: var(--text-primary); font-size: 15px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.goal-scenario-comparator { display: grid; gap: 10px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-subtle); }
+.goal-scenario-comparator h5 { margin: 0; font-size: 12px; color: var(--text-primary); }
+.goals-scenario-form { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; gap: 10px; }
+.goals-scenario-form .field-label { min-width: 0; }
+.goals-scenario-form input { width: 100%; min-width: 0; }
+.scenario-submit { display: flex; min-width: 0; }
+.scenario-submit .button { width: 100%; white-space: normal; }
+.scenario-comparison-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.scenario-result { display: grid; align-content: start; gap: 7px; min-width: 0; border: 1px solid var(--border-subtle); border-radius: 8px; padding: 12px; }
+.scenario-result-custom { border-color: var(--border-strong); }
+.scenario-result .eyebrow { margin: 0; }
+.scenario-result > strong { color: var(--text-primary); font-size: clamp(19px, 2vw, 25px); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.scenario-result > span { color: var(--text-secondary); font-size: 10px; line-height: 1.6; overflow-wrap: anywhere; }
+.scenario-result .scenario-difference { color: var(--text-primary); font-weight: 650; }
+.scenario-warnings { grid-column: 1 / -1; }
+@media (max-width: 900px) {
+  .goals-scenario-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 620px) {
+  .goals-history-metrics { grid-template-columns: minmax(0, 1fr); }
+  .goals-history-metrics > div { padding: 9px 10px; }
+  .goals-history-metrics strong { font-size: 13px; }
+  .goals-scenario-form, .scenario-comparison-grid { grid-template-columns: minmax(0, 1fr); }
+  .scenario-submit .button { width: 100%; }
+}
