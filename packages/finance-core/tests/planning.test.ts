@@ -42,15 +42,15 @@ describe('planning core', () => {
       direction: 'expense', frequency: 'once', currency: 'EUR', status: 'active',
     }];
     const result = projectSavingsGoal({
-      asOfDate: '2026-10-27', targetDate: '2027-02-15', targetAmountMinor: 300_000,
+      asOfDate: '2026-10-27', targetDate: '2027-03-31', targetAmountMinor: 300_000,
       initialAmountMinor: 50_000, monthlyContributionMinor: 100_000, currency: 'EUR',
       monthlyIncomeMinor: 200_000, monthlyExpenseMinor: 120_000, commitments,
     });
-    expect(result.months).toBe(4);
-    expect(result.monthlyProjection.map((row) => row.month)).toEqual(['2026-11', '2026-12', '2027-01', '2027-02']);
+    expect(result.months).toBe(5);
+    expect(result.monthlyProjection.map((row) => row.month)).toEqual(['2026-11', '2026-12', '2027-01', '2027-02', '2027-03']);
     expect(result.monthlyProjection[1]?.commitmentExpenseMinor).toBe(60_000);
     expect(result.monthlyProjection[1]?.actualContributionMinor).toBe(20_000);
-    expect(result.projectedBalanceMinor).toBe(350_000);
+    expect(result.projectedBalanceMinor).toBe(390_000);
     expect(result.achievableUnderCashFlow).toBe(true);
   });
 
