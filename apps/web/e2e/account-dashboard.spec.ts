@@ -38,7 +38,7 @@ test('dashboard shortcuts preserve transfer preview and signed manual movement v
   await expect(page.getByText(/Actual ha confirmado la operación/)).toBeVisible();
   transferState = await (await request.get('http://127.0.0.1:3000/__test__/state')).json();
   expect(transferState.transferCommitCount).toBe(1);
-  expect(transferState.lastTransferPayload).toMatchObject({ sourceAccountId: 'synthetic-account-1', destinationAccountId: 'synthetic-account-2', amountMinor: 12500 });
+  expect(transferState.lastTransferPayload).toMatchObject({ sourceAccountId: 'synthetic-account-1', destinationAccountId: 'synthetic-account-transfer-eur', amountMinor: 12500 });
 
   await page.getByRole('link', { name: /personal-budget, ir al resumen/ }).click();
   await page.getByRole('button', { name: 'Registrar gasto' }).click();
