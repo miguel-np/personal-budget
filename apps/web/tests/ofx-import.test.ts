@@ -142,6 +142,10 @@ describe('parseOfx', () => {
     expect(result.rejected).toHaveLength(4);
   });
 
+  it('rejects QFX/Intuit-specific tags even when the file is renamed to .ofx', () => {
+    expect(() => parseOfx(sgml(transaction({ extra: '<INTU.BID>1234' })))).toThrow(/extensiones QFX\/Intuit/);
+  });
+
   it('rejects unsupported profiles, incomplete SGML aggregates and unsafe XML constructs', () => {
     expect(() => parseOfx('OFXHEADER:100\nDATA:OFXSGML\nVERSION:200\n\n<OFX></OFX>')).toThrow(/Versión OFX SGML no admitida/);
     expect(() => parseOfx(sgml('<STMTTRN><DTPOSTED>20261003'))).toThrow(/incompletos o malformados/);
