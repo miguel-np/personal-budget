@@ -42,6 +42,41 @@ const transactions = Array.from({ length: 22 }, (_, index) => {
     cleared: index % 2 === 0,
   };
 });
+
+const transferSource = {
+  id: 'synthetic-transfer-source', account: account.id, date: iso(now), amount: -5_000,
+  transfer_id: 'synthetic-transfer-counterpart', payee_name: transferAccount.name,
+  imported_payee: transferAccount.name, notes: 'Transferencia sintética', cleared: false,
+};
+const transferCounterpart = {
+  id: 'synthetic-transfer-counterpart', account: transferAccount.id, date: iso(now), amount: 5_000,
+  transfer_id: 'synthetic-transfer-source', payee_name: account.name,
+  imported_payee: account.name, notes: 'Transferencia sintética', cleared: false,
+};
+const splitParent = {
+  id: 'synthetic-split-parent', account: account.id, date: iso(now), amount: -7_000,
+  is_parent: true, payee_name: 'Compra dividida sintética', imported_payee: 'Compra dividida sintética',
+  notes: '', cleared: false,
+  subtransactions: [
+    { id: 'synthetic-split-food', account: account.id, date: iso(now), amount: -3_000, category: categories[0].id, notes: 'Parte alimentación', parent_id: 'synthetic-split-parent', is_child: true, is_parent: false, cleared: false },
+    { id: 'synthetic-split-other', account: account.id, date: iso(now), amount: -4_000, category: categories[1].id, notes: 'Parte restaurantes', parent_id: 'synthetic-split-parent', is_child: true, is_parent: false, cleared: false },
+  ],
+};
+const linkedTransactions = [transferSource, transferCounterpart, splitParent];
+function allTransactions() {
+  return [...transactions, ...linkedTransactions];
+}
+function resetLinkedTransactions() {
+  Object.assign(transferSource, { date: iso(now), amount: -5_000, notes: 'Transferencia sintética', cleared: false });
+  Object.assign(transferCounterpart, { date: iso(now), amount: 5_000, notes: 'Transferencia sintética', cleared: false });
+  Object.assign(splitParent, {
+    date: iso(now), amount: -7_000, imported_payee: 'Compra dividida sintética', notes: '', cleared: false,
+    subtransactions: [
+      { id: 'synthetic-split-food', account: account.id, date: iso(now), amount: -3_000, category: categories[0].id, notes: 'Parte alimentación', parent_id: 'synthetic-split-parent', is_child: true, is_parent: false, cleared: false },
+      { id: 'synthetic-split-other', account: account.id, date: iso(now), amount: -4_000, category: categories[1].id, notes: 'Parte restaurantes', parent_id: 'synthetic-split-parent', is_child: true, is_parent: false, cleared: false },
+    ],
+  });
+}
 const summary = (startDate, endDate) => {
   const inScope = accountScope.mode === 'selected' ? transactions.filter((tx) => accountScope.accountIds.includes(tx.account)) : transactions;
   if (accountScope.mode === 'all') return {
@@ -126,7 +161,7 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url || '/', 'http://127.0.0.1:3000');
   try {
     if (req.method === 'POST' && url.pathname === '/__test__/reset') {
-      readiness = 'configured'; failImportPreview = false; commitCount = 0; transferPreviewCount = 0; transferCommitCount = 0; lastTransferPayload = null; categoryWrites = 0; transactionWrites = 0; lastTransactionUpdate = null; appPreferences = { theme: 'system', locale: 'es-ES' }; lastPreviewChanges = []; lastCommittedChanges = []; budgetedMinor = 50_000; currencyPreferences = { displayCurrency: 'EUR', accountCurrencyOverrides: {}, exchangeRates: [] }; accountScope = { mode: 'all', accountIds: [] };
+      readiness = 'configured'; failImportPreview = false; commitCount = 0; transferPreviewCount = 0; transferCommitCount = 0; lastTransferPayload = null; categoryWrites = 0; transactionWrites = 0; lastTransactionUpdate = null; appPreferences = { theme: 'system', locale: 'es-ES' }; lastPreviewChanges = []; lastCommittedChanges = []; budgetedMinor = 50_000; currencyPreferences = { displayCurrency: 'EUR', accountCurrencyOverrides: {}, exchangeRates: [] }; accountScope = { mode: 'all', accountIds: [] }; resetLinkedTransactions();
       return send(res, 200, { ok: true });
     }
     if (req.method === 'POST' && url.pathname === '/__test__/mode') {
@@ -135,7 +170,13 @@ const server = createServer(async (req, res) => {
       failImportPreview = body.failImportPreview === true;
       return send(res, 200, { ok: true });
     }
-    if (req.method === 'GET' && url.pathname === '/__test__/state') return send(res, 200, { commitCount, transferPreviewCount, transferCommitCount, lastTransferPayload, categoryWrites, transactionWrites, lastTransactionUpdate, appPreferences, lastPreviewChanges, lastCommittedChanges, budgetedMinor, currencyPreferences, accountScope });
+    if (req.method === 'GET' && url.pathname === '/__test__/state') return send(res, 200, {
+      commitCount, transferPreviewCount, transferCommitCount, lastTransferPayload, categoryWrites,
+      transactionWrites, lastTransactionUpdate, appPreferences, lastPreviewChanges, lastCommittedChanges,
+      budgetedMinor, currencyPreferences, accountScope,
+      transferState: { source: { ...transferSource }, counterpart: { ...transferCounterpart } },
+      splitState: { parentId: splitParent.id, parentAmount: splitParent.amount, date: splitParent.date, children: splitParent.subtransactions.map((child) => ({ ...child })) },
+    });
     if (req.method === 'GET' && url.pathname === '/health') return send(res, 200, { status: 'ok', service: 'synthetic-fixture-api' });
     if (req.method === 'GET' && url.pathname === '/ready') {
       if (readiness !== 'configured') return send(res, 503, { status: 'not_configured', error: { code: 'NOT_CONFIGURED', message: 'El presupuesto sintético no está configurado.' } });
@@ -190,7 +231,24 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/v1/categories') return send(res, 200, { data: categories });
     if (req.method === 'GET' && url.pathname === '/api/v1/reports/summary') return send(res, 200, { data: summary(url.searchParams.get('startDate'), url.searchParams.get('endDate')) });
     if (req.method === 'GET' && url.pathname === '/api/v1/transactions') {
-      let filtered = [...transactions];
+      let filtered = allTransactions().flatMap((entry) => {
+        if (entry.is_parent === true && entry.subtransactions?.length) {
+          return entry.subtransactions.map((child) => ({
+            ...child,
+            id: child.id,
+            account: child.account || entry.account,
+            date: child.date || entry.date,
+            payee_name: child.payee_name || entry.payee_name,
+            imported_payee: child.imported_payee || entry.imported_payee,
+            is_child: false,
+            parent_id: null,
+            is_split_child: true,
+            parent_transaction_id: entry.id,
+            is_split_editable: Boolean(child.id),
+          }));
+        }
+        return [entry];
+      });
       if (accountScope.mode === 'selected') filtered = filtered.filter((tx) => accountScope.accountIds.includes(tx.account));
       const q = url.searchParams.get('search')?.toLocaleLowerCase('es') || '';
       if (q) filtered = filtered.filter((tx) => (tx.payee_name + ' ' + (accounts.find((entry) => entry.id === tx.account)?.name ?? '')).toLocaleLowerCase('es').includes(q));
@@ -214,21 +272,64 @@ const server = createServer(async (req, res) => {
     if (req.method === 'PUT' && transactionUpdateMatch) {
       const id = decodeURIComponent(transactionUpdateMatch[1]);
       const body = await readBody(req);
-      const transaction = transactions.find((item) => item.id === id);
+      const rawTransactions = allTransactions();
+      const parent = rawTransactions.find((item) => item.is_parent === true && item.subtransactions?.some((child) => child.id === id && (child.account || item.account) === body.accountId));
+      const child = parent?.subtransactions.find((item) => item.id === id);
+      const row = rawTransactions.find((item) => item.id === id && item.account === body.accountId);
+      const transaction = row || (parent && child ? { ...child, account: child.account || parent.account, date: child.date || parent.date } : null);
       if (!transaction || transaction.account !== body.accountId || transaction.date < body.startDate || transaction.date > body.endDate) {
         return send(res, 404, { error: { code: 'INVALID_TRANSACTION', message: 'No existe el movimiento sintético solicitado.' } });
-      }
-      if (transaction.transfer_id || transaction.is_parent || transaction.is_child || transaction.parent_id || transaction.subtransactions?.length) {
-        return send(res, 409, { error: { code: 'UNSUPPORTED_TRANSACTION', message: 'El movimiento sintético no es editable.' } });
       }
       const fields = body.changes || {};
       if (fields.category !== undefined && fields.category !== null && !categories.some((item) => item.id === fields.category)) {
         return send(res, 400, { error: { code: 'INVALID_CATEGORY', message: 'La categoría sintética no existe.' } });
       }
+      if (transaction.transfer_id) {
+        if (fields.category !== undefined || fields.imported_payee !== undefined) {
+          return send(res, 409, { error: { code: 'TRANSFER_FIELDS_RESTRICTED', message: 'La transferencia está enlazada.' } });
+        }
+        const counterpart = rawTransactions.find((item) => item.id === transaction.transfer_id && item.transfer_id === transaction.id && item.account !== transaction.account);
+        if (!counterpart || counterpart.amount !== -transaction.amount) return send(res, 409, { error: { code: 'TRANSFER_COUNTERPART_NOT_AVAILABLE', message: 'No se puede verificar la otra pata de la transferencia.' } });
+        const nextAmount = fields.amount ?? transaction.amount;
+        if (Math.sign(nextAmount) !== Math.sign(transaction.amount)) return send(res, 400, { error: { code: 'TRANSFER_DIRECTION_CHANGE_NOT_ALLOWED', message: 'No se puede invertir la dirección de la transferencia.' } });
+        Object.assign(transaction, fields);
+        let writes = 1;
+        if (fields.date !== undefined) counterpart.date = fields.date;
+        if (fields.amount !== undefined) counterpart.amount = -nextAmount;
+        if (fields.date !== undefined || fields.amount !== undefined) writes += 1;
+        transactionWrites += writes;
+        lastTransactionUpdate = { transactionId: id, fields: Object.keys(fields), changes: fields, counterpartTransactionId: counterpart.id, paired: true };
+        return send(res, 200, { data: { transactionId: id, counterpartTransactionId: counterpart.id, updatedFields: Object.keys(fields), persisted: true, verified: true, partial: false } });
+      }
+      if (parent && child) {
+        const totalBefore = parent.subtransactions.reduce((sum, item) => sum + item.amount, 0);
+        if (totalBefore !== parent.amount) return send(res, 409, { error: { code: 'SPLIT_TOTAL_MISMATCH', message: 'El desglose sintético no cuadra.' } });
+        const nextAmount = fields.amount ?? child.amount;
+        if (Math.sign(nextAmount) !== Math.sign(child.amount)) return send(res, 400, { error: { code: 'SPLIT_PART_DIRECTION_CHANGE_NOT_ALLOWED', message: 'No se puede cambiar la dirección de una parte.' } });
+        const nextDate = fields.date ?? parent.date;
+        parent.subtransactions = parent.subtransactions.map((item) => ({
+          ...item,
+          date: fields.date === undefined ? item.date : nextDate,
+          ...(item.id === child.id && fields.amount !== undefined ? { amount: nextAmount } : {}),
+          ...(item.id === child.id && fields.category !== undefined ? { category: fields.category } : {}),
+          ...(item.id === child.id && fields.notes !== undefined ? { notes: fields.notes } : {}),
+        }));
+        parent.amount = parent.subtransactions.reduce((sum, item) => sum + item.amount, 0);
+        if (!Number.isSafeInteger(parent.amount) || parent.amount === 0) return send(res, 400, { error: { code: 'INVALID_SPLIT_TOTAL', message: 'El total del desglose no es válido.' } });
+        if (fields.date !== undefined) parent.date = fields.date;
+        if (fields.imported_payee !== undefined) parent.imported_payee = fields.imported_payee;
+        if (fields.cleared !== undefined) parent.cleared = fields.cleared;
+        transactionWrites += 1;
+        lastTransactionUpdate = { transactionId: id, fields: Object.keys(fields), changes: fields, parentTransactionId: parent.id, parentAmount: parent.amount, childIds: parent.subtransactions.map((item) => item.id) };
+        return send(res, 200, { data: { transactionId: id, parentTransactionId: parent.id, updatedFields: Object.keys(fields), parentAmount: parent.amount, persisted: true, verified: true } });
+      }
+      if (transaction.is_parent || transaction.is_child || transaction.parent_id || transaction.subtransactions?.length) {
+        return send(res, 409, { error: { code: 'UNSUPPORTED_TRANSACTION', message: 'La estructura del desglose no se puede verificar.' } });
+      }
       Object.assign(transaction, fields);
       transactionWrites += 1;
       lastTransactionUpdate = { transactionId: id, fields: Object.keys(fields), changes: fields };
-      return send(res, 200, { data: { transactionId: id, updatedFields: Object.keys(fields), persisted: true } });
+      return send(res, 200, { data: { transactionId: id, updatedFields: Object.keys(fields), persisted: true, verified: true } });
     }
     if (req.method === 'POST' && url.pathname === '/api/v1/transfers/preview') {
       const body = await readBody(req);

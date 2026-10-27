@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { BudgetAccount, BudgetCategory, BudgetRepository, BudgetTransaction, TransactionCategoryBatchChange, TransactionCategoryBatchResult } from '@personal-budget/finance-core';
+import type { BudgetAccount, BudgetCategory, BudgetRepository, BudgetTransaction, TransactionCategoryBatchChange, TransactionCategoryBatchResult, TransactionStructureUpdate, TransactionUpdate, TransactionWriteResult } from '@personal-budget/finance-core';
 import { ActualAdapterError } from '@personal-budget/actual-adapter';
 import type { ActualImportRecord, ActualImportResult } from '@personal-budget/actual-adapter';
 import { buildApp } from '../src/app.js';
@@ -1089,7 +1089,16 @@ describe('local API', () => {
   it('edits only validated ordinary transactions and rejects a resulting amount/category mismatch', async () => {
     const listTransactions = vi.fn(async () => transactions);
     const updateTransaction = vi.fn(async () => undefined);
-    const repository = Object.assign(createRepository({ listTransactions }), { updateTransaction }) as BudgetRepository;
+    const updateTransactionSafely = vi.fn(async (
+      id: string,
+      _accountId: string,
+      _beforeDate: string,
+      fields: TransactionStructureUpdate,
+    ): Promise<TransactionWriteResult> => {
+      await updateTransaction(id, fields as TransactionUpdate);
+      return { persisted: true, verified: true };
+    });
+    const repository = createRepository({ listTransactions, updateTransactionSafely }) as BudgetRepository;
     const appConfig = { ...config, actualDataDir: await mkdtemp(join(tmpdir(), 'personal-budget-edit-test-')) };
     temporaryDirectories.push(appConfig.actualDataDir);
     const app = await createTestApp(repository, appConfig);
@@ -1126,8 +1135,150 @@ describe('local API', () => {
       },
     });
     expect(transfer.statusCode).toBe(409);
-    expect(transfer.json().error.code).toBe('TRANSFER_EDIT_NOT_SUPPORTED');
+    expect(transfer.json().error.code).toBe('TRANSFER_COUNTERPART_NOT_AVAILABLE');
     expect(updateTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('updates both verified legs of a transfer and refuses direction reversal', async () => {
+    const pairAccounts: readonly BudgetAccount[] = [
+      ...accounts,
+      { id: 'account-2', name: 'Cuenta de ahorro', currencyCode: 'EUR', closed: false, offBudget: false, currentBalanceMinor: 50_000 },
+    ];
+    const pairTransactions: readonly BudgetTransaction[] = [
+      { id: 'pair-out', account: 'account-1', currencyCode: 'EUR', date: '2026-10-02', amount: -50_000, transfer_id: 'pair-in' },
+      { id: 'pair-in', account: 'account-2', currencyCode: 'EUR', date: '2026-10-02', amount: 50_000, transfer_id: 'pair-out' },
+    ];
+    const listTransactions = vi.fn(async (accountId: string) => pairTransactions.filter((item) => item.account === accountId));
+    const updateTransaction = vi.fn(async () => undefined);
+    const updateTransactionSafely = vi.fn(async (
+      id: string,
+      _accountId: string,
+      _beforeDate: string,
+      fields: TransactionStructureUpdate,
+    ): Promise<TransactionWriteResult> => {
+      await updateTransaction(id, fields as TransactionUpdate);
+      return { persisted: true, verified: true };
+    });
+    const repository = createRepository({
+      listAccounts: vi.fn(async () => pairAccounts),
+      listTransactions,
+      updateTransaction,
+      updateTransactionSafely,
+    });
+    const directory = await mkdtemp(join(tmpdir(), 'personal-budget-transfer-edit-'));
+    temporaryDirectories.push(directory);
+    const app = await createTestApp(repository, { ...config, actualDataDir: directory });
+
+    const updated = await app.inject({
+      method: 'PUT', url: '/api/v1/transactions/pair-out',
+      payload: {
+        accountId: 'account-1', startDate: '2026-10-01', endDate: '2026-10-31',
+        changes: { date: '2026-10-04', amount: -60_000 },
+      },
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json().data).toMatchObject({
+      transactionId: 'pair-out', counterpartTransactionId: 'pair-in',
+      updatedTransactionIds: ['pair-out', 'pair-in'], verified: true, partial: false,
+    });
+    expect(updateTransaction).toHaveBeenNthCalledWith(1, 'pair-out', { date: '2026-10-04', amount: -60_000 });
+    expect(updateTransaction).toHaveBeenNthCalledWith(2, 'pair-in', { date: '2026-10-04', amount: 60_000 });
+    expect(updateTransactionSafely).toHaveBeenCalledTimes(2);
+
+    const countBeforeReverse = updateTransaction.mock.calls.length;
+    const reverse = await app.inject({
+      method: 'PUT', url: '/api/v1/transactions/pair-out',
+      payload: {
+        accountId: 'account-1', startDate: '2026-10-01', endDate: '2026-10-31',
+        changes: { amount: 60_000 },
+      },
+    });
+    expect(reverse.statusCode).toBe(400);
+    expect(reverse.json().error.code).toBe('TRANSFER_DIRECTION_CHANGE_NOT_ALLOWED');
+    expect(updateTransaction).toHaveBeenCalledTimes(countBeforeReverse);
+  });
+
+  it('updates a split child through its parent while preserving all child IDs and the parent sum', async () => {
+    const parent: BudgetTransaction = {
+      id: 'split-parent',
+      account: 'account-1',
+      currencyCode: 'EUR',
+      date: '2026-10-02',
+      amount: -5_000,
+      is_parent: true,
+      subtransactions: [
+        { id: 'split-food', account: 'account-1', date: '2026-10-02', amount: -2_000, parent_id: 'split-parent', is_child: true, category: 'food' },
+        { id: 'split-other', account: 'account-1', date: '2026-10-02', amount: -3_000, parent_id: 'split-parent', is_child: true },
+      ],
+    };
+    const updateTransaction = vi.fn(async () => undefined);
+    const updateTransactionSafely = vi.fn(async (
+      id: string,
+      _accountId: string,
+      _beforeDate: string,
+      fields: TransactionStructureUpdate,
+    ): Promise<TransactionWriteResult> => {
+      await updateTransaction(id, fields as TransactionUpdate);
+      return { persisted: true, verified: true };
+    });
+    const repository = createRepository({
+      listTransactions: vi.fn(async (accountId: string) => accountId === 'account-1' ? [parent] : []),
+      updateTransaction,
+      updateTransactionSafely,
+    });
+    const directory = await mkdtemp(join(tmpdir(), 'personal-budget-split-edit-'));
+    temporaryDirectories.push(directory);
+    const app = await createTestApp(repository, { ...config, actualDataDir: directory });
+
+    const response = await app.inject({
+      method: 'PUT', url: '/api/v1/transactions/split-food',
+      payload: {
+        accountId: 'account-1', startDate: '2026-10-01', endDate: '2026-10-31',
+        changes: { amount: -2_500, notes: 'Ajuste sintético' },
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toMatchObject({ transactionId: 'split-food', parentTransactionId: 'split-parent', parentAmount: -5_500, verified: true });
+    expect(updateTransaction).toHaveBeenCalledOnce();
+    expect(updateTransactionSafely).toHaveBeenCalledOnce();
+    const [parentId, fields] = updateTransaction.mock.calls[0] as unknown as [string, Record<string, unknown>];
+    expect(parentId).toBe('split-parent');
+    expect(fields.amount).toBe(-5_500);
+    const children = fields.subtransactions as BudgetTransaction[];
+    expect(children.map((child) => child.id)).toEqual(['split-food', 'split-other']);
+    expect(children.map((child) => child.amount)).toEqual([-2_500, -3_000]);
+    expect(children.reduce((sum, child) => sum + child.amount, 0)).toBe(fields.amount);
+    expect(children[0]).toMatchObject({ parent_id: 'split-parent', is_child: true, notes: 'Ajuste sintético' });
+  });
+
+  it('reports a partial transfer write if Actual confirms only the first leg', async () => {
+    const pairAccounts: readonly BudgetAccount[] = [
+      ...accounts,
+      { id: 'account-2', name: 'Cuenta de ahorro', currencyCode: 'EUR', closed: false, offBudget: false, currentBalanceMinor: 50_000 },
+    ];
+    const pairTransactions: readonly BudgetTransaction[] = [
+      { id: 'pair-out', account: 'account-1', date: '2026-10-02', amount: -50_000, transfer_id: 'pair-in' },
+      { id: 'pair-in', account: 'account-2', date: '2026-10-02', amount: 50_000, transfer_id: 'pair-out' },
+    ];
+    const updateTransactionSafely = vi.fn(async (id: string) => ({ persisted: id === 'pair-out', verified: id === 'pair-out' }));
+    const repository = Object.assign(createRepository({
+      listAccounts: vi.fn(async () => pairAccounts),
+      listTransactions: vi.fn(async (accountId: string) => pairTransactions.filter((item) => item.account === accountId)),
+    }), { updateTransactionSafely }) as BudgetRepository;
+    const directory = await mkdtemp(join(tmpdir(), 'personal-budget-transfer-partial-'));
+    temporaryDirectories.push(directory);
+    const app = await createTestApp(repository, { ...config, actualDataDir: directory });
+    const response = await app.inject({
+      method: 'PUT', url: '/api/v1/transactions/pair-out',
+      payload: {
+        accountId: 'account-1', startDate: '2026-10-01', endDate: '2026-10-31',
+        changes: { amount: -60_000 },
+      },
+    });
+    expect(response.statusCode).toBe(207);
+    expect(response.json().data).toMatchObject({
+      updatedTransactionIds: ['pair-out'], failedTransactionId: 'pair-in', persisted: true, verified: false, partial: true,
+    });
   });
 
   it('returns explicit partial outcomes for category batches and prevalidates transfer rows', async () => {

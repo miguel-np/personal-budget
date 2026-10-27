@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
-import type { BudgetTransaction } from '@personal-budget/finance-core';
+import type { BudgetTransaction, TransactionStructureUpdate } from '@personal-budget/finance-core';
 import { ActualBudgetAdapter } from '../src/actual-budget-adapter.js';
 import { mapActualAccount, mapActualCategory } from '../src/actual-api-contract.js';
 import type { ActualApiContract, ActualBudgetMonthRecord, ActualImportRecord } from '../src/actual-api-contract.js';
@@ -53,6 +53,62 @@ describe('ActualBudgetAdapter', () => {
     await expect(adapter.getBudgetMonth('2026-10')).rejects.toMatchObject({ code: 'UPSTREAM_FAILURE' });
     await expect(adapter.getBudgetAllocations('2026-10')).rejects.toMatchObject({ code: 'UPSTREAM_FAILURE' });
     await expect(adapter.setBudgetAmount('2026-10', 'food', 1_000)).rejects.toMatchObject({ code: 'UPSTREAM_FAILURE' });
+  });
+
+  it('waits for Actual read-after-write confirmation before syncing an update', async () => {
+    let rows: BudgetTransaction[] = [{
+      id: 'delayed-tx', account: 'account-1', date: '2026-10-02', amount: -1_000, category: 'food',
+    }];
+    const events: string[] = [];
+    const api = createApi({
+      sync: vi.fn(async () => { events.push('sync'); }),
+      getTransactions: vi.fn(async (_accountId: string, startDate: string, endDate: string) =>
+        rows.filter((row) => row.date >= startDate && row.date <= endDate)),
+      updateTransaction: vi.fn(async (id: string, fields: TransactionStructureUpdate) => {
+        setTimeout(() => {
+          const existing = rows.find((row) => row.id === id);
+          if (existing) Object.assign(existing, fields);
+          events.push('applied');
+        }, 25);
+      }),
+    });
+    const adapter = new ActualBudgetAdapter(config, api);
+    const result = await adapter.updateTransactionSafely('delayed-tx', 'account-1', '2026-10-02', {
+      date: '2026-10-04', amount: -1_250,
+    });
+    expect(result).toEqual({ persisted: true, verified: true });
+    expect(rows[0]).toMatchObject({ date: '2026-10-04', amount: -1_250 });
+    expect(events.indexOf('applied')).toBeGreaterThan(-1);
+    expect(events.lastIndexOf('sync')).toBeGreaterThan(events.indexOf('applied'));
+  });
+
+  it('verifies a complete split parent update and every retained child id', async () => {
+    let rows: BudgetTransaction[] = [{
+      id: 'split-parent', account: 'account-1', date: '2026-10-02', amount: -5_000, is_parent: true,
+      subtransactions: [
+        { id: 'part-a', account: 'account-1', date: '2026-10-02', amount: -2_000, parent_id: 'split-parent', is_child: true, category: 'food' },
+        { id: 'part-b', account: 'account-1', date: '2026-10-02', amount: -3_000, parent_id: 'split-parent', is_child: true },
+      ],
+    }];
+    const api = createApi({
+      getTransactions: vi.fn(async (_accountId: string, startDate: string, endDate: string) =>
+        rows.filter((row) => row.date >= startDate && row.date <= endDate)),
+      updateTransaction: vi.fn(async (id: string, fields: TransactionStructureUpdate) => {
+        const existing = rows.find((row) => row.id === id);
+        if (existing) Object.assign(existing, fields);
+      }),
+    });
+    const adapter = new ActualBudgetAdapter(config, api);
+    const updatedChildren: BudgetTransaction[] = [
+      { id: 'part-a', account: 'account-1', date: '2026-10-02', amount: -2_500, parent_id: 'split-parent', is_child: true, category: 'food' },
+      { id: 'part-b', account: 'account-1', date: '2026-10-02', amount: -3_000, parent_id: 'split-parent', is_child: true },
+    ];
+    const result = await adapter.updateTransactionSafely('split-parent', 'account-1', '2026-10-02', {
+      is_parent: true, amount: -5_500, subtransactions: updatedChildren,
+    });
+    expect(result).toEqual({ persisted: true, verified: true });
+    expect(rows[0]?.subtransactions?.map((child) => child.id)).toEqual(['part-a', 'part-b']);
+    expect(rows[0]?.amount).toBe(rows[0]?.subtransactions?.reduce((sum, child) => sum + child.amount, 0));
   });
 
   it('reads transactions for a valid account and date period', async () => {
@@ -223,61 +279,104 @@ describe('ActualBudgetAdapter', () => {
     expect(api.sync).toHaveBeenCalledTimes(2);
   });
 
-  it('validates category batches before writing and synchronizes once for the whole batch', async () => {
-    const updateTransaction = vi.fn(async () => undefined);
-    const api = createApi({ updateTransaction });
+  it('validates category batches and verifies each write before syncing the next', async () => {
+    const rows: BudgetTransaction[] = [
+      { id: 'transaction-1', account: 'account-1', date: '2026-10-10', amount: -1_000, category: null },
+      { id: 'transaction-2', account: 'account-1', date: '2026-10-10', amount: -2_000, category: null },
+    ];
+    const updateTransaction = vi.fn(async (id: string, fields: TransactionStructureUpdate) => {
+      const row = rows.find((item) => item.id === id);
+      if (row) Object.assign(row, fields);
+    });
+    const api = createApi({
+      updateTransaction,
+      getTransactions: vi.fn(async (accountId: string, startDate: string, endDate: string) =>
+        rows.filter((row) => row.account === accountId && row.date >= startDate && row.date <= endDate)),
+    });
     const adapter = new ActualBudgetAdapter(config, api);
     const changes = [
-      { transactionId: 'transaction-1', categoryId: 'food' },
-      { transactionId: 'transaction-2', categoryId: 'food' },
+      { transactionId: 'transaction-1', categoryId: 'food', accountId: 'account-1', date: '2026-10-10' },
+      { transactionId: 'transaction-2', categoryId: 'food', accountId: 'account-1', date: '2026-10-10' },
     ];
     await expect(adapter.updateTransactionCategoriesBatch(changes)).resolves.toEqual({
       requested: 2, updatedTransactionIds: ['transaction-1', 'transaction-2'], persisted: true,
     });
     expect(updateTransaction).toHaveBeenNthCalledWith(1, 'transaction-1', { category: 'food' });
     expect(updateTransaction).toHaveBeenNthCalledWith(2, 'transaction-2', { category: 'food' });
-    expect(api.sync).toHaveBeenCalledTimes(2);
+    // One init sync plus a sync after each verified write; no second write can interrupt a pending one.
+    expect(api.sync).toHaveBeenCalledTimes(3);
+    expect(rows.map((row) => row.category)).toEqual(['food', 'food']);
 
     const callsBeforeDuplicate = updateTransaction.mock.calls.length;
     await expect(adapter.updateTransactionCategoriesBatch([
-      { transactionId: 'transaction-1', categoryId: 'food' },
-      { transactionId: 'transaction-1', categoryId: 'food' },
+      { transactionId: 'transaction-1', categoryId: 'food', accountId: 'account-1', date: '2026-10-10' },
+      { transactionId: 'transaction-1', categoryId: 'food', accountId: 'account-1', date: '2026-10-10' },
     ])).rejects.toMatchObject({ code: 'INVALID_INPUT' });
     expect(updateTransaction).toHaveBeenCalledTimes(callsBeforeDuplicate);
   });
 
-  it('reports a partial category batch and never claims an automatic rollback', async () => {
-    const updateTransaction = vi.fn(async (id: string) => {
+  it('reports partial category batches without claiming unverified writes were persisted', async () => {
+    const rows: BudgetTransaction[] = [
+      { id: 'transaction-1', account: 'account-1', date: '2026-10-10', amount: -1_000, category: null },
+      { id: 'transaction-2', account: 'account-1', date: '2026-10-10', amount: -2_000, category: null },
+    ];
+    const updateTransaction = vi.fn(async (id: string, fields: TransactionStructureUpdate) => {
       if (id === 'transaction-2') throw new Error('private upstream detail');
+      const row = rows.find((item) => item.id === id);
+      if (row) Object.assign(row, fields);
     });
-    const api = createApi({ updateTransaction });
+    const api = createApi({
+      updateTransaction,
+      getTransactions: vi.fn(async (accountId: string, startDate: string, endDate: string) =>
+        rows.filter((row) => row.account === accountId && row.date >= startDate && row.date <= endDate)),
+    });
     const adapter = new ActualBudgetAdapter(config, api);
     const outcome = await adapter.updateTransactionCategoriesBatch([
-      { transactionId: 'transaction-1', categoryId: 'food' },
-      { transactionId: 'transaction-2', categoryId: 'food' },
+      { transactionId: 'transaction-1', categoryId: 'food', accountId: 'account-1', date: '2026-10-10' },
+      { transactionId: 'transaction-2', categoryId: 'food', accountId: 'account-1', date: '2026-10-10' },
     ]);
     expect(outcome).toEqual({
       requested: 2, updatedTransactionIds: ['transaction-1'],
-      failedTransactionId: 'transaction-2', persisted: true,
+      failedTransactionId: 'transaction-2', persisted: false,
     });
+    expect(rows[0]?.category).toBe('food');
+    expect(rows[1]?.category).toBeNull();
     expect(api.sync).toHaveBeenCalledTimes(2);
   });
 
-  it('reports persistence as unverified when the final batch sync fails', async () => {
+  it('reports a failed sync as unverified and identifies the current item', async () => {
     let syncCalls = 0;
+    const row: BudgetTransaction = { id: 'transaction-1', account: 'account-1', date: '2026-10-10', amount: -1_000, category: null };
     const api = createApi({
       sync: vi.fn(async () => {
         syncCalls += 1;
         if (syncCalls === 2) throw new Error('private sync failure');
       }),
+      getTransactions: vi.fn(async () => [row]),
+      updateTransaction: vi.fn(async (_id: string, fields: TransactionStructureUpdate) => { Object.assign(row, fields); }),
+    });
+    const adapter = new ActualBudgetAdapter(config, api);
+    await expect(adapter.updateTransactionCategoriesBatch([
+      { transactionId: 'transaction-1', categoryId: 'food', accountId: 'account-1', date: '2026-10-10' },
+    ])).resolves.toMatchObject({
+      requested: 1, updatedTransactionIds: [], failedTransactionId: 'transaction-1', persisted: false,
+    });
+  });
+
+  it('returns unverified without syncing if updateTransaction resolves but readback never observes the new category', async () => {
+    const row: BudgetTransaction = { id: 'transaction-1', account: 'account-1', date: '2026-10-10', amount: -1_000, category: null };
+    const api = createApi({
+      getTransactions: vi.fn(async () => [row]),
       updateTransaction: vi.fn(async () => undefined),
     });
     const adapter = new ActualBudgetAdapter(config, api);
     await expect(adapter.updateTransactionCategoriesBatch([
-      { transactionId: 'transaction-1', categoryId: 'food' },
-    ])).resolves.toMatchObject({
-      requested: 1, updatedTransactionIds: ['transaction-1'], persisted: false,
+      { transactionId: 'transaction-1', categoryId: 'food', accountId: 'account-1', date: '2026-10-10' },
+    ])).resolves.toEqual({
+      requested: 1, updatedTransactionIds: [], failedTransactionId: 'transaction-1', persisted: false,
     });
+    // Only the enqueue initialization sync occurs; syncing before readback would risk interrupting the pending write.
+    expect(api.sync).toHaveBeenCalledTimes(1);
   });
 
 });

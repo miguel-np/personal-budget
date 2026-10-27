@@ -1,4 +1,4 @@
-import type { BudgetAccount, BudgetCategory, BudgetTransaction, TransactionUpdate } from '@personal-budget/finance-core';
+import type { BudgetAccount, BudgetCategory, BudgetTransaction, TransactionStructureUpdate } from '@personal-budget/finance-core';
 
 export interface ActualBudgetMonthCategory {
   readonly id: string;
@@ -82,7 +82,7 @@ export interface ActualApiContract {
   getBudgetMonth?(month: string): Promise<ActualBudgetMonthRecord>;
   getBudgetAllocations?(month: string): Promise<readonly ActualBudgetAllocation[]>;
   setBudgetAmount?(month: string, categoryId: string, amount: number): Promise<null>;
-  updateTransaction?(transactionId: string, fields: TransactionUpdate): Promise<unknown>;
+  updateTransaction?(transactionId: string, fields: TransactionStructureUpdate): Promise<unknown>;
   getTransactions(accountId: string, startDate: string, endDate: string): Promise<readonly BudgetTransaction[]>;
   importTransactions(
     accountId: string,

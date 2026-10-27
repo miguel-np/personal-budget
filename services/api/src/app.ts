@@ -1,7 +1,7 @@
 import Fastify, { LogController, type FastifyInstance, type FastifyReply, type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import helmet from '@fastify/helmet';
 import { calculateSummary, convertAmountMinor, detectRecurringCandidates, isIsoDate, normalizeCurrencyCode, normalizeTransactions, projectSavings, suggestCategories, validatePeriod } from '@personal-budget/finance-core';
-import type { BudgetRepository, BudgetTransaction, ForecastScenario, TransactionCategoryBatchChange, TransactionUpdate } from '@personal-budget/finance-core';
+import type { BudgetRepository, BudgetTransaction, ForecastScenario, TransactionCategoryBatchChange, TransactionStructureUpdate } from '@personal-budget/finance-core';
 import { ActualAdapterError } from '@personal-budget/actual-adapter';
 import type { ActualBudgetMonthRecord, ActualImportRecord, ActualImportResult } from '@personal-budget/actual-adapter';
 import { z, ZodError } from 'zod';
@@ -484,6 +484,8 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         readonly payee_name?: string | null;
         readonly imported_payee?: string | null;
         readonly is_split_child?: boolean;
+        readonly parent_transaction_id?: string;
+        readonly is_split_editable?: boolean;
       };
       const flattened: PresentedTransaction[] = groups.flat().flatMap((source): PresentedTransaction[] => {
         const transaction = source as PresentedTransaction;
@@ -506,6 +508,8 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
               is_child: false,
               parent_id: null,
               is_split_child: true,
+              parent_transaction_id: transaction.id,
+              is_split_editable: Boolean(child.id),
             };
           });
         }
@@ -567,40 +571,214 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       const parsed = TransactionUpdateRequestSchema.parse(request.body);
       assertPeriod(parsed.startDate, parsed.endDate);
       const updater = repository as BudgetRepository & {
-        updateTransaction?: (transactionId: string, fields: TransactionUpdate) => Promise<void>;
+        updateTransactionSafely?: (
+          transactionId: string,
+          accountId: string,
+          beforeDate: string,
+          fields: TransactionStructureUpdate,
+        ) => Promise<{ readonly persisted: boolean; readonly verified: boolean }>;
       };
-      if (typeof updater.updateTransaction !== 'function') {
-        return reply.code(503).send({ error: { code: 'TRANSACTION_UPDATE_NOT_SUPPORTED', message: 'The configured local adapter does not support these transaction edits.' } });
+      if (typeof updater.updateTransactionSafely !== 'function') {
+        return reply.code(503).send({ error: {
+          code: 'TRANSACTION_SAFE_UPDATE_NOT_SUPPORTED',
+          message: 'The configured local adapter cannot verify transaction writes; no changes were written.',
+        } });
       }
-      const { transactions, accounts } = await openAccountTransactions(parsed.accountId, parsed.startDate, parsed.endDate);
+      // Load all accounts inside the persisted global scope so a linked transfer's other
+      // leg can be verified without letting the request widen that scope.
+      const { transactions, accounts } = await openAccountTransactions(undefined, parsed.startDate, parsed.endDate);
       if (!accounts.some((account) => account.id === parsed.accountId && !account.closed)) {
         return reply.code(400).send({ error: { code: 'INVALID_ACCOUNT', message: 'Choose an open account from the configured account scope.' } });
       }
-      const transaction = transactions.find((item) => item.id === params.transactionId && item.account === parsed.accountId);
+
+      // Actual returns split children nested under their parent; resolve only real child IDs.
+      const splitParent = transactions.find((item) =>
+        item.account === parsed.accountId && item.is_parent === true &&
+        item.subtransactions?.some((child) => child.id === params.transactionId &&
+          (child.account ?? item.account) === parsed.accountId),
+      );
+      const splitChild = splitParent?.subtransactions?.find((child) => child.id === params.transactionId);
+      const topLevelTransaction = transactions.find((item) => item.id === params.transactionId && item.account === parsed.accountId);
+      const transaction = topLevelTransaction ?? (splitParent && splitChild ? {
+        ...splitChild,
+        account: splitChild.account || splitParent.account,
+        date: splitChild.date || splitParent.date,
+      } : undefined);
       if (!transaction) {
         return reply.code(404).send({ error: { code: 'INVALID_TRANSACTION', message: 'The transaction does not belong to the selected account and date range.' } });
       }
-      if (transaction.transfer_id) {
-        return reply.code(409).send({ error: { code: 'TRANSFER_EDIT_NOT_SUPPORTED', message: 'Transfers are protected here to preserve both sides of the transfer.' } });
+      // A legacy repository can still edit ordinary rows, but linked structures require
+      // the adapter's read-after-write verification. Never fall back to an unverified write.
+      if ((Boolean(transaction.transfer_id) || Boolean(splitParent && splitChild)) &&
+          typeof updater.updateTransactionSafely !== 'function') {
+        return reply.code(503).send({ error: {
+          code: 'LINKED_TRANSACTION_SAFE_UPDATE_NOT_SUPPORTED',
+          message: 'This adapter cannot verify the linked records safely; no changes were written.',
+        } });
       }
-      if (transaction.is_child || transaction.parent_id || transaction.is_parent || (transaction.subtransactions?.length ?? 0) > 0) {
-        return reply.code(409).send({ error: { code: 'SPLIT_EDIT_NOT_SUPPORTED', message: 'Split transactions are protected here to avoid losing or duplicating child entries.' } });
-      }
+
       const categories = await repository.listCategories();
+      const categoryExistsAndMatchesAmount = (categoryId: string | null | undefined, amount: number): boolean => {
+        if (!categoryId) return true;
+        const category = categories.find((item) => item.id === categoryId);
+        return Boolean(category && ((amount > 0) === category.isIncome));
+      };
+      const writeOne = async (
+        id: string,
+        accountId: string,
+        beforeDate: string,
+        fields: TransactionStructureUpdate,
+      ): Promise<{ readonly persisted: boolean; readonly verified: boolean }> =>
+        updater.updateTransactionSafely!(id, accountId, beforeDate, fields);
+
+      if (transaction.transfer_id) {
+        // Never alter the linkage or category/payee of a transfer. Date and amount must
+        // be kept coherent across both records; non-atomic failures are reported explicitly.
+        if (parsed.changes.category !== undefined || parsed.changes.imported_payee !== undefined) {
+          return reply.code(409).send({ error: { code: 'TRANSFER_FIELDS_RESTRICTED', message: 'For linked transfers, only date, amount, notes and cleared status may be edited.' } });
+        }
+        const counterpart = transactions.find((item) =>
+          item.id === transaction.transfer_id && item.transfer_id === transaction.id &&
+          item.account !== transaction.account,
+        );
+        if (!counterpart || !accounts.some((account) => account.id === counterpart.account && !account.closed)) {
+          return reply.code(409).send({ error: { code: 'TRANSFER_COUNTERPART_NOT_AVAILABLE', message: 'The matching transfer leg is outside the active account scope or could not be verified. No changes were written.' } });
+        }
+        if (transaction.amount === 0 || counterpart.amount !== -transaction.amount) {
+          return reply.code(409).send({ error: { code: 'TRANSFER_PAIR_INCONSISTENT', message: 'The transfer pair is inconsistent. Review it in Actual Budget before editing.' } });
+        }
+        const nextAmount = parsed.changes.amount ?? transaction.amount;
+        if (Math.sign(nextAmount) !== Math.sign(transaction.amount)) {
+          return reply.code(400).send({ error: { code: 'TRANSFER_DIRECTION_CHANGE_NOT_ALLOWED', message: 'Changing the direction of a linked transfer is not supported.' } });
+        }
+        const primaryFields: TransactionStructureUpdate = {
+          ...(parsed.changes.date === undefined ? {} : { date: parsed.changes.date }),
+          ...(parsed.changes.amount === undefined ? {} : { amount: nextAmount }),
+          ...(parsed.changes.notes === undefined ? {} : { notes: parsed.changes.notes }),
+          ...(parsed.changes.cleared === undefined ? {} : { cleared: parsed.changes.cleared }),
+        };
+        const primaryResult = await writeOne(transaction.id, transaction.account, transaction.date, primaryFields);
+        if (!primaryResult.persisted || !primaryResult.verified) {
+          return reply.code(503).send({ error: { code: 'TRANSACTION_PERSISTENCE_UNVERIFIED', message: 'Actual Budget did not confirm the transfer update. Reopen the movement and verify both legs before retrying.' } });
+        }
+
+        const pairFields: TransactionStructureUpdate = {
+          ...(parsed.changes.date === undefined ? {} : { date: parsed.changes.date }),
+          ...(parsed.changes.amount === undefined ? {} : { amount: -nextAmount }),
+        };
+        if (Object.keys(pairFields).length > 0) {
+          const counterpartResult = await writeOne(counterpart.id, counterpart.account, counterpart.date, pairFields);
+          if (!counterpartResult.persisted || !counterpartResult.verified) {
+            return reply.code(207).send({ data: {
+              transactionId: transaction.id,
+              counterpartTransactionId: counterpart.id,
+              updatedFields: Object.keys(parsed.changes),
+              updatedTransactionIds: [transaction.id],
+              failedTransactionId: counterpart.id,
+              persisted: true,
+              verified: false,
+              partial: true,
+            } });
+          }
+        }
+        return { data: {
+          transactionId: transaction.id,
+          counterpartTransactionId: counterpart.id,
+          updatedFields: Object.keys(parsed.changes),
+          updatedTransactionIds: pairFields && Object.keys(pairFields).length > 0 ? [transaction.id, counterpart.id] : [transaction.id],
+          persisted: true,
+          verified: true,
+          partial: false,
+        } };
+      }
+
+      if (splitParent && splitChild) {
+        // The only supported split write is a complete parent update with every original child
+        // retained, the same IDs preserved, and the parent total equal to the sum of its children.
+        const originalChildren = splitParent.subtransactions ?? [];
+        if (originalChildren.length === 0 || originalChildren.some((child) => !child.id) ||
+            new Set(originalChildren.map((child) => child.id)).size !== originalChildren.length) {
+          return reply.code(409).send({ error: { code: 'SPLIT_STRUCTURE_UNSAFE', message: 'The split structure has missing or duplicate child IDs and cannot be safely edited.' } });
+        }
+        const originalTotal = originalChildren.reduce((sum, child) => sum + child.amount, 0);
+        if (!Number.isSafeInteger(originalTotal) || originalTotal !== splitParent.amount) {
+          return reply.code(409).send({ error: { code: 'SPLIT_TOTAL_MISMATCH', message: 'The split parts do not match the parent total. Review the movement in Actual Budget before editing.' } });
+        }
+        const nextChildAmount = parsed.changes.amount ?? splitChild.amount;
+        if (Math.sign(nextChildAmount) !== Math.sign(splitChild.amount)) {
+          return reply.code(400).send({ error: { code: 'SPLIT_PART_DIRECTION_CHANGE_NOT_ALLOWED', message: 'A split part cannot change from expense to income or from income to expense in this editor.' } });
+        }
+        const nextCategory = Object.hasOwn(parsed.changes, 'category')
+          ? parsed.changes.category ?? null
+          : splitChild.category ?? null;
+        if (!categoryExistsAndMatchesAmount(nextCategory, nextChildAmount)) {
+          return reply.code(400).send({ error: { code: 'CATEGORY_AMOUNT_MISMATCH', message: 'The category must match the income or expense direction of this split part.' } });
+        }
+        if (parsed.changes.imported_payee !== undefined && parsed.changes.imported_payee.length > 500) {
+          return reply.code(400).send({ error: { code: 'INVALID_PAYEE', message: 'The concept is too long.' } });
+        }
+        const nextDate = parsed.changes.date ?? splitParent.date;
+        const updatedChildren: BudgetTransaction[] = originalChildren.map((child) => {
+          const target = child.id === splitChild.id;
+          return {
+            ...child,
+            account: child.account || splitParent.account,
+            date: parsed.changes.date === undefined ? (child.date || splitParent.date) : nextDate,
+            parent_id: splitParent.id,
+            is_child: true,
+            is_parent: false,
+            ...(target && parsed.changes.amount !== undefined ? { amount: nextChildAmount } : {}),
+            ...(target && parsed.changes.category !== undefined ? { category: nextCategory } : {}),
+            ...(target && parsed.changes.notes !== undefined ? { notes: parsed.changes.notes } : {}),
+          };
+        });
+        const nextTotal = updatedChildren.reduce((sum, child) => sum + child.amount, 0);
+        if (!Number.isSafeInteger(nextTotal) || nextTotal === 0) {
+          return reply.code(400).send({ error: { code: 'INVALID_SPLIT_TOTAL', message: 'The resulting split total must be a safe, non-zero amount.' } });
+        }
+        const parentFields: TransactionStructureUpdate = {
+          is_parent: true,
+          subtransactions: updatedChildren,
+          amount: nextTotal,
+          ...(parsed.changes.date === undefined ? {} : { date: nextDate }),
+          ...(parsed.changes.imported_payee === undefined ? {} : { imported_payee: parsed.changes.imported_payee }),
+          ...(parsed.changes.cleared === undefined ? {} : { cleared: parsed.changes.cleared }),
+        };
+        const result = await writeOne(splitParent.id, splitParent.account, splitParent.date, parentFields);
+        if (!result.persisted || !result.verified) {
+          return reply.code(503).send({ error: { code: 'TRANSACTION_PERSISTENCE_UNVERIFIED', message: 'Actual Budget did not confirm the split update. Reopen the movement and inspect the parent and all parts before retrying.' } });
+        }
+        return { data: {
+          transactionId: splitChild.id,
+          parentTransactionId: splitParent.id,
+          updatedFields: Object.keys(parsed.changes),
+          parentAmount: nextTotal,
+          persisted: true,
+          verified: true,
+        } };
+      }
+
+      if (transaction.is_child || transaction.parent_id || transaction.is_parent || (transaction.subtransactions?.length ?? 0) > 0) {
+        return reply.code(409).send({ error: { code: 'SPLIT_EDIT_NOT_SUPPORTED', message: 'This split row cannot be resolved to a complete, verifiable parent structure.' } });
+      }
       if (parsed.changes.category !== undefined || parsed.changes.amount !== undefined) {
         const resultingCategoryId = Object.hasOwn(parsed.changes, 'category')
           ? parsed.changes.category ?? null
           : transaction.category ?? null;
         const resultingAmount = parsed.changes.amount ?? transaction.amount;
-        if (resultingCategoryId) {
-          const category = categories.find((item) => item.id === resultingCategoryId);
-          if (!category) return reply.code(400).send({ error: { code: 'INVALID_CATEGORY', message: 'Choose a category from the configured budget.' } });
-          if ((resultingAmount > 0) !== category.isIncome) {
-            return reply.code(400).send({ error: { code: 'CATEGORY_AMOUNT_MISMATCH', message: 'Income movements require an income category and expense movements require an expense category.' } });
-          }
+        if (!categoryExistsAndMatchesAmount(resultingCategoryId, resultingAmount)) {
+          const categoryExists = categories.some((item) => item.id === resultingCategoryId);
+          return reply.code(400).send({
+            error: {
+              code: categoryExists ? 'CATEGORY_AMOUNT_MISMATCH' : 'INVALID_CATEGORY',
+              message: categoryExists
+                ? 'Income movements require an income category and expense movements require an expense category.'
+                : 'Choose a category from the configured budget.',
+            },
+          });
         }
       }
-      const update: TransactionUpdate = {
+      const update: TransactionStructureUpdate = {
         ...(parsed.changes.date === undefined ? {} : { date: parsed.changes.date }),
         ...(parsed.changes.amount === undefined ? {} : { amount: parsed.changes.amount }),
         ...(parsed.changes.imported_payee === undefined ? {} : { imported_payee: parsed.changes.imported_payee }),
@@ -608,8 +786,11 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         ...(parsed.changes.notes === undefined ? {} : { notes: parsed.changes.notes }),
         ...(parsed.changes.cleared === undefined ? {} : { cleared: parsed.changes.cleared }),
       };
-      await updater.updateTransaction!(params.transactionId, update);
-      return { data: { transactionId: params.transactionId, updatedFields: Object.keys(parsed.changes), persisted: true } };
+      const result = await writeOne(transaction.id, transaction.account, transaction.date, update);
+      if (!result.persisted || !result.verified) {
+        return reply.code(503).send({ error: { code: 'TRANSACTION_PERSISTENCE_UNVERIFIED', message: 'Actual Budget did not confirm the edit. Reopen the movement and verify its stored values before retrying.' } });
+      }
+      return { data: { transactionId: params.transactionId, updatedFields: Object.keys(parsed.changes), persisted: true, verified: true } };
     } catch (error) {
       const normalized = sanitizedErrorResponse(error);
       return reply.code(normalized.statusCode).send(normalized.body);
@@ -1025,7 +1206,12 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         return { data: { preview: true, requested: parsed.transactions.length, changes: parsed.transactions.length } };
       }
       if (typeof categorizer.updateTransactionCategoriesBatch === 'function') {
-        const outcome = await categorizer.updateTransactionCategoriesBatch(parsed.transactions);
+        const verifiedChanges = parsed.transactions.map((change) => {
+          const transaction = transactionById.get(change.transactionId);
+          if (!transaction) throw new Error('Transaction disappeared during category batch validation.');
+          return { ...change, accountId: transaction.account, date: transaction.date };
+        });
+        const outcome = await categorizer.updateTransactionCategoriesBatch(verifiedChanges);
         const applied = outcome.updatedTransactionIds.length;
         const complete = applied === outcome.requested && outcome.persisted;
         if (!complete) {
@@ -1035,9 +1221,9 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
               appliedTransactionIds: outcome.updatedTransactionIds,
               ...(outcome.failedTransactionId ? { failedTransactionId: outcome.failedTransactionId } : {}),
               persisted: outcome.persisted, partial: true,
-              message: outcome.persisted
-                ? 'Some changes were applied and synced before the batch stopped. Review the indicated transaction id in Actual; no automatic undo was attempted.'
-                : 'The adapter could not verify persistence. Review Actual before retrying; no automatic undo was attempted.',
+              message: outcome.updatedTransactionIds.length > 0
+                ? 'Some changes were verified and synced. The batch stopped at the indicated transaction id; inspect that movement in Actual before retrying. No automatic undo was attempted.'
+                : 'No change was confirmed as persisted. Inspect the indicated movement in Actual before retrying; no automatic undo was attempted.',
             },
           });
         }

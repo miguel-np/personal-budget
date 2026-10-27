@@ -22,6 +22,8 @@ interface MovementTransaction {
   is_child?: boolean;
   is_split_child?: boolean;
   parent_id?: string | null;
+  parent_transaction_id?: string;
+  is_split_editable?: boolean;
   subtransactions?: readonly MovementTransaction[];
 }
 interface MovementAccount { id: string; name: string; closed: boolean }
@@ -71,11 +73,12 @@ function transactionDescription(transaction: MovementTransaction): string {
   return transaction.imported_payee?.trim() || transaction.payee_name?.trim() || transaction.notes?.trim() || 'Movimiento sin concepto';
 }
 function canEdit(transaction: MovementTransaction): boolean {
-  return !transaction.transfer_id && !transaction.is_parent && !transaction.is_child &&
-    !transaction.is_split_child && !transaction.parent_id && !(transaction.subtransactions?.length);
+  if (transaction.transfer_id) return true;
+  if (transaction.is_split_child) return Boolean(transaction.is_split_editable && transaction.parent_transaction_id);
+  return !transaction.is_parent && !transaction.is_child && !transaction.parent_id && !(transaction.subtransactions?.length);
 }
 function canBulkCategorize(transaction: MovementTransaction): boolean {
-  return canEdit(transaction) && transaction.amount < 0;
+  return canEdit(transaction) && !transaction.transfer_id && !transaction.is_split_child && transaction.amount < 0;
 }
 function amountInput(amountMinor: number, locale: 'es-ES' | 'en-GB'): string {
   const value = Math.abs(amountMinor);
@@ -229,15 +232,18 @@ export function MovementManager(props: MovementManagerProps) {
     if (!isIsoDate(draft.date)) throw new Error('Introduce una fecha real con formato AAAA-MM-DD.');
     const amountMinor = parseAmountInput(draft.amount);
     if (amountMinor === null) throw new Error('El importe debe ser distinto de cero, seguro y tener como máximo dos decimales. No uses separadores de miles.');
+    if (editing.transfer_id && Math.sign(amountMinor) !== Math.sign(editing.amount)) {
+      throw new Error('No se puede invertir la dirección de una transferencia enlazada desde este editor.');
+    }
     if (draft.concept.trim().length > 500) throw new Error('El concepto no puede superar 500 caracteres.');
     if (draft.notes.length > 2_000) throw new Error('Las notas no pueden superar 2.000 caracteres.');
     const fields: UpdateFields = {};
     if (draft.date !== editing.date) fields.date = draft.date;
     if (amountMinor !== editing.amount) fields.amount = amountMinor;
     const originalConcept = editing.imported_payee?.trim() || editing.payee_name?.trim() || '';
-    if (draft.concept.trim() !== originalConcept) fields.imported_payee = draft.concept.trim();
+    if (!editing.transfer_id && draft.concept.trim() !== originalConcept) fields.imported_payee = draft.concept.trim();
     const nextCategory = draft.categoryId || null;
-    if (nextCategory !== (editing.category ?? null)) fields.category = nextCategory;
+    if (!editing.transfer_id && nextCategory !== (editing.category ?? null)) fields.category = nextCategory;
     if (draft.notes !== (editing.notes ?? '')) fields.notes = draft.notes;
     if (draft.cleared !== Boolean(editing.cleared)) fields.cleared = draft.cleared;
     if (nextCategory) {
@@ -276,7 +282,16 @@ export function MovementManager(props: MovementManagerProps) {
     }
     setEditBusy(true);
     try {
-      const { response, payload } = await requestJson<{ transactionId: string; updatedFields: string[]; persisted: boolean }>(
+      const { response, payload } = await requestJson<{
+        transactionId: string;
+        updatedFields: string[];
+        persisted: boolean;
+        partial?: boolean;
+        counterpartTransactionId?: string;
+        parentTransactionId?: string;
+        parentAmount?: number;
+        failedTransactionId?: string;
+      }>(
         '/api/v1/transactions/' + encodeURIComponent(editing.id),
         {
           method: 'PUT',
@@ -285,7 +300,16 @@ export function MovementManager(props: MovementManagerProps) {
         },
       );
       if (!response.ok || !payload.data) throw new Error(payload.error?.message ?? 'No se han podido guardar los cambios.');
-      const notice = 'Cambios validados y guardados en Actual Budget.';
+      if (payload.data.partial) {
+        const warning = 'Actual Budget solo confirmó una parte de la transferencia enlazada. Se ha actualizado un lado; verifica ambos movimientos en Actual antes de volver a intentarlo.';
+        onUpdated(warning);
+        throw new Error(warning);
+      }
+      const notice = editing.transfer_id
+        ? 'Transferencia actualizada y verificada en sus dos cuentas de Actual Budget.'
+        : editing.is_split_child
+          ? 'Parte del desglose actualizada; el conjunto completo se ha conservado y verificado en Actual Budget.'
+          : 'Cambios validados y verificados en Actual Budget.';
       setEditNotice(notice);
       lastEditId.current = editing.id;
       setEditing(null);
@@ -465,13 +489,17 @@ export function MovementManager(props: MovementManagerProps) {
         <div className="transaction-edit-backdrop">
           <div className="transaction-edit-dialog panel" role="dialog" aria-modal="true" aria-labelledby="transaction-edit-title" onKeyDown={onDialogKeyDown}>
             <div className="section-heading"><div><p className="eyebrow">EDICIÓN DE MOVIMIENTO</p><h2 id="transaction-edit-title">Revisar cambios</h2></div><button className="button secondary" type="button" disabled={editBusy} onClick={closeEditor}>Cerrar</button></div>
-            <p className="setting-hint">La cuenta de origen la controla Actual Budget y no se puede cambiar aquí. Beneficiario normalizado, enlace de transferencia y estructura dividida no se reescriben. Los campos se vuelven a validar en servidor antes de guardar.</p>
+            <p className="setting-hint">{editing.transfer_id
+              ? 'La transferencia está enlazada: fecha e importe se aplican a las dos patas; notas y conciliación solo afectan a este lado. No se puede cambiar su dirección ni su categoría desde aquí.'
+              : editing.is_split_child
+                ? 'Esta parte se guarda reenviando el desglose completo con todos sus IDs. Categoría y notas pertenecen a esta parte; fecha, concepto y conciliación afectan al movimiento padre. Cambiar el importe recalcula el total del padre.'
+                : 'La cuenta de origen la controla Actual Budget y no se puede cambiar aquí. Los campos se validan en servidor antes de guardar.'}</p>
             <form onSubmit={(event) => { void handleEditSubmit(event); }}>
               <div className="edit-fields-grid">
                 <label className="field-label">Fecha<input ref={dateInput} autoFocus type="date" required value={draft.date} onChange={(event) => changeDraft('date', event.currentTarget.value)} /></label>
                 <label className="field-label">Importe (unidades principales)<input required inputMode="decimal" autoComplete="off" value={draft.amount} onChange={(event) => changeDraft('amount', event.currentTarget.value)} aria-describedby="edit-amount-hint" /><small id="edit-amount-hint">Ejemplo: 1234,56. No uses separadores de miles.</small></label>
-                <label className="field-label edit-full-width">Concepto importado<input maxLength={500} value={draft.concept} onChange={(event) => changeDraft('concept', event.currentTarget.value)} /></label>
-                <label className="field-label">Categoría<select value={draft.categoryId} onChange={(event) => changeDraft('categoryId', event.currentTarget.value)}><option value="">Sin categoría</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}{category.isIncome ? ' · Ingreso' : ' · Gasto'}</option>)}</select></label>
+                <label className="field-label edit-full-width">Concepto importado<input maxLength={500} disabled={Boolean(editing.transfer_id)} value={draft.concept} onChange={(event) => changeDraft('concept', event.currentTarget.value)} /></label>
+                {editing.transfer_id ? <p className="setting-hint">El enlace y el beneficiario de transferencia están protegidos.</p> : <label className="field-label">Categoría<select value={draft.categoryId} onChange={(event) => changeDraft('categoryId', event.currentTarget.value)}><option value="">Sin categoría</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}{category.isIncome ? ' · Ingreso' : ' · Gasto'}</option>)}</select></label>}
                 <label className="field-label">Cuenta<input value={accountNames.get(editing.account) ?? 'Cuenta desconocida'} disabled readOnly /></label>
                 <label className="field-label edit-full-width">Notas<textarea rows={3} maxLength={2000} value={draft.notes} onChange={(event) => changeDraft('notes', event.currentTarget.value)} /></label>
                 <label className="check-field edit-full-width"><input type="checkbox" checked={draft.cleared} onChange={(event) => changeDraft('cleared', event.currentTarget.checked)} /> Movimiento conciliado</label>

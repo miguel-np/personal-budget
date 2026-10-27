@@ -97,9 +97,24 @@ export interface TransactionUpdate {
   readonly cleared?: boolean;
 }
 
+/** Full parent update required by Actual when changing one child of a split transaction. */
+export interface TransactionStructureUpdate extends TransactionUpdate {
+  readonly is_parent?: boolean;
+  readonly subtransactions?: readonly BudgetTransaction[];
+}
+
+/** Result of a write that was read back from Actual and synced. */
+export interface TransactionWriteResult {
+  readonly persisted: boolean;
+  readonly verified: boolean;
+}
+
 export interface TransactionCategoryBatchChange {
   readonly transactionId: string;
   readonly categoryId: string;
+  /** Read-back verification scope; required so a write can be persisted before the next update. */
+  readonly accountId: string;
+  readonly date: string;
 }
 
 /** Explicit outcome of a non-atomic batch. A false persisted flag means sync could not be verified. */
@@ -117,6 +132,13 @@ export interface BudgetRepository {
   listTransactions(accountId: string, startDate: string, endDate: string): Promise<readonly BudgetTransaction[]>;
   /** Update only fields supported by the official adapter; structure/account/transfer linkage is not editable here. */
   updateTransaction?(transactionId: string, fields: TransactionUpdate): Promise<void>;
+  /** Read-after-write verified update; beforeDate identifies the original read window. */
+  updateTransactionSafely?(
+    transactionId: string,
+    accountId: string,
+    beforeDate: string,
+    fields: TransactionStructureUpdate,
+  ): Promise<TransactionWriteResult>;
   /** Category-only batch using one serialized adapter operation and an explicit partial outcome. */
   updateTransactionCategoriesBatch?(changes: readonly TransactionCategoryBatchChange[]): Promise<TransactionCategoryBatchResult>;
   /** Backwards-compatible single category update for repositories without batch support. */
