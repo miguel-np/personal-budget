@@ -140,6 +140,9 @@ function inputAmount(amountMinor: number | null | undefined): string {
 function toMinor(value: string, label: string, allowNegative = false, allowZero = true): number {
   const normalized = value.trim().replace(/\s/g, '').replace(',', '.');
   if (!normalized) throw new Error(label + ': introduce un importe.');
+  if (!/^-?(?:\d+(?:\.\d{1,2})?|\.\d{1,2})$/.test(normalized)) {
+    throw new Error(label + ': utiliza como máximo dos decimales y no incluyas separadores de miles.');
+  }
   const amount = Number(normalized);
   const minor = Math.round(amount * 100);
   if (!Number.isFinite(amount) || !Number.isSafeInteger(minor) || (!allowNegative && minor < 0) || (!allowZero && minor === 0)) {
