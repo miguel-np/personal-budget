@@ -1429,7 +1429,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         let nextDate = new Date(candidate.lastDate + 'T00:00:00.000Z');
         nextDate.setUTCDate(nextDate.getUTCDate() + Math.round(interval));
         let attempts = 0;
-        while (nextDate.toISOString().slice(0, 10) <= asOfDate && attempts < 100) {
+        while ((nextDate.toISOString().slice(0, 10) <= asOfDate || nextDate.toISOString().slice(0, 10) < monthPeriod.startDate) && attempts < 100) {
           nextDate.setUTCDate(nextDate.getUTCDate() + Math.round(interval));
           attempts += 1;
         }
