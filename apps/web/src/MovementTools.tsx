@@ -716,7 +716,7 @@ export function MovementTools({ accounts, categories, currency, onImported, quic
           </div>
           {fileName ? <p className="file-caption">Archivo cargado: <strong>{fileName}</strong>{fileFormat === 'ofx' ? ' · Extracto OFX local' : ' · ' + csvRows.length + ' filas de datos'}</p> : null}
           {fileFormat === 'ofx' && ofxParsed ? (
-            <div className="csv-sample ofx-import-summary" aria-label="Resumen de validación del extracto OFX">
+            <div className="csv-sample ofx-import-summary" role="region" aria-label="Resumen de validación del extracto OFX">
               <strong>{ofxParsed.profile} · {ofxParsed.currencyCode ?? 'Divisa no declarada'}</strong>
               <p>{ofxParsed.records.length} operaciones válidas · {ofxParsed.rejected.length} rechazadas · {ofxParsed.duplicateRecords} duplicadas dentro del archivo omitidas.</p>
               {ofxParsed.warnings.map((warning, index) => <p className="tool-hint" key={'warning-' + index}>Aviso: {warning}</p>)}
