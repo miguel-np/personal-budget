@@ -35,7 +35,7 @@ interface MovementToolsProps {
   accounts: readonly MovementAccount[];
   categories: readonly MovementCategory[];
   currency: string;
-  onImported: () => void;
+  onImported: (notice: string) => void;
 }
 
 function localToday(): string {
@@ -185,11 +185,12 @@ export function MovementTools({ accounts, categories, currency, onImported }: Mo
       const result = await sendImport('/api/v1/import/commit', accountId, manualRecords);
       setManualResult(result);
       setManualRecords(null);
-      setManualMessage('Resultado confirmado por Actual: ' + result.added + ' añadidos, ' + result.updated + ' actualizados y ' + result.errors + ' errores.');
+      const notice = 'Resultado confirmado por Actual: ' + result.added + ' añadidos, ' + result.updated + ' actualizados y ' + result.errors + ' errores.';
+      setManualMessage(notice);
       setAmount('');
       setPayee('');
       setNotes('');
-      onImported();
+      onImported(notice);
     } catch (error) {
       setManualError(error instanceof Error ? error.message : 'No se ha podido registrar el movimiento.');
     } finally {
@@ -341,8 +342,9 @@ export function MovementTools({ accounts, categories, currency, onImported }: Mo
       const result = await sendImport('/api/v1/import/commit', csvAccountId, csvRecords);
       setCsvResult(result);
       setCsvRecords(null);
-      setCsvMessage('Importación confirmada por Actual: ' + result.added + ' añadidos, ' + result.updated + ' actualizados y ' + result.errors + ' errores. Los movimientos conciliados no se duplican por su identificador importado.');
-      onImported();
+      const notice = 'Importación confirmada por Actual: ' + result.added + ' añadidos, ' + result.updated + ' actualizados y ' + result.errors + ' errores. Los movimientos conciliados no se duplican por su identificador importado.';
+      setCsvMessage(notice);
+      onImported(notice);
     } catch (error) {
       setCsvError(error instanceof Error ? error.message : 'No se ha podido importar el CSV.');
     } finally {
