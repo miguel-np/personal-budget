@@ -1059,7 +1059,7 @@ describe('local API', () => {
     const updateTransactionCategoriesBatch = vi.fn(async (changes: readonly TransactionCategoryBatchChange[]): Promise<TransactionCategoryBatchResult> => ({
       requested: changes.length,
       updatedTransactionIds: [changes[0]!.transactionId],
-      failedTransactionId: changes[1]?.transactionId,
+      ...(changes[1] ? { failedTransactionId: changes[1].transactionId } : {}),
       persisted: true,
     }));
     const repository = Object.assign(createRepository({ listTransactions }), { updateTransactionCategoriesBatch }) as BudgetRepository;
