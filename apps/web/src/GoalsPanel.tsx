@@ -515,6 +515,35 @@ export function GoalsPanel({ currency }: { currency: string }) {
             </form>
           </article>
 
+          <section className="goals-commitment-management" aria-labelledby="commitment-list-heading">
+            <div className="panel-heading"><div><p className="eyebrow">REGISTROS LOCALES</p><h3 id="commitment-list-heading">Compromisos guardados ({sortedCommitments.length})</h3></div></div>
+            {sortedCommitments.length === 0 ? <p className="muted-copy">Aún no hay compromisos guardados. Los elementos de la agenda pueden incluir también operaciones ya registradas o candidatos no confirmados.</p> : null}
+            <div className="commitment-management-list">
+              {sortedCommitments.map((commitment) => (
+                <article className="panel commitment-card" key={commitment.id}>
+                  <div className="goal-card-top">
+                    <div><p className="eyebrow">{commitment.direction === 'expense' ? 'SALIDA PREVISTA' : 'ENTRADA PREVISTA'}</p><h4>{commitment.title}</h4></div>
+                    <span className={'status-label ' + (commitment.status === 'active' ? 'status-active' : 'status-paused')}>{commitment.status === 'active' ? 'Activo' : 'En pausa'}</span>
+                  </div>
+                  <div className="goal-amount-row"><strong>{money(commitment.amountMinor, commitment.currency)}</strong><span>{commitment.frequency === 'once' ? 'Una vez' : commitment.frequency === 'monthly' ? 'Mensual' : commitment.frequency === 'quarterly' ? 'Trimestral' : 'Anual'} · Fecha ancla {civilDate(commitment.date)}</span></div>
+                  {commitment.notes ? <p className="section-context">{commitment.notes}</p> : null}
+                  {(!commitment.scopeMatches || !commitment.currencyMatches) ? (
+                    <p className="form-alert error" role="alert">
+                      {!commitment.scopeMatches ? 'El ámbito de cuentas guardado ha cambiado. ' : ''}
+                      {!commitment.currencyMatches ? 'La divisa de análisis ha cambiado. ' : ''}
+                      Este compromiso queda excluido de la proyección hasta editarlo y confirmar el contexto actual.
+                    </p>
+                  ) : null}
+                  <div className="button-row">
+                    <button className="button secondary" type="button" disabled={busy} onClick={() => editCommitment(commitment)}>Editar</button>
+                    <button className="button secondary" type="button" disabled={busy} onClick={() => { void runMutation('/api/v1/planning/commitments/' + commitment.id + '/status', 'PATCH', { status: commitment.status === 'active' ? 'paused' : 'active' }, commitment.status === 'active' ? 'Compromiso pausado.' : 'Compromiso reanudado.'); }}>{commitment.status === 'active' ? 'Pausar' : 'Reanudar'}</button>
+                    <button className="button danger" type="button" disabled={busy} onClick={() => { if (window.confirm('¿Eliminar el compromiso «' + commitment.title + '»? No se modificará Actual Budget.')) void runMutation('/api/v1/planning/commitments/' + commitment.id, 'DELETE', undefined, 'Compromiso eliminado.'); }}>Eliminar</button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+
           <section className="panel goals-agenda-panel" aria-labelledby="agenda-heading">
             <div className="panel-heading goals-agenda-heading">
               <div><p className="eyebrow">CALENDARIO FINANCIERO</p><h3 id="agenda-heading">Compromisos y próximos movimientos</h3></div>
