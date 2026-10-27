@@ -78,7 +78,7 @@ test('CSV import requires preview and explicit confirmation; errors preserve ent
   await request.post(fixtureApi + '/__test__/mode', { data: { failImportPreview: false } });
   await page.getByRole('button', { name: 'Validar y previsualizar' }).click();
   await page.getByRole('button', { name: 'Confirmar importación (1)' }).click();
-  await expect(page.getByText(/Importación confirmada por Actual/)).toBeVisible();
+  await expect(page.locator('.movement-operation-notice')).toContainText('Importación confirmada por Actual');
   expect((await (await request.get(fixtureApi + '/__test__/state')).json()).commitCount).toBe(1);
 });
 
