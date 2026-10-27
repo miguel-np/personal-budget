@@ -87,7 +87,7 @@ En otra terminal:
 npm run dev:web
 ~~~
 
-Abre http://127.0.0.1:5173. La aplicación usa solo la API local: Resumen, Movimientos, Informes, Presupuestos y Configuración. El Asistente aparece como no conectado y no envía movimientos a ningún modelo. Para registrar movimientos e importar extractos, revisa la previsualización y confirma la operación; el CSV se procesa en el navegador y la conciliación final la realiza Actual Budget.
+Abre http://127.0.0.1:5173. La aplicación usa solo la API local: Resumen, Movimientos, Informes, Presupuestos y Configuración. El Asistente aparece como no conectado y no envía movimientos a ningún modelo. Para registrar movimientos e importar extractos, revisa la previsualización y confirma la operación. CSV y OFX se procesan localmente en el navegador; consulta la [guía OFX](ofx-import.md) para conocer las variantes admitidas. La API local envía a Actual solo los registros normalizados confirmados y Actual realiza la conciliación final.
 
 ## 5. IA local, MCP y recuperación
 
