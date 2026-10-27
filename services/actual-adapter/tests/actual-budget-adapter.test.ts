@@ -438,7 +438,8 @@ describe('ActualBudgetAdapter', () => {
     ]);
     expect(retry).toEqual({ requested: 1, updatedTransactionIds: ['transaction-1'], persisted: true });
     expect(updateTransaction).toHaveBeenCalledOnce();
-    expect(syncCalls).toBe(3);
+    // The adapter synchronizes at operation start and again to verify the idempotent retry.
+    expect(syncCalls).toBe(4);
   });
 
 });
