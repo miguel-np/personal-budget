@@ -50,7 +50,9 @@ describe('planning core', () => {
     expect(result.monthlyProjection.map((row) => row.month)).toEqual(['2026-11', '2026-12', '2027-01', '2027-02', '2027-03']);
     expect(result.monthlyProjection[1]?.commitmentExpenseMinor).toBe(60_000);
     expect(result.monthlyProjection[1]?.actualContributionMinor).toBe(20_000);
-    expect(result.projectedBalanceMinor).toBe(390_000);
+    expect(result.projectedBalanceMinor).toBe(300_000);
+    expect(result.estimatedCompletionDate).toBe('2027-02-28');
+    expect(result.monthlyProjection[4]?.actualContributionMinor).toBe(0);
     expect(result.achievableUnderCashFlow).toBe(true);
   });
 
