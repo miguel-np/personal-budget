@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import type { BudgetAccount, BudgetCategory, BudgetRepository, BudgetTransaction } from '@personal-budget/finance-core';
+import type { BudgetAccount, BudgetCategory, BudgetRepository, BudgetTransaction, TransactionCategoryBatchChange, TransactionCategoryBatchResult, TransactionUpdate } from '@personal-budget/finance-core';
 import { isIsoDate, validatePeriod } from '@personal-budget/finance-core';
 import { z } from 'zod';
 import type { ActualAdapterConfig, ActualApiContract, ActualBudgetAllocation, ActualBudgetMonthRecord, ActualImportRecord, ActualImportResult } from './actual-api-contract.js';
@@ -17,6 +17,25 @@ export class ActualAdapterError extends Error {
 }
 
 const IdentifierSchema = z.string().trim().min(1).max(128);
+const TransactionUpdateSchema = z.object({
+  date: z.string().refine(isIsoDate, 'date must be a valid YYYY-MM-DD date').optional(),
+  amount: z.number().int().refine(Number.isSafeInteger, 'amount must be a safe integer').refine((value) => value !== 0, 'amount cannot be zero').optional(),
+  imported_payee: z.string().max(500).transform((value) => value.trim()).optional(),
+  category: IdentifierSchema.nullable().optional(),
+  notes: z.string().max(2_000).optional(),
+  cleared: z.boolean().optional(),
+}).strict().refine((value) => Object.keys(value).length > 0, 'At least one supported transaction field is required');
+
+const CategoryBatchSchema = z.array(z.object({
+  transactionId: IdentifierSchema,
+  categoryId: IdentifierSchema,
+}).strict()).min(1).max(200).superRefine((changes, context) => {
+  const seen = new Set<string>();
+  for (const [index, change] of changes.entries()) {
+    if (seen.has(change.transactionId)) context.addIssue({ code: 'custom', path: [index, 'transactionId'], message: 'Transaction ids must be unique within a batch.' });
+    seen.add(change.transactionId);
+  }
+});
 const ImportRecordSchema = z.object({
   date: z.string().refine(isIsoDate, 'date must be a valid YYYY-MM-DD date'),
   amount: z.number().int().safe(),
@@ -118,18 +137,75 @@ export class ActualBudgetAdapter implements BudgetRepository {
     });
   }
 
+  public async updateTransaction(transactionId: string, fields: TransactionUpdate): Promise<void> {
+    const parsedTransactionId = IdentifierSchema.safeParse(transactionId);
+    const parsedFields = TransactionUpdateSchema.safeParse(fields);
+    if (!parsedTransactionId.success || !parsedFields.success) {
+      throw new ActualAdapterError('INVALID_INPUT', 'Transaction id or supported update fields are invalid.');
+    }
+    if (!this.api.updateTransaction) {
+      throw new ActualAdapterError('UPSTREAM_FAILURE', 'The configured Actual API client does not support transaction updates.');
+    }
+    await this.enqueue(async () => {
+      const update: TransactionUpdate = {
+        ...(parsedFields.data.date === undefined ? {} : { date: parsedFields.data.date }),
+        ...(parsedFields.data.amount === undefined ? {} : { amount: parsedFields.data.amount }),
+        ...(parsedFields.data.imported_payee === undefined ? {} : { imported_payee: parsedFields.data.imported_payee }),
+        ...(parsedFields.data.category === undefined ? {} : { category: parsedFields.data.category }),
+        ...(parsedFields.data.notes === undefined ? {} : { notes: parsedFields.data.notes }),
+        ...(parsedFields.data.cleared === undefined ? {} : { cleared: parsedFields.data.cleared }),
+      };
+      await this.api.updateTransaction!(parsedTransactionId.data, update);
+      await this.api.sync();
+    });
+  }
+
   public async updateTransactionCategory(transactionId: string, categoryId: string): Promise<void> {
     const parsedTransactionId = IdentifierSchema.safeParse(transactionId);
     const parsedCategoryId = IdentifierSchema.safeParse(categoryId);
     if (!parsedTransactionId.success || !parsedCategoryId.success) {
       throw new ActualAdapterError('INVALID_INPUT', 'Transaction or category id is invalid.');
     }
+    await this.updateTransaction(parsedTransactionId.data, { category: parsedCategoryId.data });
+  }
+
+  /**
+   * The official client does not promise database-level atomicity. Validate the complete batch
+   * before queueing any writes, perform the updates in one serialized session, then sync once.
+   * Partial results are reported explicitly; no compensating write is claimed as an undo.
+   */
+  public async updateTransactionCategoriesBatch(changes: readonly TransactionCategoryBatchChange[]): Promise<TransactionCategoryBatchResult> {
+    const parsed = CategoryBatchSchema.safeParse(changes);
+    if (!parsed.success) throw new ActualAdapterError('INVALID_INPUT', 'Category batch is invalid or contains duplicate transaction ids.');
     if (!this.api.updateTransaction) {
       throw new ActualAdapterError('UPSTREAM_FAILURE', 'The configured Actual API client does not support transaction updates.');
     }
-    await this.enqueue(async () => {
-      await this.api.updateTransaction!(parsedTransactionId.data, { category: parsedCategoryId.data });
-      await this.api.sync();
+    return this.enqueue(async () => {
+      const updatedTransactionIds: string[] = [];
+      let currentTransactionId: string | undefined;
+      try {
+        for (const change of parsed.data) {
+          currentTransactionId = change.transactionId;
+          await this.api.updateTransaction!(change.transactionId, { category: change.categoryId });
+          updatedTransactionIds.push(change.transactionId);
+          currentTransactionId = undefined;
+        }
+      } catch {
+        let persisted = false;
+        try { await this.api.sync(); persisted = true; } catch { /* Report unverified persistence instead of claiming rollback. */ }
+        return {
+          requested: parsed.data.length,
+          updatedTransactionIds,
+          ...(currentTransactionId ? { failedTransactionId: currentTransactionId } : {}),
+          persisted,
+        };
+      }
+      try {
+        await this.api.sync();
+        return { requested: parsed.data.length, updatedTransactionIds, persisted: true };
+      } catch {
+        return { requested: parsed.data.length, updatedTransactionIds, persisted: false };
+      }
     });
   }
 

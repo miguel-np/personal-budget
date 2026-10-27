@@ -210,4 +210,74 @@ describe('ActualBudgetAdapter', () => {
     await adapter.close();
     await expect(adapter.listAccounts()).rejects.toMatchObject({ code: 'CLOSED' });
   });
+  it('updates only validated official transaction fields and syncs after a successful write', async () => {
+    const updateTransaction = vi.fn(async () => undefined);
+    const api = createApi({ updateTransaction });
+    const adapter = new ActualBudgetAdapter(config, api);
+    const fields = {
+      date: '2026-10-13', amount: -12_345, imported_payee: 'Proveedor revisado',
+      category: null, notes: 'Nota revisada', cleared: true,
+    };
+    await adapter.updateTransaction('transaction-1', fields);
+    expect(updateTransaction).toHaveBeenCalledWith('transaction-1', fields);
+    expect(api.sync).toHaveBeenCalledTimes(2);
+  });
+
+  it('validates category batches before writing and synchronizes once for the whole batch', async () => {
+    const updateTransaction = vi.fn(async () => undefined);
+    const api = createApi({ updateTransaction });
+    const adapter = new ActualBudgetAdapter(config, api);
+    const changes = [
+      { transactionId: 'transaction-1', categoryId: 'food' },
+      { transactionId: 'transaction-2', categoryId: 'food' },
+    ];
+    await expect(adapter.updateTransactionCategoriesBatch(changes)).resolves.toEqual({
+      requested: 2, updatedTransactionIds: ['transaction-1', 'transaction-2'], persisted: true,
+    });
+    expect(updateTransaction).toHaveBeenNthCalledWith(1, 'transaction-1', { category: 'food' });
+    expect(updateTransaction).toHaveBeenNthCalledWith(2, 'transaction-2', { category: 'food' });
+    expect(api.sync).toHaveBeenCalledTimes(2);
+
+    const callsBeforeDuplicate = updateTransaction.mock.calls.length;
+    await expect(adapter.updateTransactionCategoriesBatch([
+      { transactionId: 'transaction-1', categoryId: 'food' },
+      { transactionId: 'transaction-1', categoryId: 'food' },
+    ])).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+    expect(updateTransaction).toHaveBeenCalledTimes(callsBeforeDuplicate);
+  });
+
+  it('reports a partial category batch and never claims an automatic rollback', async () => {
+    const updateTransaction = vi.fn(async (id: string) => {
+      if (id === 'transaction-2') throw new Error('private upstream detail');
+    });
+    const api = createApi({ updateTransaction });
+    const adapter = new ActualBudgetAdapter(config, api);
+    const outcome = await adapter.updateTransactionCategoriesBatch([
+      { transactionId: 'transaction-1', categoryId: 'food' },
+      { transactionId: 'transaction-2', categoryId: 'food' },
+    ]);
+    expect(outcome).toEqual({
+      requested: 2, updatedTransactionIds: ['transaction-1'],
+      failedTransactionId: 'transaction-2', persisted: true,
+    });
+    expect(api.sync).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports persistence as unverified when the final batch sync fails', async () => {
+    let syncCalls = 0;
+    const api = createApi({
+      sync: vi.fn(async () => {
+        syncCalls += 1;
+        if (syncCalls === 2) throw new Error('private sync failure');
+      }),
+      updateTransaction: vi.fn(async () => undefined),
+    });
+    const adapter = new ActualBudgetAdapter(config, api);
+    await expect(adapter.updateTransactionCategoriesBatch([
+      { transactionId: 'transaction-1', categoryId: 'food' },
+    ])).resolves.toMatchObject({
+      requested: 1, updatedTransactionIds: ['transaction-1'], persisted: false,
+    });
+  });
+
 });
