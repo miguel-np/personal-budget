@@ -382,7 +382,7 @@ test('editing a linked transfer verifies both legs and rejects reversing its dir
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
   const dateValue = yesterday.getFullYear() + '-' + String(yesterday.getMonth() + 1).padStart(2, '0') + '-' + String(yesterday.getDate()).padStart(2, '0');
-  await dialog.getByLabel('Fecha').fill(dateValue);
+  await dialog.getByRole('textbox', { name: 'Fecha' }).fill(dateValue);
   await dialog.getByRole('checkbox', { name: /Sincronizar también la fecha con la otra cuenta/ }).check();
   await dialog.getByRole('button', { name: 'Previsualizar cambios' }).click();
   expect((await (await request.get(fixtureApi + '/__test__/state')).json()).transactionWrites).toBe(0);
@@ -423,7 +423,7 @@ test('editing a linked transfer date keeps the other date unless explicitly sync
   const dateValue = yesterday.getFullYear() + '-' + String(yesterday.getMonth() + 1).padStart(2, '0') + '-' + String(yesterday.getDate()).padStart(2, '0');
   const syncDate = dialog.getByRole('checkbox', { name: /Sincronizar también la fecha con la otra cuenta/ });
   await expect(syncDate).not.toBeChecked();
-  await dialog.getByLabel('Fecha').fill(dateValue);
+  await dialog.getByRole('textbox', { name: 'Fecha' }).fill(dateValue);
   await expect(syncDate).toBeEnabled();
   await dialog.getByRole('button', { name: 'Previsualizar cambios' }).click();
   expect((await (await request.get(fixtureApi + '/__test__/state')).json()).transactionWrites).toBe(0);
