@@ -51,7 +51,7 @@ interface MovementToolsProps {
   accounts: readonly MovementAccount[];
   categories: readonly MovementCategory[];
   currency: string;
-  onImported: () => void;
+  onImported: (notice?: string) => void;
   quickRequest?: { readonly key: number; readonly kind: 'income' | 'expense' | 'transfer' } | null;
 }
 
@@ -298,7 +298,7 @@ export function MovementTools({ accounts, categories, currency, onImported, quic
       setTransferAmount('');
       setTransferNotes('');
       setTransferImportId(newIdentifier());
-      onImported();
+      onImported('Actual ha confirmado la operación. La transferencia se registra como pareja vinculada, no como ingreso y gasto independientes.');
     } catch (error) {
       setTransferError(error instanceof Error ? error.message : 'No se ha podido confirmar la transferencia.');
     } finally {
@@ -369,7 +369,7 @@ export function MovementTools({ accounts, categories, currency, onImported, quic
       setAmount('');
       setPayee('');
       setNotes('');
-      onImported();
+      onImported('Movimiento confirmado por Actual: ' + result.added + ' añadido(s), ' + result.updated + ' actualizado(s) y ' + result.errors + ' error(es).');
     } catch (error) {
       setManualError(error instanceof Error ? error.message : 'No se ha podido registrar el movimiento.');
     } finally {
@@ -522,7 +522,7 @@ export function MovementTools({ accounts, categories, currency, onImported, quic
       setCsvResult(result);
       setCsvRecords(null);
       setCsvMessage('Importación confirmada por Actual: ' + result.added + ' añadidos, ' + result.updated + ' actualizados y ' + result.errors + ' errores. Los movimientos conciliados no se duplican por su identificador importado.');
-      onImported();
+      onImported('Importación confirmada por Actual: ' + result.added + ' añadido(s), ' + result.updated + ' actualizado(s) y ' + result.errors + ' error(es). Los movimientos conciliados no se duplican por su identificador importado.');
     } catch (error) {
       setCsvError(error instanceof Error ? error.message : 'No se ha podido importar el CSV.');
     } finally {
