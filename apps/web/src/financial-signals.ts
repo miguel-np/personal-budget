@@ -90,8 +90,8 @@ export interface NetWorthAccountInput {
   readonly closed: boolean;
   readonly offBudget: boolean;
   readonly classification?: AccountClassification | null;
-  readonly displayBalanceMinor: number | null | undefined;
-  readonly displayCurrency: string | null | undefined;
+  readonly displayBalanceMinor?: number | null;
+  readonly displayCurrency?: string | null;
 }
 
 export interface NetWorthAssessment {
