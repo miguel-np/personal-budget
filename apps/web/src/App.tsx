@@ -258,6 +258,7 @@ export function App() {
   const [currencySaving, setCurrencySaving] = useState(false);
   const [currencySaveError, setCurrencySaveError] = useState('');
   const [currencySaveNotice, setCurrencySaveNotice] = useState('');
+  const [movementNotice, setMovementNotice] = useState('');
   const [appPreferences, setAppPreferences] = useState<AppPreferences>({ theme: 'system', locale: 'es-ES' });
   const [, setFormattingRevision] = useState(0);
   const [appPreferencesSaving, setAppPreferencesSaving] = useState(false);
@@ -585,6 +586,7 @@ export function App() {
           </div>
         </header>
 
+        {route === '/movements' && movementNotice ? <p className="form-alert success movement-operation-notice" role="status">{movementNotice}</p> : null}
         {connection === 'checking' ? <LoadingState /> : null}
         {connection === 'unconfigured' ? <ErrorNotice title="Actual Budget aún no está conectado" message={bootError || 'Configura la conexión local con Actual Budget para consultar tus datos.'} /> : null}
         {connection === 'error' ? <ErrorNotice title="No se puede cargar la aplicación" message={bootError || 'Comprueba el backend local y vuelve a intentarlo.'} onRetry={retryBoot} /> : null}
@@ -727,7 +729,7 @@ export function App() {
                   accounts={accounts}
                   categories={categories}
                   currency={currency}
-                  onImported={() => { setPage(1); setRefreshKey((value) => value + 1); }}
+                  onImported={(notice) => { setMovementNotice(notice); setPage(1); setRefreshKey((value) => value + 1); }}
                 />
                 {accounts.filter((item) => !item.closed).length === 0 ? <EmptyState title="No hay cuentas disponibles" body="Crea o abre una cuenta en Actual Budget y vuelve a cargar los datos." /> : (
                   <>
@@ -754,7 +756,7 @@ export function App() {
                       sortAscending={sortAscending}
                       filterKey={[period.startDate, period.endDate, accountFilter, categoryFilter, searchText, uncategorizedOnly, page, sortKey, sortAscending].join('|')}
                       onSort={changeSort}
-                      onUpdated={() => setRefreshKey((value) => value + 1)}
+                      onUpdated={(notice) => { setMovementNotice(notice); setRefreshKey((value) => value + 1); }}
                     />
                                         <div className="table-footer"><span>Página {currentPage} de {pageCount} · {transactionTotal} movimientos</span><div className="pagination"><button className="button secondary" type="button" disabled={currentPage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>Anterior</button><button className="button secondary" type="button" disabled={currentPage >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>Siguiente</button></div></div>
                     <p className="section-footnote">La API limita los periodos de consulta a cinco años. Los importes conservan el signo de Actual; los traspasos se muestran en el registro, pero se excluyen de los totales consolidados.</p>
