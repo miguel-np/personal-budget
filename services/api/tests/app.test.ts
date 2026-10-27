@@ -1146,7 +1146,7 @@ describe('local API', () => {
       },
     });
     expect(transfer.statusCode).toBe(409);
-    expect(transfer.json().error.code).toBe('TRANSFER_COUNTERPART_NOT_AVAILABLE');
+    expect(transfer.json().error.code).toBe('TRANSACTION_SAFE_UPDATE_NOT_SUPPORTED');
     expect(updateTransaction).toHaveBeenCalledTimes(1);
   });
 

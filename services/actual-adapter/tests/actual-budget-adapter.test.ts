@@ -56,7 +56,7 @@ describe('ActualBudgetAdapter', () => {
   });
 
   it('waits for Actual read-after-write confirmation before syncing an update', async () => {
-    let rows: BudgetTransaction[] = [{
+    const rows: BudgetTransaction[] = [{
       id: 'delayed-tx', account: 'account-1', date: '2026-10-02', amount: -1_000, category: 'food',
     }];
     const events: string[] = [];
@@ -83,7 +83,7 @@ describe('ActualBudgetAdapter', () => {
   });
 
   it('verifies a complete split parent update and every retained child id', async () => {
-    let rows: BudgetTransaction[] = [{
+    const rows: BudgetTransaction[] = [{
       id: 'split-parent', account: 'account-1', date: '2026-10-02', amount: -5_000, is_parent: true,
       subtransactions: [
         { id: 'part-a', account: 'account-1', date: '2026-10-02', amount: -2_000, parent_id: 'split-parent', is_child: true, category: 'food' },
