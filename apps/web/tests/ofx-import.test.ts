@@ -80,6 +80,14 @@ describe('parseOfx', () => {
     expect(result.rejected).toEqual([]);
   });
 
+  it('accepts the second supported SGML profile and decodes a declared Windows-1252 byte stream', () => {
+    const profile103 = sgml(transaction({ name: 'Café' })).replace('VERSION:102', 'VERSION:103');
+    const encoded = Uint8Array.from([...profile103].map((character) => character.charCodeAt(0)));
+    const decoded = decodeOfxBytes(encoded);
+    expect(parseOfx(decoded).profile).toBe('OFX SGML 1.03');
+    expect(parseOfx(decoded).records[0]?.payee_name).toBe('Café');
+  });
+
   it('parses OFX XML, decodes standard XML entities and preserves memo metadata', () => {
     const result = parseOfx(xmlFixture);
     expect(result.profile).toBe('OFX XML 2.x');
@@ -144,6 +152,11 @@ describe('parseOfx', () => {
   it('rejects mixed-currency statements and multiple source-account blocks', () => {
     expect(() => parseOfx(sgml(transaction(), '<CURDEF>USD'))).toThrow(/mezcla varias divisas/);
     expect(() => parseOfx(sgml(transaction(), '<BANKACCTFROM><BANKID>999</BANKID><ACCTID>another</ACCTID></BANKACCTFROM>'))).toThrow(/varias cuentas de origen/);
+  });
+
+  it('rejects statements above the 2,000 transaction bound before deduplicating', () => {
+    const repeated = Array.from({ length: 2_001 }, () => transaction()).join('\\n');
+    expect(() => parseOfx(sgml(repeated))).toThrow(/máximo de 2.000 operaciones/);
   });
 
   it('keeps missing currency explicit instead of guessing or converting', () => {
