@@ -31,6 +31,11 @@ interface ImportResult {
   submitted: number;
   dryRun: boolean;
 }
+interface ImportSourceOptions {
+  readonly sourceFormat?: 'ofx';
+  readonly sourceCurrencyCode?: string;
+  readonly allowUnverifiedCurrency?: boolean;
+}
 interface TransferRequestPayload {
   readonly sourceAccountId: string;
   readonly destinationAccountId: string;
@@ -100,11 +105,16 @@ function selectorValue(row: readonly string[], index: string): string {
   if (index === '') return '';
   return row[Number(index)]?.trim() ?? '';
 }
-async function sendImport(path: '/api/v1/import/preview' | '/api/v1/import/commit', accountId: string, records: readonly ImportRecord[]): Promise<ImportResult> {
+async function sendImport(
+  path: '/api/v1/import/preview' | '/api/v1/import/commit',
+  accountId: string,
+  records: readonly ImportRecord[],
+  sourceOptions?: ImportSourceOptions,
+): Promise<ImportResult> {
   const response = await fetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ accountId, records }),
+    body: JSON.stringify({ accountId, records, ...(sourceOptions ?? {}) }),
   });
   const payload = await response.json().catch(() => ({})) as ApiResponse<ImportResult>;
   if (!response.ok) throw new Error(payload.error?.message ?? 'La API local rechazó la importación.');
@@ -546,7 +556,14 @@ export function MovementTools({ accounts, categories, currency, onImported, quic
         records = buildCsvRecords();
       }
 
-      const result = await sendImport('/api/v1/import/preview', csvAccountId, records);
+      const sourceOptions: ImportSourceOptions | undefined = fileFormat === 'ofx' && ofxParsed
+        ? {
+            sourceFormat: 'ofx',
+            ...(ofxParsed.currencyCode ? { sourceCurrencyCode: ofxParsed.currencyCode } : {}),
+            allowUnverifiedCurrency: ofxNeedsCurrencyAcknowledgement && ofxCurrencyAcknowledged,
+          }
+        : undefined;
+      const result = await sendImport('/api/v1/import/preview', csvAccountId, records, sourceOptions);
       setCsvRecords(records);
       setCsvResult(result);
       if (fileFormat === 'ofx' && ofxParsed) {
@@ -587,7 +604,14 @@ export function MovementTools({ accounts, categories, currency, onImported, quic
           throw new Error('Debes confirmar la divisa del extracto antes de importar.');
         }
       }
-      const result = await sendImport('/api/v1/import/commit', csvAccountId, csvRecords);
+      const sourceOptions: ImportSourceOptions | undefined = fileFormat === 'ofx' && ofxParsed
+        ? {
+            sourceFormat: 'ofx',
+            ...(ofxParsed.currencyCode ? { sourceCurrencyCode: ofxParsed.currencyCode } : {}),
+            allowUnverifiedCurrency: ofxNeedsCurrencyAcknowledgement && ofxCurrencyAcknowledged,
+          }
+        : undefined;
+      const result = await sendImport('/api/v1/import/commit', csvAccountId, csvRecords, sourceOptions);
       setCsvResult(result);
       setCsvRecords(null);
       onImported(
@@ -608,7 +632,7 @@ export function MovementTools({ accounts, categories, currency, onImported, quic
   })), [headers]);
   const selectedImportAccount = openAccounts.find((account) => account.id === csvAccountId);
   const selectedImportCurrency = (selectedImportAccount?.nativeCurrencyCode ?? selectedImportAccount?.currencyCode)?.trim().toUpperCase() ?? '';
-  const importCurrency = selectedImportCurrency || ofxParsed?.currencyCode || currency;
+  const importCurrency = fileFormat === 'ofx' ? selectedImportCurrency || ofxParsed?.currencyCode || currency : currency;
   const ofxCurrencyMismatch = Boolean(fileFormat === 'ofx' && ofxParsed?.currencyCode && selectedImportCurrency && ofxParsed.currencyCode !== selectedImportCurrency);
   const ofxNeedsCurrencyAcknowledgement = Boolean(fileFormat === 'ofx' && ofxParsed && (!ofxParsed.currencyCode || !selectedImportCurrency));
   const hasImportSource = fileFormat === 'csv' ? csvRows.length > 0 : fileFormat === 'ofx' ? (ofxParsed?.records.length ?? 0) > 0 : false;
@@ -680,7 +704,7 @@ export function MovementTools({ accounts, categories, currency, onImported, quic
       {csvOpen ? (
         <div className="tool-panel">
           <div className="panel-heading"><div><p className="eyebrow">EXTRACTO LOCAL</p><h4>CSV / OFX con previsualización y conciliación</h4></div><span className="muted-label">Máx. 350 KB / 2.000 operaciones</span></div>
-          <p className="tool-hint">Los archivos se leen y procesan localmente en el navegador. Selecciona la cuenta destino de forma explícita y revisa los registros, advertencias y posibles coincidencias antes de confirmar. OFX admite SGML 1.02/1.03 y XML OFX 2.x; no se admiten QFX, QIF ni CAMT. Consulta la guía de importación OFX.</p>
+          <p className="tool-hint">Los archivos se leen y procesan localmente en el navegador. Selecciona la cuenta destino de forma explícita y revisa los registros, advertencias y posibles coincidencias antes de confirmar. OFX admite SGML 1.02/1.03 y XML OFX 2.x; no se admiten QFX, QIF ni CAMT. Consulta la <a href="https://github.com/miguel-np/personal-budget/blob/main/docs/ofx-import.md" target="_blank" rel="noreferrer">guía de importación OFX</a>.</p>
           <div className="csv-controls-top">
             <label className="field-label">Archivo CSV u OFX<input type="file" accept=".csv,text/csv,.ofx,application/x-ofx,application/ofx" onChange={(event) => void handleFile(event)} /></label>
             <label className="field-label">Cuenta destino<select value={csvAccountId} onChange={(event) => { setCsvAccountId(event.currentTarget.value); setCsvRecords(null); setCsvResult(null); setOfxCurrencyAcknowledged(false); setCsvError(''); }} required><option value="">Selecciona cuenta destino…</option>{openAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
