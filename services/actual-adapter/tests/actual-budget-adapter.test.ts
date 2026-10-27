@@ -111,6 +111,40 @@ describe('ActualBudgetAdapter', () => {
     expect(rows[0]?.amount).toBe(rows[0]?.subtransactions?.reduce((sum, child) => sum + child.amount, 0));
   });
 
+  it('does not verify a split update if Actual drops child hierarchy flags', async () => {
+    const rows: BudgetTransaction[] = [{
+      id: 'split-parent', account: 'account-1', date: '2026-10-02', amount: -5_000, is_parent: true,
+      subtransactions: [
+        { id: 'part-a', account: 'account-1', date: '2026-10-02', amount: -2_000, parent_id: 'split-parent', is_child: true, is_parent: false, category: 'food' },
+        { id: 'part-b', account: 'account-1', date: '2026-10-02', amount: -3_000, parent_id: 'split-parent', is_child: true, is_parent: false },
+      ],
+    }];
+    const api = createApi({
+      getTransactions: vi.fn(async (_accountId: string, startDate: string, endDate: string) =>
+        rows.filter((row) => row.date >= startDate && row.date <= endDate)),
+      updateTransaction: vi.fn(async (id: string, fields: TransactionStructureUpdate) => {
+        const existing = rows.find((row) => row.id === id);
+        if (!existing) return;
+        Object.assign(existing, fields);
+        existing.subtransactions = (fields.subtransactions ?? []).map((child) => ({
+          ...child,
+          is_child: false,
+          is_parent: true,
+        }));
+      }),
+    });
+    const adapter = new ActualBudgetAdapter(config, api);
+    const result = await adapter.updateTransactionSafely('split-parent', 'account-1', '2026-10-02', {
+      is_parent: true,
+      amount: -5_500,
+      subtransactions: [
+        { id: 'part-a', account: 'account-1', date: '2026-10-02', amount: -2_500, parent_id: 'split-parent', is_child: true, is_parent: false, category: 'food' },
+        { id: 'part-b', account: 'account-1', date: '2026-10-02', amount: -3_000, parent_id: 'split-parent', is_child: true, is_parent: false },
+      ],
+    });
+    expect(result).toEqual({ persisted: false, verified: false });
+  });
+
   it('reads transactions for a valid account and date period', async () => {
     const api = createApi();
     const adapter = new ActualBudgetAdapter(config, api);
