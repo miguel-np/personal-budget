@@ -1053,7 +1053,7 @@ describe('local API', () => {
   it('rejects transfers with unsupported currencies, mismatched budget scope or an excluded account', async () => {
     const transferAccounts: readonly BudgetAccount[] = [
       { id: 'account-1', name: 'Cuenta corriente', currencyCode: 'EUR', closed: false, offBudget: false, currentBalanceMinor: 200_000 },
-      { id: 'account-2', name: 'Cuenta externa', currencyCode: 'GBP', closed: false, offBudget: true, currentBalanceMinor: 100_000 },
+      { id: 'account-2', name: 'Cuenta externa', currencyCode: 'GBP', closed: false, offBudget: false, currentBalanceMinor: 100_000 },
     ];
     const importTransactions = vi.fn(async (): Promise<ActualImportResult> => ({ errors: [], added: ['unexpected'], updated: [] }));
     const listTransferPayees = vi.fn(async () => [{ name: 'Transfer: Cuenta externa', accountId: 'account-2' }]);
