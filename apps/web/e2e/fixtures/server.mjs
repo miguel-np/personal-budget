@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 
-      readiness = 'configured'; failImportPreview = false; commitCount = 0; transferPreviewCount = 0; transferCommitCount = 0; lastTransferPayload = null; categoryWrites = 0; transactionWrites = 0; lastTransactionUpdate = null; appPreferences = { theme: 'system', locale: 'es-ES' }; lastPreviewChanges = []; lastCommittedChanges = []; budgetedMinor = 50_000; currencyPreferences = { displayCurrency: 'EUR', accountCurrencyOverrides: {}, exchangeRates: [] }; accountScope = { mode: 'all', accountIds: [] };
+let readiness = 'configured';
+
 let failImportPreview = false;
 let commitCount = 0;
 let transferPreviewCount = 0;
