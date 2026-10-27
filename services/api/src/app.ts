@@ -41,8 +41,19 @@ const ImportRecordSchema = z.object({
 }).strict();
 const ImportRequestSchema = z.object({
   accountId: z.string().trim().min(1).max(128),
+  sourceFormat: z.literal('ofx').optional(),
+  sourceCurrencyCode: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/, 'sourceCurrencyCode must be an ISO-style currency code.').optional(),
+  allowUnverifiedCurrency: z.boolean().optional().default(false),
   records: z.array(ImportRecordSchema).min(1).max(2_000),
-}).strict();
+}).strict().superRefine((request, context) => {
+  if (request.sourceFormat !== 'ofx' && (request.sourceCurrencyCode !== undefined || request.allowUnverifiedCurrency)) {
+    context.addIssue({
+      code: 'custom',
+      path: ['sourceFormat'],
+      message: 'OFX currency metadata requires sourceFormat=ofx.',
+    });
+  }
+});
 const TransferRequestSchema = z.object({
   sourceAccountId: z.string().trim().min(1).max(128),
   destinationAccountId: z.string().trim().min(1).max(128),
@@ -846,8 +857,22 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         repository.listAccounts(),
         repository.listCategories(),
       ]);
-      if (!accounts.some((account) => account.id === parsed.accountId && !account.closed)) {
+      const destinationAccount = accounts.find((account) => account.id === parsed.accountId && !account.closed);
+      if (!destinationAccount) {
         return reply.code(400).send({ error: { code: 'INVALID_ACCOUNT', message: 'Choose an open account from the configured budget.' } });
+      }
+      if (parsed.sourceFormat === 'ofx') {
+        const destinationCurrency = destinationAccount.currencyCode?.trim().toUpperCase() ?? '';
+        if (parsed.sourceCurrencyCode && destinationCurrency && parsed.sourceCurrencyCode !== destinationCurrency) {
+          return reply.code(409).send({
+            error: { code: 'IMPORT_CURRENCY_MISMATCH', message: 'The OFX statement currency does not match the destination account native currency. No transactions were written.' },
+          });
+        }
+        if ((!parsed.sourceCurrencyCode || !destinationCurrency) && !parsed.allowUnverifiedCurrency) {
+          return reply.code(422).send({
+            error: { code: 'IMPORT_CURRENCY_UNVERIFIED', message: 'The OFX statement or destination account has no verifiable currency. An explicit confirmation is required before importing.' },
+          });
+        }
       }
       const categoryIds = new Set(categories.map((category) => category.id));
       if (parsed.records.some((record) => record.category !== undefined && !categoryIds.has(record.category))) {
