@@ -949,7 +949,7 @@ textarea::placeholder {
   .goal-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .agenda-legend { display: grid; gap: 8px; }
   .goals-calendar-weekdays { display: none; }
-  .goals-calendar-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+  .goals-calendar-grid { grid-template-columns: minmax(0, 1fr); gap: 7px; }
   .calendar-day-empty { display: none; }
   .calendar-day { min-height: 70px; padding: 8px; }
   .calendar-day > h5 { font-size: 11px; }
