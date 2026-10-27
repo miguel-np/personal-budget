@@ -886,6 +886,9 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         if (!transaction) {
           return reply.code(400).send({ error: { code: 'INVALID_TRANSACTION', message: 'One or more transaction ids do not belong to an open account in the period.' } });
         }
+        if (transaction.amount >= 0) {
+          return reply.code(400).send({ error: { code: 'CATEGORY_AMOUNT_MISMATCH', message: 'Bulk categorization is limited to ordinary expense movements.' } });
+        }
         if (transaction.transfer_id) {
           return reply.code(409).send({ error: { code: 'TRANSFER_EDIT_NOT_SUPPORTED', message: 'Transfer transactions are protected from bulk category changes.' } });
         }
