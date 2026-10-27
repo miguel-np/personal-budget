@@ -197,6 +197,8 @@ jobs:
         run: npm run update:actual -- update --to actualbudget/actual-server:26.10.0 --confirm
       - name: Compare synthetic inventory after update
         run: npm run test:update:acceptance -- verify
+      - name: Verify linked transfer and split edits against isolated synthetic Actual
+        run: npm run test:update:acceptance -- transactions
       - name: Explicitly restore the pre-update synthetic backup
         run: |
           BACKUP_PATH="$(node -e "const s=require('./.local/update-state.json');process.stdout.write(s.backupArchive)")"

@@ -71,7 +71,7 @@ export function PlanningPanel({ currency }: { currency: string }) {
   const [candidates, setCandidates] = useState<readonly RecurringCandidate[]>([]);
   const [suggestions, setSuggestions] = useState<readonly CategorySuggestion[]>([]);
   const [discarded, setDiscarded] = useState<readonly string[]>([]);
-  const [pendingChanges, setPendingChanges] = useState<readonly { transactionId: string; categoryId: string }[]>([]);
+  const [pendingChanges, setPendingChanges] = useState<readonly { transactionId: string; categoryId: string; expectedCategoryId: string | null }[]>([]);
   const [chosenCategory, setChosenCategory] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -125,11 +125,24 @@ export function PlanningPanel({ currency }: { currency: string }) {
           transactions: changes,
         }),
       });
-      const payload = await jsonResponse<{ preview: boolean; requested?: number; changes: number }>(response);
+      const payload = await jsonResponse<{
+        preview: boolean;
+        requested?: number;
+        changes: number;
+        baseline?: readonly { transactionId: string; expectedCategoryId: string | null }[];
+      }>(response);
       if (!payload.data?.preview || payload.data.changes !== changes.length) {
         throw new Error('La API no confirmó una previsualización de solo lectura para todos los cambios.');
       }
-      setPendingChanges(changes);
+      const baseline = payload.data.baseline;
+      if (!baseline || baseline.length !== changes.length ||
+          changes.some((change) => !baseline.some((entry) => entry.transactionId === change.transactionId))) {
+        throw new Error('La API no devolvió una categoría de referencia verificable para cada movimiento.');
+      }
+      setPendingChanges(changes.map((change) => ({
+        ...change,
+        expectedCategoryId: baseline.find((entry) => entry.transactionId === change.transactionId)!.expectedCategoryId,
+      })));
       setNotice('Previsualización: ' + changes.length + ' cambio(s) propuesto(s). No se ha escrito ningún cambio.');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No se pudo previsualizar la sugerencia.');
@@ -150,19 +163,49 @@ export function PlanningPanel({ currency }: { currency: string }) {
           transactions: changes,
         }),
       });
-      const payload = await jsonResponse<{ preview: boolean; requested?: number; changes: number }>(response);
-      if (payload.data?.preview || payload.data?.changes !== changes.length) {
-        throw new Error('La API no confirmó que todos los cambios previstos se hayan aplicado.');
+      const payload = await response.json() as ApiPayload<{
+        preview: boolean;
+        requested?: number;
+        changes: number;
+        applied?: number;
+        appliedTransactionIds?: readonly string[];
+        failedTransactionId?: string;
+        partial?: boolean;
+        persisted?: boolean;
+        message?: string;
+      }>;
+      if (!response.ok || !payload.data) {
+        const message = payload.error?.message ?? 'La API no confirmó la categorización.';
+        // A stale or uncertain commit invalidates the preview; do not allow a blind retry.
+        setPendingChanges([]);
+        throw new Error(response.status === 409
+          ? message + ' Vuelve a previsualizar antes de confirmar.'
+          : message);
       }
-      setNotice('Se actualizaron ' + payload.data.changes + ' movimiento(s) en Actual Budget tras la confirmación explícita.');
-      setDiscarded((previous) => [...previous, ...changes.map((change) => change.transactionId)]);
+      const outcome = payload.data;
+      const appliedIds = new Set(outcome.appliedTransactionIds ?? []);
+      const applied = outcome.applied ?? outcome.changes;
+      const complete = !outcome.partial && applied === changes.length &&
+        outcome.persisted !== false && appliedIds.size === changes.length;
+      if (!complete) {
+        setDiscarded((previous) => [...previous, ...appliedIds]);
+        setPendingChanges([]);
+        setNotice(
+          'Resultado parcial: ' + applied + ' de ' + changes.length + ' movimientos confirmados. ' +
+          (outcome.failedTransactionId ? 'Revisa el identificador técnico ' + outcome.failedTransactionId + '. ' : '') +
+          (outcome.message ?? 'Vuelve a revisar las sugerencias y previsualiza de nuevo antes de reintentar.')
+        );
+        return;
+      }
+      setNotice('Se actualizaron ' + applied + ' movimiento(s) en Actual Budget tras la confirmación explícita.');
+      setDiscarded((previous) => [...previous, ...appliedIds]);
       setPendingChanges([]);
     } catch (caught) {
+      // Keep the selected categories as a draft, but force a new preview after any uncertain write.
+      setPendingChanges([]);
       setError(caught instanceof Error ? caught.message : 'No se pudo aplicar la sugerencia. Comprueba el estado en Actual Budget antes de reintentar.');
-      // Preserve the preview so the user can inspect it; never auto-retry a write.
     } finally { setBusy(false); }
   }
-
   function cancelPreview(): void {
     setPendingChanges([]);
     setNotice('Previsualización cancelada. No se ha escrito ningún cambio.');

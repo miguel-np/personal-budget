@@ -358,7 +358,7 @@ test('movement editor previews validated changes before writing to Actual', asyn
   expect((await (await request.get(fixtureApi + '/__test__/state')).json()).transactionWrites).toBe(0);
   await dialog.getByRole('button', { name: 'Confirmar y guardar' }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(page.locator('.movement-operation-notice')).toContainText('Cambios validados y guardados en Actual Budget');
+  await expect(page.locator('.movement-operation-notice')).toContainText('Cambios validados y verificados en Actual Budget');
   const state = await (await request.get(fixtureApi + '/__test__/state')).json();
   expect(state.transactionWrites).toBe(1);
   expect(state.lastTransactionUpdate).toMatchObject({
@@ -368,19 +368,190 @@ test('movement editor previews validated changes before writing to Actual', asyn
   });
 });
 
+test('editing a linked transfer verifies both legs and rejects reversing its direction', async ({ page, request }) => {
+  await request.post(fixtureApi + '/__test__/reset');
+  await page.goto('/movements');
+  const sourceRow = page.locator('.transactions-table tbody tr')
+    .filter({ hasText: 'Transferencia sintética' })
+    .filter({ has: page.locator('.amount-cell.expense') })
+    .first();
+  await expect(sourceRow).toBeVisible();
+  await sourceRow.getByRole('button', { name: 'Editar' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Revisar cambios' });
+  await dialog.getByLabel('Importe (unidades principales)').fill('-60,00');
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const dateValue = yesterday.getFullYear() + '-' + String(yesterday.getMonth() + 1).padStart(2, '0') + '-' + String(yesterday.getDate()).padStart(2, '0');
+  await dialog.getByRole('textbox', { name: 'Fecha' }).fill(dateValue);
+  await dialog.getByRole('checkbox', { name: /Sincronizar también la fecha con la otra cuenta/ }).check();
+  await dialog.getByRole('button', { name: 'Previsualizar cambios' }).click();
+  expect((await (await request.get(fixtureApi + '/__test__/state')).json()).transactionWrites).toBe(0);
+  await dialog.getByRole('button', { name: 'Confirmar y guardar' }).click();
+  await expect(page.locator('.movement-operation-notice')).toContainText('Transferencia actualizada y verificada');
+  const state = await (await request.get(fixtureApi + '/__test__/state')).json();
+  expect(state.transactionWrites).toBe(2);
+  expect(state.transferState.source).toMatchObject({ date: dateValue, amount: -6_000, transfer_id: 'synthetic-transfer-counterpart' });
+  expect(state.transferState.counterpart).toMatchObject({ date: dateValue, amount: 6_000, transfer_id: 'synthetic-transfer-source' });
+  expect(state.transferState.source.amount + state.transferState.counterpart.amount).toBe(0);
+
+  await page.reload();
+  const updatedSource = page.locator('.transactions-table tbody tr')
+    .filter({ hasText: 'Transferencia sintética' })
+    .filter({ has: page.locator('.amount-cell.expense') })
+    .first();
+  await updatedSource.getByRole('button', { name: 'Editar' }).click();
+  const reverseDialog = page.getByRole('dialog', { name: 'Revisar cambios' });
+  await reverseDialog.getByLabel('Importe (unidades principales)').fill('60,00');
+  await reverseDialog.getByRole('button', { name: 'Previsualizar cambios' }).click();
+  await expect(reverseDialog.getByRole('alert')).toContainText('No se puede invertir la dirección');
+  expect((await (await request.get(fixtureApi + '/__test__/state')).json()).transactionWrites).toBe(2);
+});
+
+test('editing a linked transfer date keeps the other date unless explicitly synchronized', async ({ page, request }) => {
+  await request.post(fixtureApi + '/__test__/reset');
+  await page.goto('/movements');
+  const initialState = await (await request.get(fixtureApi + '/__test__/state')).json();
+  const counterpartDate = initialState.transferState.counterpart.date;
+  const sourceRow = page.locator('.transactions-table tbody tr')
+    .filter({ hasText: 'Transferencia sintética' })
+    .filter({ has: page.locator('.amount-cell.expense') })
+    .first();
+  await sourceRow.getByRole('button', { name: 'Editar' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Revisar cambios' });
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const dateValue = yesterday.getFullYear() + '-' + String(yesterday.getMonth() + 1).padStart(2, '0') + '-' + String(yesterday.getDate()).padStart(2, '0');
+  const syncDate = dialog.getByRole('checkbox', { name: /Sincronizar también la fecha con la otra cuenta/ });
+  await expect(syncDate).not.toBeChecked();
+  await dialog.getByRole('textbox', { name: 'Fecha' }).fill(dateValue);
+  await expect(syncDate).toBeEnabled();
+  await dialog.getByRole('button', { name: 'Previsualizar cambios' }).click();
+  expect((await (await request.get(fixtureApi + '/__test__/state')).json()).transactionWrites).toBe(0);
+  await dialog.getByRole('button', { name: 'Confirmar y guardar' }).click();
+
+  await expect(page.locator('.movement-operation-notice'))
+    .toContainText('La fecha solo se ha cambiado en esta cuenta; la otra conserva su fecha.');
+  const state = await (await request.get(fixtureApi + '/__test__/state')).json();
+  expect(state.transactionWrites).toBe(1);
+  expect(state.transferState.source.date).toBe(dateValue);
+  expect(state.transferState.counterpart.date).toBe(counterpartDate);
+});
+
+test('editing notes on a linked transfer synchronizes and verifies both legs', async ({ page, request }) => {
+  await request.post(fixtureApi + '/__test__/reset');
+  await page.goto('/movements');
+  const sourceRow = page.locator('.transactions-table tbody tr')
+    .filter({ hasText: 'Transferencia sintética' })
+    .filter({ has: page.locator('.amount-cell.expense') })
+    .first();
+  await expect(sourceRow).toBeVisible();
+  await sourceRow.getByRole('button', { name: 'Editar' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Revisar cambios' });
+  await dialog.getByLabel('Notas').fill('Nota sincronizada');
+  await dialog.getByRole('button', { name: 'Previsualizar cambios' }).click();
+  expect((await (await request.get(fixtureApi + '/__test__/state')).json()).transactionWrites).toBe(0);
+  await dialog.getByRole('button', { name: 'Confirmar y guardar' }).click();
+
+  await expect(page.locator('.movement-operation-notice'))
+    .toContainText('Las notas se han sincronizado y verificado en ambas partes.');
+  const state = await (await request.get(fixtureApi + '/__test__/state')).json();
+  expect(state.transactionWrites).toBe(2);
+  expect(state.transferState.source.notes).toBe('Nota sincronizada');
+  expect(state.transferState.counterpart.notes).toBe('Nota sincronizada');
+});
+
+test('editing a split child preserves every part and recalculates the parent total', async ({ page, request }) => {
+  await request.post(fixtureApi + '/__test__/reset');
+  await page.goto('/movements');
+  const splitRow = page.locator('.transactions-table tbody tr').filter({ hasText: 'Parte alimentación' }).first();
+  await expect(splitRow).toBeVisible();
+  await splitRow.getByRole('button', { name: 'Editar' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Revisar cambios' });
+  await expect(dialog.getByText(/Esta parte se guarda reenviando el desglose completo/)).toBeVisible();
+  await dialog.getByLabel('Importe (unidades principales)').fill('-35,00');
+  await dialog.getByRole('button', { name: 'Previsualizar cambios' }).click();
+  expect((await (await request.get(fixtureApi + '/__test__/state')).json()).transactionWrites).toBe(0);
+  await dialog.getByRole('button', { name: 'Confirmar y guardar' }).click();
+  await expect(page.locator('.movement-operation-notice')).toContainText('Parte del desglose actualizada');
+  const state = await (await request.get(fixtureApi + '/__test__/state')).json();
+  expect(state.transactionWrites).toBe(1);
+  expect(state.splitState.parentAmount).toBe(-7_500);
+  expect(state.splitState.children.map((child: { id: string }) => child.id)).toEqual(['synthetic-split-food', 'synthetic-split-other']);
+  expect(state.splitState.children.map((child: { amount: number }) => child.amount)).toEqual([-3_500, -4_000]);
+  expect(state.splitState.children.reduce((sum: number, child: { amount: number }) => sum + child.amount, 0)).toBe(state.splitState.parentAmount);
+});
+
 test('bulk categorization previews all eligible rows and confirms a reported outcome', async ({ page, request }) => {
   await page.goto('/movements');
   await page.getByRole('checkbox', { name: 'Seleccionar Supermercado sintético' }).check();
   await page.getByLabel('Categoría de gasto para el lote').selectOption('synthetic-restaurants');
   await page.getByRole('button', { name: 'Previsualizar lote' }).click();
-  await expect(page.locator('.movement-actions-toolbar').getByRole('status')).toContainText('Todavía no se ha escrito ningún cambio');
+  await expect(page.locator('.movement-actions-toolbar').getByRole('status')).toContainText('todavía no se ha modificado ningún movimiento');
   expect((await (await request.get(fixtureApi + '/__test__/state')).json()).categoryWrites).toBe(0);
   page.once('dialog', (dialog) => { void dialog.accept(); });
   await page.getByRole('button', { name: 'Confirmar lote' }).click();
-  await expect(page.locator('.movement-operation-notice')).toContainText('Se han guardado y sincronizado 1 cambios de categoría');
+  await expect(page.locator('.movement-operation-notice')).toContainText('Se ha confirmado la categoría de 1 movimiento en Actual Budget');
   const state = await (await request.get(fixtureApi + '/__test__/state')).json();
   expect(state.categoryWrites).toBe(1);
   expect(state.lastCommittedChanges).toEqual([{ transactionId: 'synthetic-tx-1', categoryId: 'synthetic-restaurants' }]);
+});
+
+test('bulk category commit rejects a stale preview and requires a refreshed baseline', async ({ page, request }) => {
+  await request.post(fixtureApi + '/__test__/reset');
+  await page.goto('/movements');
+  const rowCheckbox = page.getByRole('checkbox', { name: 'Seleccionar Supermercado sintético' });
+  await rowCheckbox.check();
+  await page.getByLabel('Categoría de gasto para el lote').selectOption('synthetic-restaurants');
+  await page.getByRole('button', { name: 'Previsualizar lote' }).click();
+  await expect(page.locator('.movement-actions-toolbar').getByRole('status')).toContainText('Se comprobará que sus categorías no cambien');
+  expect((await (await request.get(fixtureApi + '/__test__/state')).json()).categoryWrites).toBe(0);
+
+  await request.post(fixtureApi + '/__test__/change-category', {
+    data: { transactionId: 'synthetic-tx-1', categoryId: 'synthetic-restaurants' },
+  });
+  page.once('dialog', (dialog) => { void dialog.accept(); });
+  await page.getByRole('button', { name: 'Confirmar lote' }).click();
+  await expect(page.locator('.movement-actions-toolbar').getByRole('alert')).toContainText('La categoría cambió después de la previsualización');
+  expect(await rowCheckbox.isChecked()).toBe(true);
+  expect((await (await request.get(fixtureApi + '/__test__/state')).json()).categoryWrites).toBe(0);
+
+  await page.getByRole('button', { name: 'Previsualizar lote' }).click();
+  page.once('dialog', (dialog) => { void dialog.accept(); });
+  await page.getByRole('button', { name: 'Confirmar lote' }).click();
+  await expect(page.locator('.movement-operation-notice')).toContainText('Se ha confirmado la categoría de 1 movimiento');
+  const state = await (await request.get(fixtureApi + '/__test__/state')).json();
+  expect(state.categoryWrites).toBe(0); // the concurrent change already satisfied the requested final state
+  expect(state.lastCommittedChanges).toEqual([{ transactionId: 'synthetic-tx-1', categoryId: 'synthetic-restaurants' }]);
+});
+
+test('bulk category partial result keeps only pending rows selected for a fresh retry', async ({ page, request }) => {
+  await request.post(fixtureApi + '/__test__/reset');
+  await page.goto('/movements');
+  const first = page.getByRole('checkbox', { name: 'Seleccionar Supermercado sintético' });
+  const second = page.getByRole('checkbox', { name: 'Seleccionar Cafetería sin categoría sintética' });
+  await first.check();
+  await second.check();
+  await page.getByLabel('Categoría de gasto para el lote').selectOption('synthetic-restaurants');
+  await page.getByRole('button', { name: 'Previsualizar lote' }).click();
+  await request.post(fixtureApi + '/__test__/mode', { data: { batchFailAtTransactionId: 'synthetic-tx-3' } });
+  page.once('dialog', (dialog) => { void dialog.accept(); });
+  await page.getByRole('button', { name: 'Confirmar lote' }).click();
+
+  await expect(page.locator('.movement-actions-toolbar').getByRole('status')).toContainText('Solo quedan seleccionados los movimientos pendientes');
+  expect(await first.isChecked()).toBe(false);
+  expect(await second.isChecked()).toBe(true);
+  let state = await (await request.get(fixtureApi + '/__test__/state')).json();
+  expect(state.categoryWrites).toBe(1);
+  expect(state.lastCommittedChanges).toEqual([{ transactionId: 'synthetic-tx-1', categoryId: 'synthetic-restaurants' }]);
+
+  await page.getByRole('button', { name: 'Previsualizar lote' }).click();
+  await expect(page.locator('.movement-actions-toolbar').getByRole('status')).toContainText('1 movimientos de gasto');
+  page.once('dialog', (dialog) => { void dialog.accept(); });
+  await page.getByRole('button', { name: 'Confirmar lote' }).click();
+  await expect(page.locator('.movement-operation-notice')).toContainText('Se ha confirmado la categoría de 1 movimiento');
+  state = await (await request.get(fixtureApi + '/__test__/state')).json();
+  expect(state.categoryWrites).toBe(2);
+  expect(state.lastCommittedChanges).toEqual([{ transactionId: 'synthetic-tx-3', categoryId: 'synthetic-restaurants' }]);
 });
 
 test('CSV export downloads every row matching the current filters', async ({ page }) => {

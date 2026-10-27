@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import type { BudgetAccount, BudgetCategory, BudgetRepository, BudgetTransaction, TransactionCategoryBatchChange, TransactionCategoryBatchResult, TransactionUpdate } from '@personal-budget/finance-core';
+import type { BudgetAccount, BudgetCategory, BudgetRepository, BudgetTransaction, TransactionCategoryBatchChange, TransactionCategoryBatchResult, TransactionStructureUpdate, TransactionUpdate, TransactionWriteResult } from '@personal-budget/finance-core';
 import { isIsoDate, validatePeriod } from '@personal-budget/finance-core';
 import { z } from 'zod';
 import type { ActualAdapterConfig, ActualApiContract, ActualBudgetAllocation, ActualBudgetMonthRecord, ActualImportRecord, ActualImportResult } from './actual-api-contract.js';
@@ -26,9 +26,60 @@ const TransactionUpdateSchema = z.object({
   cleared: z.boolean().optional(),
 }).strict().refine((value) => Object.keys(value).length > 0, 'At least one supported transaction field is required');
 
+const TransactionStructureUpdateSchema = z.object({
+  date: z.string().refine(isIsoDate, 'date must be a valid YYYY-MM-DD date').optional(),
+  amount: z.number().int().refine(Number.isSafeInteger, 'amount must be a safe integer').refine((value) => value !== 0, 'amount cannot be zero').optional(),
+  imported_payee: z.string().max(500).transform((value) => value.trim()).optional(),
+  category: IdentifierSchema.nullable().optional(),
+  notes: z.string().max(2_000).optional(),
+  cleared: z.boolean().optional(),
+  is_parent: z.boolean().optional(),
+  subtransactions: z.array(z.object({
+    id: IdentifierSchema,
+    account: IdentifierSchema,
+    date: z.string().refine(isIsoDate, 'date must be a valid YYYY-MM-DD date'),
+    amount: z.number().int().refine(Number.isSafeInteger, 'amount must be a safe integer'),
+    parent_id: IdentifierSchema.nullable().optional(),
+    is_child: z.boolean().optional(),
+    is_parent: z.boolean().optional(),
+    category: IdentifierSchema.nullable().optional(),
+    notes: z.string().max(2_000).optional(),
+  }).passthrough()).min(1).optional(),
+}).strict().refine((value) => Object.keys(value).length > 0, 'At least one supported transaction field is required');
+
+function transactionMatchesUpdate(actual: BudgetTransaction, expected: TransactionStructureUpdate): boolean {
+  if (expected.date !== undefined && actual.date !== expected.date) return false;
+  if (expected.amount !== undefined && actual.amount !== expected.amount) return false;
+  if (expected.imported_payee !== undefined && actual.imported_payee !== expected.imported_payee) return false;
+  if (expected.category !== undefined && (actual.category ?? null) !== expected.category) return false;
+  if (expected.notes !== undefined && (actual.notes ?? '') !== expected.notes) return false;
+  if (expected.cleared !== undefined && Boolean(actual.cleared) !== expected.cleared) return false;
+  if (expected.is_parent !== undefined && Boolean(actual.is_parent) !== expected.is_parent) return false;
+  if (expected.subtransactions !== undefined) {
+    const actualChildren = actual.subtransactions ?? [];
+    if (actualChildren.length !== expected.subtransactions.length) return false;
+    const byId = new Map(actualChildren.map((child) => [child.id, child]));
+    for (const child of expected.subtransactions) {
+      const saved = byId.get(child.id);
+      if (!saved || saved.account !== child.account || saved.date !== child.date || saved.amount !== child.amount ||
+          (saved.category ?? null) !== (child.category ?? null) || (saved.notes ?? '') !== (child.notes ?? '') ||
+          (saved.parent_id ?? null) !== (child.parent_id ?? null) ||
+          (child.is_child !== undefined && Boolean(saved.is_child) !== child.is_child) ||
+          (child.is_parent !== undefined && Boolean(saved.is_parent) !== child.is_parent) ||
+          (child.cleared !== undefined && Boolean(saved.cleared) !== child.cleared) ||
+          (child.imported_payee !== undefined && (saved.imported_payee ?? null) !== child.imported_payee) ||
+          (child.payee_name !== undefined && (saved.payee_name ?? null) !== child.payee_name)) return false;
+    }
+  }
+  return true;
+}
+
 const CategoryBatchSchema = z.array(z.object({
   transactionId: IdentifierSchema,
   categoryId: IdentifierSchema,
+  accountId: IdentifierSchema,
+  date: z.string().refine(isIsoDate, 'date must be a valid YYYY-MM-DD date'),
+  expectedCategoryId: IdentifierSchema.nullable(),
 }).strict()).min(1).max(200).superRefine((changes, context) => {
   const seen = new Set<string>();
   for (const [index, change] of changes.entries()) {
@@ -137,6 +188,66 @@ export class ActualBudgetAdapter implements BudgetRepository {
     });
   }
 
+  /**
+   * Updates one Actual transaction only after its new state is observable, then syncs and
+   * verifies it again. This deliberately works around API versions where updateTransaction
+   * can resolve before the underlying batch write (notably transfer/split-related updates).
+   */
+  public async updateTransactionSafely(
+    transactionId: string,
+    accountId: string,
+    beforeDate: string,
+    fields: TransactionStructureUpdate,
+  ): Promise<TransactionWriteResult> {
+    const parsedId = IdentifierSchema.safeParse(transactionId);
+    const parsedAccount = IdentifierSchema.safeParse(accountId);
+    const parsedDate = z.string().refine(isIsoDate).safeParse(beforeDate);
+    const parsedFields = TransactionStructureUpdateSchema.safeParse(fields);
+    if (!parsedId.success || !parsedAccount.success || !parsedDate.success || !parsedFields.success) {
+      throw new ActualAdapterError('INVALID_INPUT', 'Transaction id, account, date, or update fields are invalid.');
+    }
+    if (!this.api.updateTransaction) {
+      throw new ActualAdapterError('UPSTREAM_FAILURE', 'The configured Actual API client does not support transaction updates.');
+    }
+    return this.enqueue(async () => {
+      const expected = parsedFields.data as TransactionStructureUpdate;
+      const afterDate = expected.date ?? parsedDate.data;
+      const startDate = parsedDate.data < afterDate ? parsedDate.data : afterDate;
+      const endDate = parsedDate.data > afterDate ? parsedDate.data : afterDate;
+      const waitUntilVisible = async (): Promise<boolean> => {
+        for (let attempt = 0; attempt < 40; attempt += 1) {
+          try {
+            const rows = await this.api.getTransactions(parsedAccount.data, startDate, endDate);
+            const saved = rows.find((row) => row.id === parsedId.data);
+            if (saved && transactionMatchesUpdate(saved, expected)) return true;
+          } catch {
+            // The local database may be between applying an update and exposing its read model.
+          }
+          await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+        }
+        return false;
+      };
+
+      try {
+        await this.api.updateTransaction!(parsedId.data, expected);
+      } catch {
+        return { persisted: false, verified: false };
+      }
+      // Do not sync while a detached update is still running; that can interrupt it.
+      if (!await waitUntilVisible()) {
+        try { await this.api.sync(); } catch { return { persisted: false, verified: false }; }
+        if (!await waitUntilVisible()) return { persisted: false, verified: false };
+      }
+      try {
+        await this.api.sync();
+      } catch {
+        return { persisted: false, verified: false };
+      }
+      const verified = await waitUntilVisible();
+      return { persisted: verified, verified };
+    });
+  }
+
   public async updateTransaction(transactionId: string, fields: TransactionUpdate): Promise<void> {
     const parsedTransactionId = IdentifierSchema.safeParse(transactionId);
     const parsedFields = TransactionUpdateSchema.safeParse(fields);
@@ -176,36 +287,127 @@ export class ActualBudgetAdapter implements BudgetRepository {
    */
   public async updateTransactionCategoriesBatch(changes: readonly TransactionCategoryBatchChange[]): Promise<TransactionCategoryBatchResult> {
     const parsed = CategoryBatchSchema.safeParse(changes);
-    if (!parsed.success) throw new ActualAdapterError('INVALID_INPUT', 'Category batch is invalid or contains duplicate transaction ids.');
+    if (!parsed.success) throw new ActualAdapterError('INVALID_INPUT', 'Category batch is invalid, missing verification scope, or contains duplicate transaction ids.');
     if (!this.api.updateTransaction) {
       throw new ActualAdapterError('UPSTREAM_FAILURE', 'The configured Actual API client does not support transaction updates.');
     }
     return this.enqueue(async () => {
       const updatedTransactionIds: string[] = [];
-      let currentTransactionId: string | undefined;
-      try {
-        for (const change of parsed.data) {
-          currentTransactionId = change.transactionId;
-          await this.api.updateTransaction!(change.transactionId, { category: change.categoryId });
-          updatedTransactionIds.push(change.transactionId);
-          currentTransactionId = undefined;
+      const waitForCategory = async (change: z.infer<typeof CategoryBatchSchema>[number]): Promise<boolean> => {
+        for (let attempt = 0; attempt < 40; attempt += 1) {
+          try {
+            const rows = await this.api.getTransactions(change.accountId, change.date, change.date);
+            const saved = rows.find((row) => row.id === change.transactionId && row.account === change.accountId);
+            if (saved && (saved.category ?? null) === change.categoryId) return true;
+          } catch {
+            // The official API may expose an asynchronously applied update slightly later.
+          }
+          await new Promise((resolveWait) => setTimeout(resolveWait, 50));
         }
-      } catch {
-        let persisted = false;
-        try { await this.api.sync(); persisted = true; } catch { /* Report unverified persistence instead of claiming rollback. */ }
-        return {
-          requested: parsed.data.length,
-          updatedTransactionIds,
-          ...(currentTransactionId ? { failedTransactionId: currentTransactionId } : {}),
-          persisted,
-        };
+        return false;
+      };
+
+      for (const change of parsed.data) {
+        // Compare the preview baseline again immediately before each write so a newer
+        // category edit is surfaced rather than silently overwritten by a stale batch.
+        let before: BudgetTransaction | undefined;
+        try {
+          const rows = await this.api.getTransactions(change.accountId, change.date, change.date);
+          before = rows.find((row) => row.id === change.transactionId && row.account === change.accountId);
+        } catch {
+          return {
+            requested: parsed.data.length,
+            updatedTransactionIds,
+            failedTransactionId: change.transactionId,
+            persisted: false,
+          };
+        }
+        if (!before) {
+          return {
+            requested: parsed.data.length,
+            updatedTransactionIds,
+            failedTransactionId: change.transactionId,
+            persisted: true,
+          };
+        }
+        if ((before.category ?? null) !== change.expectedCategoryId) {
+          return {
+            requested: parsed.data.length,
+            updatedTransactionIds,
+            failedTransactionId: change.transactionId,
+            conflictTransactionId: change.transactionId,
+            persisted: true,
+          };
+        }
+        // A retried request is a safe no-op when the requested category is already
+        // the verified current category and the preview baseline still matches.
+        if ((before.category ?? null) === change.categoryId) {
+          // A no-op must still sync: a previous attempt may have changed the local cache
+          // but failed to confirm remote persistence. Re-verify before acknowledging retry.
+          try {
+            await this.api.sync();
+          } catch {
+            return {
+              requested: parsed.data.length,
+              updatedTransactionIds,
+              failedTransactionId: change.transactionId,
+              persisted: false,
+            };
+          }
+          if (!await waitForCategory(change)) {
+            return {
+              requested: parsed.data.length,
+              updatedTransactionIds,
+              failedTransactionId: change.transactionId,
+              persisted: false,
+            };
+          }
+          updatedTransactionIds.push(change.transactionId);
+          continue;
+        }
+        try {
+          await this.api.updateTransaction!(change.transactionId, { category: change.categoryId });
+        } catch {
+          return {
+            requested: parsed.data.length,
+            updatedTransactionIds,
+            failedTransactionId: change.transactionId,
+            persisted: false,
+          };
+        }
+
+        // Wait until Actual exposes the new value before syncing or scheduling another write.
+        // Syncing while updateTransaction's batch is still running can interrupt the write.
+        if (!await waitForCategory(change)) {
+          return {
+            requested: parsed.data.length,
+            updatedTransactionIds,
+            failedTransactionId: change.transactionId,
+            persisted: false,
+          };
+        }
+        try {
+          await this.api.sync();
+        } catch {
+          return {
+            requested: parsed.data.length,
+            updatedTransactionIds,
+            failedTransactionId: change.transactionId,
+            persisted: false,
+          };
+        }
+        if (!await waitForCategory(change)) {
+          return {
+            requested: parsed.data.length,
+            updatedTransactionIds,
+            failedTransactionId: change.transactionId,
+            persisted: false,
+          };
+        }
+        updatedTransactionIds.push(change.transactionId);
       }
-      try {
-        await this.api.sync();
-        return { requested: parsed.data.length, updatedTransactionIds, persisted: true };
-      } catch {
-        return { requested: parsed.data.length, updatedTransactionIds, persisted: false };
-      }
+
+      return { requested: parsed.data.length, updatedTransactionIds, persisted: true };
     });
   }
 
