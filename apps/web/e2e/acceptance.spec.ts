@@ -353,6 +353,7 @@ test('movement editor previews validated changes before writing to Actual', asyn
   expect((await (await request.get(fixtureApi + '/__test__/state')).json()).transactionWrites).toBe(0);
   await dialog.getByRole('button', { name: 'Confirmar y guardar' }).click();
   await expect(dialog).toHaveCount(0);
+  await expect(page.locator('.movement-manager').getByRole('status')).toContainText('Cambios validados y guardados en Actual Budget');
   const state = await (await request.get(fixtureApi + '/__test__/state')).json();
   expect(state.transactionWrites).toBe(1);
   expect(state.lastTransactionUpdate).toMatchObject({
