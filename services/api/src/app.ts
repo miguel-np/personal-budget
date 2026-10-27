@@ -650,10 +650,24 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         if (parsed.changes.category !== undefined || parsed.changes.imported_payee !== undefined) {
           return reply.code(409).send({ error: { code: 'TRANSFER_FIELDS_RESTRICTED', message: 'For linked transfers, only date, amount, notes and cleared status may be edited.' } });
         }
-        const counterpart = transactions.find((item) =>
+        let counterpart = transactions.find((item) =>
           item.id === transaction.transfer_id && item.transfer_id === transaction.id &&
           item.account !== transaction.account,
         );
+        // Transfer legs may legitimately fall on different dates, including different months.
+        // If the selected period omitted the other leg, search the remaining active accounts
+        // across history; never widen the persisted account scope or silently edit one side.
+        if (!counterpart) {
+          for (const candidateAccount of accounts) {
+            if (candidateAccount.closed || candidateAccount.id === transaction.account) continue;
+            const candidates = await repository.listTransactions(candidateAccount.id, '0001-01-01', '9999-12-31');
+            counterpart = candidates.find((item) =>
+              item.id === transaction.transfer_id && item.transfer_id === transaction.id &&
+              item.account !== transaction.account,
+            );
+            if (counterpart) break;
+          }
+        }
         if (!counterpart || !accounts.some((account) => account.id === counterpart.account && !account.closed)) {
           return reply.code(409).send({ error: { code: 'TRANSFER_COUNTERPART_NOT_AVAILABLE', message: 'The matching transfer leg is outside the active account scope or could not be verified. No changes were written.' } });
         }
