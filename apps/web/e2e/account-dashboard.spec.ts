@@ -10,7 +10,7 @@ test('account view audits balances and opens movements in the selected account',
 
   await page.getByRole('link', { name: /Cuentas/ }).click();
   await expect(page.getByRole('heading', { name: 'Cuentas y saldos' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Cuenta sintética' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Cuenta sintética', exact: true })).toBeVisible();
   await expect(page.getByText('Patrimonio neto', { exact: true })).toBeVisible();
   await expect(page.getByText('No disponible', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('No se infiere una deuda a partir de un saldo negativo', { exact: false })).toBeVisible();
@@ -63,5 +63,5 @@ test('dashboard uses an explicit empty state when budget numbers do not raise al
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Límites que requieren atención' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Sin alertas de límite' })).toBeVisible();
-  await expect(page.getByText(/presupuesto completo de Actual/)).toBeVisible();
+  await expect(page.locator('.signal-note').filter({ hasText: 'Las alertas se ordenan primero por exceso' })).toBeVisible();
 });
