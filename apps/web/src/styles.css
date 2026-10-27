@@ -592,7 +592,7 @@ textarea::placeholder {
 .movement-actions-controls .button { min-height: 44px; }
 .transactions-table input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent, #7da7e8); }
 .transactions-table td:last-child, .transactions-table th:last-child { white-space: nowrap; }
-.transactions-table td .button.small { min-height: 40px; min-width: 64px; }
+.transactions-table td .button.small { min-height: 44px; min-width: 64px; }
 .movement-export-note { margin: 0; }
 .transaction-edit-backdrop { position: fixed; z-index: 1000; inset: 0; display: flex; align-items: center; justify-content: center; overflow-y: auto; padding: 20px; background: rgb(3 9 18 / 78%); }
 .transaction-edit-dialog { width: min(760px, 100%); max-height: min(90vh, 900px); overflow-y: auto; padding: 22px; box-shadow: 0 18px 64px rgb(0 0 0 / 32%); }
