@@ -143,7 +143,7 @@ export function ReportExportPanel({ current, previous, period, comparisonPeriod 
         type, period.startDate, period.endDate, comparisonPeriod.startDate, comparisonPeriod.endDate,
         scopeLabel, accountNames, metric.label, metric.category ?? '',
         value === null ? '' : value, metric.unit === 'minor' ? 'unidades menores (minor units)' : metric.unit,
-        current.currency, previousValue === null ? '' : previousValue, delta === null ? '' : delta,
+        current.currency, 'No desglosada en informe agregado; consulta exportación de movimientos para ver divisa nativa', previousValue === null ? '' : previousValue, delta === null ? '' : delta,
         deltaPercent === null ? '' : deltaPercent, current.transactionCount,
         current.unconvertedTransactionCount ?? 0, current.excludedTransferCount,
         conversionCriteria, ratesText, warningsText,
@@ -176,11 +176,11 @@ export function ReportExportPanel({ current, previous, period, comparisonPeriod 
         const headers = [
           'tipo', 'periodo_inicio', 'periodo_fin', 'comparacion_inicio', 'comparacion_fin',
           'ambito_cuentas', 'cuentas', 'metrica', 'categoria', 'valor_actual', 'unidad',
-          'divisa_analisis_actual', 'valor_periodo_anterior', 'variacion', 'variacion_pct',
+          'divisa_analisis_actual', 'divisas_nativas_por_movimiento', 'valor_periodo_anterior', 'variacion', 'variacion_pct',
           'cantidad_movimientos', 'movimientos_sin_conversion', 'traspasos_excluidos',
           'criterio_conversion', 'tipos_cambio_aplicados', 'advertencias',
         ];
-        const formulaSafeColumns = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 18, 19, 20];
+        const formulaSafeColumns = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 19, 20, 21];
         const csv = serializeCsv(headers, buildRows(), formulaSafeColumns);
         downloadTextFile(filename + '.csv', csv, 'text/csv;charset=utf-8');
       } else {
@@ -198,6 +198,7 @@ export function ReportExportPanel({ current, previous, period, comparisonPeriod 
           comparisonCurrency: previous.currency,
           currenciesComparable: sameCurrency,
           conversion: {
+            nativeCurrencyScope: 'El resumen agregado no desglosa los movimientos por moneda nativa; consulta la exportación de movimientos para ese detalle.',
             criteria: conversionCriteria,
             exchangeRatesUsed: [...(current.exchangeRatesUsed ?? [])],
             unconvertedTransactionCount: current.unconvertedTransactionCount ?? 0,
@@ -242,6 +243,7 @@ export function ReportExportPanel({ current, previous, period, comparisonPeriod 
             <div><dt>Ámbito de cuentas</dt><dd>{scopeLabel}</dd></div>
             <div><dt>Cuentas</dt><dd>{accountNames}</dd></div>
             <div><dt>Divisa de análisis</dt><dd>{current.currency}</dd></div>
+            <div><dt>Divisas nativas por movimiento</dt><dd>No se desglosan en el resumen agregado; exporta los movimientos para consultar la moneda original.</dd></div>
             <div><dt>Contenido</dt><dd>9 indicadores y {current.expensesByCategory.length} categorías de gasto; importes conservados en unidades menores.</dd></div>
             <div><dt>Conversión</dt><dd>{ratesText}</dd></div>
             <div><dt>Advertencias</dt><dd>{warningsText}</dd></div>

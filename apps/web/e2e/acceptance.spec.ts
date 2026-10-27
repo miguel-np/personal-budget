@@ -585,7 +585,7 @@ test('report export previews period, account scope and analysis currency before 
   await expect(preview).toBeVisible();
   await expect(preview).toContainText('Periodo actual');
   await expect(preview).toContainText('Divisa de análisis');
-  await expect(preview).toContainText('Importes agregados calculados');
+  await expect(preview).toContainText('este informe agregado expresa los importes en la divisa de análisis');
 
   const csvPromise = page.waitForEvent('download');
   await preview.getByRole('button', { name: 'Descargar informe CSV' }).click();
