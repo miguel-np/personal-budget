@@ -287,7 +287,6 @@ export class ActualBudgetAdapter implements BudgetRepository {
     }
     return this.enqueue(async () => {
       const updatedTransactionIds: string[] = [];
-      let currentTransactionId: string | undefined;
       const waitForCategory = async (change: z.infer<typeof CategoryBatchSchema>[number]): Promise<boolean> => {
         for (let attempt = 0; attempt < 40; attempt += 1) {
           try {
@@ -303,9 +302,8 @@ export class ActualBudgetAdapter implements BudgetRepository {
       };
 
       for (const change of parsed.data) {
-        currentTransactionId = change.transactionId;
         try {
-          await this.api.updateTransaction(change.transactionId, { category: change.categoryId });
+          await this.api.updateTransaction!(change.transactionId, { category: change.categoryId });
         } catch {
           return {
             requested: parsed.data.length,
@@ -344,7 +342,6 @@ export class ActualBudgetAdapter implements BudgetRepository {
           };
         }
         updatedTransactionIds.push(change.transactionId);
-        currentTransactionId = undefined;
       }
 
       return { requested: parsed.data.length, updatedTransactionIds, persisted: true };
