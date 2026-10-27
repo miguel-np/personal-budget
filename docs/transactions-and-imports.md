@@ -28,7 +28,7 @@ No existe garantía de compatibilidad universal con todos los formatos propietar
 
 ## Importación de datos en `personal-budget`
 
-La app propia debe usar el flujo de Actual o llamar a sus operaciones soportadas mediante `@actual-app/api`; no debe modificar directamente archivos internos, SQLite de Actual o ficheros de sincronización. La aplicación puede añadir una vista de previsualización, pero Actual continúa siendo la fuente de verdad.
+La importación CSV de la aplicación mantiene el mapeo de columnas existente. La importación OFX propia está limitada a SGML 1.02/1.03 y XML OFX 2.x, y se procesa en el navegador. Para límites, codificaciones, deduplicación y divisas, consulta la [guía de importación OFX](ofx-import.md). Los demás formatos admitidos por Actual no están habilitados en el flujo propio. La app debe usar el flujo de Actual o llamar a sus operaciones soportadas mediante `@actual-app/api`; no debe modificar archivos internos, SQLite de Actual ni ficheros de sincronización. Actual continúa siendo la fuente de verdad.
 
 ## Datos que no deben compartirse
 
