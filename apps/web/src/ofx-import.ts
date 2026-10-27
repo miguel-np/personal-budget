@@ -159,6 +159,9 @@ function boundedText(value: string | undefined, max: number): string | undefined
 }
 
 function selectProfile(source: string): { xml: boolean; profile: OfxParseResult['profile'] } {
+  if (/<!\s*(?:DOCTYPE|ENTITY|\[CDATA)\b/i.test(source)) {
+    fail('El documento incluye DTD, entidades personalizadas o CDATA no admitidos.');
+  }
   if (/<INTU\.[A-Z0-9_.-]+\b/i.test(source)) fail('El archivo contiene extensiones QFX/Intuit no admitidas.');
   const ofxStart = source.search(/<OFX\b/i);
   if (ofxStart < 0) fail('El archivo no contiene un documento OFX reconocible.');
