@@ -7,7 +7,7 @@ import { MovementManager } from './MovementManager.js';
 import { SettingsCenter, type AppPreferences } from './SettingsCenter.js';
 import { AccountsPanel } from './AccountsPanel.js';
 import { DashboardSignals } from './DashboardSignals.js';
-import { formatAccountBalance, formatCivilDate, formatMoney as sharedFormatMoney, formatUnconvertedMoney as sharedFormatUnconvertedMoney, setFinanceLocale } from './finance-format.js';
+import { formatAccountBalance, formatCivilDate, formatMoney as sharedFormatMoney, setFinanceLocale } from './finance-format.js';
 
 type ConnectionState = 'checking' | 'connected' | 'unconfigured' | 'error';
 type PeriodMode = 'day' | 'month' | 'year' | 'custom';
