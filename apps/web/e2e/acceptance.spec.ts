@@ -406,6 +406,31 @@ test('editing a linked transfer verifies both legs and rejects reversing its dir
   expect((await (await request.get(fixtureApi + '/__test__/state')).json()).transactionWrites).toBe(2);
 });
 
+test('editing only notes on a linked transfer reports that only one leg changed', async ({ page, request }) => {
+  await request.post(fixtureApi + '/__test__/reset');
+  await page.goto('/movements');
+  const sourceRow = page.locator('.transactions-table tbody tr')
+    .filter({ hasText: 'Transferencia sintética' })
+    .filter({ has: page.locator('.amount-cell.expense') })
+    .first();
+  await expect(sourceRow).toBeVisible();
+  await sourceRow.getByRole('button', { name: 'Editar' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Revisar cambios' });
+  await dialog.getByLabel('Notas').fill('Nota exclusiva de esta parte');
+  await dialog.getByRole('button', { name: 'Previsualizar cambios' }).click();
+  expect((await (await request.get(fixtureApi + '/__test__/state')).json()).transactionWrites).toBe(0);
+  await dialog.getByRole('button', { name: 'Confirmar y guardar' }).click();
+
+  await expect(page.locator('.movement-operation-notice'))
+    .toContainText('Esta parte de la transferencia se ha actualizado y verificado');
+  await expect(page.locator('.movement-operation-notice'))
+    .toContainText('La otra parte no se ha modificado');
+  const state = await (await request.get(fixtureApi + '/__test__/state')).json();
+  expect(state.transactionWrites).toBe(1);
+  expect(state.transferState.source.notes).toBe('Nota exclusiva de esta parte');
+  expect(state.transferState.counterpart.notes).toBe('Transferencia sintética');
+});
+
 test('editing a split child preserves every part and recalculates the parent total', async ({ page, request }) => {
   await request.post(fixtureApi + '/__test__/reset');
   await page.goto('/movements');
