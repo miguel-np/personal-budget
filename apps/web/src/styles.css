@@ -749,6 +749,8 @@ textarea::placeholder {
 :root[data-theme="light"] .settings-service-state.ok { color: #17643e; }
 :root[data-theme="light"] .settings-service-state.warning { color: #774e05; }
 :root[data-theme="light"] .settings-service-state.error { color: #9a302a; }
+:root[data-theme="light"] .stat-card > p,
+:root[data-theme="light"] .stat-card > span { color: #4f6177; }
 :root[data-theme="light"] .settings-reset-panel { border-color: #dbbc77; }
 
 @media (max-width: 760px) {
