@@ -47,11 +47,11 @@ test('dashboard shortcuts preserve transfer preview and signed manual movement v
 
   await page.getByLabel(/Importe \(EUR\)/).fill('12,50');
   await page.getByLabel('Concepto').fill('Gasto sintético');
-  await page.getByRole('button', { name: 'Previsualizar' }).click();
+  await page.getByRole('button', { name: 'Previsualizar', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Para registrar un gasto, introduce un importe negativo.');
 
   await page.getByLabel(/Importe \(EUR\)/).fill('-12,50');
-  await page.getByRole('button', { name: 'Previsualizar' }).click();
+  await page.getByRole('button', { name: 'Previsualizar', exact: true }).click();
   await expect(page.getByText('Previsualización calculada. Actual no se ha modificado.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Confirmar y registrar' })).toBeVisible();
 
