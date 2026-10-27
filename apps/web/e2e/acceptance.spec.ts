@@ -165,7 +165,7 @@ test('OFX currency mismatch disables preview and never calls the import API', as
   });
   await page.locator('.csv-controls-top').getByLabel('Cuenta destino').selectOption('synthetic-account-2');
 
-  await expect(page.getByRole('alert')).toContainText('no coincide con la divisa de la cuenta destino');
+  await expect(page.locator('.ofx-import-summary').getByRole('alert')).toContainText('no coincide con la divisa de la cuenta destino');
   await expect(page.getByRole('button', { name: 'Validar y previsualizar' })).toBeDisabled();
   const state = await (await request.get(fixtureApi + '/__test__/state')).json();
   expect(state.importPreviewCount).toBe(0);
