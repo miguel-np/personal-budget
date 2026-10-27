@@ -40,7 +40,7 @@ interface DashboardSignalsProps {
   readonly accountScopeLabel: string;
   readonly currency: string;
   readonly summary: Summary;
-  readonly comparison: Summary | null;
+  readonly comparison: Pick<Summary, 'startDate' | 'endDate' | 'incomeMinor' | 'expenseMinor' | 'savingsMinor'> | null;
   readonly reloadKey: number;
   readonly onNavigate: (href: string) => void;
   readonly onQuickRegister: (kind: QuickRegisterKind) => void;
