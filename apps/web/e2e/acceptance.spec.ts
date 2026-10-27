@@ -554,15 +554,48 @@ test('bulk category partial result keeps only pending rows selected for a fresh 
   expect(state.lastCommittedChanges).toEqual([{ transactionId: 'synthetic-tx-3', categoryId: 'synthetic-restaurants' }]);
 });
 
-test('CSV export downloads every row matching the current filters', async ({ page }) => {
+test('movement export previews all filtered rows before downloading CSV or JSON', async ({ page }) => {
   await page.goto('/movements');
   await page.getByLabel('Buscar').fill('Supermercado sintético');
   await expect(page.getByText('Supermercado sintético')).toBeVisible();
-  const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Exportar CSV filtrado' }).click();
-  const download = await downloadPromise;
-  expect(download.suggestedFilename()).toMatch(/^movimientos-filtrados-\d{4}-\d{2}-\d{2}\.csv$/);
-  await expect(page.locator('.movement-manager').getByRole('status')).toContainText('1 movimientos');
+  await page.getByRole('button', { name: 'Preparar exportación' }).click();
+  const preview = page.getByRole('region', { name: 'Previsualización de exportación de movimientos' });
+  await expect(preview).toBeVisible();
+  await expect(preview).toContainText('1 movimiento');
+  await expect(preview).toContainText('Todas las categorías');
+
+  const csvPromise = page.waitForEvent('download');
+  await preview.getByRole('button', { name: 'Descargar CSV' }).click();
+  const csvDownload = await csvPromise;
+  expect(csvDownload.suggestedFilename()).toMatch(/^movimientos-filtrados-\d{4}-\d{2}-\d{2}\.csv$/);
+  await expect(page.locator('.movement-manager').getByRole('status')).toContainText('Descarga iniciada');
+
+  const jsonPromise = page.waitForEvent('download');
+  await preview.getByRole('button', { name: 'Descargar JSON' }).click();
+  const jsonDownload = await jsonPromise;
+  expect(jsonDownload.suggestedFilename()).toMatch(/^movimientos-filtrados-\d{4}-\d{2}-\d{2}\.json$/);
+});
+
+test('report export previews period, account scope and analysis currency before download', async ({ page }) => {
+  await page.goto('/reports');
+  const exportPanel = page.getByRole('region', { name: 'Exportación de informes' });
+  await expect(exportPanel).toBeVisible();
+  await exportPanel.getByRole('button', { name: 'Preparar exportación del informe' }).click();
+  const preview = page.getByRole('region', { name: 'Previsualización de exportación del informe' });
+  await expect(preview).toBeVisible();
+  await expect(preview).toContainText('Periodo actual');
+  await expect(preview).toContainText('Divisa de análisis');
+  await expect(preview).toContainText('este informe agregado expresa los importes en la divisa de análisis');
+
+  const csvPromise = page.waitForEvent('download');
+  await preview.getByRole('button', { name: 'Descargar informe CSV' }).click();
+  const csvDownload = await csvPromise;
+  expect(csvDownload.suggestedFilename()).toMatch(/^informe-financiero-\d{4}-\d{2}-\d{2}\.csv$/);
+
+  const jsonPromise = page.waitForEvent('download');
+  await preview.getByRole('button', { name: 'Descargar informe JSON' }).click();
+  const jsonDownload = await jsonPromise;
+  expect(jsonDownload.suggestedFilename()).toMatch(/^informe-financiero-\d{4}-\d{2}-\d{2}\.json$/);
 });
 
 test('settings persist theme and regional formatting and reset only local preferences', async ({ page, request }) => {

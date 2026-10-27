@@ -4,6 +4,7 @@ import { BudgetPanel } from './BudgetPanel.js';
 import { AssistantPanel } from './AssistantPanel.js';
 import { PlanningPanel } from './PlanningPanel.js';
 import { MovementManager } from './MovementManager.js';
+import { ReportExportPanel } from './ReportExportPanel.js';
 import { SettingsCenter, type AppPreferences } from './SettingsCenter.js';
 import { AccountsPanel } from './AccountsPanel.js';
 import { DashboardSignals } from './DashboardSignals.js';
@@ -796,6 +797,7 @@ export function App() {
                       sortKey={sortKey}
                       sortAscending={sortAscending}
                       filterKey={[period.startDate, period.endDate, accountFilter, categoryFilter, searchText, uncategorizedOnly, page, sortKey, sortAscending].join('|')}
+                      accountScopeLabel={accountScope?.label ?? (accountScope?.mode === 'selected' ? 'Cuentas seleccionadas' : 'Todas las cuentas abiertas')}
                       onSort={changeSort}
                       onUpdated={(notice, refresh = true) => { setMovementNotice(notice); if (refresh) setRefreshKey((value) => value + 1); }}
                     />
@@ -827,6 +829,7 @@ export function App() {
                       </article>
                     </div>
                     <div className="section-footnote">La comparación utiliza el mismo tipo de periodo y cálculos de finance-core. No se consideran transferencias internas como ingresos o gastos consolidados.</div>
+                    <ReportExportPanel current={summary} previous={comparison} period={period} comparisonPeriod={previous} />
                   </>
                 ) : <EmptyState title="No hay datos suficientes" body="El informe necesita un presupuesto configurado y datos devueltos por Actual Budget." />}
               </section>
