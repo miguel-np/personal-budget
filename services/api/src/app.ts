@@ -89,6 +89,7 @@ const TransactionUpdateRequestSchema = z.object({
   accountId: z.string().trim().min(1).max(128),
   startDate: z.string().refine(isIsoDate, 'startDate must be a valid YYYY-MM-DD date.'),
   endDate: z.string().refine(isIsoDate, 'endDate must be a valid YYYY-MM-DD date.'),
+  syncTransferDate: z.boolean().optional().default(false),
   changes: z.object({
     date: z.string().refine(isIsoDate, 'date must be a valid YYYY-MM-DD date.').optional(),
     amount: z.number().int().refine(Number.isSafeInteger, 'amount must be a safe integer.').refine((amount) => amount !== 0, 'amount cannot be zero.').optional(),
@@ -644,8 +645,8 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         updater.updateTransactionSafely!(id, accountId, beforeDate, fields);
 
       if (transaction.transfer_id) {
-        // Never alter the linkage or category/payee of a transfer. Date and amount must
-        // be kept coherent across both records; non-atomic failures are reported explicitly.
+        // Actual links transfer amount and notes across both legs. Reconcile status stays local;
+        // date stays independent unless the user explicitly requests date synchronization.
         if (parsed.changes.category !== undefined || parsed.changes.imported_payee !== undefined) {
           return reply.code(409).send({ error: { code: 'TRANSFER_FIELDS_RESTRICTED', message: 'For linked transfers, only date, amount, notes and cleared status may be edited.' } });
         }
@@ -675,8 +676,9 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         }
 
         const pairFields: TransactionStructureUpdate = {
-          ...(parsed.changes.date === undefined ? {} : { date: parsed.changes.date }),
+          ...(parsed.changes.date === undefined || !parsed.syncTransferDate ? {} : { date: parsed.changes.date }),
           ...(parsed.changes.amount === undefined ? {} : { amount: -nextAmount }),
+          ...(parsed.changes.notes === undefined ? {} : { notes: parsed.changes.notes }),
         };
         if (Object.keys(pairFields).length > 0) {
           const counterpartResult = await writeOne(counterpart.id, counterpart.account, counterpart.date, pairFields);
@@ -697,7 +699,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
           transactionId: transaction.id,
           counterpartTransactionId: counterpart.id,
           updatedFields: Object.keys(parsed.changes),
-          updatedTransactionIds: pairFields && Object.keys(pairFields).length > 0 ? [transaction.id, counterpart.id] : [transaction.id],
+          updatedTransactionIds: Object.keys(pairFields).length > 0 ? [transaction.id, counterpart.id] : [transaction.id],
           persisted: true,
           verified: true,
           partial: false,
