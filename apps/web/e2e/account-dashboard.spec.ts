@@ -35,7 +35,7 @@ test('dashboard shortcuts preserve transfer preview and signed manual movement v
   expect(transferState.transferPreviewCount).toBe(1);
   expect(transferState.transferCommitCount).toBe(0);
   await page.getByRole('button', { name: 'Confirmar transferencia' }).click();
-  await expect(page.getByText(/Actual ha confirmado la operación/)).toBeVisible();
+  await expect(page.locator('.movement-operation-notice')).toContainText('Actual ha confirmado la operación');
   transferState = await (await request.get('http://127.0.0.1:3000/__test__/state')).json();
   expect(transferState.transferCommitCount).toBe(1);
   expect(transferState.lastTransferPayload).toMatchObject({ sourceAccountId: 'synthetic-account-1', destinationAccountId: 'synthetic-account-transfer-eur', amountMinor: 12500 });
@@ -47,11 +47,11 @@ test('dashboard shortcuts preserve transfer preview and signed manual movement v
 
   await page.getByLabel(/Importe \(EUR\)/).fill('12,50');
   await page.getByLabel('Concepto').fill('Gasto sintético');
-  await page.getByRole('button', { name: 'Previsualizar' }).click();
+  await page.getByRole('button', { name: 'Previsualizar', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Para registrar un gasto, introduce un importe negativo.');
 
   await page.getByLabel(/Importe \(EUR\)/).fill('-12,50');
-  await page.getByRole('button', { name: 'Previsualizar' }).click();
+  await page.getByRole('button', { name: 'Previsualizar', exact: true }).click();
   await expect(page.getByText('Previsualización calculada. Actual no se ha modificado.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Confirmar y registrar' })).toBeVisible();
 

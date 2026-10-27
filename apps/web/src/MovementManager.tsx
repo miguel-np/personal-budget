@@ -43,7 +43,7 @@ interface MovementManagerProps {
   sortAscending: boolean;
   filterKey: string;
   onSort: (key: SortKey) => void;
-  onUpdated: () => void;
+  onUpdated: (notice: string) => void;
 }
 interface ApiResult<T> {
   data?: T;
@@ -131,7 +131,7 @@ export function MovementManager(props: MovementManagerProps) {
   const [editNotice, setEditNotice] = useState('');
   const lastEditId = useRef<string | null>(null);
   const dateInput = useRef<HTMLInputElement>(null);
-  const visibleIds = useMemo(() => new Set(transactions.map((item) => item.id)), [transactions]);
+  const visibleIdKey = JSON.stringify(transactions.map((item) => item.id));
   const selectableTransactions = useMemo(() => transactions.filter(canBulkCategorize), [transactions]);
   const accountNames = useMemo(() => new Map(accounts.map((item) => [item.id, item.name])), [accounts]);
   const categoryNames = useMemo(() => new Map(categories.map((item) => [item.id, item.name])), [categories]);
@@ -153,32 +153,38 @@ export function MovementManager(props: MovementManagerProps) {
   }, [filterKey]);
 
   useEffect(() => {
+    // Keep the selection when a parent creates a new array with the same visible rows.
+    const visibleIds = new Set<string>(JSON.parse(visibleIdKey) as string[]);
     setSelectedIds((previous) => previous.filter((id) => visibleIds.has(id)));
-  }, [visibleIds]);
+  }, [visibleIdKey]);
 
   useEffect(() => {
-    if (editing) {
-      setDraft({
-        date: editing.date,
-        amount: amountInput(editing.amount, locale),
-        concept: editing.imported_payee?.trim() || editing.payee_name?.trim() || '',
-        categoryId: editing.category ?? '',
-        notes: editing.notes ?? '',
-        cleared: Boolean(editing.cleared),
-      });
-      setEditPreview(false);
-      setEditError('');
-      setEditNotice('');
-      return;
-    }
-    if (lastEditId.current) {
-      const id = lastEditId.current;
-      lastEditId.current = null;
-      const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-transaction-edit]'));
-      const target = buttons.find((button) => button.getAttribute('data-transaction-edit') === id);
-      target?.focus();
-    }
-  }, [editing?.id, locale]);
+    if (editing || !lastEditId.current) return;
+    const id = lastEditId.current;
+    lastEditId.current = null;
+    const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-transaction-edit]'));
+    const target = buttons.find((button) => button.getAttribute('data-transaction-edit') === id);
+    if (target) target.focus();
+    else document.querySelector<HTMLElement>('[data-movement-manager-heading]')?.focus();
+  }, [editing?.id]);
+
+  function openEditor(transaction: MovementTransaction): void {
+    // Initialize the draft in the same event as opening the dialog so the first
+    // render is complete; an effect must not overwrite input entered immediately.
+    lastEditId.current = transaction.id;
+    setDraft({
+      date: transaction.date,
+      amount: amountInput(transaction.amount, locale),
+      concept: transaction.imported_payee?.trim() || transaction.payee_name?.trim() || '',
+      categoryId: transaction.category ?? '',
+      notes: transaction.notes ?? '',
+      cleared: Boolean(transaction.cleared),
+    });
+    setEditPreview(false);
+    setEditError('');
+    setEditNotice('');
+    setEditing(transaction);
+  }
 
   function closeEditor(): void {
     setEditing(null);
@@ -192,20 +198,24 @@ export function MovementManager(props: MovementManagerProps) {
       closeEditor();
       return;
     }
-    if (event.key === 'Tab') {
-      const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      )).filter((element) => element.getClientRects().length > 0);
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (!first || !last) return;
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
+    if (event.key !== 'Tab') return;
+    const dialog = event.currentTarget;
+    const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    )).filter((element) => element.tabIndex >= 0);
+    if (focusable.length === 0) {
+      event.preventDefault();
+      return;
+    }
+    const first = focusable[0]!;
+    const last = focusable[focusable.length - 1]!;
+    const active = document.activeElement;
+    if (event.shiftKey && (active === first || !dialog.contains(active))) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
+      event.preventDefault();
+      first.focus();
     }
   }
   function changeDraft<K extends keyof EditDraft>(field: K, value: EditDraft[K]): void {
@@ -275,13 +285,14 @@ export function MovementManager(props: MovementManagerProps) {
         },
       );
       if (!response.ok || !payload.data) throw new Error(payload.error?.message ?? 'No se han podido guardar los cambios.');
-      setEditNotice('Cambios validados y guardados en Actual Budget.');
+      const notice = 'Cambios validados y guardados en Actual Budget.';
+      setEditNotice(notice);
       lastEditId.current = editing.id;
       setEditing(null);
       setDraft(null);
       setEditPreview(false);
       setSelectedIds([]);
-      onUpdated();
+      onUpdated(notice);
     } catch (error) {
       setEditError(error instanceof Error ? error.message : 'No se han podido guardar los cambios.');
     } finally {
@@ -323,18 +334,17 @@ export function MovementManager(props: MovementManagerProps) {
       });
       if (!response.ok || !payload.data) throw new Error(payload.error?.message ?? 'La API no pudo aplicar el lote.');
       const outcome = payload.data;
-      if (outcome.partial || outcome.applied !== outcome.requested || outcome.persisted === false) {
-        setBatchNotice('Resultado parcial: ' + (outcome.applied ?? outcome.changes) + ' de ' + outcome.requested + ' cambios intentados. ' +
+      const batchMessage = outcome.partial || outcome.applied !== outcome.requested || outcome.persisted === false
+        ? 'Resultado parcial: ' + (outcome.applied ?? outcome.changes) + ' de ' + outcome.requested + ' cambios intentados. ' +
           (outcome.failedTransactionId ? 'Revisa el ID técnico ' + outcome.failedTransactionId + '. ' : '') +
           (outcome.persisted === false ? 'La persistencia no se ha podido verificar. ' : '') +
-          (outcome.message ?? 'Revisa Actual antes de volver a intentarlo; no se ha ejecutado ninguna deshacer automática.'));
-      } else {
-        setBatchNotice('Se han guardado y sincronizado ' + outcome.changes + ' cambios de categoría.');
-      }
+          (outcome.message ?? 'Revisa Actual antes de volver a intentarlo; no se ha ejecutado ninguna deshacer automática.')
+        : 'Se han guardado y sincronizado ' + outcome.changes + ' cambios de categoría.';
+      setBatchNotice(batchMessage);
       setSelectedIds([]);
       setBatchPreview(false);
       setBatchCategoryId('');
-      onUpdated();
+      onUpdated(batchMessage);
     } catch (error) {
       setBatchError(error instanceof Error ? error.message : 'No se ha podido completar el lote.');
     } finally { setBatchBusy(false); }
@@ -396,7 +406,7 @@ export function MovementManager(props: MovementManagerProps) {
     <section className="movement-manager" aria-label="Gestión de movimientos">
       <div className="movement-actions-toolbar panel">
         <div className="movement-actions-heading">
-          <div><p className="eyebrow">ACCIONES SEGURAS</p><h3>Selección y exportación</h3></div>
+          <div><p className="eyebrow">ACCIONES SEGURAS</p><h3 tabIndex={-1} data-movement-manager-heading>Selección y exportación</h3></div>
           <span className="date-badge">{total} resultados · {selectedIds.length} seleccionados</span>
         </div>
         <p className="setting-hint">La selección se limita a la página visible. La categorización por lote solo incluye gastos ordinarios; las transferencias, ingresos y movimientos divididos se protegen de acciones en lote.</p>
@@ -417,11 +427,12 @@ export function MovementManager(props: MovementManagerProps) {
         {batchNotice ? <p className="form-alert" role="status">{batchNotice}</p> : null}
         {exportMessage ? <p className="form-alert" role="status">{exportMessage}</p> : null}
       </div>
+      {editNotice ? <p className="form-alert" role="status">{editNotice}</p> : null}
       {transactions.length === 0 ? <div className="empty-state"><span className="empty-symbol" aria-hidden="true">◇</span><h3>No se han encontrado movimientos</h3><p>Cambia el periodo o los filtros. Esta vista no inventa datos cuando Actual no devuelve resultados.</p></div> : (
         <div className="table-wrap" role="region" aria-label="Movimientos paginados; desplázate horizontalmente para ver todas las columnas" tabIndex={0}>
           <table className="transactions-table">
             <thead><tr>
-              <th scope="col"><input type="checkbox" aria-label="Seleccionar todos los gastos ordinarios de esta página" checked={allSelectableSelected} onChange={(event) => setSelectedIds(event.currentTarget.checked ? selectableTransactions.map((item) => item.id) : [])} /></th>
+              <th scope="col"><input type="checkbox" aria-label="Seleccionar todos los gastos ordinarios de esta página" checked={allSelectableSelected} onChange={(event) => { const checked = event.currentTarget.checked; setSelectedIds(checked ? selectableTransactions.map((item) => item.id) : []); setBatchPreview(false); setBatchNotice(''); }} /></th>
               <th scope="col"><button type="button" className="sort-button" onClick={() => onSort('date')}>Fecha{sortKey === 'date' ? (sortAscending ? ' ↑' : ' ↓') : ''}</button></th>
               <th scope="col"><button type="button" className="sort-button" onClick={() => onSort('description')}>Descripción{sortKey === 'description' ? (sortAscending ? ' ↑' : ' ↓') : ''}</button></th>
               <th scope="col">Cuenta</th><th scope="col">Categoría</th>
@@ -434,7 +445,7 @@ export function MovementManager(props: MovementManagerProps) {
               const description = transactionDescription(transaction);
               const reason = transaction.transfer_id ? 'Las transferencias deben editarse juntas en Actual Budget.' : 'Los movimientos divididos se protegen para evitar perder o duplicar apuntes.';
               return <tr key={transaction.id}>
-                <td><input type="checkbox" aria-label={'Seleccionar ' + description} checked={selectedIds.includes(transaction.id)} disabled={!bulkSelectable} title={!bulkSelectable ? (editable ? 'La categorización en lote está limitada a gastos.' : reason) : undefined} onChange={(event) => { setSelectedIds((previous) => event.currentTarget.checked ? [...previous.filter((id) => id !== transaction.id), transaction.id] : previous.filter((id) => id !== transaction.id)); setBatchPreview(false); setBatchNotice(''); }} /></td>
+                <td><input type="checkbox" aria-label={'Seleccionar ' + description} checked={selectedIds.includes(transaction.id)} disabled={!bulkSelectable} title={!bulkSelectable ? (editable ? 'La categorización en lote está limitada a gastos.' : reason) : undefined} onChange={(event) => { const checked = event.currentTarget.checked; setSelectedIds((previous) => checked ? [...previous.filter((id) => id !== transaction.id), transaction.id] : previous.filter((id) => id !== transaction.id)); setBatchPreview(false); setBatchNotice(''); }} /></td>
                 <td>{formatCivilDate(transaction.date, locale)}</td>
                 <td><strong className="transaction-name">{description}</strong>{transaction.notes ? <small className="transaction-note">{transaction.notes}</small> : null}</td>
                 <td>{accountNames.get(transaction.account) ?? 'Cuenta desconocida'}</td>
@@ -443,7 +454,7 @@ export function MovementManager(props: MovementManagerProps) {
                   ? formatMoney(transaction.displayAmountMinor, transaction.displayCurrency ?? currency, locale)
                   : <span title="No hay conversión válida">{formatMoney(transaction.amount, transaction.currencyCode ?? currency, locale)}<small className="warning-text">Sin conversión de análisis</small></span>}</td>
                 <td><span className={'cleared-badge ' + (transaction.cleared ? 'cleared' : '')}>{transaction.cleared ? 'Conciliado' : 'Pendiente'}</span></td>
-                <td><button className="button small secondary" type="button" data-transaction-edit={transaction.id} disabled={!editable} title={!editable ? reason : 'Editar movimiento'} onClick={() => { lastEditId.current = transaction.id; setEditing(transaction); }}>Editar</button></td>
+                <td><button className="button small secondary" type="button" data-transaction-edit={transaction.id} disabled={!editable} title={!editable ? reason : 'Editar movimiento'} onClick={() => openEditor(transaction)}>Editar</button></td>
               </tr>;
             })}</tbody>
           </table>
@@ -471,6 +482,7 @@ export function MovementManager(props: MovementManagerProps) {
                   <p><strong>{transactionDescription(editing)}</strong> · {formatCivilDate(editing.date, locale)} · {formatMoney(editing.amount, editing.currencyCode ?? currency, locale)}</p>
                   <p>Nuevo valor: <strong>{draft.concept.trim() || 'Sin concepto'}</strong> · {formatCivilDate(draft.date, locale)} · {parseAmountInput(draft.amount) === null ? 'Importe inválido' : formatMoney(parseAmountInput(draft.amount) as number, editing.currencyCode ?? currency, locale)}</p>
                   <p>Categoría: {categoryNames.get(editing.category ?? '') ?? 'Sin categoría'} → {categoryNames.get(draft.categoryId) ?? 'Sin categoría'}; estado: {editing.cleared ? 'Conciliado' : 'Pendiente'} → {draft.cleared ? 'Conciliado' : 'Pendiente'}.</p>
+                  <p>Notas: <strong>{editing.notes?.trim() || 'Sin notas'}</strong> → <strong>{draft.notes.trim() || 'Sin notas'}</strong>.</p>
                 </section>
               ) : null}
               {editError ? <p className="form-alert error" role="alert">{editError}</p> : null}
