@@ -63,7 +63,12 @@ function transactionMatchesUpdate(actual: BudgetTransaction, expected: Transacti
       const saved = byId.get(child.id);
       if (!saved || saved.account !== child.account || saved.date !== child.date || saved.amount !== child.amount ||
           (saved.category ?? null) !== (child.category ?? null) || (saved.notes ?? '') !== (child.notes ?? '') ||
-          (saved.parent_id ?? null) !== (child.parent_id ?? null)) return false;
+          (saved.parent_id ?? null) !== (child.parent_id ?? null) ||
+          (child.is_child !== undefined && Boolean(saved.is_child) !== child.is_child) ||
+          (child.is_parent !== undefined && Boolean(saved.is_parent) !== child.is_parent) ||
+          (child.cleared !== undefined && Boolean(saved.cleared) !== child.cleared) ||
+          (child.imported_payee !== undefined && (saved.imported_payee ?? null) !== child.imported_payee) ||
+          (child.payee_name !== undefined && (saved.payee_name ?? null) !== child.payee_name)) return false;
     }
   }
   return true;
