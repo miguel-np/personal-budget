@@ -164,7 +164,8 @@ export function MovementManager(props: MovementManagerProps) {
     lastEditId.current = null;
     const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-transaction-edit]'));
     const target = buttons.find((button) => button.getAttribute('data-transaction-edit') === id);
-    target?.focus();
+    if (target) target.focus();
+    else document.querySelector<HTMLElement>('[data-movement-manager-heading]')?.focus();
   }, [editing?.id]);
 
   function openEditor(transaction: MovementTransaction): void {
@@ -195,6 +196,26 @@ export function MovementManager(props: MovementManagerProps) {
     if (event.key === 'Escape' && !editBusy) {
       event.preventDefault();
       closeEditor();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const dialog = event.currentTarget;
+    const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    )).filter((element) => element.tabIndex >= 0);
+    if (focusable.length === 0) {
+      event.preventDefault();
+      return;
+    }
+    const first = focusable[0]!;
+    const last = focusable[focusable.length - 1]!;
+    const active = document.activeElement;
+    if (event.shiftKey && (active === first || !dialog.contains(active))) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
+      event.preventDefault();
+      first.focus();
     }
   }
   function changeDraft<K extends keyof EditDraft>(field: K, value: EditDraft[K]): void {
@@ -385,7 +406,7 @@ export function MovementManager(props: MovementManagerProps) {
     <section className="movement-manager" aria-label="Gestión de movimientos">
       <div className="movement-actions-toolbar panel">
         <div className="movement-actions-heading">
-          <div><p className="eyebrow">ACCIONES SEGURAS</p><h3>Selección y exportación</h3></div>
+          <div><p className="eyebrow">ACCIONES SEGURAS</p><h3 tabIndex={-1} data-movement-manager-heading>Selección y exportación</h3></div>
           <span className="date-badge">{total} resultados · {selectedIds.length} seleccionados</span>
         </div>
         <p className="setting-hint">La selección se limita a la página visible. La categorización por lote solo incluye gastos ordinarios; las transferencias, ingresos y movimientos divididos se protegen de acciones en lote.</p>
