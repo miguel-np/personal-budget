@@ -1,4 +1,4 @@
-import { useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
 import { parseCsv, parseCsvMoney, parseDate, isValidIsoDate, type DateFormat, type Delimiter } from './csv-import.js';
 
 export interface MovementAccount {
@@ -36,6 +36,7 @@ interface MovementToolsProps {
   categories: readonly MovementCategory[];
   currency: string;
   onImported: () => void;
+  quickRequest?: { readonly key: number; readonly kind: 'income' | 'expense' } | null;
 }
 
 function localToday(): string {
@@ -97,9 +98,10 @@ function FormAlert({ children, error = false }: { children: string; error?: bool
   return <p className={'form-alert' + (error ? ' error' : '')} role={error ? 'alert' : 'status'}>{children}</p>;
 }
 
-export function MovementTools({ accounts, categories, currency, onImported }: MovementToolsProps) {
+export function MovementTools({ accounts, categories, currency, onImported, quickRequest }: MovementToolsProps) {
   const openAccounts = useMemo(() => accounts.filter((account) => !account.closed), [accounts]);
   const [manualOpen, setManualOpen] = useState(false);
+  const [manualKind, setManualKind] = useState<'any' | 'income' | 'expense'>('any');
   const [accountId, setAccountId] = useState(openAccounts[0]?.id ?? '');
   const [date, setDate] = useState(localToday);
   const [amount, setAmount] = useState('');
@@ -134,6 +136,17 @@ export function MovementTools({ accounts, categories, currency, onImported }: Mo
   const [csvMessage, setCsvMessage] = useState('');
   const [csvError, setCsvError] = useState('');
 
+  useEffect(() => {
+    if (!quickRequest) return;
+    setManualOpen(true);
+    setManualKind(quickRequest.kind);
+    setAmount('');
+    setManualRecords(null);
+    setManualResult(null);
+    setManualMessage('');
+    setManualError('');
+  }, [quickRequest]);
+
   async function previewManual(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setManualError('');
@@ -149,6 +162,14 @@ export function MovementTools({ accounts, categories, currency, onImported }: Mo
     }
     if (amountMinor === null) {
       setManualError('El importe debe ser distinto de cero y tener como máximo dos decimales.');
+      return;
+    }
+    if (manualKind === 'income' && amountMinor < 0) {
+      setManualError('Para registrar un ingreso, introduce un importe positivo.');
+      return;
+    }
+    if (manualKind === 'expense' && amountMinor > 0) {
+      setManualError('Para registrar un gasto, introduce un importe negativo.');
       return;
     }
     if (!payee.trim()) {
@@ -359,23 +380,23 @@ export function MovementTools({ accounts, categories, currency, onImported }: Mo
       <div className="movement-tools-header">
         <div><p className="eyebrow">GESTIÓN DE MOVIMIENTOS</p><h3>Nuevo movimiento o importación</h3></div>
         <div className="tool-actions">
-          <button className="button secondary" type="button" onClick={() => { setManualOpen((open) => !open); setManualError(''); setManualRecords(null); }}>{manualOpen ? 'Cerrar formulario' : 'Registrar movimiento'}</button>
+          <button className="button secondary" type="button" onClick={() => { setManualOpen((open) => { if (!open) setManualKind('any'); return !open; }); setManualError(''); setManualRecords(null); }}>{manualOpen ? 'Cerrar formulario' : 'Registrar movimiento'}</button>
           <button className="button secondary" type="button" onClick={() => { setCsvOpen((open) => !open); setCsvError(''); }}>{csvOpen ? 'Cerrar importación' : 'Importar CSV'}</button>
         </div>
       </div>
 
       {manualOpen ? (
         <form className="tool-panel" onSubmit={previewManual}>
-          <div className="panel-heading"><div><p className="eyebrow">REGISTRO MANUAL</p><h4>Añadir a Actual Budget</h4></div><span className="muted-label">Importe en {currency}</span></div>
+          <div className="panel-heading"><div><p className="eyebrow">REGISTRO MANUAL</p><h4>{manualKind === 'income' ? 'Registrar ingreso' : manualKind === 'expense' ? 'Registrar gasto' : 'Añadir a Actual Budget'}</h4></div><span className="muted-label">Importe en {currency}</span></div>
           <div className="manual-form-grid">
             <label className="field-label">Cuenta destino<select value={accountId} onChange={(event) => { setAccountId(event.currentTarget.value); setManualRecords(null); }} required>{openAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
             <label className="field-label">Fecha<input type="date" value={date} onChange={(event) => { setDate(event.currentTarget.value); setManualRecords(null); }} required /></label>
-            <label className="field-label">Importe ({currency})<input type="text" inputMode="decimal" autoComplete="off" placeholder="-25,99 gasto · 1500 ingreso" value={amount} onChange={(event) => { setAmount(event.currentTarget.value); setManualRecords(null); }} required /></label>
+            <label className="field-label">Importe ({currency})<input type="text" inputMode="decimal" autoComplete="off" placeholder={manualKind === 'income' ? 'Importe positivo, por ejemplo 1500' : manualKind === 'expense' ? 'Importe negativo, por ejemplo -25,99' : '-25,99 gasto · 1500 ingreso'} value={amount} onChange={(event) => { setAmount(event.currentTarget.value); setManualRecords(null); }} required /></label>
             <label className="field-label">Concepto<input type="text" maxLength={200} value={payee} onChange={(event) => { setPayee(event.currentTarget.value); setManualRecords(null); }} placeholder="Supermercado, nómina…" required /></label>
             <label className="field-label">Categoría<select value={categoryId} onChange={(event) => { setCategoryId(event.currentTarget.value); setManualRecords(null); }}><option value="">Sin categoría</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
             <label className="field-label">Notas (opcional)<input type="text" maxLength={2000} value={notes} onChange={(event) => { setNotes(event.currentTarget.value); setManualRecords(null); }} /></label>
           </div>
-          <p className="tool-hint">Los gastos se introducen con signo negativo y los ingresos con signo positivo. Antes de escribir, se muestra una previsualización de conciliación de Actual Budget.</p>
+          <p className="tool-hint">Los gastos usan importes negativos y los ingresos positivos{manualKind === 'income' ? '; este formulario valida que el importe sea positivo.' : manualKind === 'expense' ? '; este formulario valida que el importe sea negativo.' : '.'} Antes de escribir, se muestra una previsualización de conciliación de Actual Budget.</p>
           <div className="tool-actions">
             <button className="button primary" type="submit" disabled={manualBusy || openAccounts.length === 0}>{manualBusy ? 'Comprobando…' : 'Previsualizar'}</button>
             {manualRecords ? <button className="button primary" type="button" disabled={manualBusy} onClick={() => void commitManual()}>{manualBusy ? 'Guardando…' : 'Confirmar y registrar'}</button> : null}
