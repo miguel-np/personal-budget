@@ -633,7 +633,7 @@ export function MovementTools({ accounts, categories, currency, onImported, quic
   })), [headers]);
   const selectedImportAccount = openAccounts.find((account) => account.id === csvAccountId);
   const selectedImportCurrency = (selectedImportAccount?.nativeCurrencyCode ?? selectedImportAccount?.currencyCode)?.trim().toUpperCase() ?? '';
-  const importCurrency = fileFormat === 'ofx' ? selectedImportCurrency || ofxParsed?.currencyCode || currency : currency;
+  const importCurrency = fileFormat === 'ofx' ? selectedImportCurrency || ofxParsed?.currencyCode || 'XXX' : currency;
   const ofxCurrencyMismatch = Boolean(fileFormat === 'ofx' && ofxParsed?.currencyCode && selectedImportCurrency && ofxParsed.currencyCode !== selectedImportCurrency);
   const ofxNeedsCurrencyAcknowledgement = Boolean(fileFormat === 'ofx' && ofxParsed && (!ofxParsed.currencyCode || !selectedImportCurrency));
   const hasImportSource = fileFormat === 'csv' ? csvRows.length > 0 : fileFormat === 'ofx' ? (ofxParsed?.records.length ?? 0) > 0 : false;
