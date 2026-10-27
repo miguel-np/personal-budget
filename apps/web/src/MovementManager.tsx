@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { formatCivilDate, formatMoney } from './finance-format.js';
+import { downloadTextFile, exportDateStamp, serializeCsv } from './export-utils.js';
 
 type SortKey = 'date' | 'amount' | 'description';
 interface MovementTransaction {
@@ -25,6 +26,8 @@ interface MovementTransaction {
   parent_transaction_id?: string;
   is_split_editable?: boolean;
   subtransactions?: readonly MovementTransaction[];
+  parent_id?: string | null;
+  conversion?: { warning?: string; rate?: string | null; effectiveDate?: string | null; source?: string | null };
 }
 interface MovementAccount { id: string; name: string; closed: boolean }
 interface MovementCategory { id: string; name: string; isIncome: boolean }
@@ -44,6 +47,7 @@ interface MovementManagerProps {
   sortKey: SortKey;
   sortAscending: boolean;
   filterKey: string;
+  accountScopeLabel: string;
   onSort: (key: SortKey) => void;
   onUpdated: (notice: string, refresh?: boolean) => void;
 }
@@ -51,6 +55,23 @@ interface ApiResult<T> {
   data?: T;
   error?: { code?: string; message?: string };
   pagination?: { total: number; limit: number; offset: number };
+}
+interface MovementExportPreview {
+  rows: readonly MovementTransaction[];
+  generatedAt: string;
+  filters: {
+    startDate: string;
+    endDate: string;
+    account: string;
+    accountId: string | null;
+    category: string;
+    categoryId: string | null;
+    search: string;
+    uncategorizedOnly: boolean;
+    sortBy: SortKey;
+    sortOrder: 'asc' | 'desc';
+    accountScope: string;
+  };
 }
 interface EditDraft {
   date: string;
@@ -101,11 +122,6 @@ function isIsoDate(value: string): boolean {
   const date = new Date(Number(yearText), Number(monthText) - 1, Number(dayText), 12);
   return date.getFullYear() === Number(yearText) && date.getMonth() === Number(monthText) - 1 && date.getDate() === Number(dayText);
 }
-function safeCsvCell(value: unknown, formulaSafe = false): string {
-  let text = value === null || value === undefined ? '' : String(value);
-  if (formulaSafe && /^[\s\u0000-\u001f]*[=+\-@]/.test(text)) text = "'" + text;
-  return '"' + text.replace(/"/g, '""') + '"';
-}
 async function requestJson<T>(url: string, init?: RequestInit): Promise<{ response: Response; payload: ApiResult<T> }> {
   const response = await fetch(url, { ...init, headers: { Accept: 'application/json', ...(init?.headers ?? {}) } });
   const payload = await response.json().catch(() => ({})) as ApiResult<T>;
@@ -116,7 +132,7 @@ export function MovementManager(props: MovementManagerProps) {
   const {
     transactions, total, accounts, categories, currency, locale, startDate, endDate,
     accountFilter, categoryFilter, searchText, uncategorizedOnly, sortKey, sortAscending,
-    filterKey, onSort, onUpdated,
+    filterKey, accountScopeLabel, onSort, onUpdated,
   } = props;
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [batchCategoryId, setBatchCategoryId] = useState('');
@@ -127,6 +143,8 @@ export function MovementManager(props: MovementManagerProps) {
   const [batchNotice, setBatchNotice] = useState('');
   const [exportBusy, setExportBusy] = useState(false);
   const [exportMessage, setExportMessage] = useState('');
+  const [exportError, setExportError] = useState('');
+  const [exportPreview, setExportPreview] = useState<MovementExportPreview | null>(null);
   const [editing, setEditing] = useState<MovementTransaction | null>(null);
   const [draft, setDraft] = useState<EditDraft | null>(null);
   const [editPreview, setEditPreview] = useState(false);
@@ -156,6 +174,8 @@ export function MovementManager(props: MovementManagerProps) {
     setBatchError('');
     setBatchNotice('');
     setExportMessage('');
+    setExportError('');
+    setExportPreview(null);
   }, [filterKey]);
 
   useEffect(() => {
@@ -437,56 +457,150 @@ export function MovementManager(props: MovementManagerProps) {
     } finally { setBatchBusy(false); }
   }
 
-  async function exportCsv(): Promise<void> {
+  async function prepareExport(): Promise<void> {
     if (exportBusy) return;
-    setExportBusy(true); setExportMessage('');
+    setExportBusy(true);
+    setExportMessage('');
+    setExportError('');
+    setExportPreview(null);
     try {
       const allRows: MovementTransaction[] = [];
       const pageLimit = 200;
-      const filters = new URLSearchParams({ startDate, endDate, limit: String(pageLimit), offset: '0', sortBy: sortKey, order: sortAscending ? 'asc' : 'desc' });
+      const filters = new URLSearchParams({
+        startDate, endDate, limit: String(pageLimit), offset: '0',
+        sortBy: sortKey, order: sortAscending ? 'asc' : 'desc',
+      });
       if (accountFilter !== 'all') filters.set('accountId', accountFilter);
       if (categoryFilter !== 'all') filters.set('categoryId', categoryFilter);
       if (uncategorizedOnly) filters.set('uncategorized', 'true');
       if (searchText.trim()) filters.set('search', searchText.trim());
       const first = await requestJson<MovementTransaction[]>('/api/v1/transactions?' + filters.toString());
-      if (!first.response.ok || !first.payload.data) throw new Error(first.payload.error?.message ?? 'No se han podido consultar los movimientos para exportar.');
+      if (!first.response.ok || !first.payload.data) {
+        throw new Error(first.payload.error?.message ?? 'No se han podido consultar los movimientos para exportar.');
+      }
       const expected = first.payload.pagination?.total ?? first.payload.data.length;
+      if (!Number.isSafeInteger(expected) || expected < 0) {
+        throw new Error('La API devolvió un total de movimientos no válido; no se ha creado ningún archivo.');
+      }
+      if (expected === 0) {
+        throw new Error('No hay movimientos que coincidan con los filtros. No se ha creado ningún archivo.');
+      }
       const maxExport = 10_000;
-      if (expected > maxExport) throw new Error('El resultado incluye ' + expected + ' movimientos. Acota el periodo o los filtros a 10.000 movimientos o menos para exportar de forma segura.');
+      if (expected > maxExport) {
+        throw new Error('El resultado incluye ' + expected + ' movimientos. Acota el periodo o los filtros a ' + maxExport + ' movimientos o menos para exportar de forma segura.');
+      }
       allRows.push(...first.payload.data);
       for (let offset = pageLimit; offset < expected; offset += pageLimit) {
         filters.set('offset', String(offset));
         const { response, payload } = await requestJson<MovementTransaction[]>('/api/v1/transactions?' + filters.toString());
-        if (!response.ok || !payload.data || payload.data.length === 0) throw new Error(payload.error?.message ?? 'La consulta exportable cambió o quedó incompleta; no se ha generado ningún archivo.');
+        if (!response.ok || !payload.data || payload.data.length === 0) {
+          throw new Error(payload.error?.message ?? 'La consulta exportable cambió o quedó incompleta; no se ha generado ningún archivo.');
+        }
         allRows.push(...payload.data);
       }
-      if (allRows.length !== expected) throw new Error('El total consultado cambió durante la exportación. Ajusta los filtros y vuelve a intentarlo.');
-      const headers = ['fecha', 'concepto', 'cuenta', 'categoria', 'importe_minor', 'divisa', 'notas', 'conciliado', 'id_movimiento', 'id_transferencia'];
-      const rows = allRows.map((item) => [
-        item.date,
-        transactionDescription(item),
-        accountNames.get(item.account) ?? 'Cuenta desconocida',
-        categoryNames.get(item.category ?? '') ?? '',
-        String(item.amount),
-        item.currencyCode ?? item.currency_code ?? '',
-        item.notes ?? '',
-        item.cleared ? 'sí' : 'no',
-        item.id,
-        item.transfer_id ?? '',
-      ]);
-      const csv = '\uFEFF' + [headers, ...rows].map((row) => row.map((value, index) => safeCsvCell(value, [1, 2, 3, 5, 6, 8, 9].includes(index))).join(';')).join('\r\n') + '\r\n';
-      const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = 'movimientos-filtrados-' + new Date().toISOString().slice(0, 10) + '.csv';
-      document.body.append(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setExportMessage('Archivo CSV generado en el navegador: ' + allRows.length + ' movimientos con filtros actuales. El servidor no conserva la exportación.');
+      const uniqueIds = new Set(allRows.map((item) => item.id));
+      if (allRows.length !== expected || uniqueIds.size !== expected) {
+        throw new Error('El total o los IDs consultados cambiaron durante la exportación. Ajusta los filtros y vuelve a intentarlo.');
+      }
+      const filterSnapshot: MovementExportPreview['filters'] = {
+        startDate,
+        endDate,
+        account: accountFilter === 'all' ? 'Todas las cuentas del ámbito (' + accountScopeLabel + ')' : (accountNames.get(accountFilter) ?? 'Cuenta seleccionada'),
+        accountId: accountFilter === 'all' ? null : accountFilter,
+        category: categoryFilter === 'all' ? 'Todas las categorías' : (categoryNames.get(categoryFilter) ?? 'Categoría seleccionada'),
+        categoryId: categoryFilter === 'all' ? null : categoryFilter,
+        search: searchText.trim(),
+        uncategorizedOnly,
+        sortBy: sortKey,
+        sortOrder: sortAscending ? 'asc' : 'desc',
+        accountScope: accountScopeLabel,
+      };
+      setExportPreview({ rows: allRows, generatedAt: new Date().toISOString(), filters: filterSnapshot });
+      setExportMessage('Previsualización preparada para ' + allRows.length + (allRows.length === 1 ? ' movimiento.' : ' movimientos.') + ' Todavía no se ha creado ningún archivo; confirma el formato para descargarlo.');
     } catch (error) {
-      setExportMessage(error instanceof Error ? error.message : 'No se ha podido generar el archivo CSV.');
-    } finally { setExportBusy(false); }
+      setExportPreview(null);
+      setExportError(error instanceof Error ? error.message : 'No se ha podido preparar la exportación CSV/JSON.');
+    } finally {
+      setExportBusy(false);
+    }
+  }
+
+  function downloadExport(format: 'csv' | 'json'): void {
+    if (!exportPreview) return;
+    setExportError('');
+    try {
+      const filename = 'movimientos-filtrados-' + exportDateStamp(new Date(exportPreview.generatedAt));
+      if (format === 'csv') {
+        const headers = [
+          'fecha', 'concepto', 'cuenta', 'categoria', 'importe_minor', 'divisa_nativa',
+          'importe_analisis_minor', 'divisa_analisis', 'tipo_cambio', 'fecha_conversion',
+          'fuente_conversion', 'notas', 'conciliado', 'id_movimiento', 'id_transferencia',
+          'id_padre', 'id_movimiento_padre',
+        ];
+        const rows = exportPreview.rows.map((item) => [
+          item.date,
+          transactionDescription(item),
+          accountNames.get(item.account) ?? 'Cuenta desconocida',
+          categoryNames.get(item.category ?? '') ?? '',
+          item.amount,
+          item.currencyCode ?? item.currency_code ?? '',
+          item.displayAmountMinor ?? '',
+          item.displayCurrency ?? '',
+          item.conversion?.rate ?? '',
+          item.conversion?.effectiveDate ?? '',
+          item.conversion?.source ?? '',
+          item.notes ?? '',
+          item.cleared ? 'sí' : 'no',
+          item.id,
+          item.transfer_id ?? '',
+          item.parent_id ?? '',
+          item.parent_transaction_id ?? '',
+        ]);
+        const formulaSafeColumns = [0, 1, 2, 3, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        const csv = serializeCsv(headers, rows, formulaSafeColumns);
+        downloadTextFile(filename + '.csv', csv, 'text/csv;charset=utf-8');
+      } else {
+        const payload = {
+          schema: 'personal-budget.transactions-export.v1',
+          generatedAt: exportPreview.generatedAt,
+          filters: exportPreview.filters,
+          recordCount: exportPreview.rows.length,
+          amountConvention: {
+            amountMinor: 'Entero en unidades menores de la divisa nativa de cada movimiento; conserva precisión y signo de Actual Budget.',
+            analysisAmountMinor: 'Importe convertido por la API a la divisa de análisis cuando existe conversión válida; null si no está disponible.',
+            conversionRate: 'Tasa y metadatos de conversión informados por la API; no se recalculan durante la exportación.',
+          },
+          transactions: exportPreview.rows.map((item) => ({
+            id: item.id,
+            date: item.date,
+            description: transactionDescription(item),
+            accountId: item.account,
+            accountName: accountNames.get(item.account) ?? null,
+            categoryId: item.category ?? null,
+            categoryName: categoryNames.get(item.category ?? '') ?? null,
+            amountMinor: item.amount,
+            nativeCurrency: item.currencyCode ?? item.currency_code ?? null,
+            analysisAmountMinor: item.displayAmountMinor ?? null,
+            analysisCurrency: item.displayCurrency ?? null,
+            conversion: item.conversion ? { ...item.conversion } : null,
+            notes: item.notes ?? null,
+            cleared: Boolean(item.cleared),
+            transferId: item.transfer_id ?? null,
+            parentId: item.parent_id ?? null,
+            parentTransactionId: item.parent_transaction_id ?? null,
+            isParent: Boolean(item.is_parent),
+            isChild: Boolean(item.is_child),
+            isSplitChild: Boolean(item.is_split_child),
+            subtransactionIds: item.subtransactions?.map((child) => child.id) ?? [],
+          })),
+          disclaimer: 'Exportación de los movimientos consultados; no es una copia de seguridad completa y no incluye configuración, historial ni todos los datos privados de Actual Budget.',
+        };
+        downloadTextFile(filename + '.json', JSON.stringify(payload, null, 2) + '\n', 'application/json;charset=utf-8');
+      }
+      setExportMessage('Descarga iniciada en el navegador. El archivo no se guarda en el servidor ni se envía a terceros.');
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : 'No se ha podido generar el archivo de exportación.');
+    }
   }
 
   return (
@@ -507,12 +621,33 @@ export function MovementManager(props: MovementManagerProps) {
           <div className="button-row">
             <button className="button secondary" type="button" disabled={!selectedTransactions.length || !batchCategoryId || batchBusy} onClick={() => { void previewBatch(); }}>Previsualizar lote</button>
             <button className="button primary" type="button" disabled={!batchPreview || !selectedTransactions.length || !batchCategoryId || batchBusy} onClick={() => { void commitBatch(); }}>{batchBusy ? 'Procesando…' : 'Confirmar lote'}</button>
-            <button className="button secondary" type="button" disabled={exportBusy} onClick={() => { void exportCsv(); }}>{exportBusy ? 'Exportando…' : 'Exportar CSV filtrado'}</button>
+            <button className="button secondary" type="button" disabled={exportBusy} onClick={() => { void prepareExport(); }}>{exportBusy ? 'Preparando…' : 'Preparar exportación'}</button>
           </div>
         </div>
         {batchError ? <p className="form-alert error" role="alert">{batchError}</p> : null}
         {batchNotice ? <p className="form-alert" role="status">{batchNotice}</p> : null}
+        {exportError ? <p className="form-alert error" role="alert">{exportError}</p> : null}
         {exportMessage ? <p className="form-alert" role="status">{exportMessage}</p> : null}
+        {exportPreview ? (
+          <section className="confirmation-panel export-preview" aria-label="Previsualización de exportación de movimientos">
+            <h4>Previsualización — todavía no se ha creado ningún archivo</h4>
+            <dl className="export-preview-metadata">
+              <div><dt>Periodo</dt><dd>{exportPreview.filters.startDate} — {exportPreview.filters.endDate}</dd></div>
+              <div><dt>Cuenta</dt><dd>{exportPreview.filters.account}</dd></div>
+              <div><dt>Categoría</dt><dd>{exportPreview.filters.category}</dd></div>
+              <div><dt>Búsqueda</dt><dd>{exportPreview.filters.search || 'Sin búsqueda textual'}</dd></div>
+              <div><dt>Sin categoría</dt><dd>{exportPreview.filters.uncategorizedOnly ? 'Sí' : 'No'}</dd></div>
+              <div><dt>Resultados</dt><dd>{exportPreview.rows.length} {exportPreview.rows.length === 1 ? 'movimiento' : 'movimientos'}</dd></div>
+              <div><dt>Ámbito guardado</dt><dd>{exportPreview.filters.accountScope}</dd></div>
+            </dl>
+            <p className="setting-hint">CSV: UTF-8 con BOM, separador punto y coma, fechas ISO y cantidades enteras en unidades menores. JSON conserva identificadores, relaciones e información de conversión disponible. La exportación es local y no sustituye a una copia de seguridad completa.</p>
+            <div className="button-row">
+              <button className="button primary" type="button" onClick={() => downloadExport('csv')}>Descargar CSV</button>
+              <button className="button secondary" type="button" onClick={() => downloadExport('json')}>Descargar JSON</button>
+              <button className="button secondary" type="button" onClick={() => { setExportPreview(null); setExportMessage('Previsualización cancelada; no se ha creado ningún archivo.'); setExportError(''); }}>Cancelar</button>
+            </div>
+          </section>
+        ) : null}
       </div>
       {editNotice ? <p className="form-alert" role="status">{editNotice}</p> : null}
       {transactions.length === 0 ? <div className="empty-state"><span className="empty-symbol" aria-hidden="true">◇</span><h3>No se han encontrado movimientos</h3><p>Cambia el periodo o los filtros. Esta vista no inventa datos cuando Actual no devuelve resultados.</p></div> : (
@@ -547,7 +682,7 @@ export function MovementManager(props: MovementManagerProps) {
           </table>
         </div>
       )}
-      <p className="setting-hint movement-export-note">El CSV incluye todos los resultados de los filtros actuales (no solo la página visible), con importes enteros en unidades menores y divisa de origen. Las exportaciones solo se descargan en el navegador; no se guardan en el servidor.</p>
+      <p className="setting-hint movement-export-note">La exportación consulta todas las páginas del conjunto filtrado, no solo la página visible. Conserva importes originales en unidades menores, informa de la divisa nativa y añade el importe de análisis únicamente cuando la API dispone de conversión válida.</p>
       {editing && draft ? (
         <div className="transaction-edit-backdrop">
           <div className="transaction-edit-dialog panel" role="dialog" aria-modal="true" aria-labelledby="transaction-edit-title" onKeyDown={onDialogKeyDown}>
