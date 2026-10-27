@@ -1099,7 +1099,7 @@ describe('local API', () => {
 
   it('edits only validated ordinary transactions and rejects a resulting amount/category mismatch', async () => {
     const listTransactions = vi.fn(async () => transactions);
-    const updateTransaction = vi.fn(async (_id: string, _fields: TransactionUpdate) => undefined);
+    const updateTransaction = vi.fn(async (id: string, fields: TransactionUpdate) => { void id; void fields; });
     const updateTransactionSafely = vi.fn(async (
       id: string,
       _accountId: string,
@@ -1160,7 +1160,7 @@ describe('local API', () => {
       { id: 'pair-in', account: 'account-2', currencyCode: 'EUR', date: '2026-10-02', amount: 50_000, transfer_id: 'pair-out' },
     ];
     const listTransactions = vi.fn(async (accountId: string) => pairTransactions.filter((item) => item.account === accountId));
-    const updateTransaction = vi.fn(async (_id: string, _fields: TransactionUpdate) => undefined);
+    const updateTransaction = vi.fn(async (id: string, fields: TransactionUpdate) => { void id; void fields; });
     const updateTransactionSafely = vi.fn(async (
       id: string,
       _accountId: string,
@@ -1222,7 +1222,7 @@ describe('local API', () => {
         { id: 'split-other', account: 'account-1', date: '2026-10-02', amount: -3_000, parent_id: 'split-parent', is_child: true },
       ],
     };
-    const updateTransaction = vi.fn(async (_id: string, _fields: TransactionUpdate) => undefined);
+    const updateTransaction = vi.fn(async (id: string, fields: TransactionUpdate) => { void id; void fields; });
     const updateTransactionSafely = vi.fn(async (
       id: string,
       _accountId: string,
