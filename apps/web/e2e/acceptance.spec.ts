@@ -196,3 +196,147 @@ test('desktop, tablet and mobile viewports avoid page-level horizontal overflow'
     expect(dimensions.page, 'page horizontal overflow at viewport ' + width + ': ' + JSON.stringify(dimensions.offenders)).toBeLessThanOrEqual(dimensions.viewport + 1);
   }
 });
+
+test('skip navigation and section changes keep keyboard focus predictable', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto('/');
+
+  const skipLink = page.getByRole('link', { name: 'Saltar al contenido principal' });
+  await page.keyboard.press('Tab');
+  await expect(skipLink).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#main-content')).toBeFocused();
+
+  await page.getByRole('navigation', { name: 'Secciones de la aplicación' })
+    .getByRole('link', { name: 'Movimientos', exact: true }).click();
+  await expect(page).toHaveURL('/movements');
+  await expect(page.getByRole('heading', { name: 'Movimientos', level: 1 })).toBeFocused();
+});
+
+test('visible form controls have programmatic labels across core sections', async ({ page }) => {
+  for (const route of ['/', '/movements', '/reports', '/budgets', '/planning', '/assistant', '/settings']) {
+    await page.goto(route);
+    await expect(page.getByRole('main')).toBeVisible();
+    const unlabeled = await page.locator('input:not([type="hidden"]), select, textarea').evaluateAll((elements) => {
+      const textForId = (id: string) => document.getElementById(id)?.textContent?.trim() ?? '';
+      return elements
+        .filter((element) => element instanceof HTMLElement && element.getClientRects().length > 0)
+        .filter((element) => {
+          const ariaLabel = element.getAttribute('aria-label')?.trim() ?? '';
+          const labelledBy = (element.getAttribute('aria-labelledby') ?? '')
+            .split(/\s+/).filter(Boolean).some((id) => textForId(id).length > 0);
+          const labels = 'labels' in element
+            ? Array.from((element as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).labels ?? [])
+                .some((label) => label.textContent?.trim())
+            : false;
+          return !ariaLabel && !labelledBy && !labels;
+        })
+        .map((element) => ({
+          tag: element.tagName.toLowerCase(),
+          type: element.getAttribute('type'),
+          id: element.id,
+          name: element.getAttribute('name'),
+          placeholder: element.getAttribute('placeholder'),
+        }));
+    });
+    expect(unlabeled, 'Unlabeled visible controls at ' + route).toEqual([]);
+  }
+});
+
+test('key financial text meets WCAG AA contrast against its rendered surface', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('.stat-card').first()).toBeVisible();
+  const lowContrast = await page.evaluate(() => {
+    type RGBA = [number, number, number, number];
+    const parseColor = (value: string): RGBA | null => {
+      const channels = value.match(/[\d.]+/g)?.map(Number);
+      if (!channels || channels.length < 3) return null;
+      return [channels[0] ?? 0, channels[1] ?? 0, channels[2] ?? 0, channels[3] ?? 1];
+    };
+    const luminance = (color: RGBA): number => {
+      const channel = (value: number) => {
+        const srgb = value / 255;
+        return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * channel(color[0]) + 0.7152 * channel(color[1]) + 0.0722 * channel(color[2]);
+    };
+    const ratio = (foreground: RGBA, background: RGBA) => {
+      const a = luminance(foreground);
+      const b = luminance(background);
+      return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    };
+    const selectors = [
+      '.page-header h1', '.page-subtitle', '.stat-card > p', '.stat-card > strong',
+      '.stat-card > span', '.app-footer', '.muted-copy', '.section-footnote', '.field-label',
+    ];
+    return selectors.flatMap((selector) => [...document.querySelectorAll(selector)]
+      .filter((element) => element.getClientRects().length > 0 && (element.textContent ?? '').trim().length > 0)
+      .map((element) => {
+        const style = getComputedStyle(element);
+        const foreground = parseColor(style.color);
+        let ancestor: Element | null = element;
+        let background: RGBA | null = null;
+        while (ancestor) {
+          const parsed = parseColor(getComputedStyle(ancestor).backgroundColor);
+          if (parsed && parsed[3] >= 0.99) { background = parsed; break; }
+          ancestor = ancestor.parentElement;
+        }
+        const contrast = foreground && background ? ratio(foreground, background) : 0;
+        return { selector, text: (element.textContent ?? '').trim().slice(0, 60), contrast: Number(contrast.toFixed(2)) };
+      }).filter((sample) => sample.contrast < 4.5));
+  });
+  expect(lowContrast, 'Text that fails the WCAG AA contrast threshold: ' + JSON.stringify(lowContrast)).toEqual([]);
+});
+
+test('core sections reflow at desktop, tablet and mobile widths without page-level overflow', async ({ page }) => {
+  const sections = [
+    { route: '/', heading: 'Resumen financiero' },
+    { route: '/movements', heading: 'Movimientos' },
+    { route: '/reports', heading: 'Informes' },
+    { route: '/budgets', heading: 'Presupuestos' },
+    { route: '/planning', heading: 'Planificación' },
+    { route: '/assistant', heading: 'Asistente' },
+    { route: '/settings', heading: 'Configuración' },
+  ];
+  for (const width of [1440, 768, 375]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const section of sections) {
+      await page.goto(section.route);
+      await expect(page.getByRole('heading', { name: section.heading, level: 1 })).toBeVisible();
+      const dimensions = await page.evaluate(() => ({
+        viewport: window.innerWidth,
+        document: document.documentElement.scrollWidth,
+        offenders: [...document.querySelectorAll('*')].map((element) => {
+          const rect = element.getBoundingClientRect();
+          return {
+            tag: element.tagName.toLowerCase(),
+            className: typeof element.className === 'string' ? element.className.slice(0, 80) : '',
+            left: Math.round(rect.left),
+            right: Math.round(rect.right),
+            width: Math.round(rect.width),
+            scrollWidth: element.scrollWidth,
+          };
+        }).filter((element) => element.right > window.innerWidth + 1 && element.width > 0)
+          .sort((a, b) => b.right - a.right).slice(0, 8),
+      }));
+      expect(dimensions.document, 'Page overflow at ' + section.route + ' / ' + width + 'px: ' + JSON.stringify(dimensions.offenders)).toBeLessThanOrEqual(dimensions.viewport + 1);
+    }
+  }
+});
+
+test('primary actions expose comfortable touch target sizes on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto('/movements');
+  const undersized = await page.locator('.button, .nav-item, .mode-button, .pagination button')
+    .evaluateAll((elements) => elements
+      .filter((element) => element.getClientRects().length > 0)
+      .map((element) => ({
+        selector: element.className.toString(),
+        label: (element.textContent ?? '').trim().slice(0, 40),
+        width: Math.round(element.getBoundingClientRect().width),
+        height: Math.round(element.getBoundingClientRect().height),
+      }))
+      .filter((element) => element.height < 44 || element.width < 44));
+  expect(undersized, 'Action targets below the 44px design target: ' + JSON.stringify(undersized)).toEqual([]);
+});
+

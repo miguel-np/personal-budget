@@ -424,7 +424,7 @@ export function MovementTools({ accounts, categories, currency, onImported }: Mo
                 Cuenta destino: <strong>{openAccounts.find((account) => account.id === csvAccountId)?.name ?? 'Cuenta no disponible'}</strong>.
                 {csvResult?.dryRun ? ' Actual informa ' + csvResult.added + ' movimientos nuevos y ' + csvResult.updated + ' actualizables; el análisis no ha escrito cambios.' : ' Revisa las filas antes de confirmar.'}
               </p>
-              <div className="csv-preview-table-wrap">
+              <div className="csv-preview-table-wrap" role="region" aria-label="Previsualización de movimientos importados; desplázate horizontalmente para ver todas las columnas" tabIndex={0}>
                 <table className="csv-preview-table">
                   <thead><tr><th scope="col">Fecha</th><th scope="col">Concepto</th><th scope="col">Categoría</th><th scope="col">Importe ({currency})</th><th scope="col">Resultado</th></tr></thead>
                   <tbody>{csvRecords.slice(0, 50).map((record) => {

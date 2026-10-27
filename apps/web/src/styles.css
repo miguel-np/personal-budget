@@ -399,3 +399,183 @@ textarea { min-width: 0; max-width: 100%; border: 1px solid var(--border-strong)
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* Issue #36: keyboard, touch-target, contrast and reflow hardening. */
+:root {
+  --text-tertiary: #91a4bb;
+}
+
+.skip-link {
+  position: fixed;
+  z-index: 1000;
+  top: 16px;
+  left: 16px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 10px 14px;
+  transform: translateY(calc(-100% - 24px));
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-panel);
+  font-size: 14px;
+  font-weight: 650;
+  text-decoration: none;
+  transition: transform var(--motion-fast);
+}
+.skip-link:focus,
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+.skip-link:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex="0"]:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+#main-content:focus-visible,
+.page-header h1[tabindex="-1"]:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 4px;
+  border-radius: 3px;
+}
+
+.nav-list {
+  padding-block: 3px;
+  scroll-padding-inline: 10px;
+}
+.nav-item,
+.mode-button,
+.button {
+  min-height: 44px;
+  min-width: 44px;
+}
+button:not(.sort-button),
+.sort-button,
+.button {
+  min-height: 44px;
+  touch-action: manipulation;
+}
+.sort-button {
+  min-width: 44px;
+}
+.pagination button {
+  min-width: 44px;
+  min-height: 44px;
+}
+.field-label input,
+.field-label select,
+.filters-panel input,
+.filters-panel select {
+  height: 44px;
+  min-height: 44px;
+}
+input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]) {
+  min-height: 44px;
+  height: 44px;
+}
+select,
+textarea {
+  min-height: 44px;
+}
+.check-field {
+  min-height: 44px;
+}
+.check-field input {
+  width: 20px;
+  height: 20px;
+  min-height: 20px;
+  flex: 0 0 20px;
+}
+.allocation-input input {
+  height: 44px;
+  min-height: 44px;
+}
+.allocation-actions .button {
+  min-height: 44px;
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-tertiary);
+  opacity: 1;
+}
+.app-footer {
+  color: #91a4bb;
+  font-size: 11px;
+}
+.section-footnote {
+  color: #9aaec5;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.stat-card > span {
+  color: #9aaec5;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.muted-label {
+  color: #9db0c6;
+  font-size: 11px;
+}
+.table-wrap,
+.budget-table-wrap,
+.trend-table-wrap,
+.csv-preview-table-wrap {
+  max-width: 100%;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Planning uses long payee names and explanatory copy; keep their min-content
+   width from creating document-level horizontal scrolling on small screens. */
+@media (max-width: 620px) {
+  .planning-panel,
+  .forecast-result,
+  .forecast-result .panel,
+  .suggestion-block,
+  .comparison-row,
+  .comparison-meta,
+  .form-grid {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .comparison-row > div {
+    min-width: 0;
+    flex-wrap: wrap;
+    overflow-wrap: anywhere;
+  }
+  .comparison-row > div > span,
+  .comparison-row > div > strong,
+  .comparison-meta > span {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+  .planning-panel .button-row {
+    display: flex;
+    flex-wrap: wrap;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .planning-panel .button {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .form-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+}
+
