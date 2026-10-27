@@ -3,6 +3,8 @@ import { MovementTools } from './MovementTools.js';
 import { BudgetPanel } from './BudgetPanel.js';
 import { AssistantPanel } from './AssistantPanel.js';
 import { PlanningPanel } from './PlanningPanel.js';
+import { AccountsPanel } from './AccountsPanel.js';
+import { DashboardSignals } from './DashboardSignals.js';
 import { formatAccountBalance, formatCivilDate, formatMoney as sharedFormatMoney, formatUnconvertedMoney as sharedFormatUnconvertedMoney } from './finance-format.js';
 
 type ConnectionState = 'checking' | 'connected' | 'unconfigured' | 'error';
@@ -122,6 +124,7 @@ class ApiError extends Error {
 const NAV_ITEMS = [
   { href: '/', label: 'Resumen', icon: '◫' },
   { href: '/movements', label: 'Movimientos', icon: '↕' },
+  { href: '/accounts', label: 'Cuentas', icon: '€' }, 
   { href: '/reports', label: 'Informes', icon: '▥' },
   { href: '/budgets', label: 'Presupuestos', icon: '◷' },
   { href: '/planning', label: 'Planificación', icon: '◎' },
@@ -264,6 +267,7 @@ export function App() {
   const [accountScopeSaving, setAccountScopeSaving] = useState(false);
   const [accountScopeSaveError, setAccountScopeSaveError] = useState('');
   const [accountScopeSaveNotice, setAccountScopeSaveNotice] = useState('');
+  const [manualQuickRequest, setManualQuickRequest] = useState<{ key: number; kind: 'income' | 'expense' } | null>(null);
 
   const [route, setRoute] = useState(() => window.location.pathname.replace(/\/+$/, '') || '/');
   const previousRoute = useRef(route);
@@ -284,11 +288,23 @@ export function App() {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     if (event.currentTarget.origin !== window.location.origin) return;
     event.preventDefault();
-    if (window.location.pathname !== href) {
-      window.history.pushState(null, '', href);
-      setRoute(href);
-      window.scrollTo({ top: 0, behavior: 'auto' });
-    }
+    navigateTo(href);
+  }
+  function navigateTo(href: string): void {
+    if (window.location.pathname !== href) window.history.pushState(null, '', href);
+    setRoute(href);
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }
+  function quickRegister(kind: 'income' | 'expense'): void {
+    setManualQuickRequest((previous) => ({ key: (previous?.key ?? 0) + 1, kind }));
+    setAccountFilter('all');
+    setPage(1);
+    navigateTo('/movements');
+  }
+  function openAccountMovements(accountId: string): void {
+    setAccountFilter(accountId);
+    setPage(1);
+    navigateTo('/movements');
   }
   const pageTitle = NAV_ITEMS.find((item) => item.href === route)?.label ?? 'Resumen';
   const period = useMemo(() => periodFor(mode, anchor, customStart, customEnd), [mode, anchor, customStart, customEnd]);
@@ -359,7 +375,7 @@ export function App() {
     Promise.all([
       apiData<Summary>('/api/v1/reports/summary' + queryFor(period), controller.signal),
       transactionRequest,
-      route === '/reports'
+      route === '/' || route === '/reports'
         ? apiData<Summary>('/api/v1/reports/summary' + queryFor(previous), controller.signal)
         : Promise.resolve(null),
     ])
@@ -622,6 +638,17 @@ export function App() {
                         <div className="detail-line"><span>Traspasos excluidos del consolidado</span><strong>{summary.excludedTransferCount}</strong></div>
                       </article>
                     </div>
+                    <DashboardSignals
+                      accounts={accounts}
+                      activeAccountIds={accountScope?.activeAccountIds ?? accounts.filter((account) => !account.closed).map((account) => account.id)}
+                      accountScopeLabel={accountScope?.label ?? 'Ámbito pendiente'}
+                      currency={currency}
+                      summary={summary}
+                      comparison={comparison}
+                      reloadKey={refreshKey}
+                      onNavigate={navigateTo}
+                      onQuickRegister={quickRegister}
+                    />
                     {summary.exchangeRatesUsed.length > 0 ? <details className="panel exchange-rate-details">
                       <summary>Tipos de cambio utilizados ({summary.exchangeRatesUsed.length})</summary>
                       <div className="comparison-rows">{summary.exchangeRatesUsed.map((rate) => (
@@ -638,13 +665,23 @@ export function App() {
               </section>
             )}
 
+            {!dataLoading && !dataError && !invalidPeriod && route === '/accounts' && (
+              <AccountsPanel
+                accounts={accounts}
+                currency={currency}
+                activeAccountIds={accountScope?.activeAccountIds ?? accounts.filter((account) => !account.closed).map((account) => account.id)}
+                onOpenMovements={openAccountMovements}
+              />
+            )}
+
             {!dataLoading && !dataError && !invalidPeriod && route === '/movements' && (
               <section className="content-section" aria-labelledby="movements-heading">
                 <div className="section-heading"><div><p className="eyebrow">LIBRO DE MOVIMIENTOS</p><h2 id="movements-heading">Transacciones</h2></div><span className="date-badge">{transactionTotal} resultados</span></div>
                 <MovementTools
-                  accounts={accounts}
+                  accounts={movementAccounts}
                   categories={categories}
                   currency={currency}
+                  quickRequest={manualQuickRequest}
                   onImported={() => { setPage(1); setRefreshKey((value) => value + 1); }}
                 />
                 {accounts.filter((item) => !item.closed).length === 0 ? <EmptyState title="No hay cuentas disponibles" body="Crea o abre una cuenta en Actual Budget y vuelve a cargar los datos." /> : (
@@ -807,7 +844,7 @@ export function App() {
               </section>
             )}
 
-            {!['/', '/movements', '/reports', '/budgets', '/planning', '/assistant', '/settings'].includes(route) && (
+            {!['/', '/movements', '/accounts', '/reports', '/budgets', '/planning', '/assistant', '/settings'].includes(route) && (
               <section className="content-section"><EmptyState title="Sección no encontrada" body="Utiliza la navegación principal para abrir una sección disponible." /><a className="button primary" href="/">Volver al resumen</a></section>
             )}
           </>
