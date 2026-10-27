@@ -1063,7 +1063,9 @@ describe('local API', () => {
       persisted: true,
     }));
     const repository = Object.assign(createRepository({ listTransactions }), { updateTransactionCategoriesBatch }) as BudgetRepository;
-    const app = await createTestApp(repository);
+    const batchDataDirectory = await mkdtemp(join(tmpdir(), 'personal-budget-batch-test-'));
+    temporaryDirectories.push(batchDataDirectory);
+    const app = await createTestApp(repository, { ...config, actualDataDir: batchDataDirectory });
 
     const partial = await app.inject({
       method: 'POST', url: '/api/v1/insights/categorize',
