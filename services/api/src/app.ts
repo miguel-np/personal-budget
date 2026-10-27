@@ -1560,7 +1560,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         return reply.code(409).send({ error: { code: 'PLANNING_CONTEXT_CHANGED', message: 'El ámbito de cuentas o la divisa ha cambiado. Edita el objetivo y confirma el contexto actual antes de simular.' } });
       }
       validateGoalWindow(goal.targetDate, asOfDate);
-      const commitments: PlanningCommitment[] = stored.commitments.filter((item) =>
+      const commitments = stored.commitments.filter((item) =>
         item.status === 'active' && item.currency === goal.currency && planningScopeMatches(item.scope, currentScope),
       );
       const projection = projectSavingsGoal({
