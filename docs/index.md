@@ -17,6 +17,7 @@ Esta documentación describe el diseño objetivo de `personal-budget`, una aplic
 
 - [Arquitectura](architecture.md)
 - [Registro de movimientos e importaciones](transactions-and-imports.md)
+- [Importación OFX local: perfiles, límites y seguridad](ofx-import.md)
 - [IA local y modelos](local-ai.md)
 - [Herramientas MCP y permisos](mcp.md)
 
