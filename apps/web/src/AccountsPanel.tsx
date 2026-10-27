@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { assessNetWorth } from './financial-signals.js';
-import { formatAccountBalance, formatUnconvertedMoney } from './finance-format.js';
+import { formatAccountBalance, formatMoney, formatUnconvertedMoney } from './finance-format.js';
 
 interface Account {
   readonly id: string;
@@ -80,6 +80,26 @@ export function AccountsPanel({ accounts, currency, activeAccountIds, onOpenMove
           const displayCurrency = account.displayCurrency ?? currency;
           const displayBalance = account.displayBalanceMinor;
           const hasConvertedBalance = displayBalance !== null && displayBalance !== undefined;
+          const inAssessment = assessment.includedAccountIds.includes(account.id);
+          const contributionMinor = assessment.status === 'available' && inAssessment && hasConvertedBalance
+            ? account.classification === 'liability' ? -Math.abs(displayBalance) : displayBalance
+            : null;
+          const contributionLabel = !inAssessment
+            ? account.closed ? 'Excluida: cuenta cerrada'
+              : !activeIds.has(account.id) ? 'Excluida: fuera del ámbito global'
+                : account.offBudget && !includeOffBudget ? 'Excluida: fuera de presupuesto'
+                  : 'Excluida del ámbito patrimonial'
+            : contributionMinor === null ? 'Pendiente de clasificación o conversión'
+              : formatMoney(contributionMinor, currency);
+          const contributionHint = !inAssessment
+            ? 'No se suma al total con las preferencias y el ámbito actuales.'
+            : assessment.status === 'unavailable'
+              ? 'La cuenta pertenece al ámbito elegido, pero la clasificación activo/pasivo no está disponible.'
+              : assessment.status === 'incomplete'
+                ? 'La cuenta pertenece al ámbito elegido; falta un saldo convertido válido para completar el cálculo.'
+                : account.classification === 'liability'
+                  ? 'Contribución de pasivo: se resta el saldo absoluto.'
+                  : 'Contribución de activo: usa el saldo convertido confirmado.';
           const statusLabel = account.closed ? 'Cerrada' : 'Abierta';
           return (
             <article className="panel account-card" key={account.id}>
@@ -108,8 +128,8 @@ export function AccountsPanel({ accounts, currency, activeAccountIds, onOpenMove
                 ) : null}
                 <div>
                   <dt>Contribución al patrimonio</dt>
-                  <dd>No calculada</dd>
-                  <small>Clasificación activo/pasivo no disponible.</small>
+                  <dd>{contributionLabel}</dd>
+                  <small>{contributionHint}</small>
                 </div>
               </dl>
               <div className="account-card-footer">
