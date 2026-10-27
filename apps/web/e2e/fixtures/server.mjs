@@ -4,6 +4,9 @@ let readiness = 'configured';
 let failImportPreview = false;
 let commitCount = 0;
 let categoryWrites = 0;
+let transactionWrites = 0;
+let lastTransactionUpdate = null;
+let appPreferences = { theme: 'system', locale: 'es-ES' };
 let lastPreviewChanges = [];
 let lastCommittedChanges = [];
 let budgetedMinor = 50_000;
@@ -118,7 +121,7 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url || '/', 'http://127.0.0.1:3000');
   try {
     if (req.method === 'POST' && url.pathname === '/__test__/reset') {
-      readiness = 'configured'; failImportPreview = false; commitCount = 0; categoryWrites = 0; lastPreviewChanges = []; lastCommittedChanges = []; budgetedMinor = 50_000; currencyPreferences = { displayCurrency: 'EUR', accountCurrencyOverrides: {}, exchangeRates: [] }; accountScope = { mode: 'all', accountIds: [] };
+      readiness = 'configured'; failImportPreview = false; commitCount = 0; categoryWrites = 0; transactionWrites = 0; lastTransactionUpdate = null; appPreferences = { theme: 'system', locale: 'es-ES' }; lastPreviewChanges = []; lastCommittedChanges = []; budgetedMinor = 50_000; currencyPreferences = { displayCurrency: 'EUR', accountCurrencyOverrides: {}, exchangeRates: [] }; accountScope = { mode: 'all', accountIds: [] };
       return send(res, 200, { ok: true });
     }
     if (req.method === 'POST' && url.pathname === '/__test__/mode') {
@@ -127,7 +130,7 @@ const server = createServer(async (req, res) => {
       failImportPreview = body.failImportPreview === true;
       return send(res, 200, { ok: true });
     }
-    if (req.method === 'GET' && url.pathname === '/__test__/state') return send(res, 200, { commitCount, categoryWrites, lastPreviewChanges, lastCommittedChanges, budgetedMinor, currencyPreferences, accountScope });
+    if (req.method === 'GET' && url.pathname === '/__test__/state') return send(res, 200, { commitCount, categoryWrites, transactionWrites, lastTransactionUpdate, appPreferences, lastPreviewChanges, lastCommittedChanges, budgetedMinor, currencyPreferences, accountScope });
     if (req.method === 'GET' && url.pathname === '/health') return send(res, 200, { status: 'ok', service: 'synthetic-fixture-api' });
     if (req.method === 'GET' && url.pathname === '/ready') {
       if (readiness !== 'configured') return send(res, 503, { status: 'not_configured', error: { code: 'NOT_CONFIGURED', message: 'El presupuesto sintético no está configurado.' } });
@@ -146,6 +149,23 @@ const server = createServer(async (req, res) => {
       accountScope = { mode: body.mode, accountIds: body.accountIds };
       const active = accountScope.mode === 'all' ? accounts.filter((entry) => !entry.closed) : accounts.filter((entry) => !entry.closed && accountScope.accountIds.includes(entry.id));
       return send(res, 200, { data: { ...accountScope, label: accountScope.mode === 'all' ? 'Todas las cuentas abiertas (' + active.length + ')' : active.length ? 'Cuentas seleccionadas: ' + active.map((entry) => entry.name).join(', ') : 'Ninguna cuenta seleccionada', activeAccountIds: active.map((entry) => entry.id), accountNames: active.map((entry) => entry.name) } });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/v1/preferences/app') return send(res, 200, { data: appPreferences });
+    if (req.method === 'PUT' && url.pathname === '/api/v1/preferences/app') {
+      const body = await readBody(req);
+      if (!['system', 'dark', 'light'].includes(body.theme) || !['es-ES', 'en-GB'].includes(body.locale)) {
+        return send(res, 400, { error: { code: 'INVALID_APP_PREFERENCES', message: 'Las preferencias sintéticas no son válidas.' } });
+      }
+      appPreferences = { theme: body.theme, locale: body.locale };
+      return send(res, 200, { data: appPreferences });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/v1/preferences/reset') {
+      const body = await readBody(req);
+      if (body.confirmation !== 'RESET_APP_PREFERENCES') return send(res, 400, { error: { code: 'CONFIRMATION_REQUIRED', message: 'Se requiere confirmación explícita.' } });
+      appPreferences = { theme: 'system', locale: 'es-ES' };
+      currencyPreferences = { displayCurrency: 'EUR', accountCurrencyOverrides: {}, exchangeRates: [] };
+      accountScope = { mode: 'all', accountIds: [] };
+      return send(res, 200, { data: { reset: true, app: appPreferences, currency: { ...currencyPreferences, budgetCurrency: 'EUR' }, accountScope } });
     }
     if (req.method === 'GET' && url.pathname === '/api/v1/preferences/currency') {
       return send(res, 200, { data: { ...currencyPreferences, budgetCurrency: 'EUR' } });
@@ -185,6 +205,26 @@ const server = createServer(async (req, res) => {
       const offset = Number(url.searchParams.get('offset') || 0);
       return send(res, 200, { data: filtered.slice(offset, offset + limit), pagination: { total: filtered.length, limit, offset, sortBy, order } });
     }
+    const transactionUpdateMatch = url.pathname.match(/^\\/api\\/v1\\/transactions\\/([^/]+)$/);
+    if (req.method === 'PUT' && transactionUpdateMatch) {
+      const id = decodeURIComponent(transactionUpdateMatch[1]);
+      const body = await readBody(req);
+      const transaction = transactions.find((item) => item.id === id);
+      if (!transaction || transaction.account !== body.accountId || transaction.date < body.startDate || transaction.date > body.endDate) {
+        return send(res, 404, { error: { code: 'INVALID_TRANSACTION', message: 'No existe el movimiento sintético solicitado.' } });
+      }
+      if (transaction.transfer_id || transaction.is_parent || transaction.is_child || transaction.parent_id || transaction.subtransactions?.length) {
+        return send(res, 409, { error: { code: 'UNSUPPORTED_TRANSACTION', message: 'El movimiento sintético no es editable.' } });
+      }
+      const fields = body.changes || {};
+      if (fields.category !== undefined && fields.category !== null && !categories.some((item) => item.id === fields.category)) {
+        return send(res, 400, { error: { code: 'INVALID_CATEGORY', message: 'La categoría sintética no existe.' } });
+      }
+      Object.assign(transaction, fields);
+      transactionWrites += 1;
+      lastTransactionUpdate = { transactionId: id, fields: Object.keys(fields), changes: fields };
+      return send(res, 200, { data: { transactionId: id, updatedFields: Object.keys(fields), persisted: true } });
+    }
     if (req.method === 'POST' && url.pathname === '/api/v1/import/preview') {
       const body = await readBody(req);
       if (failImportPreview) return send(res, 502, { error: { code: 'UPSTREAM_FAILURE', message: 'La previsualización sintética ha fallado; no se han escrito movimientos.' } });
@@ -220,7 +260,11 @@ const server = createServer(async (req, res) => {
       } else {
         lastPreviewChanges = body.transactions ?? [];
       }
-      return send(res, 200, { data: { preview: body.commit !== true, requested: body.transactions?.length ?? 0, changes: body.transactions?.length ?? 0 } });
+      const requested = body.transactions?.length ?? 0;
+      return send(res, 200, { data: {
+        preview: body.commit !== true, requested, changes: requested,
+        ...(body.commit === true ? { applied: requested, appliedTransactionIds: (body.transactions ?? []).map((item) => item.transactionId), persisted: true, partial: false } : {}),
+      } });
     }
     if (req.method === 'GET' && url.pathname === '/api/v1/assistant/status') return send(res, 200, { enabled: false, status: 'disabled' });
     if (req.method === 'POST' && url.pathname === '/api/v1/assistant/chat') return send(res, 503, { error: { code: 'AI_DISABLED', message: 'El asistente local está desactivado.' } });
