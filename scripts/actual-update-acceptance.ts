@@ -192,18 +192,37 @@ async function verifyLinkedTransactionEditing(): Promise<void> {
 
     counterpartAccountId = await api.createAccount({ name: 'Cuenta sintética contraparte ' + randomUUID().slice(0, 8), offbudget: false });
     await api.sync();
-    const transferPayee = (await api.getPayees()).find((payee) => payee.transfer_acct === counterpartAccountId);
-    if (!transferPayee) throw new Error('Actual did not expose a transfer payee for the synthetic counterpart account.');
+    const payees = await api.getPayees();
+    const transferPayeeToCounterpart = payees.find((payee) => payee.transfer_acct === counterpartAccountId);
+    const transferPayeeToSource = payees.find((payee) => payee.transfer_acct === sourceAccount.id);
+    if (!transferPayeeToCounterpart || !transferPayeeToSource) {
+      throw new Error('Actual did not expose reciprocal transfer payees for the synthetic accounts.');
+    }
 
-    const addedTransferIds = await api.addTransactions(sourceAccount.id, [{
+    // Seed the linked pair through the public API in direct-insert mode, with explicit
+    // reciprocal transfer IDs. This avoids testing Actual's import matcher instead of
+    // the application's edit behavior. Subsequent updates go through the real transfer
+    // update hooks and must keep both records coherent.
+    sourceId = randomUUID();
+    counterpartId = randomUUID();
+    await api.addTransactions(sourceAccount.id, [{
+      id: sourceId,
+      transfer_id: counterpartId,
       date: '2026-09-01',
       amount: -4_200,
-      payee: transferPayee.id,
+      payee: transferPayeeToCounterpart.id,
       notes: 'Nota inicial sintética',
       cleared: false,
-    }], { runTransfers: true });
-    sourceId = addedTransferIds[0] ?? '';
-    if (!sourceId) throw new Error('Actual did not return an ID for the synthetic transfer.');
+    }]);
+    await api.addTransactions(counterpartAccountId, [{
+      id: counterpartId,
+      transfer_id: sourceId,
+      date: '2026-09-01',
+      amount: 4_200,
+      payee: transferPayeeToSource.id,
+      notes: 'Nota inicial sintética',
+      cleared: false,
+    }]);
     await api.sync();
 
     const transferPair = async (): Promise<{ source: AcceptanceTransaction; counterpart: AcceptanceTransaction }> => {
@@ -212,10 +231,10 @@ async function verifyLinkedTransactionEditing(): Promise<void> {
         api.getTransactions(counterpartAccountId, '2026-09-01', '2026-09-30'),
       ]);
       const source = sourceRows.find((item) => item.id === sourceId);
-      if (!source?.transfer_id) throw new Error('Actual did not link the synthetic transfer to the counterpart account.');
-      counterpartId = source.transfer_id;
-      const counterpart = counterpartRows.find((item) => item.id === counterpartId && item.transfer_id === sourceId);
-      if (!counterpart) throw new Error('The synthetic transfer counterpart is missing or not linked reciprocally.');
+      const counterpart = counterpartRows.find((item) => item.id === counterpartId);
+      if (!source || source.transfer_id !== counterpartId || !counterpart || counterpart.transfer_id !== sourceId) {
+        throw new Error('Actual did not persist the reciprocal synthetic transfer links.');
+      }
       return { source, counterpart };
     };
 
