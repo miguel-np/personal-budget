@@ -1426,7 +1426,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       for (const candidate of recurringCandidates) {
         const interval = candidate.estimatedIntervalDays;
         if (!interval || interval < 1 || !candidate.lastDate || candidate.meanAbsoluteAmountMinor <= 0) continue;
-        let nextDate = new Date(candidate.lastDate + 'T00:00:00.000Z');
+        const nextDate = new Date(candidate.lastDate + 'T00:00:00.000Z');
         nextDate.setUTCDate(nextDate.getUTCDate() + Math.round(interval));
         let attempts = 0;
         while ((nextDate.toISOString().slice(0, 10) <= asOfDate || nextDate.toISOString().slice(0, 10) < monthPeriod.startDate) && attempts < 100) {
