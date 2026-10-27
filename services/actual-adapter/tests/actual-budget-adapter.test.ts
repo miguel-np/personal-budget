@@ -409,7 +409,36 @@ describe('ActualBudgetAdapter', () => {
       { transactionId: 'transaction-1', categoryId: 'food', accountId: 'account-1', date: '2026-10-10', expectedCategoryId: 'food' },
     ])).resolves.toEqual({ requested: 1, updatedTransactionIds: ['transaction-1'], persisted: true });
     expect(updateTransaction).not.toHaveBeenCalled();
-    expect(api.sync).toHaveBeenCalledTimes(1);
+    expect(api.sync).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries a locally applied category after a sync failure without a duplicate write', async () => {
+    const row: BudgetTransaction = { id: 'transaction-1', account: 'account-1', date: '2026-10-10', amount: -1_000, category: null };
+    let syncCalls = 0;
+    const updateTransaction = vi.fn(async (id: string, fields: TransactionStructureUpdate) => { if (id === row.id) Object.assign(row, fields); });
+    const api = createApi({
+      sync: vi.fn(async () => {
+        syncCalls += 1;
+        if (syncCalls === 2) throw new Error('synthetic sync failure');
+      }),
+      updateTransaction,
+      getTransactions: vi.fn(async () => [row]),
+    });
+    const adapter = new ActualBudgetAdapter(config, api);
+    const first = await adapter.updateTransactionCategoriesBatch([
+      { transactionId: 'transaction-1', categoryId: 'food', accountId: 'account-1', date: '2026-10-10', expectedCategoryId: null },
+    ]);
+    expect(first).toEqual({
+      requested: 1, updatedTransactionIds: [], failedTransactionId: 'transaction-1', persisted: false,
+    });
+    expect(row.category).toBe('food');
+
+    const retry = await adapter.updateTransactionCategoriesBatch([
+      { transactionId: 'transaction-1', categoryId: 'food', accountId: 'account-1', date: '2026-10-10', expectedCategoryId: 'food' },
+    ]);
+    expect(retry).toEqual({ requested: 1, updatedTransactionIds: ['transaction-1'], persisted: true });
+    expect(updateTransaction).toHaveBeenCalledOnce();
+    expect(syncCalls).toBe(3);
   });
 
 });

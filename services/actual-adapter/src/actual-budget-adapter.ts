@@ -337,6 +337,26 @@ export class ActualBudgetAdapter implements BudgetRepository {
         // A retried request is a safe no-op when the requested category is already
         // the verified current category and the preview baseline still matches.
         if ((before.category ?? null) === change.categoryId) {
+          // A no-op must still sync: a previous attempt may have changed the local cache
+          // but failed to confirm remote persistence. Re-verify before acknowledging retry.
+          try {
+            await this.api.sync();
+          } catch {
+            return {
+              requested: parsed.data.length,
+              updatedTransactionIds,
+              failedTransactionId: change.transactionId,
+              persisted: false,
+            };
+          }
+          if (!await waitForCategory(change)) {
+            return {
+              requested: parsed.data.length,
+              updatedTransactionIds,
+              failedTransactionId: change.transactionId,
+              persisted: false,
+            };
+          }
           updatedTransactionIds.push(change.transactionId);
           continue;
         }
