@@ -19,6 +19,7 @@ interface Summary {
   readonly incomeMinor: number;
   readonly expenseMinor: number;
   readonly savingsMinor: number;
+  readonly savingsRatePercent: number | null;
   readonly accountScope?: { readonly label: string };
 }
 
@@ -40,7 +41,7 @@ interface DashboardSignalsProps {
   readonly accountScopeLabel: string;
   readonly currency: string;
   readonly summary: Summary;
-  readonly comparison: Pick<Summary, 'startDate' | 'endDate' | 'incomeMinor' | 'expenseMinor' | 'savingsMinor'> | null;
+  readonly comparison: Pick<Summary, 'startDate' | 'endDate' | 'incomeMinor' | 'expenseMinor' | 'savingsMinor' | 'savingsRatePercent'> | null;
   readonly reloadKey: number;
   readonly onNavigate: (href: string) => void;
   readonly onQuickRegister: (kind: QuickRegisterKind) => void;
@@ -138,6 +139,15 @@ export function DashboardSignals({
             <div className="comparison-row">
               <div><span>Ahorro neto</span><strong>{money(summary.savingsMinor, currency)}</strong></div>
               <div className="comparison-meta"><span>Anterior: {money(comparison.savingsMinor, currency)}</span><span>{changeDescription(summary.savingsMinor, comparison.savingsMinor, currency)}</span></div>
+            </div>
+            <div className="comparison-row">
+              <div><span>Tasa de ahorro</span><strong>{summary.savingsRatePercent === null ? 'No aplicable' : percentage(summary.savingsRatePercent).replace('+', '')}</strong></div>
+              <div className="comparison-meta">
+                <span>Anterior: {comparison.savingsRatePercent === null ? 'No aplicable' : percentage(comparison.savingsRatePercent).replace('+', '')}</span>
+                <span>{summary.savingsRatePercent === null || comparison.savingsRatePercent === null
+                  ? 'Variación en puntos porcentuales no disponible: una de las tasas no es aplicable.'
+                  : 'Cambio absoluto: ' + percentage(summary.savingsRatePercent - comparison.savingsRatePercent) + ' puntos porcentuales.'}</span>
+              </div>
             </div>
           </div>
           <p className="section-footnote">El cambio absoluto se expresa en {currency}. El porcentaje solo aparece si la base del periodo anterior es positiva; un cero o un valor negativo no se presenta como una variación porcentual normal.</p>
