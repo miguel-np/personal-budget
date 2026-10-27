@@ -644,11 +644,15 @@ describe('local API', () => {
   });
 
   it('previews categorization without writing and commits only when asked', async () => {
-    const updateTransactionCategory = vi.fn(async () => undefined);
+    const updateTransactionCategoriesBatch = vi.fn(async (
+      changes: readonly TransactionCategoryBatchChange[],
+    ): Promise<TransactionCategoryBatchResult> => ({
+      requested: changes.length,
+      updatedTransactionIds: changes.map((change) => change.transactionId),
+      persisted: true,
+    }));
     const listTransactions = vi.fn(async () => transactions);
-    const repository = Object.assign(createRepository({ listTransactions }), { updateTransactionCategory }) as BudgetRepository & {
-      updateTransactionCategory: typeof updateTransactionCategory;
-    };
+    const repository = createRepository({ listTransactions, updateTransactionCategoriesBatch });
     const app = await createTestApp(repository);
     const body = {
       startDate: '2026-10-01',
@@ -658,7 +662,7 @@ describe('local API', () => {
     const preview = await app.inject({ method: 'POST', url: '/api/v1/insights/categorize', payload: { ...body, commit: false } });
     expect(preview.statusCode).toBe(200);
     expect(preview.json().data).toMatchObject({ preview: true, changes: 1 });
-    expect(updateTransactionCategory).not.toHaveBeenCalled();
+    expect(updateTransactionCategoriesBatch).not.toHaveBeenCalled();
 
     const baseline = preview.json().data.baseline as { transactionId: string; expectedCategoryId: string | null }[];
     const commit = await app.inject({
@@ -674,8 +678,11 @@ describe('local API', () => {
     });
     expect(commit.statusCode).toBe(200);
     expect(commit.json().data).toMatchObject({ preview: false, changes: 1 });
-    expect(updateTransactionCategory).toHaveBeenCalledTimes(1);
-    expect(updateTransactionCategory).toHaveBeenCalledWith('expense-1', 'food');
+    expect(updateTransactionCategoriesBatch).toHaveBeenCalledTimes(1);
+    expect(updateTransactionCategoriesBatch).toHaveBeenCalledWith([{
+      transactionId: 'expense-1', categoryId: 'food', expectedCategoryId: 'food',
+      accountId: 'account-1', date: '2026-10-02',
+    }]);
   });
 
   it('fails closed on unknown transactions, income categories and missing update capability', async () => {
@@ -1146,7 +1153,7 @@ describe('local API', () => {
       },
     });
     expect(transfer.statusCode).toBe(409);
-    expect(transfer.json().error.code).toBe('TRANSACTION_SAFE_UPDATE_NOT_SUPPORTED');
+    expect(transfer.json().error.code).toBe('TRANSFER_COUNTERPART_NOT_AVAILABLE');
     expect(updateTransaction).toHaveBeenCalledTimes(1);
   });
 
