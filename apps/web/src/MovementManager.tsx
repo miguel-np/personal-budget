@@ -433,7 +433,7 @@ export function MovementManager(props: MovementManagerProps) {
                   ? formatMoney(transaction.displayAmountMinor, transaction.displayCurrency ?? currency, locale)
                   : <span title="No hay conversión válida">{formatMoney(transaction.amount, transaction.currencyCode ?? currency, locale)}<small className="warning-text">Sin conversión de análisis</small></span>}</td>
                 <td><span className={'cleared-badge ' + (transaction.cleared ? 'cleared' : '')}>{transaction.cleared ? 'Conciliado' : 'Pendiente'}</span></td>
-                <td><button className="button small secondary" type="button" data-transaction-edit={transaction.id} disabled={!editable} title={!editable ? reason : 'Editar movimiento'} onClick={() => openEditor(transaction)>Editar</button></td>
+                <td><button className="button small secondary" type="button" data-transaction-edit={transaction.id} disabled={!editable} title={!editable ? reason : 'Editar movimiento'} onClick={() => openEditor(transaction)}>Editar</button></td>
               </tr>;
             })}</tbody>
           </table>
