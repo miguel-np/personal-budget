@@ -17,6 +17,8 @@ export interface PlanningCommitment {
   readonly frequency: PlanningFrequency;
   readonly currency: string;
   readonly status: PlanningStatus;
+  /** Transient source metadata for agenda display; it is never stored in Actual. */
+  readonly source?: 'manual' | 'actual_transaction' | 'recurring_candidate';
 }
 
 export interface PlanningMonthlyCashFlow {
