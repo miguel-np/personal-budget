@@ -267,7 +267,7 @@ export function App() {
   const [accountScopeSaving, setAccountScopeSaving] = useState(false);
   const [accountScopeSaveError, setAccountScopeSaveError] = useState('');
   const [accountScopeSaveNotice, setAccountScopeSaveNotice] = useState('');
-  const [manualQuickRequest, setManualQuickRequest] = useState<{ key: number; kind: 'income' | 'expense' } | null>(null);
+  const [manualQuickRequest, setManualQuickRequest] = useState<{ key: number; kind: 'income' | 'expense' | 'transfer' } | null>(null);
 
   const [route, setRoute] = useState(() => window.location.pathname.replace(/\/+$/, '') || '/');
   const previousRoute = useRef(route);
