@@ -268,6 +268,7 @@ export function App() {
   const [accountScopeSaveError, setAccountScopeSaveError] = useState('');
   const [accountScopeSaveNotice, setAccountScopeSaveNotice] = useState('');
   const [manualQuickRequest, setManualQuickRequest] = useState<{ key: number; kind: 'income' | 'expense' | 'transfer' } | null>(null);
+  const [movementOperationNotice, setMovementOperationNotice] = useState('');
 
   const [route, setRoute] = useState(() => window.location.pathname.replace(/\/+$/, '') || '/');
   const previousRoute = useRef(route);
@@ -291,6 +292,7 @@ export function App() {
     navigateTo(href);
   }
   function navigateTo(href: string): void {
+    if (window.location.pathname !== href) setMovementOperationNotice('');
     if (window.location.pathname !== href) window.history.pushState(null, '', href);
     setRoute(href);
     window.scrollTo({ top: 0, behavior: 'auto' });
@@ -582,6 +584,7 @@ export function App() {
               {accountScopeSaveError ? <p role="alert" className="form-alert error">{accountScopeSaveError}</p> : null}
               {accountScopeSaveNotice ? <p role="status" className="form-alert success">{accountScopeSaveNotice}</p> : null}
             </section>
+            {route === '/movements' && movementOperationNotice ? <p className="form-alert success" role="status">{movementOperationNotice}</p> : null}
             {(route === '/' || route === '/reports' || route === '/movements') && (
               <section className="period-panel" aria-label="Periodo de consulta">
                 <div className="period-modes" role="group" aria-label="Tipo de periodo">
@@ -682,7 +685,7 @@ export function App() {
                   categories={categories}
                   currency={currency}
                   quickRequest={manualQuickRequest}
-                  onImported={() => { setPage(1); setRefreshKey((value) => value + 1); }}
+                  onImported={(notice) => { if (notice) setMovementOperationNotice(notice); setPage(1); setRefreshKey((value) => value + 1); }}
                 />
                 {accounts.filter((item) => !item.closed).length === 0 ? <EmptyState title="No hay cuentas disponibles" body="Crea o abre una cuenta en Actual Budget y vuelve a cargar los datos." /> : (
                   <>
