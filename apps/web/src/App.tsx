@@ -5,7 +5,7 @@ import { AssistantPanel } from './AssistantPanel.js';
 import { PlanningPanel } from './PlanningPanel.js';
 import { MovementManager } from './MovementManager.js';
 import { SettingsCenter, type AppPreferences } from './SettingsCenter.js';
-import { formatAccountBalance, formatCivilDate, formatMoney as sharedFormatMoney, formatUnconvertedMoney as sharedFormatUnconvertedMoney, setFinanceLocale } from './finance-format.js';
+import { formatAccountBalance, formatCivilDate, formatMoney as sharedFormatMoney, setFinanceLocale } from './finance-format.js';
 
 type ConnectionState = 'checking' | 'connected' | 'unconfigured' | 'error';
 type PeriodMode = 'day' | 'month' | 'year' | 'custom';
@@ -203,11 +203,7 @@ async function apiData<T>(url: string, signal?: AbortSignal): Promise<T> {
   return payload.data === undefined ? payload as T : payload.data;
 }
 function formatMoney(amountMinor: number, currency: string): string { return sharedFormatMoney(amountMinor, currency); }
-function formatUnconvertedMoney(amountMinor: number, currency: string | null | undefined): string { return sharedFormatUnconvertedMoney(amountMinor, currency); }
 function displayDate(value: string): string { return formatCivilDate(value); }
-function transactionDescription(transaction: Transaction): string {
-  return transaction.payee_name?.trim() || transaction.imported_payee?.trim() || transaction.notes?.trim() || 'Movimiento sin concepto';
-}
 function queryFor(period: Period): string {
   return '?startDate=' + encodeURIComponent(period.startDate) + '&endDate=' + encodeURIComponent(period.endDate);
 }
@@ -433,8 +429,6 @@ export function App() {
     return () => controller.abort();
   }, [bootLoaded, connection, refreshKey, route, trendWindows]);
 
-  const categoriesById = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
-  const accountsById = useMemo(() => new Map(accounts.map((account) => [account.id, account])), [accounts]);
   const movementAccounts = useMemo(() => accounts.filter((account) => !account.closed &&
     (accountScope?.mode !== 'selected' || accountScope.accountIds.includes(account.id))), [accounts, accountScope]);
   const filteredTransactions = transactions;
