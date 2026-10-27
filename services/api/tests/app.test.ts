@@ -1223,9 +1223,9 @@ describe('local API', () => {
     ];
     const pairTransactions: readonly BudgetTransaction[] = [
       { id: 'pair-out', account: 'account-1', currencyCode: 'EUR', date: '2026-10-02', amount: -50_000, transfer_id: 'pair-in' },
-      { id: 'pair-in', account: 'account-2', currencyCode: 'EUR', date: '2026-10-03', amount: 50_000, transfer_id: 'pair-out' },
+      { id: 'pair-in', account: 'account-2', currencyCode: 'EUR', date: '2026-11-03', amount: 50_000, transfer_id: 'pair-out' },
     ];
-    const listTransactions = vi.fn(async (accountId: string) => pairTransactions.filter((item) => item.account === accountId));
+    const listTransactions = vi.fn(async (accountId: string, startDate: string, endDate: string) => pairTransactions.filter((item) => item.account === accountId && item.date >= startDate && item.date <= endDate));
     const updateTransaction = vi.fn(async (id: string, fields: TransactionUpdate) => { void id; void fields; });
     const updateTransactionSafely = vi.fn(async (
       id: string,
@@ -1262,6 +1262,7 @@ describe('local API', () => {
     });
     expect(updateTransaction).toHaveBeenNthCalledWith(2, 'pair-in', { notes: 'Nota compartida' });
     expect(updateTransactionSafely).toHaveBeenCalledTimes(2);
+    expect(updateTransactionSafely).toHaveBeenNthCalledWith(2, 'pair-in', 'account-2', '2026-11-03', { notes: 'Nota compartida' });
   });
 
   it('updates a split child through its parent while preserving all child IDs and the parent sum', async () => {
