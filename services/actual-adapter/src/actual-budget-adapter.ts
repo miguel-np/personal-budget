@@ -70,6 +70,17 @@ export class ActualBudgetAdapter implements BudgetRepository {
     return this.enqueue(async () => (await this.api.getCategories()).map(mapActualCategory));
   }
 
+  public async listTransferPayees(): Promise<readonly { readonly name: string; readonly accountId: string }[]> {
+    if (!this.api.getPayees) {
+      throw new ActualAdapterError('UPSTREAM_FAILURE', 'The configured Actual API client does not support transfer payee lookup.');
+    }
+    return this.enqueue(async () => (await this.api.getPayees!()).flatMap((payee) => {
+      const name = payee.name.trim();
+      const accountId = payee.transfer_acct?.trim();
+      return name && accountId ? [{ name, accountId }] : [];
+    }));
+  }
+
   public async getBudgetMonth(month: string): Promise<ActualBudgetMonthRecord> {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
       throw new ActualAdapterError('INVALID_INPUT', 'Budget month must use YYYY-MM.');
