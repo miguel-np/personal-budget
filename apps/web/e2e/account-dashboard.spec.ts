@@ -21,11 +21,26 @@ test('account view audits balances and opens movements in the selected account',
   await expect(page.getByLabel('Cuenta', { exact: true })).toHaveValue('synthetic-account-1');
 });
 
-test('dashboard quick actions preserve preview, signed amount validation and transfer safety', async ({ page, request }) => {
+test('dashboard shortcuts preserve transfer preview and signed manual movement validation', async ({ page, request }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Acciones rápidas' })).toBeVisible();
 
-  await expect(page.getByRole('button', { name: 'Registrar transferencia' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Registrar transferencia' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Registrar transferencia' }).click();
+  await expect(page.getByRole('heading', { name: 'Entre cuentas de Actual Budget' })).toBeVisible();
+  await page.getByLabel('Importe positivo (EUR)').fill('125,00');
+  await page.getByRole('button', { name: 'Previsualizar transferencia' }).click();
+  await expect(page.getByRole('button', { name: 'Confirmar transferencia' })).toBeVisible();
+  let transferState = await (await request.get('http://127.0.0.1:3000/__test__/state')).json();
+  expect(transferState.transferPreviewCount).toBe(1);
+  expect(transferState.transferCommitCount).toBe(0);
+  await page.getByRole('button', { name: 'Confirmar transferencia' }).click();
+  await expect(page.getByText(/Actual ha confirmado la operación/)).toBeVisible();
+  transferState = await (await request.get('http://127.0.0.1:3000/__test__/state')).json();
+  expect(transferState.transferCommitCount).toBe(1);
+  expect(transferState.lastTransferPayload).toMatchObject({ sourceAccountId: 'synthetic-account-1', destinationAccountId: 'synthetic-account-2', amountMinor: 12500 });
+
+  await page.getByRole('link', { name: /personal-budget, ir al resumen/ }).click();
   await page.getByRole('button', { name: 'Registrar gasto' }).click();
   await expect(page).toHaveURL(/\/movements$/);
   await expect(page.getByRole('heading', { name: 'Registrar gasto' })).toBeVisible();
