@@ -125,12 +125,14 @@ describe('ActualBudgetAdapter', () => {
       updateTransaction: vi.fn(async (id: string, fields: TransactionStructureUpdate) => {
         const existing = rows.find((row) => row.id === id);
         if (!existing) return;
-        Object.assign(existing, fields);
-        existing.subtransactions = (fields.subtransactions ?? []).map((child) => ({
-          ...child,
-          is_child: false,
-          is_parent: true,
-        }));
+        Object.assign(existing, {
+          ...fields,
+          subtransactions: (fields.subtransactions ?? []).map((child) => ({
+            ...child,
+            is_child: false,
+            is_parent: true,
+          })),
+        });
       }),
     });
     const adapter = new ActualBudgetAdapter(config, api);
