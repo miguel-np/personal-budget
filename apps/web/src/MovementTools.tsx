@@ -616,8 +616,8 @@ export function MovementTools({ accounts, categories, currency, onImported, quic
       setCsvResult(result);
       setCsvRecords(null);
       onImported(
-        (fileFormat === 'ofx' ? 'Importación OFX' : 'Importación CSV') +
-        ' confirmada por Actual: ' + result.added + ' añadido(s), ' + result.updated +
+        (fileFormat === 'ofx' ? 'Importación OFX confirmada por Actual: ' : 'Importación confirmada por Actual: ') +
+        result.added + ' añadido(s), ' + result.updated +
         ' actualizado(s) y ' + result.errors +
         ' error(es). Los movimientos se concilian mediante su identificador importado.',
       );
