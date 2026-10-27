@@ -85,4 +85,13 @@ describe('net worth eligibility', () => {
     expect(excluded.excludedAccountIds).toEqual(['loan', 'closed']);
     expect(excluded.reasons.join(' ')).toContain('fuera de presupuesto están excluidas');
   });
+  it('treats an explicitly known zero balance as zero rather than unknown', () => {
+    const result = assessNetWorth([
+      { id: 'zero-cash', closed: false, offBudget: false, classification: 'asset', displayBalanceMinor: 0, displayCurrency: 'EUR' },
+    ], 'EUR');
+    expect(result.status).toBe('available');
+    expect(result.amountMinor).toBe(0);
+    expect(result.includedAccountIds).toEqual(['zero-cash']);
+  });
+
 });
