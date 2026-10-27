@@ -35,3 +35,11 @@ La previsión separa el gasto recurrente estimado (transacciones de candidatos r
 - Sugerencia real aplicada: un movimiento sin categoría de `Supermercado` recibió `Comida` (2 evidencias); la previsualización no escribió y el commit dejó la categoría actualizada en Actual Budget.
 - Previsión verificada: determinismo bit a bit entre llamadas idénticas, reducción del 10 % en `Comida` calculada sobre la mediana de la categoría (450 → 4500−450), avisos por historial de 2 meses y por horizonte sin datos.
 - Pruebas de `finance-core`: importes variables, fechas desplazadas, reembolsos, nombres similares, cadencia semanal/anual, empates de categoría, ingresos cero, picos extraordinarios e historial insuficiente.
+
+## Objetivos de ahorro y compromisos futuros
+
+La nueva sección **Objetivos** añade objetivos de ahorro, aportaciones deseadas, supuestos de ingreso/gasto y compromisos manuales puntuales o recurrentes. La API persiste estos datos en un fichero local independiente de Actual Budget, y finance-core calcula el progreso y el flujo mensual estimado. La agenda combina la lista y el calendario con el mismo conjunto de elementos y etiqueta claramente los compromisos manuales, las operaciones futuras ya registradas y los candidatos recurrentes no confirmados.
+
+Las proyecciones incluyen doce meses naturales (los meses vacíos cuentan como cero), excluyen traspasos, aplican únicamente compromisos activos de la misma divisa y ámbito de cuentas y limitan cada aportación al efectivo mensual estimado disponible. No se aplican intereses ni se escriben movimientos en Actual. Si cambia la divisa o el ámbito guardado, el registro requiere revisión explícita antes de ser proyectado.
+
+La copia cifrada existente de Actual **no incluye** planning-data.json: el fichero está bajo ACTUAL_DATA_DIR, distinto del directorio de datos del servidor empaquetado por el backup de Actual. Consulta [Objetivos de ahorro y compromisos futuros](planning-goals.md) para el contrato API, supuestos financieros, límites y procedimiento de copia local.
