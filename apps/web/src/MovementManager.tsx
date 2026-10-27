@@ -26,7 +26,6 @@ interface MovementTransaction {
   parent_transaction_id?: string;
   is_split_editable?: boolean;
   subtransactions?: readonly MovementTransaction[];
-  parent_id?: string | null;
   conversion?: { warning?: string; rate?: string | null; effectiveDate?: string | null; source?: string | null };
 }
 interface MovementAccount { id: string; name: string; closed: boolean }
