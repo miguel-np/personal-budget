@@ -14,6 +14,8 @@ interface SettingsCenterProps {
   saveError: string;
   saveNotice: string;
   resetting: boolean;
+  resetError: string;
+  resetNotice: string;
   currency: string;
   budgetCurrency: string;
   accountCount: number;
@@ -31,7 +33,7 @@ function statusIcon(state: ServiceState['state']): string {
 
 export function SettingsCenter(props: SettingsCenterProps) {
   const {
-    preferences, onChange, onSave, onReset, saving, saveError, saveNotice, resetting,
+    preferences, onChange, onSave, onReset, saving, saveError, saveNotice, resetting, resetError, resetNotice,
     currency, budgetCurrency, accountCount, categoryCount,
   } = props;
   const [services, setServices] = useState<ServiceState[]>([
@@ -146,6 +148,8 @@ export function SettingsCenter(props: SettingsCenterProps) {
         <p className="eyebrow">RESTABLECIMIENTO LOCAL</p><h3>Restablecer preferencias de la aplicación</h3>
         <p className="setting-hint">Restablece el tema, el formato regional, la divisa de análisis y el ámbito global de cuentas a sus valores iniciales. No borra movimientos, categorías, presupuestos, datos de Actual, backups ni archivos CSV descargados.</p>
         <button className="button secondary" type="button" disabled={resetting} onClick={onReset}>{resetting ? 'Restableciendo…' : 'Restablecer preferencias locales'}</button>
+        {resetError ? <p className="form-alert error" role="alert">{resetError}</p> : null}
+        {resetNotice ? <p className="form-alert" role="status">{resetNotice}</p> : null}
       </article>
     </section>
   );
