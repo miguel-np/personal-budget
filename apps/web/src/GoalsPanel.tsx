@@ -223,14 +223,16 @@ export function GoalsPanel({ currency }: { currency: string }) {
   }, [month]);
   const sortedCommitments = useMemo(() => [...(data?.commitments ?? [])].sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title)), [data?.commitments]);
 
-  async function runMutation(url: string, method: string, body: unknown, success: string): Promise<void> {
+  async function runMutation(url: string, method: string, body: unknown, success: string): Promise<boolean> {
     setBusy(true); setError(''); setNotice('');
     try {
       await apiRequest<unknown>(url, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
       setNotice(success);
       setReloadKey((value) => value + 1);
+      return true;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'La operación no se pudo completar.');
+      return false;
     } finally {
       setBusy(false);
     }
@@ -248,8 +250,9 @@ export function GoalsPanel({ currency }: { currency: string }) {
         monthlyIncomeMinor: goalDraft.monthlyIncome.trim() ? toMinor(goalDraft.monthlyIncome, 'Ingreso mensual supuesto', true) : null,
         monthlyExpenseMinor: goalDraft.monthlyExpense.trim() ? toMinor(goalDraft.monthlyExpense, 'Gasto mensual supuesto') : null,
       };
-      await runMutation(editingGoalId ? '/api/v1/planning/goals/' + editingGoalId : '/api/v1/planning/goals',
+      const saved = await runMutation(editingGoalId ? '/api/v1/planning/goals/' + editingGoalId : '/api/v1/planning/goals',
         editingGoalId ? 'PUT' : 'POST', body, editingGoalId ? 'Objetivo actualizado y recalculado con el ámbito actual.' : 'Objetivo guardado localmente.');
+      if (!saved) return;
       setGoalDraft(emptyGoalDraft());
       setEditingGoalId(null);
     } catch (caught) {
@@ -268,8 +271,9 @@ export function GoalsPanel({ currency }: { currency: string }) {
         frequency: commitmentDraft.frequency,
         notes: commitmentDraft.notes.trim(),
       };
-      await runMutation(editingCommitmentId ? '/api/v1/planning/commitments/' + editingCommitmentId : '/api/v1/planning/commitments',
+      const saved = await runMutation(editingCommitmentId ? '/api/v1/planning/commitments/' + editingCommitmentId : '/api/v1/planning/commitments',
         editingCommitmentId ? 'PUT' : 'POST', body, editingCommitmentId ? 'Compromiso actualizado.' : 'Compromiso guardado como hipótesis local.');
+      if (!saved) return;
       setCommitmentDraft(emptyCommitmentDraft());
       setEditingCommitmentId(null);
     } catch (caught) {
@@ -309,7 +313,8 @@ export function GoalsPanel({ currency }: { currency: string }) {
   async function deleteAllPlanningData(): Promise<void> {
     const accepted = window.confirm('¿Eliminar definitivamente todos los objetivos y compromisos locales? No se modificará ningún movimiento ni presupuesto de Actual Budget.');
     if (!accepted) return;
-    await runMutation('/api/v1/planning/reset', 'POST', { confirmation: 'DELETE_PLANNING_DATA' }, 'Se han eliminado los objetivos y compromisos locales.');
+    const deleted = await runMutation('/api/v1/planning/reset', 'POST', { confirmation: 'DELETE_PLANNING_DATA' }, 'Se han eliminado los objetivos y compromisos locales.');
+    if (!deleted) return;
     setEditingGoalId(null); setGoalDraft(emptyGoalDraft());
     setEditingCommitmentId(null); setCommitmentDraft(emptyCommitmentDraft());
   }
