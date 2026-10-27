@@ -12,8 +12,8 @@ let accountScope = { mode: 'all', accountIds: [] };
 const now = new Date();
 const iso = (date) => date.toISOString().slice(0, 10);
 const currentMonthStart = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-01';
-const account = { id: 'synthetic-account-1', name: 'Cuenta sintética', closed: false, offBudget: false, currentBalanceMinor: 123456, currencyCode: 'EUR', nativeCurrencyCode: 'EUR' };
-const secondaryAccount = { id: 'synthetic-account-2', name: 'Cuenta sintética secundaria', closed: false, offBudget: false, currentBalanceMinor: 65432, currencyCode: 'GBP', nativeCurrencyCode: 'GBP' };
+const account = { id: 'synthetic-account-1', name: 'Cuenta sintética', closed: false, offBudget: false, currentBalanceMinor: 123456, currencyCode: 'EUR', nativeCurrencyCode: 'EUR', displayBalanceMinor: 123456, displayCurrency: 'EUR', balanceConversion: { fromCurrency: 'EUR', toCurrency: 'EUR', rate: '1', effectiveDate: iso(now), source: 'synthetic-identity', inverseRate: false } };
+const secondaryAccount = { id: 'synthetic-account-2', name: 'Cuenta sintética secundaria', closed: false, offBudget: false, currentBalanceMinor: 65432, currencyCode: 'GBP', nativeCurrencyCode: 'GBP', displayBalanceMinor: null, displayCurrency: 'EUR', balanceConversion: { warning: 'No existe tipo de cambio sintético para GBP/EUR.' } };
 const accounts = [account, secondaryAccount];
 const categories = [
   { id: 'synthetic-food', name: 'Alimentación sintética', groupId: 'synthetic-group', isIncome: false },
