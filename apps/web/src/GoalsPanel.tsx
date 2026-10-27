@@ -178,6 +178,86 @@ async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
   return payload.data;
 }
 
+
+interface GoalScenarioResponse {
+  saved: false;
+  label: string;
+  inputs: { monthlyContributionMinor: number; monthlyIncomeMinor: number; monthlyExpenseMinor: number };
+  projection: GoalProjection;
+}
+
+function GoalScenarioComparator({ goal, baseline }: { goal: Goal; baseline: GoalProjection }) {
+  const initialRow = baseline.monthlyProjection[0];
+  const [contribution, setContribution] = useState(inputAmount(goal.monthlyContributionMinor));
+  const [income, setIncome] = useState(inputAmount(goal.monthlyIncomeMinor ?? initialRow?.incomeMinor ?? 0));
+  const [expense, setExpense] = useState(inputAmount(goal.monthlyExpenseMinor ?? initialRow?.expenseMinor ?? 0));
+  const [scenario, setScenario] = useState<GoalScenarioResponse | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  async function compare(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const inputs = {
+        monthlyContributionMinor: toMinor(contribution, 'Aportación del escenario'),
+        monthlyIncomeMinor: toMinor(income, 'Ingreso del escenario', true),
+        monthlyExpenseMinor: toMinor(expense, 'Gasto del escenario'),
+      };
+      const result = await apiRequest<GoalScenarioResponse>('/api/v1/planning/goals/' + goal.id + '/simulate', {
+        method: 'POST', body: JSON.stringify(inputs),
+      });
+      setScenario(result);
+      setNotice('Escenario calculado localmente. No se ha guardado ni cambiado el objetivo.');
+    } catch (caught) {
+      setScenario(null);
+      setError(caught instanceof Error ? caught.message : 'No se pudo comparar el escenario.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const diff = scenario ? scenario.projection.projectedBalanceMinor - baseline.projectedBalanceMinor : 0;
+  return (
+    <section className="goal-scenario-comparator" aria-labelledby={'scenario-heading-' + goal.id}>
+      <h5 id={'scenario-heading-' + goal.id}>Comparar otro escenario</h5>
+      <p className="section-footnote">Prueba aportación e ingresos/gastos alternativos manteniendo el mismo objetivo y los compromisos activos. Solo se simula; el objetivo guardado no cambia.</p>
+      <form className="form-grid goals-scenario-form" onSubmit={(event) => { void compare(event); }}>
+        <label className="field-label">Aportación mensual ({goal.currency})
+          <input value={contribution} required inputMode="decimal" autoComplete="off" onChange={(event) => setContribution(event.currentTarget.value)} />
+        </label>
+        <label className="field-label">Ingreso mensual supuesto ({goal.currency})
+          <input value={income} required inputMode="decimal" autoComplete="off" onChange={(event) => setIncome(event.currentTarget.value)} />
+        </label>
+        <label className="field-label">Gasto mensual supuesto ({goal.currency})
+          <input value={expense} required inputMode="decimal" autoComplete="off" onChange={(event) => setExpense(event.currentTarget.value)} />
+        </label>
+        <div className="scenario-submit"><button className="button secondary" type="submit" disabled={busy}>{busy ? 'Calculando…' : 'Comparar escenario'}</button></div>
+      </form>
+      {error ? <p className="form-alert error" role="alert">{error}</p> : null}
+      {notice ? <p className="form-alert" role="status">{notice}</p> : null}
+      {scenario ? (
+        <div className="scenario-comparison-grid" aria-live="polite">
+          <article className="scenario-result">
+            <p className="eyebrow">OBJETIVO GUARDADO</p>
+            <strong>{money(baseline.projectedBalanceMinor, goal.currency)}</strong>
+            <span>{baseline.estimatedCompletionDate ? 'Alcanza la meta: ' + civilDate(baseline.estimatedCompletionDate) : 'No alcanza la meta con los supuestos guardados'}</span>
+          </article>
+          <article className="scenario-result scenario-result-custom">
+            <p className="eyebrow">ESCENARIO SIN GUARDAR</p>
+            <strong>{money(scenario.projection.projectedBalanceMinor, goal.currency)}</strong>
+            <span>{scenario.projection.estimatedCompletionDate ? 'Alcanza la meta: ' + civilDate(scenario.projection.estimatedCompletionDate) : 'No alcanza la meta con estos supuestos'}</span>
+            <span className="scenario-difference">Diferencia respecto al objetivo guardado: {diff > 0 ? '+' : diff < 0 ? '−' : ''}{money(Math.abs(diff), goal.currency)}</span>
+          </article>
+          {scenario.projection.warnings.length ? <ul className="warning-list scenario-warnings">{scenario.projection.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+
 export function GoalsPanel({ currency }: { currency: string }) {
   const [data, setData] = useState<PlanningData | null>(null);
   const [month, setMonth] = useState(monthNow);
@@ -373,6 +453,16 @@ export function GoalsPanel({ currency }: { currency: string }) {
           </div>
           {data.warnings.length ? <ul className="warning-list goals-warning-list">{[...new Set(data.warnings)].map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
 
+          <article className="panel goals-history-summary" aria-labelledby="goals-history-heading">
+            <div className="panel-heading"><div><p className="eyebrow">DATOS OBSERVADOS</p><h3 id="goals-history-heading">Flujo mensual de referencia</h3></div></div>
+            <p className="section-context">Mediana calculada en finance-core a partir del historial local; no son ingresos futuros confirmados. Los meses sin movimientos se incluyen como cero.</p>
+            <div className="goals-history-metrics">
+              <div><span>Ingreso observado mediano</span><strong>{money(data.history.monthlyIncomeMinor, effectiveCurrency)}</strong></div>
+              <div><span>Gasto observado mediano</span><strong>{money(data.history.monthlyExpenseMinor, effectiveCurrency)}</strong></div>
+              <div><span>Meses sin movimientos</span><strong>{data.history.emptyMonths} de 12</strong></div>
+            </div>
+          </article>
+
           <article className="panel goals-form-panel" aria-labelledby="goal-form-heading">
             <div className="panel-heading"><div><p className="eyebrow">OBJETIVO PERSONAL</p><h3 id="goal-form-heading">{editingGoalId ? 'Editar objetivo de ahorro' : 'Crear objetivo de ahorro'}</h3></div></div>
             <p className="setting-hint">Define cantidad, fecha, ahorro inicial y aportación mensual. Los ingresos/gastos supuestos pueden sustituir la mediana histórica; déjalos vacíos para usar el historial local de 12 meses.</p>
@@ -431,6 +521,8 @@ export function GoalsPanel({ currency }: { currency: string }) {
                       <div><span>Aportación deseada</span><strong>{money(goal.monthlyContributionMinor, goal.currency)}/mes</strong></div>
                       <div><span>Saldo proyectado</span><strong>{projection ? money(projection.projectedBalanceMinor, goal.currency) : 'No disponible'}</strong></div>
                       <div><span>Aportación necesaria aprox.</span><strong>{projection?.requiredMonthlyContributionMinor === null || !projection ? 'No calculable' : money(projection.requiredMonthlyContributionMinor, goal.currency) + '/mes'}</strong></div>
+                      <div><span>Desviación al vencimiento</span><strong>{!projection ? 'No calculable' : projection.projectedBalanceMinor >= projection.targetAmountMinor ? 'Objetivo alcanzado' : 'Faltan ' + money(projection.targetAmountMinor - projection.projectedBalanceMinor, goal.currency)}</strong></div>
+                      <div><span>Ritmo vs. necesario</span><strong>{!projection || projection.requiredMonthlyContributionMinor === null ? 'No calculable' : goal.monthlyContributionMinor >= projection.requiredMonthlyContributionMinor ? '+' + money(goal.monthlyContributionMinor - projection.requiredMonthlyContributionMinor, goal.currency) + '/mes' : '−' + money(projection.requiredMonthlyContributionMinor - goal.monthlyContributionMinor, goal.currency) + '/mes'}</strong></div>
                     </div>
                     {projection ? (
                       <>
@@ -463,6 +555,7 @@ export function GoalsPanel({ currency }: { currency: string }) {
                           ) : <p className="muted-copy">No hay meses completos antes de la fecha objetivo.</p>}
                           <h5>Supuestos del cálculo</h5>
                           <ul className="assumption-list">{projection.assumptions.map((assumption) => <li key={assumption}>{assumption}</li>)}</ul>
+                          <GoalScenarioComparator key={goal.id + ':' + goal.updatedAt} goal={goal} baseline={projection} />
                         </details>
                       </>
                     ) : <p className="form-alert error" role="status">No se genera una proyección: {goal.planningWarnings.join(' ') || 'el objetivo está en pausa o falta un ámbito válido.'}</p>}
