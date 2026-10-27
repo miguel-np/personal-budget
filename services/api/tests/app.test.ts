@@ -1008,7 +1008,7 @@ describe('local API', () => {
 
   it('edits only validated ordinary transactions and rejects a resulting amount/category mismatch', async () => {
     const listTransactions = vi.fn(async () => transactions);
-    const updateTransaction = vi.fn(async (_id: string, _fields: TransactionUpdate) => undefined);
+    const updateTransaction = vi.fn(async () => undefined);
     const repository = Object.assign(createRepository({ listTransactions }), { updateTransaction }) as BudgetRepository;
     const appConfig = { ...config, actualDataDir: await mkdtemp(join(tmpdir(), 'personal-budget-edit-test-')) };
     temporaryDirectories.push(appConfig.actualDataDir);
