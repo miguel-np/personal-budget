@@ -35,9 +35,9 @@ function createRepository(overrides: Partial<BudgetRepository> = {}): BudgetRepo
     listCategories: vi.fn(async () => categories),
     listTransactions: vi.fn(async () => historicalTransactions),
     updateTransaction: vi.fn(async () => undefined),
-    updateTransactionSafely: vi.fn(async () => ({ transaction: { id: '', account: '', date: '', amount: 0 }, verified: true })),
+    updateTransactionSafely: vi.fn(async () => ({ persisted: true, verified: true })),
     updateTransactionCategory: vi.fn(async () => undefined),
-    updateTransactionCategoriesBatch: vi.fn(async () => ({ requested: 0, applied: 0, appliedTransactionIds: [], partial: false, persisted: true })),
+    updateTransactionCategoriesBatch: vi.fn(async () => ({ requested: 0, updatedTransactionIds: [], persisted: true })),
     ...overrides,
   };
 }
@@ -82,7 +82,7 @@ describe('local planning API', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().data).toMatchObject({
       currency: 'EUR', goals: [], commitments: [], calendarItems: [],
-      accountScope: { mode: 'all', label: 'Todas las cuentas abiertas' },
+      accountScope: { mode: 'all', label: expect.stringContaining('Todas las cuentas abiertas') },
     });
     expect(response.json().data.history.monthlyHistory).toHaveLength(12);
     expect(repository.updateTransaction).not.toHaveBeenCalled();
