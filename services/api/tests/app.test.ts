@@ -660,7 +660,18 @@ describe('local API', () => {
     expect(preview.json().data).toMatchObject({ preview: true, changes: 1 });
     expect(updateTransactionCategory).not.toHaveBeenCalled();
 
-    const commit = await app.inject({ method: 'POST', url: '/api/v1/insights/categorize', payload: { ...body, commit: true } });
+    const baseline = preview.json().data.baseline as { transactionId: string; expectedCategoryId: string | null }[];
+    const commit = await app.inject({
+      method: 'POST', url: '/api/v1/insights/categorize',
+      payload: {
+        ...body,
+        commit: true,
+        transactions: body.transactions.map((change) => ({
+          ...change,
+          expectedCategoryId: baseline.find((entry) => entry.transactionId === change.transactionId)!.expectedCategoryId,
+        })),
+      },
+    });
     expect(commit.statusCode).toBe(200);
     expect(commit.json().data).toMatchObject({ preview: false, changes: 1 });
     expect(updateTransactionCategory).toHaveBeenCalledTimes(1);
@@ -676,14 +687,14 @@ describe('local API', () => {
     const app = await createTestApp(repository);
     const unknownTransaction = await app.inject({
       method: 'POST', url: '/api/v1/insights/categorize',
-      payload: { startDate: '2026-10-01', endDate: '2026-10-31', commit: true, transactions: [{ transactionId: 'missing', categoryId: 'food' }] },
+      payload: { startDate: '2026-10-01', endDate: '2026-10-31', commit: true, transactions: [{ transactionId: 'missing', categoryId: 'food', expectedCategoryId: null }] },
     });
     expect(unknownTransaction.statusCode).toBe(400);
     expect(unknownTransaction.json().error.code).toBe('INVALID_TRANSACTION');
 
     const incomeCategory = await app.inject({
       method: 'POST', url: '/api/v1/insights/categorize',
-      payload: { startDate: '2026-10-01', endDate: '2026-10-31', commit: true, transactions: [{ transactionId: 'expense-1', categoryId: 'salary' }] },
+      payload: { startDate: '2026-10-01', endDate: '2026-10-31', commit: true, transactions: [{ transactionId: 'expense-1', categoryId: 'salary', expectedCategoryId: 'food' }] },
     });
     expect(incomeCategory.statusCode).toBe(400);
     expect(incomeCategory.json().error.code).toBe('INVALID_CATEGORY');
@@ -692,10 +703,10 @@ describe('local API', () => {
     const withoutCapability = await createTestApp(createRepository({ listTransactions }));
     const unsupported = await withoutCapability.inject({
       method: 'POST', url: '/api/v1/insights/categorize',
-      payload: { startDate: '2026-10-01', endDate: '2026-10-31', commit: true, transactions: [{ transactionId: 'expense-1', categoryId: 'food' }] },
+      payload: { startDate: '2026-10-01', endDate: '2026-10-31', commit: true, transactions: [{ transactionId: 'expense-1', categoryId: 'food', expectedCategoryId: 'food' }] },
     });
     expect(unsupported.statusCode).toBe(503);
-    expect(unsupported.json().error.code).toBe('TRANSACTION_UPDATE_NOT_SUPPORTED');
+    expect(unsupported.json().error.code).toBe('TRANSACTION_BATCH_UPDATE_NOT_SUPPORTED');
   });
 
   it('simulates forecasts deterministically and rejects malformed scenarios', async () => {
@@ -1303,8 +1314,8 @@ describe('local API', () => {
       payload: {
         startDate: '2026-10-01', endDate: '2026-10-31', commit: true,
         transactions: [
-          { transactionId: 'expense-1', categoryId: 'food' },
-          { transactionId: 'expense-2', categoryId: 'food' },
+          { transactionId: 'expense-1', categoryId: 'food', expectedCategoryId: 'food' },
+          { transactionId: 'expense-2', categoryId: 'food', expectedCategoryId: null },
         ],
       },
     });
@@ -1314,12 +1325,29 @@ describe('local API', () => {
       failedTransactionId: 'expense-2', persisted: true, partial: true,
     });
 
+    updateTransactionCategoriesBatch.mockResolvedValueOnce({
+      requested: 1, updatedTransactionIds: [], failedTransactionId: 'expense-2',
+      conflictTransactionId: 'expense-2', persisted: true,
+    });
+    const adapterConflict = await app.inject({
+      method: 'POST', url: '/api/v1/insights/categorize',
+      payload: {
+        startDate: '2026-10-01', endDate: '2026-10-31', commit: true,
+        transactions: [{ transactionId: 'expense-2', categoryId: 'food', expectedCategoryId: null }],
+      },
+    });
+    expect(adapterConflict.statusCode).toBe(409);
+    expect(adapterConflict.json().error.code).toBe('TRANSACTION_CHANGED_SINCE_PREVIEW');
+    expect(updateTransactionCategoriesBatch).toHaveBeenLastCalledWith([
+      { transactionId: 'expense-2', categoryId: 'food', expectedCategoryId: null, accountId: 'account-1', date: '2026-10-03' },
+    ]);
+
     const callsBeforeInvalidRequest = updateTransactionCategoriesBatch.mock.calls.length;
     const transfer = await app.inject({
       method: 'POST', url: '/api/v1/insights/categorize',
       payload: {
         startDate: '2026-10-01', endDate: '2026-10-31', commit: true,
-        transactions: [{ transactionId: 'transfer-1', categoryId: 'food' }],
+        transactions: [{ transactionId: 'transfer-1', categoryId: 'food', expectedCategoryId: null }],
       },
     });
     expect(transfer.statusCode).toBe(409);
@@ -1330,8 +1358,8 @@ describe('local API', () => {
       payload: {
         startDate: '2026-10-01', endDate: '2026-10-31', commit: true,
         transactions: [
-          { transactionId: 'expense-1', categoryId: 'food' },
-          { transactionId: 'expense-1', categoryId: 'food' },
+          { transactionId: 'expense-1', categoryId: 'food', expectedCategoryId: 'food' },
+          { transactionId: 'expense-1', categoryId: 'food', expectedCategoryId: 'food' },
         ],
       },
     });

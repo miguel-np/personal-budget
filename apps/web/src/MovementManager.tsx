@@ -121,6 +121,7 @@ export function MovementManager(props: MovementManagerProps) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [batchCategoryId, setBatchCategoryId] = useState('');
   const [batchPreview, setBatchPreview] = useState(false);
+  const [batchExpectedCategories, setBatchExpectedCategories] = useState<Record<string, string | null>>({});
   const [batchBusy, setBatchBusy] = useState(false);
   const [batchError, setBatchError] = useState('');
   const [batchNotice, setBatchNotice] = useState('');
@@ -150,6 +151,7 @@ export function MovementManager(props: MovementManagerProps) {
     setSelectedIds([]);
     setBatchCategoryId('');
     setBatchPreview(false);
+    setBatchExpectedCategories({});
     setBatchError('');
     setBatchNotice('');
     setExportMessage('');
@@ -324,53 +326,89 @@ export function MovementManager(props: MovementManagerProps) {
     }
   }
 
-  const batchPayload = () => ({
-    startDate, endDate, commit: false,
-    transactions: selectedTransactions.map((item) => ({ transactionId: item.id, categoryId: batchCategoryId })),
+  const batchPayload = (commit = false) => ({
+    startDate, endDate, commit,
+    transactions: selectedTransactions.map((item) => ({
+      transactionId: item.id,
+      categoryId: batchCategoryId,
+      ...(commit && Object.hasOwn(batchExpectedCategories, item.id)
+        ? { expectedCategoryId: batchExpectedCategories[item.id] }
+        : {}),
+    })),
   });
   async function previewBatch(): Promise<void> {
     if (batchBusy || !batchCategoryId || selectedTransactions.length === 0) return;
     setBatchBusy(true); setBatchError(''); setBatchNotice('');
+    setBatchPreview(false); setBatchExpectedCategories({});
     try {
-      const { response, payload } = await requestJson<{ preview: boolean; requested: number; changes: number }>(
+      const { response, payload } = await requestJson<{
+        preview: boolean;
+        requested: number;
+        changes: number;
+        baseline?: readonly { transactionId: string; expectedCategoryId: string | null }[];
+      }>(
         '/api/v1/insights/categorize',
         { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(batchPayload()) },
       );
       if (!response.ok || !payload.data) throw new Error(payload.error?.message ?? 'La API no pudo validar el lote.');
+      const baseline = payload.data.baseline;
+      if (!baseline || baseline.length !== selectedTransactions.length ||
+          selectedTransactions.some((item) => !baseline.some((entry) => entry.transactionId === item.id))) {
+        throw new Error('La API no devolvió una referencia de categoría verificable para cada movimiento. Vuelve a intentarlo.');
+      }
+      setBatchExpectedCategories(Object.fromEntries(baseline.map((entry) => [entry.transactionId, entry.expectedCategoryId])));
       setBatchPreview(true);
-      setBatchNotice('Previsualización validada: ' + payload.data.changes + ' movimientos de gasto. Todavía no se ha escrito ningún cambio.');
+      setBatchNotice('Previsualización validada: ' + payload.data.changes + ' movimientos de gasto. Se comprobará que sus categorías no cambien antes de escribir; todavía no se ha modificado ningún movimiento.');
     } catch (error) {
       setBatchError(error instanceof Error ? error.message : 'No se ha podido validar el lote.');
     } finally { setBatchBusy(false); }
   }
   async function commitBatch(): Promise<void> {
     if (batchBusy || !batchPreview || !batchCategoryId || selectedTransactions.length === 0) return;
-    const confirmed = window.confirm('Se cambiará la categoría de ' + selectedTransactions.length + ' movimientos ordinarios de gasto a «' + (categoryNames.get(batchCategoryId) ?? batchCategoryId) + '». Actual Budget puede informar de un resultado parcial; no se realizará una deshacer automática. ¿Continuar?');
+    if (selectedTransactions.some((item) => !Object.hasOwn(batchExpectedCategories, item.id))) {
+      setBatchPreview(false);
+      setBatchExpectedCategories({});
+      setBatchError('La previsualización ya no cubre todos los movimientos seleccionados. Vuelve a previsualizar el lote.');
+      return;
+    }
+    const confirmed = window.confirm('Se cambiará la categoría de ' + selectedTransactions.length + ' movimientos ordinarios de gasto a «' + (categoryNames.get(batchCategoryId) ?? batchCategoryId) + '». Se comprobará que cada categoría siga igual que en la previsualización. Si falla una escritura, solo se volverán a seleccionar los movimientos pendientes; no se realizará una deshacer automática. ¿Continuar?');
     if (!confirmed) return;
     setBatchBusy(true); setBatchError(''); setBatchNotice('');
     try {
       const { response, payload } = await requestJson<{
         requested: number; applied?: number; changes: number; appliedTransactionIds?: string[];
-        failedTransactionId?: string; persisted?: boolean; partial?: boolean; message?: string;
+        failedTransactionId?: string; conflictTransactionId?: string; persisted?: boolean; partial?: boolean; message?: string;
       }>('/api/v1/insights/categorize', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ ...batchPayload(), commit: true }),
+        body: JSON.stringify(batchPayload(true)),
       });
       if (!response.ok || !payload.data) throw new Error(payload.error?.message ?? 'La API no pudo aplicar el lote.');
       const outcome = payload.data;
+      const appliedIds = new Set(outcome.appliedTransactionIds ?? []);
       const batchMessage = outcome.partial || outcome.applied !== outcome.requested || outcome.persisted === false
-        ? 'Resultado parcial: ' + (outcome.applied ?? outcome.changes) + ' de ' + outcome.requested + ' cambios intentados. ' +
+        ? 'Resultado parcial: ' + (outcome.applied ?? outcome.changes) + ' de ' + outcome.requested + ' movimientos confirmados. ' +
           (outcome.failedTransactionId ? 'Revisa el ID técnico ' + outcome.failedTransactionId + '. ' : '') +
+          (outcome.conflictTransactionId ? 'La categoría cambió después de la previsualización. ' : '') +
           (outcome.persisted === false ? 'La persistencia no se ha podido verificar. ' : '') +
           (outcome.message ?? 'Revisa Actual antes de volver a intentarlo; no se ha ejecutado ninguna deshacer automática.')
-        : 'Se han guardado y sincronizado ' + outcome.changes + ' cambios de categoría.';
-      setBatchNotice(batchMessage);
-      setSelectedIds([]);
-      setBatchPreview(false);
-      setBatchCategoryId('');
+        : 'Se han confirmado ' + outcome.changes + ' estados de categoría en Actual Budget.';
+      if (outcome.partial || outcome.applied !== outcome.requested || outcome.persisted === false) {
+        setSelectedIds((previous) => previous.filter((id) => !appliedIds.has(id)));
+        setBatchPreview(false);
+        setBatchExpectedCategories({});
+        setBatchNotice(batchMessage + ' Solo quedan seleccionados los movimientos pendientes; previsualiza de nuevo antes de reintentar.');
+      } else {
+        setSelectedIds([]);
+        setBatchPreview(false);
+        setBatchExpectedCategories({});
+        setBatchCategoryId('');
+        setBatchNotice(batchMessage);
+      }
       onUpdated(batchMessage);
     } catch (error) {
-      setBatchError(error instanceof Error ? error.message : 'No se ha podido completar el lote.');
+      setBatchPreview(false);
+      setBatchExpectedCategories({});
+      setBatchError(error instanceof Error ? error.message : 'No se ha podido completar el lote. Vuelve a previsualizar antes de reintentar.');
     } finally { setBatchBusy(false); }
   }
 
@@ -436,7 +474,7 @@ export function MovementManager(props: MovementManagerProps) {
         <p className="setting-hint">La selección se limita a la página visible. La categorización por lote solo incluye gastos ordinarios; las transferencias, ingresos y movimientos divididos se protegen de acciones en lote.</p>
         <div className="movement-actions-controls">
           <label className="field-label">Categoría de gasto para el lote
-            <select value={batchCategoryId} onChange={(event) => { setBatchCategoryId(event.currentTarget.value); setBatchPreview(false); setBatchNotice(''); setBatchError(''); }}>
+            <select value={batchCategoryId} onChange={(event) => { setBatchCategoryId(event.currentTarget.value); setBatchPreview(false); setBatchExpectedCategories({}); setBatchNotice(''); setBatchError(''); }}>
               <option value="">Selecciona categoría…</option>
               {expenseCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
             </select>
@@ -456,7 +494,7 @@ export function MovementManager(props: MovementManagerProps) {
         <div className="table-wrap" role="region" aria-label="Movimientos paginados; desplázate horizontalmente para ver todas las columnas" tabIndex={0}>
           <table className="transactions-table">
             <thead><tr>
-              <th scope="col"><input type="checkbox" aria-label="Seleccionar todos los gastos ordinarios de esta página" checked={allSelectableSelected} onChange={(event) => { const checked = event.currentTarget.checked; setSelectedIds(checked ? selectableTransactions.map((item) => item.id) : []); setBatchPreview(false); setBatchNotice(''); }} /></th>
+              <th scope="col"><input type="checkbox" aria-label="Seleccionar todos los gastos ordinarios de esta página" checked={allSelectableSelected} onChange={(event) => { const checked = event.currentTarget.checked; setSelectedIds(checked ? selectableTransactions.map((item) => item.id) : []); setBatchPreview(false); setBatchExpectedCategories({}); setBatchNotice(''); }} /></th>
               <th scope="col"><button type="button" className="sort-button" onClick={() => onSort('date')}>Fecha{sortKey === 'date' ? (sortAscending ? ' ↑' : ' ↓') : ''}</button></th>
               <th scope="col"><button type="button" className="sort-button" onClick={() => onSort('description')}>Descripción{sortKey === 'description' ? (sortAscending ? ' ↑' : ' ↓') : ''}</button></th>
               <th scope="col">Cuenta</th><th scope="col">Categoría</th>
@@ -469,7 +507,7 @@ export function MovementManager(props: MovementManagerProps) {
               const description = transactionDescription(transaction);
               const reason = transaction.transfer_id ? 'Las transferencias deben editarse juntas en Actual Budget.' : 'Los movimientos divididos se protegen para evitar perder o duplicar apuntes.';
               return <tr key={transaction.id}>
-                <td><input type="checkbox" aria-label={'Seleccionar ' + description} checked={selectedIds.includes(transaction.id)} disabled={!bulkSelectable} title={!bulkSelectable ? (editable ? 'La categorización en lote está limitada a gastos.' : reason) : undefined} onChange={(event) => { const checked = event.currentTarget.checked; setSelectedIds((previous) => checked ? [...previous.filter((id) => id !== transaction.id), transaction.id] : previous.filter((id) => id !== transaction.id)); setBatchPreview(false); setBatchNotice(''); }} /></td>
+                <td><input type="checkbox" aria-label={'Seleccionar ' + description} checked={selectedIds.includes(transaction.id)} disabled={!bulkSelectable} title={!bulkSelectable ? (editable ? 'La categorización en lote está limitada a gastos.' : reason) : undefined} onChange={(event) => { const checked = event.currentTarget.checked; setSelectedIds((previous) => checked ? [...previous.filter((id) => id !== transaction.id), transaction.id] : previous.filter((id) => id !== transaction.id)); setBatchPreview(false); setBatchExpectedCategories({}); setBatchNotice(''); }} /></td>
                 <td>{formatCivilDate(transaction.date, locale)}</td>
                 <td><strong className="transaction-name">{description}</strong>{transaction.notes ? <small className="transaction-note">{transaction.notes}</small> : null}</td>
                 <td>{accountNames.get(transaction.account) ?? 'Cuenta desconocida'}</td>

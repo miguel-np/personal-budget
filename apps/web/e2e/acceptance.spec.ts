@@ -442,6 +442,64 @@ test('bulk categorization previews all eligible rows and confirms a reported out
   expect(state.lastCommittedChanges).toEqual([{ transactionId: 'synthetic-tx-1', categoryId: 'synthetic-restaurants' }]);
 });
 
+test('bulk category commit rejects a stale preview and requires a refreshed baseline', async ({ page, request }) => {
+  await request.post(fixtureApi + '/__test__/reset');
+  await page.goto('/movements');
+  const rowCheckbox = page.getByRole('checkbox', { name: 'Seleccionar Supermercado sintético' });
+  await rowCheckbox.check();
+  await page.getByLabel('Categoría de gasto para el lote').selectOption('synthetic-restaurants');
+  await page.getByRole('button', { name: 'Previsualizar lote' }).click();
+  await expect(page.locator('.movement-actions-toolbar').getByRole('status')).toContainText('Se comprobará que sus categorías no cambien');
+  expect((await (await request.get(fixtureApi + '/__test__/state')).json()).categoryWrites).toBe(0);
+
+  await request.post(fixtureApi + '/__test__/change-category', {
+    data: { transactionId: 'synthetic-tx-1', categoryId: 'synthetic-restaurants' },
+  });
+  page.once('dialog', (dialog) => { void dialog.accept(); });
+  await page.getByRole('button', { name: 'Confirmar lote' }).click();
+  await expect(page.locator('.movement-actions-toolbar').getByRole('alert')).toContainText('La categoría cambió después de la previsualización');
+  expect(await rowCheckbox.isChecked()).toBe(true);
+  expect((await (await request.get(fixtureApi + '/__test__/state')).json()).categoryWrites).toBe(0);
+
+  await page.getByRole('button', { name: 'Previsualizar lote' }).click();
+  page.once('dialog', (dialog) => { void dialog.accept(); });
+  await page.getByRole('button', { name: 'Confirmar lote' }).click();
+  await expect(page.locator('.movement-operation-notice')).toContainText('Se han confirmado 1 estados de categoría');
+  const state = await (await request.get(fixtureApi + '/__test__/state')).json();
+  expect(state.categoryWrites).toBe(0); // the concurrent change already satisfied the requested final state
+  expect(state.lastCommittedChanges).toEqual([{ transactionId: 'synthetic-tx-1', categoryId: 'synthetic-restaurants' }]);
+});
+
+test('bulk category partial result keeps only pending rows selected for a fresh retry', async ({ page, request }) => {
+  await request.post(fixtureApi + '/__test__/reset');
+  await page.goto('/movements');
+  const first = page.getByRole('checkbox', { name: 'Seleccionar Supermercado sintético' });
+  const second = page.getByRole('checkbox', { name: 'Seleccionar Cafetería sin categoría sintética' });
+  await first.check();
+  await second.check();
+  await page.getByLabel('Categoría de gasto para el lote').selectOption('synthetic-restaurants');
+  await page.getByRole('button', { name: 'Previsualizar lote' }).click();
+  await request.post(fixtureApi + '/__test__/mode', { data: { batchFailAtTransactionId: 'synthetic-tx-3' } });
+  page.once('dialog', (dialog) => { void dialog.accept(); });
+  await page.getByRole('button', { name: 'Confirmar lote' }).click();
+
+  await expect(page.locator('.movement-actions-toolbar').getByRole('status')).toContainText('Solo quedan seleccionados los movimientos pendientes');
+  expect(await first.isChecked()).toBe(false);
+  expect(await second.isChecked()).toBe(true);
+  let state = await (await request.get(fixtureApi + '/__test__/state')).json();
+  expect(state.categoryWrites).toBe(1);
+  expect(state.lastCommittedChanges).toEqual([{ transactionId: 'synthetic-tx-1', categoryId: 'synthetic-restaurants' }]);
+
+  await page.getByRole('button', { name: 'Previsualizar lote' }).click();
+  await expect(page.locator('.movement-actions-toolbar').getByRole('status')).toContainText('1 movimientos de gasto');
+  page.once('dialog', (dialog) => { void dialog.accept(); });
+  await page.getByRole('button', { name: 'Confirmar lote' }).click();
+  await expect(page.locator('.movement-operation-notice')).toContainText('Se han confirmado 1 estados de categoría');
+  state = await (await request.get(fixtureApi + '/__test__/state')).json();
+  expect(state.categoryWrites).toBe(2);
+  expect(state.lastCommittedChanges).toEqual([{ transactionId: 'synthetic-tx-3', categoryId: 'synthetic-restaurants' }]);
+});
+
 test('CSV export downloads every row matching the current filters', async ({ page }) => {
   await page.goto('/movements');
   await page.getByLabel('Buscar').fill('Supermercado sintético');

@@ -115,6 +115,8 @@ export interface TransactionCategoryBatchChange {
   /** Read-back verification scope; required so a write can be persisted before the next update. */
   readonly accountId: string;
   readonly date: string;
+  /** Category at the preview boundary; null means uncategorized. */
+  readonly expectedCategoryId: string | null;
 }
 
 /** Explicit outcome of a non-atomic batch. A false persisted flag means sync could not be verified. */
@@ -122,6 +124,8 @@ export interface TransactionCategoryBatchResult {
   readonly requested: number;
   readonly updatedTransactionIds: readonly string[];
   readonly failedTransactionId?: string;
+  /** Set when an optimistic concurrency check detects a different category than the preview. */
+  readonly conflictTransactionId?: string;
   readonly persisted: boolean;
 }
 

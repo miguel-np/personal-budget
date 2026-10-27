@@ -295,8 +295,8 @@ describe('ActualBudgetAdapter', () => {
     });
     const adapter = new ActualBudgetAdapter(config, api);
     const changes = [
-      { transactionId: 'transaction-1', categoryId: 'food', accountId: 'account-1', date: '2026-10-10' },
-      { transactionId: 'transaction-2', categoryId: 'food', accountId: 'account-1', date: '2026-10-10' },
+      { transactionId: 'transaction-1', categoryId: 'food', accountId: 'account-1', date: '2026-10-10', expectedCategoryId: null },
+      { transactionId: 'transaction-2', categoryId: 'food', accountId: 'account-1', date: '2026-10-10', expectedCategoryId: null },
     ];
     await expect(adapter.updateTransactionCategoriesBatch(changes)).resolves.toEqual({
       requested: 2, updatedTransactionIds: ['transaction-1', 'transaction-2'], persisted: true,
@@ -309,8 +309,8 @@ describe('ActualBudgetAdapter', () => {
 
     const callsBeforeDuplicate = updateTransaction.mock.calls.length;
     await expect(adapter.updateTransactionCategoriesBatch([
-      { transactionId: 'transaction-1', categoryId: 'food', accountId: 'account-1', date: '2026-10-10' },
-      { transactionId: 'transaction-1', categoryId: 'food', accountId: 'account-1', date: '2026-10-10' },
+      { transactionId: 'transaction-1', categoryId: 'food', accountId: 'account-1', date: '2026-10-10', expectedCategoryId: null },
+      { transactionId: 'transaction-1', categoryId: 'food', accountId: 'account-1', date: '2026-10-10', expectedCategoryId: null },
     ])).rejects.toMatchObject({ code: 'INVALID_INPUT' });
     expect(updateTransaction).toHaveBeenCalledTimes(callsBeforeDuplicate);
   });
@@ -332,8 +332,8 @@ describe('ActualBudgetAdapter', () => {
     });
     const adapter = new ActualBudgetAdapter(config, api);
     const outcome = await adapter.updateTransactionCategoriesBatch([
-      { transactionId: 'transaction-1', categoryId: 'food', accountId: 'account-1', date: '2026-10-10' },
-      { transactionId: 'transaction-2', categoryId: 'food', accountId: 'account-1', date: '2026-10-10' },
+      { transactionId: 'transaction-1', categoryId: 'food', accountId: 'account-1', date: '2026-10-10', expectedCategoryId: null },
+      { transactionId: 'transaction-2', categoryId: 'food', accountId: 'account-1', date: '2026-10-10', expectedCategoryId: null },
     ]);
     expect(outcome).toEqual({
       requested: 2, updatedTransactionIds: ['transaction-1'],
@@ -357,7 +357,7 @@ describe('ActualBudgetAdapter', () => {
     });
     const adapter = new ActualBudgetAdapter(config, api);
     await expect(adapter.updateTransactionCategoriesBatch([
-      { transactionId: 'transaction-1', categoryId: 'food', accountId: 'account-1', date: '2026-10-10' },
+      { transactionId: 'transaction-1', categoryId: 'food', accountId: 'account-1', date: '2026-10-10', expectedCategoryId: null },
     ])).resolves.toMatchObject({
       requested: 1, updatedTransactionIds: [], failedTransactionId: 'transaction-1', persisted: false,
     });
@@ -371,11 +371,44 @@ describe('ActualBudgetAdapter', () => {
     });
     const adapter = new ActualBudgetAdapter(config, api);
     await expect(adapter.updateTransactionCategoriesBatch([
-      { transactionId: 'transaction-1', categoryId: 'food', accountId: 'account-1', date: '2026-10-10' },
+      { transactionId: 'transaction-1', categoryId: 'food', accountId: 'account-1', date: '2026-10-10', expectedCategoryId: null },
     ])).resolves.toEqual({
       requested: 1, updatedTransactionIds: [], failedTransactionId: 'transaction-1', persisted: false,
     });
     // Only the enqueue initialization sync occurs; syncing before readback would risk interrupting the pending write.
+    expect(api.sync).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a stale category baseline before writing', async () => {
+    const row: BudgetTransaction = { id: 'transaction-1', account: 'account-1', date: '2026-10-10', amount: -1_000, category: 'restaurants' };
+    const updateTransaction = vi.fn(async () => undefined);
+    const api = createApi({
+      updateTransaction,
+      getTransactions: vi.fn(async () => [row]),
+    });
+    const adapter = new ActualBudgetAdapter(config, api);
+    await expect(adapter.updateTransactionCategoriesBatch([
+      { transactionId: 'transaction-1', categoryId: 'food', accountId: 'account-1', date: '2026-10-10', expectedCategoryId: null },
+    ])).resolves.toEqual({
+      requested: 1, updatedTransactionIds: [], failedTransactionId: 'transaction-1',
+      conflictTransactionId: 'transaction-1', persisted: true,
+    });
+    expect(updateTransaction).not.toHaveBeenCalled();
+    expect(api.sync).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats an already-satisfied category as an idempotent no-op', async () => {
+    const row: BudgetTransaction = { id: 'transaction-1', account: 'account-1', date: '2026-10-10', amount: -1_000, category: 'food' };
+    const updateTransaction = vi.fn(async () => undefined);
+    const api = createApi({
+      updateTransaction,
+      getTransactions: vi.fn(async () => [row]),
+    });
+    const adapter = new ActualBudgetAdapter(config, api);
+    await expect(adapter.updateTransactionCategoriesBatch([
+      { transactionId: 'transaction-1', categoryId: 'food', accountId: 'account-1', date: '2026-10-10', expectedCategoryId: 'food' },
+    ])).resolves.toEqual({ requested: 1, updatedTransactionIds: ['transaction-1'], persisted: true });
+    expect(updateTransaction).not.toHaveBeenCalled();
     expect(api.sync).toHaveBeenCalledTimes(1);
   });
 

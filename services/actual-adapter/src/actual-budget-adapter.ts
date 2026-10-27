@@ -74,6 +74,7 @@ const CategoryBatchSchema = z.array(z.object({
   categoryId: IdentifierSchema,
   accountId: IdentifierSchema,
   date: z.string().refine(isIsoDate, 'date must be a valid YYYY-MM-DD date'),
+  expectedCategoryId: IdentifierSchema.nullable(),
 }).strict()).min(1).max(200).superRefine((changes, context) => {
   const seen = new Set<string>();
   for (const [index, change] of changes.entries()) {
@@ -302,6 +303,43 @@ export class ActualBudgetAdapter implements BudgetRepository {
       };
 
       for (const change of parsed.data) {
+        // Compare the preview baseline again immediately before each write so a newer
+        // category edit is surfaced rather than silently overwritten by a stale batch.
+        let before: BudgetTransaction | undefined;
+        try {
+          const rows = await this.api.getTransactions(change.accountId, change.date, change.date);
+          before = rows.find((row) => row.id === change.transactionId && row.account === change.accountId);
+        } catch {
+          return {
+            requested: parsed.data.length,
+            updatedTransactionIds,
+            failedTransactionId: change.transactionId,
+            persisted: false,
+          };
+        }
+        if (!before) {
+          return {
+            requested: parsed.data.length,
+            updatedTransactionIds,
+            failedTransactionId: change.transactionId,
+            persisted: true,
+          };
+        }
+        if ((before.category ?? null) !== change.expectedCategoryId) {
+          return {
+            requested: parsed.data.length,
+            updatedTransactionIds,
+            failedTransactionId: change.transactionId,
+            conflictTransactionId: change.transactionId,
+            persisted: true,
+          };
+        }
+        // A retried request is a safe no-op when the requested category is already
+        // the verified current category and the preview baseline still matches.
+        if ((before.category ?? null) === change.categoryId) {
+          updatedTransactionIds.push(change.transactionId);
+          continue;
+        }
         try {
           await this.api.updateTransaction!(change.transactionId, { category: change.categoryId });
         } catch {

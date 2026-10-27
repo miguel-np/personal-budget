@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 let readiness = 'configured';
 
 let failImportPreview = false;
+let batchFailAtTransactionId = null;
 let commitCount = 0;
 let transferPreviewCount = 0;
 let transferCommitCount = 0;
@@ -77,6 +78,10 @@ function resetLinkedTransactions() {
     ],
   });
 }
+const initialTransactions = transactions.map((item) => ({ ...item }));
+const resetTransactions = () => {
+  transactions.splice(0, transactions.length, ...initialTransactions.map((item) => ({ ...item })));
+};
 const summary = (startDate, endDate) => {
   const inScope = accountScope.mode === 'selected' ? transactions.filter((tx) => accountScope.accountIds.includes(tx.account)) : transactions;
   if (accountScope.mode === 'all') return {
@@ -161,14 +166,23 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url || '/', 'http://127.0.0.1:3000');
   try {
     if (req.method === 'POST' && url.pathname === '/__test__/reset') {
-      readiness = 'configured'; failImportPreview = false; commitCount = 0; transferPreviewCount = 0; transferCommitCount = 0; lastTransferPayload = null; categoryWrites = 0; transactionWrites = 0; lastTransactionUpdate = null; appPreferences = { theme: 'system', locale: 'es-ES' }; lastPreviewChanges = []; lastCommittedChanges = []; budgetedMinor = 50_000; currencyPreferences = { displayCurrency: 'EUR', accountCurrencyOverrides: {}, exchangeRates: [] }; accountScope = { mode: 'all', accountIds: [] }; resetLinkedTransactions();
+      readiness = 'configured'; failImportPreview = false; batchFailAtTransactionId = null; commitCount = 0; transferPreviewCount = 0; transferCommitCount = 0; lastTransferPayload = null; categoryWrites = 0; transactionWrites = 0; lastTransactionUpdate = null; appPreferences = { theme: 'system', locale: 'es-ES' }; lastPreviewChanges = []; lastCommittedChanges = []; budgetedMinor = 50_000; currencyPreferences = { displayCurrency: 'EUR', accountCurrencyOverrides: {}, exchangeRates: [] }; accountScope = { mode: 'all', accountIds: [] }; resetTransactions(); resetLinkedTransactions();
       return send(res, 200, { ok: true });
     }
     if (req.method === 'POST' && url.pathname === '/__test__/mode') {
       const body = await readBody(req);
       readiness = body.readiness === 'not_configured' ? 'not_configured' : 'configured';
       failImportPreview = body.failImportPreview === true;
+      batchFailAtTransactionId = typeof body.batchFailAtTransactionId === 'string' ? body.batchFailAtTransactionId : null;
       return send(res, 200, { ok: true });
+    }
+    if (req.method === 'POST' && url.pathname === '/__test__/change-category') {
+      const body = await readBody(req);
+      const transaction = allTransactions().find((item) => item.id === body.transactionId);
+      if (!transaction) return send(res, 404, { error: { code: 'INVALID_TRANSACTION', message: 'Movimiento sintético no disponible.' } });
+      if (!categories.some((item) => item.id === body.categoryId)) return send(res, 400, { error: { code: 'INVALID_CATEGORY', message: 'Categoría sintética no disponible.' } });
+      transaction.category = body.categoryId;
+      return send(res, 200, { data: { transactionId: transaction.id, categoryId: transaction.category } });
     }
     if (req.method === 'GET' && url.pathname === '/__test__/state') return send(res, 200, {
       commitCount, transferPreviewCount, transferCommitCount, lastTransferPayload, categoryWrites,
@@ -390,16 +404,59 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/v1/insights/category-suggestions') return send(res, 200, { data: suggestions });
     if (req.method === 'POST' && url.pathname === '/api/v1/insights/categorize') {
       const body = await readBody(req);
+      const batchRows = body.transactions ?? [];
+      const sourceRows = allTransactions();
       if (body.commit === true) {
-        categoryWrites += body.transactions?.length ?? 0;
-        lastCommittedChanges = body.transactions ?? [];
+        for (const change of batchRows) {
+          const transaction = sourceRows.find((item) => item.id === change.transactionId);
+          if (!transaction) return send(res, 400, { error: { code: 'INVALID_TRANSACTION', message: 'Movimiento sintético no disponible.' } });
+          if (change.expectedCategoryId === undefined || (transaction.category ?? null) !== change.expectedCategoryId) {
+            return send(res, 409, { error: { code: 'TRANSACTION_CHANGED_SINCE_PREVIEW', message: 'La categoría cambió después de la previsualización; revisa y previsualiza otra vez.' } });
+          }
+        }
+        const changed = [];
+        const appliedTransactionIds = [];
+        let failedTransactionId;
+        for (const change of batchRows) {
+          if (batchFailAtTransactionId === change.transactionId) {
+            failedTransactionId = change.transactionId;
+            batchFailAtTransactionId = null;
+            break;
+          }
+          const transaction = sourceRows.find((item) => item.id === change.transactionId);
+          if (!transaction) {
+            failedTransactionId = change.transactionId;
+            break;
+          }
+          if ((transaction.category ?? null) !== change.categoryId) {
+            transaction.category = change.categoryId;
+            changed.push(change.transactionId);
+          }
+          appliedTransactionIds.push(change.transactionId);
+        }
+        categoryWrites += changed.length;
+        lastCommittedChanges = batchRows.filter((item) => appliedTransactionIds.includes(item.transactionId))
+          .map((item) => ({ transactionId: item.transactionId, categoryId: item.categoryId }));
+        if (failedTransactionId) {
+          return send(res, 207, { data: {
+            preview: false, requested: batchRows.length, applied: appliedTransactionIds.length,
+            changes: appliedTransactionIds.length, appliedTransactionIds, failedTransactionId,
+            persisted: true, partial: true,
+            message: 'El lote sintético se detuvo en el identificador indicado; los IDs aplicados están verificados.',
+          } });
+        }
       } else {
-        lastPreviewChanges = body.transactions ?? [];
+        lastPreviewChanges = batchRows;
       }
-      const requested = body.transactions?.length ?? 0;
+      const requested = batchRows.length;
+      const baseline = body.commit === true ? undefined : batchRows.map((item) => {
+        const transaction = sourceRows.find((entry) => entry.id === item.transactionId);
+        return { transactionId: item.transactionId, expectedCategoryId: transaction?.category ?? null };
+      });
       return send(res, 200, { data: {
         preview: body.commit !== true, requested, changes: requested,
-        ...(body.commit === true ? { applied: requested, appliedTransactionIds: (body.transactions ?? []).map((item) => item.transactionId), persisted: true, partial: false } : {}),
+        ...(baseline ? { baseline } : {}),
+        ...(body.commit === true ? { applied: requested, appliedTransactionIds: batchRows.map((item) => item.transactionId), persisted: true, partial: false } : {}),
       } });
     }
     if (req.method === 'GET' && url.pathname === '/api/v1/assistant/status') return send(res, 200, { enabled: false, status: 'disabled' });

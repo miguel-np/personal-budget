@@ -65,6 +65,7 @@ const CategorizeRequestSchema = z.object({
   transactions: z.array(z.object({
     transactionId: z.string().trim().min(1).max(128),
     categoryId: z.string().trim().min(1).max(128),
+    expectedCategoryId: z.string().trim().min(1).max(128).nullable().optional(),
   }).strict()).min(1).max(200).superRefine((changes, context) => {
     const seen = new Set<string>();
     changes.forEach((change, index) => {
@@ -72,7 +73,18 @@ const CategorizeRequestSchema = z.object({
       seen.add(change.transactionId);
     });
   }),
-}).strict();
+}).strict().superRefine((value, context) => {
+  if (!value.commit) return;
+  value.transactions.forEach((change, index) => {
+    if (change.expectedCategoryId === undefined) {
+      context.addIssue({
+        code: 'custom',
+        path: ['transactions', index, 'expectedCategoryId'],
+        message: 'A confirmed category batch must include its preview baseline.',
+      });
+    }
+  });
+});
 const TransactionUpdateRequestSchema = z.object({
   accountId: z.string().trim().min(1).max(128),
   startDate: z.string().refine(isIsoDate, 'startDate must be a valid YYYY-MM-DD date.'),
@@ -1173,9 +1185,8 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       const parsed = CategorizeRequestSchema.parse(request.body);
       assertPeriod(parsed.startDate, parsed.endDate);
       const categorizer = repository as BudgetRepository & {
-        updateTransactionCategory?: (transactionId: string, categoryId: string) => Promise<void>;
         updateTransactionCategoriesBatch?: (changes: readonly TransactionCategoryBatchChange[]) => Promise<{
-          requested: number; updatedTransactionIds: readonly string[]; failedTransactionId?: string; persisted: boolean;
+          requested: number; updatedTransactionIds: readonly string[]; failedTransactionId?: string; conflictTransactionId?: string; persisted: boolean;
         }>;
       };
       const { transactions } = await openAccountTransactions(undefined, parsed.startDate, parsed.endDate);
@@ -1186,6 +1197,13 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         const transaction = transactionById.get(change.transactionId);
         if (!transaction) {
           return reply.code(400).send({ error: { code: 'INVALID_TRANSACTION', message: 'One or more transaction ids do not belong to an open account in the period.' } });
+        }
+        if (parsed.commit && change.expectedCategoryId !== (transaction.category ?? null)) {
+          return reply.code(409).send({ error: {
+            code: 'TRANSACTION_CHANGED_SINCE_PREVIEW',
+            message: 'One or more selected movements changed category after preview. Review and preview the batch again; no changes were written.',
+            transactionId: change.transactionId,
+          } });
         }
         if (transaction.amount >= 0) {
           return reply.code(400).send({ error: { code: 'CATEGORY_AMOUNT_MISMATCH', message: 'Bulk categorization is limited to ordinary expense movements.' } });
@@ -1203,41 +1221,50 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         return reply.code(400).send({ error: { code: 'INVALID_CATEGORY', message: 'Choose an expense category from the configured budget.' } });
       }
       if (!parsed.commit) {
-        return { data: { preview: true, requested: parsed.transactions.length, changes: parsed.transactions.length } };
+        const baseline = parsed.transactions.map((change) => {
+          const transaction = transactionById.get(change.transactionId)!;
+          return { transactionId: change.transactionId, expectedCategoryId: transaction.category ?? null };
+        });
+        return { data: { preview: true, requested: parsed.transactions.length, changes: parsed.transactions.length, baseline } };
       }
       if (typeof categorizer.updateTransactionCategoriesBatch === 'function') {
         const verifiedChanges = parsed.transactions.map((change) => {
           const transaction = transactionById.get(change.transactionId);
           if (!transaction) throw new Error('Transaction disappeared during category batch validation.');
-          return { ...change, accountId: transaction.account, date: transaction.date };
+          return { ...change, accountId: transaction.account, date: transaction.date, expectedCategoryId: change.expectedCategoryId ?? null };
         });
         const outcome = await categorizer.updateTransactionCategoriesBatch(verifiedChanges);
         const applied = outcome.updatedTransactionIds.length;
         const complete = applied === outcome.requested && outcome.persisted;
         if (!complete) {
+          if (outcome.conflictTransactionId && applied === 0) {
+            return reply.code(409).send({ error: {
+              code: 'TRANSACTION_CHANGED_SINCE_PREVIEW',
+              message: 'The category changed after preview; review and preview the remaining batch again. No changes were written by this attempt.',
+              transactionId: outcome.conflictTransactionId,
+            } });
+          }
           return reply.code(207).send({
             data: {
               preview: false, requested: outcome.requested, applied, changes: applied,
               appliedTransactionIds: outcome.updatedTransactionIds,
               ...(outcome.failedTransactionId ? { failedTransactionId: outcome.failedTransactionId } : {}),
+              ...(outcome.conflictTransactionId ? { conflictTransactionId: outcome.conflictTransactionId } : {}),
               persisted: outcome.persisted, partial: true,
-              message: outcome.updatedTransactionIds.length > 0
-                ? 'Some changes were verified and synced. The batch stopped at the indicated transaction id; inspect that movement in Actual before retrying. No automatic undo was attempted.'
-                : 'No change was confirmed as persisted. Inspect the indicated movement in Actual before retrying; no automatic undo was attempted.',
+              message: outcome.conflictTransactionId
+                ? 'The category changed after preview at the indicated transaction id. Earlier listed updates are verified; review the remaining selections and preview again.'
+                : outcome.updatedTransactionIds.length > 0
+                  ? 'Some changes were verified and synced. The batch stopped at the indicated transaction id; inspect that movement in Actual before retrying. No automatic undo was attempted.'
+                  : 'No change was confirmed as persisted. Inspect the indicated movement in Actual before retrying; no automatic undo was attempted.',
             },
           });
         }
         return { data: { preview: false, requested: outcome.requested, applied, changes: applied, appliedTransactionIds: outcome.updatedTransactionIds, persisted: true, partial: false } };
       }
-      if (parsed.transactions.length > 1) {
-        return reply.code(503).send({ error: { code: 'TRANSACTION_BATCH_UPDATE_NOT_SUPPORTED', message: 'The configured adapter cannot report safe batch outcomes; no transaction was changed.' } });
-      }
-      if (typeof categorizer.updateTransactionCategory !== 'function') {
-        return reply.code(503).send({ error: { code: 'TRANSACTION_UPDATE_NOT_SUPPORTED', message: 'The configured local adapter does not support transaction updates.' } });
-      }
-      const change = parsed.transactions[0]!;
-      await categorizer.updateTransactionCategory(change.transactionId, change.categoryId);
-      return { data: { preview: false, requested: 1, applied: 1, changes: 1, appliedTransactionIds: [change.transactionId], persisted: true, partial: false } };
+      return reply.code(503).send({ error: {
+        code: 'TRANSACTION_BATCH_UPDATE_NOT_SUPPORTED',
+        message: 'The configured adapter cannot verify category batch outcomes; no transaction was changed.',
+      } });
     } catch (error) {
       const normalized = sanitizedErrorResponse(error);
       return reply.code(normalized.statusCode).send(normalized.body);
