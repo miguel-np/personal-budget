@@ -290,6 +290,7 @@ export function App() {
       media.addEventListener('change', applyTheme);
       return () => media.removeEventListener('change', applyTheme);
     }
+    return undefined;
   }, [appPreferences]);
 
   useEffect(() => {
