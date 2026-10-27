@@ -1,6 +1,6 @@
 # Instalación: Windows + WSL2
 
-Esta guía describe una instalación local reproducible. La shell web incorpora resumen financiero, consulta y filtrado de movimientos, registro manual, importación CSV con previsualización, informes comparativos y seguimiento de presupuestos. Las escrituras pasan por la API local y requieren una acción explícita.
+Esta guía describe una instalación local reproducible. La shell web incorpora resumen financiero, consulta y filtrado de movimientos, registro manual, importación CSV/OFX local con previsualización, informes comparativos y seguimiento de presupuestos. Las escrituras pasan por la API local y requieren una acción explícita.
 
 ## Requisitos
 
