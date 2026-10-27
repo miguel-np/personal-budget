@@ -28,7 +28,7 @@ function syntheticOfx(currencyCode = 'EUR'): Buffer {
     '</STMTTRNRS>',
     '</BANKMSGSRSV1>',
     '</OFX>',
-  ].join('\\r\\n'));
+  ].join('\r\n'));
 }
 
 test.beforeEach(async ({ request }) => { await request.post(fixtureApi + '/__test__/reset'); });
@@ -141,7 +141,7 @@ test('OFX import parses locally, previews normalized records and commits only af
     amount: -1234,
     payee_name: 'Compra sintetica',
   });
-  expect(state.lastImportPreview.records[0].imported_id).toMatch(/^personal-budget-ofx:[a-f\\d]{16}$/);
+  expect(state.lastImportPreview.records[0].imported_id).toMatch(/^personal-budget-ofx:[a-f\d]{16}$/);
 
   await page.getByRole('button', { name: 'Cancelar', exact: true }).click();
   state = await (await request.get(fixtureApi + '/__test__/state')).json();
