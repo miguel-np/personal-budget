@@ -135,6 +135,20 @@ describe('ActualBudgetAdapter', () => {
     await adapter.close();
     expect(api.shutdown).toHaveBeenCalledTimes(1);
   });
+  it('maps only explicit Actual transfer payees to destination account ids', async () => {
+    const api = createApi({
+      getPayees: vi.fn(async () => [
+        { id: 'payee-transfer-1', name: 'Cuenta de destino', transfer_acct: 'account-2' },
+        { id: 'ordinary-payee', name: 'Supermercado', transfer_acct: null },
+        { id: 'incomplete-payee', name: 'Sin destino' },
+      ]),
+    });
+    const adapter = new ActualBudgetAdapter(config, api);
+    await expect(adapter.listTransferPayees()).resolves.toEqual([{ name: 'Cuenta de destino', accountId: 'account-2' }]);
+    expect(api.getPayees).toHaveBeenCalledTimes(1);
+    await adapter.close();
+  });
+
   it('does not initialize without a budget id', async () => {
     const api = createApi();
     const adapter = new ActualBudgetAdapter({ serverURL: config.serverURL, dataDir: config.dataDir }, api);

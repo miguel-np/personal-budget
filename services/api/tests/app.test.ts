@@ -1006,4 +1006,83 @@ describe('local API', () => {
     }
   });
 
+
+  it('previews and commits a verified same-currency transfer through Actual linked payees', async () => {
+    const transferAccounts: readonly BudgetAccount[] = [
+      { id: 'account-1', name: 'Cuenta corriente', currencyCode: 'EUR', closed: false, offBudget: false, currentBalanceMinor: 200_000 },
+      { id: 'account-2', name: 'Cuenta de ahorro', currencyCode: 'EUR', closed: false, offBudget: false, currentBalanceMinor: 100_000 },
+    ];
+    const importTransactions = vi.fn(async (
+      _accountId: string,
+      _records: readonly ActualImportRecord[],
+      options?: { readonly dryRun?: boolean },
+    ): Promise<ActualImportResult> => ({
+      errors: [], added: [options?.dryRun ? 'preview-transfer' : 'linked-transfer'], updated: [],
+    }));
+    const listTransferPayees = vi.fn(async () => [{ name: 'Transfer: Cuenta de ahorro', accountId: 'account-2' }]);
+    const repository = Object.assign(
+      createRepository({ listAccounts: vi.fn(async () => transferAccounts) }),
+      { importTransactions, listTransferPayees },
+    ) as BudgetRepository & { importTransactions: typeof importTransactions; listTransferPayees: typeof listTransferPayees };
+    const dataDir = await mkdtemp(join(tmpdir(), 'personal-budget-transfer-test-'));
+    temporaryDirectories.push(dataDir);
+    const app = await createTestApp(repository, { ...config, actualDataDir: dataDir });
+    const payload = {
+      sourceAccountId: 'account-1', destinationAccountId: 'account-2', date: '2026-10-15',
+      amountMinor: 12_500, importedId: 'transfer-idempotency-key',
+    };
+
+    const preview = await app.inject({ method: 'POST', url: '/api/v1/transfers/preview', payload });
+    expect(preview.statusCode).toBe(200);
+    expect(preview.json().data).toMatchObject({ dryRun: true, linkedTransfer: true, sourceAccountId: 'account-1', destinationAccountId: 'account-2' });
+    expect(importTransactions).toHaveBeenNthCalledWith(1, 'account-1', [
+      expect.objectContaining({
+        amount: -12_500, payee_name: 'Transfer: Cuenta de ahorro',
+        imported_payee: 'Transfer: Cuenta de ahorro', imported_id: 'transfer-idempotency-key',
+      }),
+    ], { dryRun: true });
+
+    const commit = await app.inject({ method: 'POST', url: '/api/v1/transfers/commit', payload });
+    expect(commit.statusCode).toBe(200);
+    expect(commit.json().data).toMatchObject({ dryRun: false, linkedTransfer: true });
+    expect(importTransactions).toHaveBeenNthCalledWith(2, 'account-1', [
+      expect.objectContaining({ amount: -12_500, payee_name: 'Transfer: Cuenta de ahorro', imported_id: 'transfer-idempotency-key' }),
+    ], { dryRun: false });
+  });
+
+  it('rejects transfers with unsupported currencies, mismatched budget scope or an excluded account', async () => {
+    const transferAccounts: readonly BudgetAccount[] = [
+      { id: 'account-1', name: 'Cuenta corriente', currencyCode: 'EUR', closed: false, offBudget: false, currentBalanceMinor: 200_000 },
+      { id: 'account-2', name: 'Cuenta externa', currencyCode: 'GBP', closed: false, offBudget: false, currentBalanceMinor: 100_000 },
+    ];
+    const importTransactions = vi.fn(async (): Promise<ActualImportResult> => ({ errors: [], added: ['unexpected'], updated: [] }));
+    const listTransferPayees = vi.fn(async () => [{ name: 'Transfer: Cuenta externa', accountId: 'account-2' }]);
+    const repository = Object.assign(
+      createRepository({ listAccounts: vi.fn(async () => transferAccounts) }),
+      { importTransactions, listTransferPayees },
+    ) as BudgetRepository & { importTransactions: typeof importTransactions; listTransferPayees: typeof listTransferPayees };
+    const dataDir = await mkdtemp(join(tmpdir(), 'personal-budget-transfer-guards-'));
+    temporaryDirectories.push(dataDir);
+    const app = await createTestApp(repository, { ...config, actualDataDir: dataDir });
+    const payload = {
+      sourceAccountId: 'account-1', destinationAccountId: 'account-2', date: '2026-10-15',
+      amountMinor: 12_500, importedId: 'transfer-guard-id',
+    };
+
+    const currencyMismatch = await app.inject({ method: 'POST', url: '/api/v1/transfers/preview', payload });
+    expect(currencyMismatch.statusCode).toBe(422);
+    expect(currencyMismatch.json().error.code).toBe('TRANSFER_CURRENCY_MISMATCH');
+    expect(importTransactions).not.toHaveBeenCalled();
+
+    const scopeResponse = await app.inject({
+      method: 'PUT', url: '/api/v1/preferences/accounts',
+      payload: { mode: 'selected', accountIds: ['account-1'] },
+    });
+    expect(scopeResponse.statusCode).toBe(200);
+    const outsideScope = await app.inject({ method: 'POST', url: '/api/v1/transfers/preview', payload });
+    expect(outsideScope.statusCode).toBe(400);
+    expect(outsideScope.json().error.code).toBe('ACCOUNT_OUTSIDE_SCOPE');
+    expect(importTransactions).not.toHaveBeenCalled();
+  });
+
 });

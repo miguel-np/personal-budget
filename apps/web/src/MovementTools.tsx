@@ -1,10 +1,13 @@
-import { useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
 import { parseCsv, parseCsvMoney, parseDate, isValidIsoDate, type DateFormat, type Delimiter } from './csv-import.js';
 
 export interface MovementAccount {
   readonly id: string;
   readonly name: string;
   readonly closed: boolean;
+  readonly currencyCode?: string | null;
+  readonly nativeCurrencyCode?: string | null;
+  readonly offBudget?: boolean;
 }
 export interface MovementCategory {
   readonly id: string;
@@ -27,6 +30,19 @@ interface ImportResult {
   submitted: number;
   dryRun: boolean;
 }
+interface TransferRequestPayload {
+  readonly sourceAccountId: string;
+  readonly destinationAccountId: string;
+  readonly date: string;
+  readonly amountMinor: number;
+  readonly notes?: string;
+  readonly importedId: string;
+}
+interface TransferResult extends ImportResult {
+  readonly sourceAccountId: string;
+  readonly destinationAccountId: string;
+  readonly linkedTransfer: boolean;
+}
 interface ApiResponse<T> {
   data?: T;
   error?: { code?: string; message?: string };
@@ -35,7 +51,8 @@ interface MovementToolsProps {
   accounts: readonly MovementAccount[];
   categories: readonly MovementCategory[];
   currency: string;
-  onImported: () => void;
+  onImported: (notice?: string) => void;
+  quickRequest?: { readonly key: number; readonly kind: 'income' | 'expense' | 'transfer' } | null;
 }
 
 function localToday(): string {
@@ -93,13 +110,25 @@ async function sendImport(path: '/api/v1/import/preview' | '/api/v1/import/commi
   if (!payload.data) throw new Error('La API local no devolvió un resultado verificable.');
   return payload.data;
 }
+async function sendTransfer(path: '/api/v1/transfers/preview' | '/api/v1/transfers/commit', request: TransferRequestPayload): Promise<TransferResult> {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(request),
+  });
+  const payload = await response.json().catch(() => ({})) as ApiResponse<TransferResult>;
+  if (!response.ok) throw new Error(payload.error?.message ?? 'La API local rechazó la transferencia.');
+  if (!payload.data) throw new Error('La API local no devolvió una previsualización verificable de la transferencia.');
+  return payload.data;
+}
 function FormAlert({ children, error = false }: { children: string; error?: boolean }) {
   return <p className={'form-alert' + (error ? ' error' : '')} role={error ? 'alert' : 'status'}>{children}</p>;
 }
 
-export function MovementTools({ accounts, categories, currency, onImported }: MovementToolsProps) {
+export function MovementTools({ accounts, categories, currency, onImported, quickRequest }: MovementToolsProps) {
   const openAccounts = useMemo(() => accounts.filter((account) => !account.closed), [accounts]);
   const [manualOpen, setManualOpen] = useState(false);
+  const [manualKind, setManualKind] = useState<'any' | 'income' | 'expense'>('any');
   const [accountId, setAccountId] = useState(openAccounts[0]?.id ?? '');
   const [date, setDate] = useState(localToday);
   const [amount, setAmount] = useState('');
@@ -111,6 +140,20 @@ export function MovementTools({ accounts, categories, currency, onImported }: Mo
   const [manualBusy, setManualBusy] = useState(false);
   const [manualMessage, setManualMessage] = useState('');
   const [manualError, setManualError] = useState('');
+
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferSourceId, setTransferSourceId] = useState(openAccounts[0]?.id ?? '');
+  const [transferDestinationId, setTransferDestinationId] = useState(openAccounts.find((account) => account.id !== openAccounts[0]?.id)?.id ?? '');
+  const [transferDate, setTransferDate] = useState(localToday);
+  const [transferAmount, setTransferAmount] = useState('');
+  const [transferNotes, setTransferNotes] = useState('');
+  const [transferImportId, setTransferImportId] = useState(newIdentifier);
+  const [transferResult, setTransferResult] = useState<TransferResult | null>(null);
+  const [transferBusy, setTransferBusy] = useState(false);
+  const [transferMessage, setTransferMessage] = useState('');
+  const [transferError, setTransferError] = useState('');
+  const selectedTransferSource = openAccounts.find((account) => account.id === transferSourceId);
+  const transferCurrency = selectedTransferSource?.currencyCode ?? selectedTransferSource?.nativeCurrencyCode ?? currency;
 
   const [csvOpen, setCsvOpen] = useState(false);
   const [csvAccountId, setCsvAccountId] = useState('');
@@ -134,6 +177,134 @@ export function MovementTools({ accounts, categories, currency, onImported }: Mo
   const [csvMessage, setCsvMessage] = useState('');
   const [csvError, setCsvError] = useState('');
 
+  function destinationFor(sourceId: string): string {
+    const source = openAccounts.find((account) => account.id === sourceId);
+    const sourceCurrency = source?.currencyCode ?? source?.nativeCurrencyCode;
+    if (!source || !sourceCurrency) return '';
+    return openAccounts.find((account) => {
+      if (account.id === sourceId) return false;
+      const destinationCurrency = account.currencyCode ?? account.nativeCurrencyCode;
+      return destinationCurrency === sourceCurrency &&
+        (source.offBudget === undefined || account.offBudget === undefined || source.offBudget === account.offBudget);
+    })?.id ?? '';
+  }
+
+  function openTransferForm(): void {
+    const sourceId = openAccounts[0]?.id ?? '';
+    setTransferOpen(true);
+    setManualOpen(false);
+    setTransferSourceId(sourceId);
+    setTransferDestinationId(destinationFor(sourceId));
+    setTransferDate(localToday());
+    setTransferAmount('');
+    setTransferNotes('');
+    setTransferImportId(newIdentifier());
+    setTransferResult(null);
+    setTransferMessage('');
+    setTransferError('');
+  }
+
+  useEffect(() => {
+    if (!quickRequest) return;
+    if (quickRequest.kind === 'transfer') {
+      openTransferForm();
+      return;
+    }
+    setTransferOpen(false);
+    setManualOpen(true);
+    setManualKind(quickRequest.kind);
+    setAmount('');
+    setManualRecords(null);
+    setManualResult(null);
+    setManualMessage('');
+    setManualError('');
+  }, [quickRequest]);
+
+  async function previewTransfer(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setTransferError('');
+    setTransferMessage('');
+    setTransferResult(null);
+    if (!transferSourceId || !openAccounts.some((account) => account.id === transferSourceId)) {
+      setTransferError('Selecciona una cuenta de origen abierta dentro del ámbito global.');
+      return;
+    }
+    if (!transferDestinationId || !openAccounts.some((account) => account.id === transferDestinationId)) {
+      setTransferError('Selecciona una cuenta de destino abierta dentro del ámbito global.');
+      return;
+    }
+    if (transferSourceId === transferDestinationId) {
+      setTransferError('El origen y el destino deben ser cuentas distintas.');
+      return;
+    }
+    if (!isValidIsoDate(transferDate)) {
+      setTransferError('Introduce una fecha válida.');
+      return;
+    }
+    const amountMinor = parseMoney(transferAmount);
+    if (amountMinor === null || amountMinor <= 0) {
+      setTransferError('Introduce un importe positivo distinto de cero con un máximo de dos decimales.');
+      return;
+    }
+    setTransferBusy(true);
+    try {
+      const result = await sendTransfer('/api/v1/transfers/preview', {
+        sourceAccountId: transferSourceId,
+        destinationAccountId: transferDestinationId,
+        date: transferDate,
+        amountMinor,
+        importedId: transferImportId,
+        ...(transferNotes.trim() ? { notes: transferNotes.trim() } : {}),
+      });
+      setTransferResult(result);
+      setTransferMessage(result.added === 0 && result.updated === 0
+        ? 'Actual no propone cambios para esta transferencia; no hay ninguna operación para confirmar.'
+        : 'Previsualización recibida de Actual. Todavía no se ha escrito ningún cambio; confirma solo si el origen, destino e importe son correctos.');
+    } catch (error) {
+      setTransferError(error instanceof Error ? error.message : 'No se ha podido previsualizar la transferencia.');
+    } finally {
+      setTransferBusy(false);
+    }
+  }
+
+  async function commitTransfer() {
+    const preview = transferResult;
+    if (!preview || !preview.dryRun || !preview.linkedTransfer || preview.errors !== 0 ||
+        preview.added + preview.updated === 0 ||
+        preview.sourceAccountId !== transferSourceId || preview.destinationAccountId !== transferDestinationId) {
+      setTransferError('Vuelve a previsualizar la transferencia antes de confirmarla.');
+      return;
+    }
+    const amountMinor = parseMoney(transferAmount);
+    if (amountMinor === null || amountMinor <= 0) {
+      setTransferError('El importe ha cambiado. Previsualiza de nuevo antes de confirmar.');
+      setTransferResult(null);
+      return;
+    }
+    setTransferBusy(true);
+    setTransferError('');
+    setTransferMessage('');
+    try {
+      const result = await sendTransfer('/api/v1/transfers/commit', {
+        sourceAccountId: transferSourceId,
+        destinationAccountId: transferDestinationId,
+        date: transferDate,
+        amountMinor,
+        importedId: transferImportId,
+        ...(transferNotes.trim() ? { notes: transferNotes.trim() } : {}),
+      });
+      setTransferResult(result);
+      setTransferAmount('');
+      setTransferNotes('');
+      setTransferImportId(newIdentifier());
+      onImported('Actual ha confirmado la operación. La transferencia se registra como pareja vinculada, no como ingreso y gasto independientes.');
+    } catch (error) {
+      setTransferError(error instanceof Error ? error.message : 'No se ha podido confirmar la transferencia.');
+    } finally {
+      setTransferBusy(false);
+    }
+  }
+
   async function previewManual(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setManualError('');
@@ -149,6 +320,14 @@ export function MovementTools({ accounts, categories, currency, onImported }: Mo
     }
     if (amountMinor === null) {
       setManualError('El importe debe ser distinto de cero y tener como máximo dos decimales.');
+      return;
+    }
+    if (manualKind === 'income' && amountMinor < 0) {
+      setManualError('Para registrar un ingreso, introduce un importe positivo.');
+      return;
+    }
+    if (manualKind === 'expense' && amountMinor > 0) {
+      setManualError('Para registrar un gasto, introduce un importe negativo.');
       return;
     }
     if (!payee.trim()) {
@@ -185,11 +364,10 @@ export function MovementTools({ accounts, categories, currency, onImported }: Mo
       const result = await sendImport('/api/v1/import/commit', accountId, manualRecords);
       setManualResult(result);
       setManualRecords(null);
-      setManualMessage('Resultado confirmado por Actual: ' + result.added + ' añadidos, ' + result.updated + ' actualizados y ' + result.errors + ' errores.');
       setAmount('');
       setPayee('');
       setNotes('');
-      onImported();
+      onImported('Movimiento confirmado por Actual: ' + result.added + ' añadido(s), ' + result.updated + ' actualizado(s) y ' + result.errors + ' error(es).');
     } catch (error) {
       setManualError(error instanceof Error ? error.message : 'No se ha podido registrar el movimiento.');
     } finally {
@@ -341,8 +519,7 @@ export function MovementTools({ accounts, categories, currency, onImported }: Mo
       const result = await sendImport('/api/v1/import/commit', csvAccountId, csvRecords);
       setCsvResult(result);
       setCsvRecords(null);
-      setCsvMessage('Importación confirmada por Actual: ' + result.added + ' añadidos, ' + result.updated + ' actualizados y ' + result.errors + ' errores. Los movimientos conciliados no se duplican por su identificador importado.');
-      onImported();
+      onImported('Importación confirmada por Actual: ' + result.added + ' añadido(s), ' + result.updated + ' actualizado(s) y ' + result.errors + ' error(es). Los movimientos conciliados no se duplican por su identificador importado.');
     } catch (error) {
       setCsvError(error instanceof Error ? error.message : 'No se ha podido importar el CSV.');
     } finally {
@@ -359,23 +536,24 @@ export function MovementTools({ accounts, categories, currency, onImported }: Mo
       <div className="movement-tools-header">
         <div><p className="eyebrow">GESTIÓN DE MOVIMIENTOS</p><h3>Nuevo movimiento o importación</h3></div>
         <div className="tool-actions">
-          <button className="button secondary" type="button" onClick={() => { setManualOpen((open) => !open); setManualError(''); setManualRecords(null); }}>{manualOpen ? 'Cerrar formulario' : 'Registrar movimiento'}</button>
+          <button className="button secondary" type="button" onClick={() => { setManualOpen((open) => { if (!open) setManualKind('any'); return !open; }); setTransferOpen(false); setManualError(''); setManualRecords(null); }}>{manualOpen ? 'Cerrar formulario' : 'Registrar movimiento'}</button>
+          <button className="button secondary" type="button" disabled={openAccounts.length < 2} onClick={() => { if (transferOpen) { setTransferOpen(false); setTransferResult(null); setTransferMessage(''); setTransferError(''); } else openTransferForm(); }}>{transferOpen ? 'Cerrar transferencia' : 'Registrar transferencia'}</button>
           <button className="button secondary" type="button" onClick={() => { setCsvOpen((open) => !open); setCsvError(''); }}>{csvOpen ? 'Cerrar importación' : 'Importar CSV'}</button>
         </div>
       </div>
 
       {manualOpen ? (
         <form className="tool-panel" onSubmit={previewManual}>
-          <div className="panel-heading"><div><p className="eyebrow">REGISTRO MANUAL</p><h4>Añadir a Actual Budget</h4></div><span className="muted-label">Importe en {currency}</span></div>
+          <div className="panel-heading"><div><p className="eyebrow">REGISTRO MANUAL</p><h4>{manualKind === 'income' ? 'Registrar ingreso' : manualKind === 'expense' ? 'Registrar gasto' : 'Añadir a Actual Budget'}</h4></div><span className="muted-label">Importe en {currency}</span></div>
           <div className="manual-form-grid">
             <label className="field-label">Cuenta destino<select value={accountId} onChange={(event) => { setAccountId(event.currentTarget.value); setManualRecords(null); }} required>{openAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
             <label className="field-label">Fecha<input type="date" value={date} onChange={(event) => { setDate(event.currentTarget.value); setManualRecords(null); }} required /></label>
-            <label className="field-label">Importe ({currency})<input type="text" inputMode="decimal" autoComplete="off" placeholder="-25,99 gasto · 1500 ingreso" value={amount} onChange={(event) => { setAmount(event.currentTarget.value); setManualRecords(null); }} required /></label>
+            <label className="field-label">Importe ({currency})<input type="text" inputMode="decimal" autoComplete="off" placeholder={manualKind === 'income' ? 'Importe positivo, por ejemplo 1500' : manualKind === 'expense' ? 'Importe negativo, por ejemplo -25,99' : '-25,99 gasto · 1500 ingreso'} value={amount} onChange={(event) => { setAmount(event.currentTarget.value); setManualRecords(null); }} required /></label>
             <label className="field-label">Concepto<input type="text" maxLength={200} value={payee} onChange={(event) => { setPayee(event.currentTarget.value); setManualRecords(null); }} placeholder="Supermercado, nómina…" required /></label>
             <label className="field-label">Categoría<select value={categoryId} onChange={(event) => { setCategoryId(event.currentTarget.value); setManualRecords(null); }}><option value="">Sin categoría</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
             <label className="field-label">Notas (opcional)<input type="text" maxLength={2000} value={notes} onChange={(event) => { setNotes(event.currentTarget.value); setManualRecords(null); }} /></label>
           </div>
-          <p className="tool-hint">Los gastos se introducen con signo negativo y los ingresos con signo positivo. Antes de escribir, se muestra una previsualización de conciliación de Actual Budget.</p>
+          <p className="tool-hint">Los gastos usan importes negativos y los ingresos positivos{manualKind === 'income' ? '; este formulario valida que el importe sea positivo.' : manualKind === 'expense' ? '; este formulario valida que el importe sea negativo.' : '.'} Antes de escribir, se muestra una previsualización de conciliación de Actual Budget.</p>
           <div className="tool-actions">
             <button className="button primary" type="submit" disabled={manualBusy || openAccounts.length === 0}>{manualBusy ? 'Comprobando…' : 'Previsualizar'}</button>
             {manualRecords ? <button className="button primary" type="button" disabled={manualBusy} onClick={() => void commitManual()}>{manualBusy ? 'Guardando…' : 'Confirmar y registrar'}</button> : null}
@@ -384,6 +562,36 @@ export function MovementTools({ accounts, categories, currency, onImported }: Mo
           {manualResult ? <FormAlert>{manualResult.dryRun ? 'Previsualización: ' + manualResult.added + ' nuevos, ' + manualResult.updated + ' actualizables, ' + manualResult.errors + ' errores.' : 'Resultado: ' + manualResult.added + ' añadidos, ' + manualResult.updated + ' actualizados.'}</FormAlert> : null}
           {manualMessage ? <FormAlert>{manualMessage}</FormAlert> : null}
           {manualError ? <FormAlert error>{manualError}</FormAlert> : null}
+        </form>
+      ) : null}
+
+
+      {transferOpen ? (
+        <form className="tool-panel" onSubmit={previewTransfer}>
+          <div className="panel-heading"><div><p className="eyebrow">TRANSFERENCIA VINCULADA</p><h4>Entre cuentas de Actual Budget</h4></div><span className="muted-label">Importe en moneda de las cuentas</span></div>
+          {openAccounts.length < 2 ? <FormAlert error>Necesitas al menos dos cuentas abiertas dentro del ámbito global para registrar una transferencia.</FormAlert> : null}
+          <div className="manual-form-grid">
+            <label className="field-label">Cuenta de origen<select value={transferSourceId} onChange={(event) => { const nextSource = event.currentTarget.value; setTransferSourceId(nextSource); setTransferDestinationId(destinationFor(nextSource)); setTransferResult(null); setTransferMessage(''); setTransferError(''); }} required><option value="">Selecciona origen…</option>{openAccounts.map((account) => <option value={account.id} key={account.id}>{account.name}</option>)}</select></label>
+            <label className="field-label">Cuenta de destino<select value={transferDestinationId} onChange={(event) => { setTransferDestinationId(event.currentTarget.value); setTransferResult(null); setTransferMessage(''); setTransferError(''); }} required><option value="">Selecciona destino…</option>{openAccounts.filter((account) => account.id !== transferSourceId).map((account) => <option value={account.id} key={account.id}>{account.name}</option>)}</select></label>
+            <label className="field-label">Fecha<input type="date" value={transferDate} onChange={(event) => { setTransferDate(event.currentTarget.value); setTransferResult(null); setTransferMessage(''); setTransferError(''); }} required /></label>
+            <label className="field-label">Importe positivo ({transferCurrency})<input type="text" inputMode="decimal" autoComplete="off" placeholder="Por ejemplo, 125,00" value={transferAmount} onChange={(event) => { setTransferAmount(event.currentTarget.value); setTransferResult(null); setTransferMessage(''); setTransferError(''); }} required /></label>
+            <label className="field-label">Notas (opcional)<input type="text" maxLength={2000} value={transferNotes} onChange={(event) => { setTransferNotes(event.currentTarget.value); setTransferResult(null); setTransferMessage(''); setTransferError(''); }} /></label>
+          </div>
+          <p className="tool-hint">El importe se introduce en la divisa nativa del origen ({transferCurrency}); se descuenta del origen y Actual crea la contrapartida vinculada en el destino a través del beneficiario de transferencia oficial. Solo se admiten dos cuentas abiertas del ámbito activo, de la misma divisa y ambas dentro o ambas fuera de presupuesto. No se guarda nada hasta confirmar.</p>
+          <div className="tool-actions">
+            <button className="button primary" type="submit" disabled={transferBusy || openAccounts.length < 2}>{transferBusy ? 'Comprobando…' : 'Previsualizar transferencia'}</button>
+            {transferResult?.dryRun && transferResult.linkedTransfer && transferResult.errors === 0 && transferResult.added + transferResult.updated > 0
+              ? <button className="button primary" type="button" disabled={transferBusy} onClick={() => void commitTransfer()}>{transferBusy ? 'Guardando…' : 'Confirmar transferencia'}</button>
+              : null}
+            {transferResult?.dryRun
+              ? <button className="button secondary" type="button" disabled={transferBusy} onClick={() => { setTransferResult(null); setTransferMessage('Previsualización cancelada. Actual no se ha modificado.'); setTransferError(''); }}>Cancelar previsualización</button>
+              : null}
+          </div>
+          {transferResult ? <FormAlert>{(transferResult.dryRun
+            ? 'Previsualización: ' + transferResult.added + ' nueva(s), ' + transferResult.updated + ' actualizable(s), ' + transferResult.errors + ' error(es).'
+            : 'Resultado confirmado por Actual: ' + transferResult.added + ' añadida(s), ' + transferResult.updated + ' actualizada(s).') + ' ' + (transferResult.linkedTransfer ? 'Vinculación de transferencia identificada.' : 'No se ha confirmado una pareja vinculada.')}</FormAlert> : null}
+          {transferMessage ? <FormAlert>{transferMessage}</FormAlert> : null}
+          {transferError ? <FormAlert error>{transferError}</FormAlert> : null}
         </form>
       ) : null}
 

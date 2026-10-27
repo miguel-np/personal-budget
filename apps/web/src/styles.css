@@ -579,3 +579,62 @@ textarea::placeholder {
   }
 }
 
+
+
+/* Account overview and dashboard signals use compact, responsive financial data patterns. */
+.section-context { margin: -6px 0 16px; color: var(--text-tertiary); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+.dashboard-signals { display: grid; gap: 15px; }
+.dashboard-signals > .section-heading { margin-bottom: 0; }
+.period-comparison-panel { margin: 0; }
+.signal-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+.signal-metrics > div { min-width: 0; display: grid; gap: 6px; border: 1px solid var(--border-subtle); border-radius: 9px; padding: 12px; }
+.signal-metrics span { color: var(--text-tertiary); font-size: 10px; }
+.signal-metrics strong { color: var(--text-primary); font-size: 18px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.signal-note { margin: 12px 0 0; color: var(--text-tertiary); font-size: 10px; line-height: 1.7; }
+.signal-alert-list { list-style: none; display: grid; gap: 10px; margin: 0; padding: 0; }
+.signal-alert { min-width: 0; border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+.signal-alert.over { border-left: 3px solid var(--red); }
+.signal-alert.near { border-left: 3px solid var(--warning); }
+.signal-alert > div:first-child, .signal-alert-values { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.signal-alert strong { color: var(--text-primary); font-size: 11px; overflow-wrap: anywhere; }
+.signal-alert span, .signal-alert p { color: var(--text-tertiary); font-size: 10px; line-height: 1.6; }
+.signal-alert-values { margin-top: 8px; }
+.signal-alert p { margin: 7px 0 0; }
+.quick-actions-panel, .planning-status-panel { display: grid; gap: 12px; }
+.quick-actions-panel .panel-heading, .planning-status-panel .panel-heading { margin-bottom: 0; }
+.quick-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.planning-status-panel > p { max-width: 900px; margin: 0; color: var(--text-secondary); font-size: 11px; line-height: 1.8; }
+.account-stats-grid { margin-bottom: 16px; }
+.net-worth-panel { margin-bottom: 16px; }
+.net-worth-value { margin: 3px 0 10px; color: var(--text-primary); font-size: clamp(22px, 3vw, 32px); font-weight: 700; letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
+.net-worth-panel > p { max-width: 900px; color: var(--text-secondary); font-size: 11px; line-height: 1.8; }
+.net-worth-toggle { margin-top: 14px; white-space: normal; }
+.accounts-list { display: grid; gap: 12px; }
+.account-card { display: grid; gap: 15px; }
+.account-card-header, .account-card-footer { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.account-card-header h3 { margin: 0 0 6px; color: var(--text-primary); font-size: 15px; overflow-wrap: anywhere; }
+.account-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.account-badge { display: inline-flex; max-width: 100%; border: 1px solid var(--border); border-radius: 999px; padding: 5px 8px; color: var(--text-secondary); font-size: 9px; line-height: 1.4; overflow-wrap: anywhere; }
+.account-badge.open { border-color: #365b49; color: #a6dec1; }
+.account-badge.closed { border-color: #635344; color: #dbc3a8; }
+.account-balance-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.account-balance-grid > div { min-width: 0; border: 1px solid var(--border-subtle); border-radius: 9px; padding: 12px; }
+.account-balance-grid dt { color: var(--text-tertiary); font-size: 10px; }
+.account-balance-grid dd { margin: 7px 0; color: var(--text-primary); font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.account-balance-grid small { display: block; color: var(--text-tertiary); font-size: 9px; line-height: 1.6; overflow-wrap: anywhere; }
+.account-card-footer { align-items: center; padding-top: 12px; border-top: 1px solid var(--border-subtle); }
+.account-card-footer .muted-copy { line-height: 1.6; }
+.account-card-footer .button { flex: 0 0 auto; }
+@media (max-width: 900px) {
+  .account-balance-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .account-balance-grid > div:last-child { grid-column: 1 / -1; }
+}
+@media (max-width: 620px) {
+  .account-card-header, .account-card-footer { flex-direction: column; align-items: stretch; }
+  .account-badges { justify-content: flex-start; }
+  .account-balance-grid { grid-template-columns: minmax(0, 1fr); }
+  .account-balance-grid > div:last-child { grid-column: auto; }
+  .quick-actions > .button { flex: 1 1 100%; }
+  .signal-alert > div:first-child, .signal-alert-values { align-items: flex-start; flex-direction: column; gap: 3px; }
+  .account-card-footer .button { align-self: flex-start; }
+}

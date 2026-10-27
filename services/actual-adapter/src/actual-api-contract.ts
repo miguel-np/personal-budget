@@ -41,6 +41,12 @@ export interface ActualAccountRecord {
   readonly currency_code?: string | null;
 }
 
+export interface ActualPayeeRecord {
+  readonly id?: string;
+  readonly name: string;
+  readonly transfer_acct?: string | null;
+}
+
 export interface ActualCategoryRecord {
   readonly id: string;
   readonly name: string;
@@ -72,6 +78,7 @@ export interface ActualApiContract {
   shutdown(): Promise<void>;
   getAccounts(): Promise<readonly ActualAccountRecord[]>;
   getCategories(): Promise<readonly ActualCategoryRecord[]>;
+  getPayees?(): Promise<readonly ActualPayeeRecord[]>;
   getBudgetMonth?(month: string): Promise<ActualBudgetMonthRecord>;
   getBudgetAllocations?(month: string): Promise<readonly ActualBudgetAllocation[]>;
   setBudgetAmount?(month: string, categoryId: string, amount: number): Promise<null>;
