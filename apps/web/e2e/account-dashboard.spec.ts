@@ -18,7 +18,7 @@ test('account view audits balances and opens movements in the selected account',
 
   await page.getByRole('button', { name: 'Ver movimientos' }).first().click();
   await expect(page.getByRole('heading', { name: 'Transacciones' })).toBeVisible();
-  await expect(page.getByLabel('Cuenta', { exact: true })).toHaveValue('synthetic-account-1');
+  await expect(page.locator('.filters-panel select').first()).toHaveValue('synthetic-account-1');
 });
 
 test('dashboard shortcuts preserve transfer preview and signed manual movement validation', async ({ page, request }) => {
