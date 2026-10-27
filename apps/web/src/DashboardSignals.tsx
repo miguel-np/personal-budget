@@ -119,7 +119,7 @@ export function DashboardSignals({
         <div><p className="eyebrow">CONTEXTO Y SIGUIENTES PASOS</p><h2 id="dashboard-signals-heading">Señales accionables</h2></div>
         <span className="date-badge">{summary.startDate} — {summary.endDate} · {currency}</span>
       </div>
-      <p className="section-context">Ámbito activo: {summary.accountScope?.label ?? accountScopeLabel}. Las comparativas usan el mismo ámbito y la misma divisa de análisis.</p>
+      <p className="section-context">Ámbito global activo: {accountScopeLabel.replace(/^Cuentas seleccionadas:\s*/, '')}. Las comparativas usan la misma selección global y divisa de análisis; las alertas pertenecen al presupuesto completo de Actual.</p>
 
       {comparison ? (
         <article className="panel period-comparison-panel" aria-labelledby="period-comparison-heading">
