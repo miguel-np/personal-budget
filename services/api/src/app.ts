@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import Fastify, { LogController, type FastifyInstance, type FastifyReply, type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import helmet from '@fastify/helmet';
 import { calculateSummary, convertAmountMinor, detectRecurringCandidates, estimatePlanningCashFlow, expandCommitmentOccurrences, isIsoDate, normalizeCurrencyCode, normalizeTransactions, projectSavings, projectSavingsGoal, suggestCategories, validatePeriod } from '@personal-budget/finance-core';
-import type { BudgetRepository, BudgetTransaction, ForecastScenario, PlanningCommitment, TransactionCategoryBatchChange, TransactionStructureUpdate } from '@personal-budget/finance-core';
+import type { BudgetRepository, BudgetTransaction, ForecastScenario, TransactionCategoryBatchChange, TransactionStructureUpdate } from '@personal-budget/finance-core';
 import { ActualAdapterError } from '@personal-budget/actual-adapter';
 import type { ActualBudgetMonthRecord, ActualImportRecord, ActualImportResult } from '@personal-budget/actual-adapter';
 import { z, ZodError } from 'zod';
@@ -15,7 +15,7 @@ import { AccountScopeError, AccountScopePreferenceSchema, defaultAccountScope, r
 import { AppPreferencesSchema, defaultAppPreferences, readAppPreferences, writeAppPreferences } from './app-preferences.js';
 import type { AccountScopePreference, AccountScopeMetadata } from './account-scope.js';
 import { PlanningCommitmentInputSchema, PlanningGoalInputSchema, readPlanningData, resetPlanningData, updatePlanningData, StoredPlanningCommitmentSchema, StoredPlanningGoalSchema } from './planning-store.js';
-import type { StoredPlanningCommitment, StoredPlanningGoal } from './planning-store.js';
+
 
 const TransactionQuerySchema = z.object({
   accountId: z.string().trim().min(1).max(128).optional(),
