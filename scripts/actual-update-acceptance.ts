@@ -176,7 +176,10 @@ async function verifyLinkedTransactionEditing(): Promise<void> {
   await api.init({ dataDir: transactionCache, serverURL, ...(serverPassword ? { password: serverPassword } : {}) });
   let sourceId = '';
   let counterpartId = '';
+  let counterpartAccountId = '';
   let splitParentId = '';
+  let splitChildIds: string[] = [];
+  const sharedNotes = 'Nota compartida verificada';
   try {
     await api.downloadBudget(expected.syncId);
     await api.sync();
@@ -184,7 +187,7 @@ async function verifyLinkedTransactionEditing(): Promise<void> {
     const sourceAccount = accounts.find((candidate) => candidate.id === expected.accountId);
     if (!sourceAccount) throw new Error('Synthetic source account could not be downloaded for linked-edit acceptance.');
 
-    const counterpartAccountId = await api.createAccount({ name: 'Cuenta sintética contraparte ' + randomUUID().slice(0, 8), offbudget: false });
+    counterpartAccountId = await api.createAccount({ name: 'Cuenta sintética contraparte ' + randomUUID().slice(0, 8), offbudget: false });
     await api.sync();
     const transferPayee = (await api.getPayees()).find((payee) => payee.transfer_acct === counterpartAccountId);
     if (!transferPayee) throw new Error('Actual did not expose a transfer payee for the synthetic counterpart account.');
@@ -216,7 +219,6 @@ async function verifyLinkedTransactionEditing(): Promise<void> {
     if (pair.source.amount !== -4_200 || pair.counterpart.amount !== 4_200) {
       throw new Error('Actual did not create a balanced synthetic transfer pair.');
     }
-    const sharedNotes = 'Nota compartida verificada';
     await api.updateTransaction(sourceId, { amount: -5_100, notes: sharedNotes });
     await api.sync();
     await api.updateTransaction(counterpartId, { amount: 5_100, notes: sharedNotes });
@@ -250,7 +252,7 @@ async function verifyLinkedTransactionEditing(): Promise<void> {
     }
 
     splitParentId = randomUUID();
-    const splitChildIds = [randomUUID(), randomUUID()];
+    splitChildIds = [randomUUID(), randomUUID()];
     await api.addTransactions(sourceAccount.id, [{
       id: splitParentId,
       date: '2026-09-10',
@@ -318,20 +320,19 @@ async function verifyLinkedTransactionEditing(): Promise<void> {
       api.getAccounts(),
       api.getTransactions(expected.accountId, '2026-09-01', '2026-09-30'),
     ]);
-    const counterpartRows = await api.getTransactions(
-      accounts.find((account) => account.name.startsWith('Cuenta sintética contraparte '))?.id ?? '',
-      '2026-09-01',
-      '2026-09-30',
-    );
+    const counterpartRows = await api.getTransactions(counterpartAccountId, '2026-09-01', '2026-09-30');
     const source = sourceRows.find((item) => item.id === sourceId);
     const counterpart = counterpartRows.find((item) => item.id === counterpartId);
     const splitRows = await api.getTransactions(expected.accountId, '2026-09-10', '2026-09-10');
     const split = splitRows.find((item) => item.id === splitParentId);
+    const persistedChildIds = split?.subtransactions?.map((item) => item.id).sort() ?? [];
+    const persistedTargetChild = split?.subtransactions?.find((item) => item.id === splitChildIds[0]);
     if (!source || source.amount !== -5_100 || source.date !== '2026-09-05' || source.notes !== sharedNotes || !source.cleared ||
-        !counterpart || counterpart.amount !== 5_100 || counterpart.date !== '2026-09-05' || counterpart.notes !== sharedNotes ||
+        !counterpart || counterpart.amount !== 5_100 || counterpart.date !== '2026-09-05' || counterpart.notes !== sharedNotes || Boolean(counterpart.cleared) ||
         !split || split.amount !== -7_500 ||
-        JSON.stringify(split.subtransactions?.map((item) => item.id).sort()) !== JSON.stringify((split.subtransactions ?? []).map((item) => item.id).sort()) ||
-        split.subtransactions?.reduce((sum, item) => sum + item.amount, 0) !== split.amount) {
+        JSON.stringify(persistedChildIds) !== JSON.stringify([...splitChildIds].sort()) ||
+        split.subtransactions?.reduce((sum, item) => sum + item.amount, 0) !== split.amount ||
+        persistedTargetChild?.amount !== -3_500 || persistedTargetChild.notes !== 'Parte sintética A revisada') {
       throw new Error('A fresh Actual client could not verify linked edits after server synchronization.');
     }
     process.stdout.write('LINKED_TRANSACTION_SYNC_OK: updated transfer and split persisted after a fresh budget download.\n');
