@@ -364,7 +364,8 @@ describe('local API', () => {
 
   it('records a reproducible bounded-page benchmark at 10k/50k/100k synthetic movements', async () => {
     let syntheticTransactions: readonly BudgetTransaction[] = [];
-    const listTransactions = vi.fn(async () => syntheticTransactions);
+    const listTransactions = vi.fn(async (_accountId: string, startDate: string, endDate: string) =>
+      syntheticTransactions.filter((transaction) => transaction.date >= startDate && transaction.date <= endDate));
     const app = await createTestApp(createRepository({ listTransactions }));
     const measurements: Array<{
       records: number;
@@ -380,7 +381,7 @@ describe('local API', () => {
         id: 'synthetic-' + String(size - index - 1).padStart(6, '0'),
         account: 'account-1',
         currencyCode: 'EUR',
-        date: '2026-10-01',
+        date: '2026-' + String((index % 12) + 1).padStart(2, '0') + '-15',
         amount: -100,
         category: 'food',
       }));
@@ -392,7 +393,7 @@ describe('local API', () => {
         const started = performance.now();
         const response = await app.inject({
           method: 'GET',
-          url: '/api/v1/transactions?startDate=2026-10-01&endDate=2026-10-31&limit=20&offset=0&sortBy=amount&order=asc',
+          url: '/api/v1/transactions?startDate=2026-01-01&endDate=2026-12-31&limit=20&offset=0&sortBy=amount&order=asc',
         });
         latencies.push(performance.now() - started);
         maxObservedHeapDeltaBytes = Math.max(
@@ -402,17 +403,19 @@ describe('local API', () => {
         expect(response.statusCode).toBe(200);
         expect(response.json().pagination.total).toBe(size);
         expect(response.json().data).toHaveLength(20);
-        expect(response.json().data.map((item: BudgetTransaction) => item.id)).toEqual(
-          Array.from({ length: 20 }, (_, index) => 'synthetic-' + String(index).padStart(6, '0')),
-        );
-        expect(listTransactions).toHaveBeenCalledTimes(1);
+        const expectedFirstPage = [...syntheticTransactions]
+          .sort((left, right) => left.date.localeCompare(right.date) || left.id.localeCompare(right.id))
+          .slice(0, 20)
+          .map((transaction) => transaction.id);
+        expect(response.json().data.map((item: BudgetTransaction) => item.id)).toEqual(expectedFirstPage);
+        expect(listTransactions).toHaveBeenCalledTimes(12);
       }
       latencies.sort((left, right) => left - right);
       measurements.push({
         records: size,
         medianLatencyMs: Number(latencies[1]!.toFixed(2)),
         maxObservedHeapDeltaBytes,
-        repositoryReadsPerRequest: 1,
+        repositoryReadsPerRequest: 12,
       });
     }
 
