@@ -199,6 +199,8 @@ jobs:
         run: npm run test:update:acceptance -- verify
       - name: Verify linked transfer and split edits against isolated synthetic Actual
         run: npm run test:update:acceptance -- transactions
+      - name: Verify category batch commit, stale preflight, and retry against isolated Actual
+        run: npx tsx scripts/category-batch-acceptance.ts
       - name: Explicitly restore the pre-update synthetic backup
         run: |
           BACKUP_PATH="$(node -e "const s=require('./.local/update-state.json');process.stdout.write(s.backupArchive)")"
