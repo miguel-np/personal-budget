@@ -64,11 +64,11 @@ Actual Budget es la fuente de verdad financiera prevista. No crear una segunda b
 
 ## IA local: límites de contexto y recursos
 
-La IA es opcional y solo explica agregados que el backend ya calculó. El chat no expone herramientas ni delega consultas, escrituras o planificación al modelo. Los cálculos numéricos siguen siendo responsabilidad de \`finance-core\`.
+La IA es opcional y solo explica agregados que el backend ya calculó. El chat no expone herramientas ni delega consultas, escrituras o planificación al modelo. Los cálculos numéricos siguen siendo responsabilidad de `finance-core`.
 
 - La disponibilidad de Ollama se cachea durante 5 segundos; una inferencia fallida invalida el estado para detectar antes una caída o recuperación.
 - El contexto se compacta antes de serializarlo como JSON válido: se descartan categorías y avisos de menor prioridad antes de reducir datos. Nunca se corta la cadena JSON ya serializada.
-- La llamada usa \`num_ctx=2048\` y \`num_predict=384\`. Se reserva un presupuesto de hasta 1536 tokens estimados para entrada; la estimación utiliza caracteres por token como límite conservador, no sustituye el tokenizador específico del modelo. El límite \`AI_MAX_CONTEXT_CHARS\` (512–8000; valor por defecto 4000) también se respeta.
+- La llamada usa `num_ctx=2048` y `num_predict=384`. Se reserva un presupuesto de hasta 1536 tokens estimados para entrada; la estimación utiliza caracteres por token como límite conservador, no sustituye el tokenizador específico del modelo. El límite `AI_MAX_CONTEXT_CHARS` (512–8000; valor por defecto 4000) también se respeta.
 - El cliente permite hasta 2 inferencias simultáneas y 4 solicitudes en espera. Al llenarse la cola responde con un error temporal explícito en lugar de crecer sin límite.
 - Solo se agrupan solicitudes concurrentes cuando coinciden la pregunta, el contexto agregado completo, el periodo, la divisa y la huella interna de cuentas. Los identificadores internos no se envían al modelo ni se registran.
 - Se propaga la cancelación del cliente a la inferencia cuando es posible, se aplica el timeout configurado y no hay reintentos automáticos.
