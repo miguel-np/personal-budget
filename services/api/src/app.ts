@@ -149,6 +149,28 @@ const AssistantRequestSchema = z.object({
 const MAX_REPORT_DAYS = 366 * 5;
 const MAX_TRANSACTION_SCAN = 100_000;
 
+/**
+ * The official Actual SDK has no cursor API. Query one calendar month at a time so
+ * a multi-year history never has to be materialized as one SDK result. The route
+ * stops scanning after MAX_TRANSACTION_SCAN presented rows and does not fetch later
+ * months once that budget is exhausted.
+ */
+function* transactionDateRanges(startDate: string, endDate: string): Generator<{ startDate: string; endDate: string }> {
+  let cursor = startDate;
+  while (cursor <= endDate) {
+    const boundary = new Date(cursor + 'T00:00:00.000Z');
+    boundary.setUTCDate(1);
+    boundary.setUTCMonth(boundary.getUTCMonth() + 1);
+    boundary.setUTCDate(0);
+    const monthEnd = boundary.toISOString().slice(0, 10);
+    const rangeEnd = monthEnd < endDate ? monthEnd : endDate;
+    yield { startDate: cursor, endDate: rangeEnd };
+    const next = new Date(rangeEnd + 'T00:00:00.000Z');
+    next.setUTCDate(next.getUTCDate() + 1);
+    cursor = next.toISOString().slice(0, 10);
+  }
+}
+
 class TransactionQueryTooBroadError extends Error {
   public constructor() {
     super('The transaction query exceeded the bounded scan budget.');
@@ -616,38 +638,40 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
 
       for (const account of accounts) {
         const nativeCurrency = accountNativeCurrency(account, preferences);
-        const transactions = await repository.listTransactions(account.id, query.startDate, query.endDate);
-        for (const source of transactions) {
-          const transaction = source as PresentedTransaction;
-          if (transaction.is_child === true || transaction.parent_id) continue;
-          const parentCurrency = normalizeCurrencyCode(transaction.currencyCode) ??
-            normalizeCurrencyCode(transaction.currency_code) ?? nativeCurrency;
-          if (transaction.subtransactions && transaction.subtransactions.length > 0) {
-            for (let index = 0; index < transaction.subtransactions.length; index += 1) {
-              const child = transaction.subtransactions[index]! as PresentedTransaction;
-              const payeeId = child.payee_id ?? transaction.payee_id;
-              const payeeName = child.payee_name ?? transaction.payee_name;
-              const importedPayee = child.imported_payee ?? transaction.imported_payee;
-              const childCurrency = normalizeCurrencyCode(child.currencyCode) ??
-                normalizeCurrencyCode(child.currency_code) ?? parentCurrency;
-              collectCandidate({
-                ...child,
-                id: child.id || transaction.id + ':split:' + index,
-                account: child.account || transaction.account || account.id,
-                date: child.date || transaction.date,
-                currencyCode: childCurrency,
-                ...(payeeId === undefined ? {} : { payee_id: payeeId }),
-                ...(payeeName === undefined ? {} : { payee_name: payeeName }),
-                ...(importedPayee === undefined ? {} : { imported_payee: importedPayee }),
-                is_child: false,
-                parent_id: null,
-                is_split_child: true,
-                parent_transaction_id: transaction.id,
-                is_split_editable: Boolean(child.id),
-              });
+        for (const dateRange of transactionDateRanges(query.startDate, query.endDate)) {
+          const transactions = await repository.listTransactions(account.id, dateRange.startDate, dateRange.endDate);
+          for (const source of transactions) {
+            const transaction = source as PresentedTransaction;
+            if (transaction.is_child === true || transaction.parent_id) continue;
+            const parentCurrency = normalizeCurrencyCode(transaction.currencyCode) ??
+              normalizeCurrencyCode(transaction.currency_code) ?? nativeCurrency;
+            if (transaction.subtransactions && transaction.subtransactions.length > 0) {
+              for (let index = 0; index < transaction.subtransactions.length; index += 1) {
+                const child = transaction.subtransactions[index]! as PresentedTransaction;
+                const payeeId = child.payee_id ?? transaction.payee_id;
+                const payeeName = child.payee_name ?? transaction.payee_name;
+                const importedPayee = child.imported_payee ?? transaction.imported_payee;
+                const childCurrency = normalizeCurrencyCode(child.currencyCode) ??
+                  normalizeCurrencyCode(child.currency_code) ?? parentCurrency;
+                collectCandidate({
+                  ...child,
+                  id: child.id || transaction.id + ':split:' + index,
+                  account: child.account || transaction.account || account.id,
+                  date: child.date || transaction.date,
+                  currencyCode: childCurrency,
+                  ...(payeeId === undefined ? {} : { payee_id: payeeId }),
+                  ...(payeeName === undefined ? {} : { payee_name: payeeName }),
+                  ...(importedPayee === undefined ? {} : { imported_payee: importedPayee }),
+                  is_child: false,
+                  parent_id: null,
+                  is_split_child: true,
+                  parent_transaction_id: transaction.id,
+                  is_split_editable: Boolean(child.id),
+                });
+              }
+            } else {
+              collectCandidate({ ...transaction, currencyCode: parentCurrency });
             }
-          } else {
-            collectCandidate({ ...transaction, currencyCode: parentCurrency });
           }
         }
       }
