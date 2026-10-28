@@ -380,20 +380,25 @@ describe('local API', () => {
       measurements,
     }));
 
-    syntheticTransactions = Array.from({ length: 100_001 }, (_, index) => ({
+    const overBudgetRows: readonly BudgetTransaction[] = Array.from({ length: 100_001 }, (_, index) => ({
       id: 'over-budget-' + String(index).padStart(6, '0'),
       account: 'account-1',
       currencyCode: 'EUR',
-      date: '2026-10-01',
+      date: '2026-09-01',
       amount: -100,
       category: 'food',
     }));
-    const overBudget = await app.inject({
+    const overBudgetReads = vi.fn(async (_accountId: string, startDate: string, _endDate: string) =>
+      startDate === '2026-09-01' ? overBudgetRows : []);
+    const broadApp = await createTestApp(createRepository({ listTransactions: overBudgetReads }));
+    const overBudget = await broadApp.inject({
       method: 'GET',
-      url: '/api/v1/transactions?startDate=2026-10-01&endDate=2026-10-31&limit=20&offset=0',
+      url: '/api/v1/transactions?startDate=2026-09-01&endDate=2026-10-31&limit=20&offset=0',
     });
     expect(overBudget.statusCode).toBe(422);
     expect(overBudget.json().error.code).toBe('TRANSACTION_QUERY_TOO_BROAD');
+    expect(overBudgetReads).toHaveBeenCalledTimes(1);
+    expect(overBudgetReads).toHaveBeenCalledWith('account-1', '2026-09-01', '2026-09-30');
   });
 
   it('reports unsupported budget read and write capabilities without exposing details', async () => {
