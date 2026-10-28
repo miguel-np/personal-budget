@@ -275,6 +275,51 @@ describe('local API', () => {
     expect(repository.listTransactions).toHaveBeenCalledTimes(1);
   });
 
+  it('scans multi-month transaction history in disjoint month windows without duplicates across pages', async () => {
+    const rows: BudgetTransaction[] = Array.from({ length: 80 }, (_, index) => {
+      const date = index < 40
+        ? new Date(Date.UTC(2026, 8, 25 + (index % 6))).toISOString().slice(0, 10)
+        : new Date(Date.UTC(2026, 9, 1 + ((index - 40) % 6))).toISOString().slice(0, 10);
+      return {
+        id: 'month-' + String(index).padStart(3, '0'),
+        account: 'account-1',
+        currencyCode: 'EUR',
+        date,
+        amount: -100,
+        category: 'food',
+      };
+    });
+    const listTransactions = vi.fn(async (_accountId: string, startDate: string, endDate: string) =>
+      rows.filter((transaction) => transaction.date >= startDate && transaction.date <= endDate));
+    const app = await createTestApp(createRepository({ listTransactions }));
+    const firstPage = await app.inject({
+      method: 'GET',
+      url: '/api/v1/transactions?startDate=2026-09-25&endDate=2026-10-06&limit=40&offset=0&sortBy=date&order=asc',
+    });
+    const secondPage = await app.inject({
+      method: 'GET',
+      url: '/api/v1/transactions?startDate=2026-09-25&endDate=2026-10-06&limit=40&offset=40&sortBy=date&order=asc',
+    });
+
+    expect(firstPage.statusCode).toBe(200);
+    expect(secondPage.statusCode).toBe(200);
+    expect(firstPage.json().pagination.total).toBe(80);
+    expect(secondPage.json().pagination.total).toBe(80);
+    const firstIds = firstPage.json().data.map((item: BudgetTransaction) => item.id);
+    const secondIds = secondPage.json().data.map((item: BudgetTransaction) => item.id);
+    const allIds = [...firstIds, ...secondIds];
+    const expectedIds = [...rows]
+      .sort((left, right) => left.date.localeCompare(right.date) || left.id.localeCompare(right.id))
+      .map((transaction) => transaction.id);
+    expect(allIds).toEqual(expectedIds);
+    expect(new Set(allIds).size).toBe(80);
+    expect(listTransactions).toHaveBeenCalledTimes(4);
+    expect(listTransactions.mock.calls.slice(0, 2)).toEqual([
+      ['account-1', '2026-09-25', '2026-09-30'],
+      ['account-1', '2026-10-01', '2026-10-06'],
+    ]);
+  });
+
   it('records a reproducible bounded-page benchmark at 10k/50k/100k synthetic movements', async () => {
     let syntheticTransactions: readonly BudgetTransaction[] = [];
     const listTransactions = vi.fn(async () => syntheticTransactions);
