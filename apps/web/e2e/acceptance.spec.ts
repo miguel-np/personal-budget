@@ -1,6 +1,36 @@
 import { expect, test } from '@playwright/test';
 const fixtureApi = 'http://127.0.0.1:3000';
 
+function syntheticOfx(currencyCode = 'EUR'): Buffer {
+  return Buffer.from([
+    'OFXHEADER:100',
+    'DATA:OFXSGML',
+    'VERSION:102',
+    'SECURITY:NONE',
+    'CHARSET:1252',
+    '',
+    '<OFX>',
+    '<BANKMSGSRSV1>',
+    '<STMTTRNRS>',
+    '<STMTRS>',
+    '<CURDEF>' + currencyCode,
+    '<BANKACCTFROM><BANKID>1234<BRANCHID>01<ACCTID>synthetic-account</BANKACCTFROM>',
+    '<BANKTRANLIST>',
+    '<STMTTRN>',
+    '<DTPOSTED>20261012',
+    '<TRNAMT>-12.34',
+    '<FITID>synthetic-fitid-001',
+    '<NAME>Compra sintetica',
+    '<MEMO>Prueba local OFX',
+    '</STMTTRN>',
+    '</BANKTRANLIST>',
+    '</STMTRS>',
+    '</STMTTRNRS>',
+    '</BANKMSGSRSV1>',
+    '</OFX>',
+  ].join('\r\n'));
+}
+
 test.beforeEach(async ({ request }) => { await request.post(fixtureApi + '/__test__/reset'); });
 
 test('dashboard loads synthetic finance figures and supports period changes', async ({ page }) => {
@@ -80,6 +110,66 @@ test('CSV import requires preview and explicit confirmation; errors preserve ent
   await page.getByRole('button', { name: 'Confirmar importación (1)' }).click();
   await expect(page.locator('.movement-operation-notice')).toContainText('Importación confirmada por Actual');
   expect((await (await request.get(fixtureApi + '/__test__/state')).json()).commitCount).toBe(1);
+});
+
+test('OFX import parses locally, previews normalized records and commits only after confirmation', async ({ page, request }) => {
+  await page.goto('/movements');
+  await page.getByRole('button', { name: /Importar CSV/ }).click();
+  await page.getByLabel('Archivo CSV u OFX').setInputFiles({
+    name: 'extracto-sintetico.ofx',
+    mimeType: 'application/x-ofx',
+    buffer: syntheticOfx(),
+  });
+
+  const summary = page.getByRole('region', { name: 'Resumen de validación del extracto OFX' });
+  await expect(summary).toContainText('OFX SGML 1.02');
+  await expect(summary).toContainText('1 operaciones válidas');
+  await page.locator('.csv-controls-top').getByLabel('Cuenta destino').selectOption('synthetic-account-1');
+  await page.getByRole('button', { name: 'Validar y previsualizar' }).click();
+  await expect(page.getByRole('cell', { name: 'Compra sintetica' })).toBeVisible();
+
+  let state = await (await request.get(fixtureApi + '/__test__/state')).json();
+  expect(state.commitCount).toBe(0);
+  expect(state.importPreviewCount).toBe(1);
+  expect(state.lastImportPreview).toMatchObject({
+    accountId: 'synthetic-account-1',
+    sourceFormat: 'ofx',
+    sourceCurrencyCode: 'EUR',
+  });
+  expect(state.lastImportPreview.records[0]).toMatchObject({
+    date: '2026-10-12',
+    amount: -1234,
+    payee_name: 'Compra sintetica',
+  });
+  expect(state.lastImportPreview.records[0].imported_id).toMatch(/^personal-budget-ofx:[a-f\d]{16}$/);
+
+  await page.getByRole('button', { name: 'Cancelar', exact: true }).click();
+  state = await (await request.get(fixtureApi + '/__test__/state')).json();
+  expect(state.commitCount).toBe(0);
+
+  await page.getByRole('button', { name: 'Validar y previsualizar' }).click();
+  await page.getByRole('button', { name: 'Confirmar importación (1)' }).click();
+  await expect(page.locator('.movement-operation-notice')).toContainText('Importación OFX confirmada por Actual');
+  state = await (await request.get(fixtureApi + '/__test__/state')).json();
+  expect(state.commitCount).toBe(1);
+  expect(state.lastImportCommit).toMatchObject({ accountId: 'synthetic-account-1', sourceFormat: 'ofx', sourceCurrencyCode: 'EUR' });
+});
+
+test('OFX currency mismatch disables preview and never calls the import API', async ({ page, request }) => {
+  await page.goto('/movements');
+  await page.getByRole('button', { name: /Importar CSV/ }).click();
+  await page.getByLabel('Archivo CSV u OFX').setInputFiles({
+    name: 'extracto-sintetico.ofx',
+    mimeType: 'application/x-ofx',
+    buffer: syntheticOfx('EUR'),
+  });
+  await page.locator('.csv-controls-top').getByLabel('Cuenta destino').selectOption('synthetic-account-2');
+
+  await expect(page.locator('.ofx-import-summary').getByRole('alert')).toContainText('no coincide con la divisa de la cuenta destino');
+  await expect(page.getByRole('button', { name: 'Validar y previsualizar' })).toBeDisabled();
+  const state = await (await request.get(fixtureApi + '/__test__/state')).json();
+  expect(state.importPreviewCount).toBe(0);
+  expect(state.commitCount).toBe(0);
 });
 
 test('budgets load and an allocation write is visible after refresh', async ({ page, request }) => {

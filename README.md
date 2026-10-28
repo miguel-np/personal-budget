@@ -2,7 +2,7 @@
 
 Aplicación local de finanzas personales con una única interfaz web para gastos, presupuestos, ahorro e informes. Un asistente con IA local será una ampliación opcional.
 
-> **Estado: roadmap P0–P3 completo (25-oct-2026).** La aplicación incluye shell web local, dashboard e informes comparativos, consultas paginadas de movimientos, registro manual, importación CSV con previsualización y conciliación oficial de Actual, presupuestos por categoría, planificación P3 (pagos recurrentes, sugerencias de categoría, previsiones explicables, objetivos de ahorro y compromisos futuros), asistente local con Ollama, MCP de solo lectura y backup/restore verificados. La CI valida Linux y Windows. La aceptación manual de Windows + WSL2 y el ciclo completo de parada/reinicio deben confirmarse en el entorno objetivo; no se consideran demostrados únicamente por CI.
+> **Estado: roadmap P0–P3 completo (25-oct-2026).** La aplicación incluye shell web local, dashboard e informes comparativos, consultas paginadas de movimientos, registro manual, importación CSV/OFX local con previsualización y conciliación oficial de Actual, presupuestos por categoría, planificación P3 (pagos recurrentes, sugerencias de categoría, previsiones explicables, objetivos de ahorro y compromisos futuros), asistente local con Ollama, MCP de solo lectura y backup/restore verificados. La CI valida Linux y Windows. La aceptación manual de Windows + WSL2 y el ciclo completo de parada/reinicio deben confirmarse en el entorno objetivo; no se consideran demostrados únicamente por CI.
 
 ## Arquitectura
 
@@ -10,7 +10,7 @@ Aplicación local de finanzas personales con una única interfaz web para gastos
 - **@actual-app/api:** acceso programático oficial; no se presupone una API REST de Actual.
 - **packages/finance-core:** normalización de movimientos y cálculos deterministas con importes en unidades monetarias menores.
 - **services/api:** API Fastify local, configuración validada y errores saneados.
-- **apps/web:** shell React/Vite con dashboard, movimientos, informes, importación CSV y edición de presupuestos en una sola interfaz local.
+- **apps/web:** shell React/Vite con dashboard, movimientos, informes, importación CSV/OFX local y edición de presupuestos en una sola interfaz local.
 - **Ollama y MCP:** asistente local opcional conectado a la interfaz y servidor MCP de solo lectura por stdio, validados con `qwen3:8b`.
 
 ## Requisitos
@@ -58,7 +58,7 @@ En otra terminal WSL:
 npm run dev:web
 ~~~
 
-Abre http://127.0.0.1:5173. La aplicación incluye Resumen, Movimientos, Informes, Presupuestos, Planificación, Asistente y Configuración. Configura ACTUAL_BUDGET_ID con el Sync ID del presupuesto de Actual. En Movimientos puedes registrar un movimiento o importar CSV; ambas operaciones muestran una previsualización y exigen confirmar antes de escribir en Actual. Planificación detecta pagos recurrentes, sugiere categorías con confirmación y simula escenarios explicables. Objetivos permite gestionar metas y compromisos futuros locales, con proyecciones deterministas, una agenda accesible y avisos por divisa/ámbito. El Asistente es opcional (AI_ENABLED/OLLAMA_MODEL en .env) y funciona con Ollama local.
+Abre http://127.0.0.1:5173. La aplicación incluye Resumen, Movimientos, Informes, Presupuestos, Planificación, Asistente y Configuración. Configura ACTUAL_BUDGET_ID con el Sync ID del presupuesto de Actual. En Movimientos puedes registrar movimientos o importar CSV/OFX; ambas operaciones muestran una previsualización y exigen confirmar antes de escribir en Actual. OFX admite perfiles SGML 1.02/1.03 y XML OFX 2.x delimitados; consulta [la guía de importación OFX](docs/ofx-import.md). El fichero se procesa en el navegador; solo se envían a la API local los registros normalizados tras la revisión. Planificación detecta pagos recurrentes, sugiere categorías con confirmación y simula escenarios explicables. Objetivos permite gestionar metas y compromisos futuros locales, con proyecciones deterministas, una agenda accesible y avisos por divisa/ámbito. El Asistente es opcional (AI_ENABLED/OLLAMA_MODEL en .env) y funciona con Ollama local.
 
 ## Prueba opcional con un presupuesto de Actual existente
 

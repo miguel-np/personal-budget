@@ -463,6 +463,60 @@ describe('local API', () => {
     expect(importTransactions.mock.calls[1]?.[1]?.[0]?.imported_id).toBe(body.records[0]?.imported_id);
   });
 
+  it('blocks OFX preview and commit when the declared currency differs from the destination account', async () => {
+    const importTransactions = vi.fn(async (): Promise<ActualImportResult> => ({ errors: [], added: ['should-not-write'], updated: [] }));
+    const repository = Object.assign(createRepository(), { importTransactions }) as BudgetRepository & {
+      importTransactions: typeof importTransactions;
+    };
+    const app = await createTestApp(repository);
+    const payload = {
+      accountId: 'account-1',
+      sourceFormat: 'ofx',
+      sourceCurrencyCode: 'USD',
+      allowUnverifiedCurrency: false,
+      records: [{ date: '2026-10-12', amount: -1299, payee_name: 'Compra', imported_id: 'personal-budget-ofx:test-1' }],
+    };
+    const preview = await app.inject({ method: 'POST', url: '/api/v1/import/preview', payload });
+    expect(preview.statusCode).toBe(409);
+    expect(preview.json().error.code).toBe('IMPORT_CURRENCY_MISMATCH');
+    const commit = await app.inject({ method: 'POST', url: '/api/v1/import/commit', payload });
+    expect(commit.statusCode).toBe(409);
+    expect(commit.json().error.code).toBe('IMPORT_CURRENCY_MISMATCH');
+    expect(importTransactions).not.toHaveBeenCalled();
+  });
+
+  it('requires explicit confirmation when OFX or destination currency cannot be verified', async () => {
+    const importTransactions = vi.fn(async (
+      _accountId: string,
+      _records: readonly ActualImportRecord[],
+      options?: { readonly dryRun?: boolean },
+    ): Promise<ActualImportResult> => ({
+      errors: [], added: [options?.dryRun ? 'preview-id' : 'saved-id'], updated: [],
+    }));
+    const repository = Object.assign(createRepository(), { importTransactions }) as BudgetRepository & {
+      importTransactions: typeof importTransactions;
+    };
+    const app = await createTestApp(repository);
+    const payload = {
+      accountId: 'account-1',
+      sourceFormat: 'ofx',
+      records: [{ date: '2026-10-12', amount: -1299, payee_name: 'Compra', imported_id: 'personal-budget-ofx:test-2' }],
+    };
+    const unverified = await app.inject({ method: 'POST', url: '/api/v1/import/preview', payload });
+    expect(unverified.statusCode).toBe(422);
+    expect(unverified.json().error.code).toBe('IMPORT_CURRENCY_UNVERIFIED');
+    expect(importTransactions).not.toHaveBeenCalled();
+
+    const acknowledged = await app.inject({
+      method: 'POST',
+      url: '/api/v1/import/preview',
+      payload: { ...payload, allowUnverifiedCurrency: true },
+    });
+    expect(acknowledged.statusCode).toBe(200);
+    expect(acknowledged.json().data).toMatchObject({ dryRun: true, added: 1 });
+    expect(importTransactions).toHaveBeenCalledWith('account-1', expect.any(Array), { dryRun: true });
+  });
+
   it('rejects invalid categories and malformed import rows without writing', async () => {
     const importTransactions = vi.fn(async (): Promise<ActualImportResult> => ({ errors: [], added: [], updated: [] }));
     const repository = Object.assign(createRepository(), { importTransactions }) as BudgetRepository & {
