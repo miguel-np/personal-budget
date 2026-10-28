@@ -169,6 +169,7 @@ export function PlanningPanel({ currency }: { currency: string }) {
         changes: number;
         applied?: number;
         appliedTransactionIds?: readonly string[];
+        pendingTransactionIds?: readonly string[];
         failedTransactionId?: string;
         partial?: boolean;
         persisted?: boolean;
@@ -188,12 +189,18 @@ export function PlanningPanel({ currency }: { currency: string }) {
       const complete = !outcome.partial && applied === changes.length &&
         outcome.persisted !== false && appliedIds.size === changes.length;
       if (!complete) {
+        const pendingIds = outcome.pendingTransactionIds ??
+          changes.map((change) => change.transactionId).filter((transactionId) => !appliedIds.has(transactionId));
         setDiscarded((previous) => [...previous, ...appliedIds]);
         setPendingChanges([]);
         setNotice(
           'Resultado parcial: ' + applied + ' de ' + changes.length + ' movimientos confirmados. ' +
-          (outcome.failedTransactionId ? 'Revisa el identificador técnico ' + outcome.failedTransactionId + '. ' : '') +
-          (outcome.message ?? 'Vuelve a revisar las sugerencias y previsualiza de nuevo antes de reintentar.')
+          (appliedIds.size > 0 ? 'Confirmados: ' + [...appliedIds].join(', ') + '. ' : '') +
+          (pendingIds.length > 0
+            ? 'Pendientes de nueva previsualización: ' + pendingIds.join(', ') + '. Los confirmados se han retirado de la lista; “Previsualizar todas las sugerencias visibles” actuará solo sobre los pendientes. '
+            : '') +
+          (outcome.failedTransactionId ? 'Movimiento donde se detuvo el lote: ' + outcome.failedTransactionId + '. ' : '') +
+          (outcome.message ?? 'Comprueba los movimientos pendientes en Actual Budget y previsualízalos otra vez antes de reintentar.')
         );
         return;
       }
