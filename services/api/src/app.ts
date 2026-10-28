@@ -341,7 +341,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       if (!config.aiEnabled) {
         return reply.code(503).send({ error: { code: 'AI_DISABLED', message: 'El asistente local está desactivado. La aplicación financiera sigue disponible.' } });
       }
-      const status = await localAi.status();
+      const status = await localAi.status(requestAbort.signal);
       if (status.status !== 'available') {
         return reply.code(503).send({ error: { code: 'AI_UNAVAILABLE', message: 'Ollama o el modelo configurado no están disponibles en local.' } });
       }
