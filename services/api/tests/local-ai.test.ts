@@ -326,4 +326,31 @@ describe('LocalAiClient', () => {
     await expect(pending).rejects.toBeInstanceOf(LocalAiCancelledError);
   });
 
+
+  it('turns a stalled inference into a sanitized timeout and refreshes readiness', async () => {
+    let tagCalls = 0;
+    const metrics: Array<Record<string, unknown>> = [];
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input).endsWith('/api/tags')) {
+        tagCalls += 1;
+        return new Response(JSON.stringify({ models: [{ name: 'synthetic-model' }] }), { status: 200 });
+      }
+      const signal = init?.signal;
+      if (!signal) throw new Error('Expected an inference abort signal.');
+      return await new Promise<Response>((_resolve, reject) => {
+        const abort = () => reject(signal.reason);
+        if (signal.aborted) abort();
+        else signal.addEventListener('abort', abort, { once: true });
+      });
+    });
+    const client = new LocalAiClient({ ...config, timeoutMs: 50 }, fetcher, (metric) => metrics.push({ ...metric }));
+
+    await expect(client.explain(context)).rejects.toBeInstanceOf(LocalAiUnavailableError);
+    expect(metrics).toContainEqual(expect.objectContaining({
+      event: 'inference', outcome: 'unavailable', modelCalls: 1,
+    }));
+    await expect(client.status()).resolves.toMatchObject({ status: 'available' });
+    expect(tagCalls).toBe(2);
+  });
+
 });
