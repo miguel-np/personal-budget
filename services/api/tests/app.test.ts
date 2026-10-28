@@ -320,6 +320,48 @@ describe('local API', () => {
     ]);
   });
 
+  it('preserves split semantics when child dates cross monthly scan windows', async () => {
+    const splitParent: BudgetTransaction = {
+      id: 'split-parent-cross-month',
+      account: 'account-1',
+      currencyCode: 'EUR',
+      date: '2026-09-30',
+      amount: -1_000,
+      is_parent: true,
+      subtransactions: [
+        { id: 'split-child-september', account: 'account-1', date: '2026-09-30', amount: -400, parent_id: 'split-parent-cross-month', is_child: true },
+        { id: 'split-child-october', account: 'account-1', date: '2026-10-01', amount: -600, parent_id: 'split-parent-cross-month', is_child: true },
+      ],
+    };
+    const rows: readonly BudgetTransaction[] = [
+      splitParent,
+      { id: 'split-child-september', account: 'account-1', currencyCode: 'EUR', date: '2026-09-30', amount: -400, parent_id: splitParent.id, is_child: true },
+      { id: 'split-child-october', account: 'account-1', currencyCode: 'EUR', date: '2026-10-01', amount: -600, parent_id: splitParent.id, is_child: true },
+      { id: 'independent-october', account: 'account-1', currencyCode: 'EUR', date: '2026-10-02', amount: -200 },
+    ];
+    const listTransactions = vi.fn(async (_accountId: string, startDate: string, endDate: string) =>
+      rows.filter((transaction) => transaction.date >= startDate && transaction.date <= endDate));
+    const app = await createTestApp(createRepository({ listTransactions }));
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/transactions?startDate=2026-09-25&endDate=2026-10-06&limit=20&offset=0&sortBy=date&order=asc',
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().pagination.total).toBe(3);
+    expect(response.json().data.map((item: BudgetTransaction) => item.id)).toEqual([
+      'split-child-september',
+      'split-child-october',
+      'independent-october',
+    ]);
+    expect(new Set(response.json().data.map((item: BudgetTransaction) => item.id)).size).toBe(3);
+    expect(listTransactions).toHaveBeenCalledTimes(2);
+    expect(listTransactions.mock.calls).toEqual([
+      ['account-1', '2026-09-25', '2026-09-30'],
+      ['account-1', '2026-10-01', '2026-10-06'],
+    ]);
+  });
+
   it('records a reproducible bounded-page benchmark at 10k/50k/100k synthetic movements', async () => {
     let syntheticTransactions: readonly BudgetTransaction[] = [];
     const listTransactions = vi.fn(async () => syntheticTransactions);
