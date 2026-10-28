@@ -1255,7 +1255,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         if (parsed.commit && change.expectedCategoryId !== (transaction.category ?? null)) {
           return reply.code(409).send({ error: {
             code: 'TRANSACTION_CHANGED_SINCE_PREVIEW',
-            message: 'One or more selected movements changed category after preview. Review and preview the batch again; no changes were written.',
+            message: 'One or more selected transactions or categories changed after preview. Review the current movements and preview the batch again; no changes were written.',
             transactionId: change.transactionId,
           } });
         }
@@ -1294,19 +1294,24 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
           if (outcome.conflictTransactionId && applied === 0) {
             return reply.code(409).send({ error: {
               code: 'TRANSACTION_CHANGED_SINCE_PREVIEW',
-              message: 'The category changed after preview; review and preview the remaining batch again. No changes were written by this attempt.',
+              message: 'The transaction or category no longer matches the preview. Review the current movements and preview the batch again; no changes were written by this attempt.',
               transactionId: outcome.conflictTransactionId,
             } });
           }
+          const appliedIds = new Set(outcome.updatedTransactionIds);
+          const pendingTransactionIds = parsed.transactions
+            .map((change) => change.transactionId)
+            .filter((transactionId) => !appliedIds.has(transactionId));
           return reply.code(207).send({
             data: {
               preview: false, requested: outcome.requested, applied, changes: applied,
               appliedTransactionIds: outcome.updatedTransactionIds,
+              pendingTransactionIds,
               ...(outcome.failedTransactionId ? { failedTransactionId: outcome.failedTransactionId } : {}),
               ...(outcome.conflictTransactionId ? { conflictTransactionId: outcome.conflictTransactionId } : {}),
               persisted: outcome.persisted, partial: true,
               message: outcome.conflictTransactionId
-                ? 'The category changed after preview at the indicated transaction id. Earlier listed updates are verified; review the remaining selections and preview again.'
+                ? 'The transaction or category no longer matches the preview at the indicated transaction id. Earlier listed updates are verified; only the remaining selections are pending and must be previewed again.'
                 : outcome.updatedTransactionIds.length > 0
                   ? 'Some changes were verified and synced. The batch stopped at the indicated transaction id; inspect that movement in Actual before retrying. No automatic undo was attempted.'
                   : 'No change was confirmed as persisted. Inspect the indicated movement in Actual before retrying; no automatic undo was attempted.',
