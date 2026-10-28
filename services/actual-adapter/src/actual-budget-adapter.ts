@@ -307,6 +307,34 @@ export class ActualBudgetAdapter implements BudgetRepository {
         return false;
       };
 
+      // Preflight every item before the first write. Actual does not expose an atomic
+      // transaction-category batch update, so a stale item must not leave earlier items
+      // modified merely because its conflict was discovered late in the loop.
+      for (const change of parsed.data) {
+        let before: BudgetTransaction | undefined;
+        try {
+          const rows = await this.api.getTransactions(change.accountId, change.date, change.date);
+          before = rows.find((row) => row.id === change.transactionId && row.account === change.accountId);
+        } catch {
+          return {
+            requested: parsed.data.length,
+            updatedTransactionIds: [],
+            failedTransactionId: change.transactionId,
+            persisted: false,
+          };
+        }
+        if (!before || (before.category ?? null) !== change.expectedCategoryId) {
+          return {
+            requested: parsed.data.length,
+            updatedTransactionIds: [],
+            failedTransactionId: change.transactionId,
+            conflictTransactionId: change.transactionId,
+            // The operation queue's initial sync succeeded and no writes were attempted.
+            persisted: true,
+          };
+        }
+      }
+
       for (const change of parsed.data) {
         // Compare the preview baseline again immediately before each write so a newer
         // category edit is surfaced rather than silently overwritten by a stale batch.
