@@ -153,7 +153,7 @@ describe('LocalAiClient', () => {
     const fetcher = vi.fn<typeof fetch>(async (input) => {
       if (String(input).endsWith('/api/tags')) {
         tagsCalls += 1;
-        return new Response(JSON.stringify({ models: [{ name: tagsCalls === 1 ? 'synthetic-model' : 'other-model' }] }), { status: 200 });
+        return new Response(JSON.stringify({ models: [{ name: 'synthetic-model' }] }), { status: 200 });
       }
       chatCalls += 1;
       return new Response('{}', { status: 503 });
@@ -165,7 +165,7 @@ describe('LocalAiClient', () => {
     expect(tagsCalls).toBe(1);
     await expect(client.explain(context)).rejects.toBeInstanceOf(LocalAiUnavailableError);
     expect(chatCalls).toBe(1);
-    await expect(client.status()).resolves.toMatchObject({ status: 'model_missing' });
+    await expect(client.status()).resolves.toMatchObject({ status: 'available' });
     expect(tagsCalls).toBe(2);
   });
 
@@ -302,6 +302,28 @@ describe('LocalAiClient', () => {
     expect(JSON.stringify(metrics)).not.toContain(context.question);
     expect(JSON.stringify(metrics)).not.toContain('Alimentación');
     expect(JSON.stringify(metrics)).not.toContain('200000');
+  });
+
+
+  it('allows a caller to cancel while a shared readiness probe is pending', async () => {
+    let tagsStarted!: () => void;
+    const started = new Promise<void>((resolve) => { tagsStarted = resolve; });
+    const fetcher = vi.fn<typeof fetch>(async (_input, init) => {
+      const signal = init?.signal;
+      if (!signal) throw new Error('Expected a readiness timeout signal.');
+      tagsStarted();
+      return await new Promise<Response>((_resolve, reject) => {
+        const abort = () => reject(signal.reason);
+        if (signal.aborted) abort();
+        else signal.addEventListener('abort', abort, { once: true });
+      });
+    });
+    const client = new LocalAiClient(config, fetcher);
+    const controller = new AbortController();
+    const pending = client.status(controller.signal);
+    await started;
+    controller.abort();
+    await expect(pending).rejects.toBeInstanceOf(LocalAiCancelledError);
   });
 
 });
