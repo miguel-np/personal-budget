@@ -55,4 +55,4 @@ Para reproducir medidas sintéticas (10.000, 50.000 y 100.000 filas; tres repeti
 
 npx vitest run services/api/tests/app.test.ts -t "records a reproducible bounded-page benchmark" --reporter=verbose
 
-La prueba registra la versión de Node, la mediana de latencia, el máximo incremento observado de heap y las llamadas al repositorio por petición. Usa exclusivamente datos sintéticos; no conecta con un presupuesto real ni constituye una medición del trabajo interno de Actual.
+La prueba registra la versión de Node, la mediana de latencia, el máximo incremento observado de heap y las llamadas al repositorio por petición. Además aplica techos de regresión deliberadamente holgados para cada tamaño: mediana por debajo de 3 s y aumento observado de heap inferior a 128 MiB; son umbrales de CI derivados con margen del benchmark sintético, no objetivos de latencia real ni una medición del trabajo interno de Actual.
