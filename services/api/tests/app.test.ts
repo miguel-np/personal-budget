@@ -394,8 +394,8 @@ describe('local API', () => {
       amount: -100,
       category: 'food',
     }));
-    const overBudgetReads = vi.fn(async (_accountId: string, startDate: string, _endDate: string) =>
-      startDate === '2026-09-01' ? overBudgetRows : []);
+    const overBudgetReads = vi.fn(async (_accountId: string, startDate: string, endDate: string) =>
+      startDate === '2026-09-01' && endDate === '2026-09-30' ? overBudgetRows : []);
     const broadApp = await createTestApp(createRepository({ listTransactions: overBudgetReads }));
     const overBudget = await broadApp.inject({
       method: 'GET',
