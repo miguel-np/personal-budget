@@ -3,7 +3,7 @@ import { mkdir, readFile, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as ActualApiNamespace from '@actual-app/api';
-import type { BudgetCategory, BudgetTransaction, TransactionCategoryBatchChange } from '@personal-budget/finance-core';
+import type { BudgetTransaction, TransactionCategoryBatchChange } from '@personal-budget/finance-core';
 import { ActualBudgetAdapter } from '../services/actual-adapter/src/actual-budget-adapter.js';
 import type { ActualAdapterConfig, ActualApiContract } from '../services/actual-adapter/src/actual-api-contract.js';
 
@@ -49,21 +49,24 @@ async function main(): Promise<void> {
   };
   const adapter = new ActualBudgetAdapter(config, ActualApiNamespace as unknown as ActualApiContract);
   try {
-    const [accounts, categories] = await Promise.all([adapter.listAccounts(), adapter.listCategories()]);
+    const [accounts] = await Promise.all([adapter.listAccounts(), adapter.listCategories()]);
     assert(accounts.some((account) => account.id === fixture.accountId),
       'Synthetic source account is missing from the live Actual budget.');
 
-    const expenseGroup = (categories as readonly BudgetCategory[]).find((category) => !category.isIncome);
-    assert(expenseGroup, 'Actual must expose an expense category group for isolated synthetic acceptance.');
-    // Seed a unique, synthetic destination category so the test does not depend on
-    // how automatic categorization may have assigned the two expense fixtures.
+    // Create an isolated expense group and destination category. The fixture must not
+    // depend on any default categories or automatic category learning in Actual.
     const categoryWriter = ActualApiNamespace as unknown as {
+      createCategoryGroup(group: { readonly name: string }): Promise<string>;
       createCategory(category: { readonly name: string; readonly group_id: string }): Promise<string>;
       sync(): Promise<void>;
     };
+    const suffix = randomUUID().slice(0, 8);
+    const expenseGroupId = await categoryWriter.createCategoryGroup({
+      name: 'Synthetic category batch group ' + suffix,
+    });
     const targetCategoryId = await categoryWriter.createCategory({
-      name: 'Synthetic category batch ' + randomUUID().slice(0, 8),
-      group_id: expenseGroup.groupId,
+      name: 'Synthetic category batch ' + suffix,
+      group_id: expenseGroupId,
     });
     await categoryWriter.sync();
     const target = (await adapter.listCategories()).find((category) => category.id === targetCategoryId);
