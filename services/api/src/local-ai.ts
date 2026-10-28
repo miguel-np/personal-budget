@@ -107,6 +107,7 @@ interface SharedInference {
   promise: Promise<string>;
   settled: boolean;
   queueWaitMs: number;
+  modelCallStarted: boolean;
   readonly contextChars: number;
   readonly estimatedInputTokens: number;
   readonly submittedAt: number;
@@ -234,25 +235,26 @@ export class LocalAiClient {
     this.baseURL = config.baseURL.endsWith('/') ? config.baseURL : config.baseURL + '/';
   }
 
-  public async status(): Promise<LocalAiStatus> {
+  public async status(callerSignal?: AbortSignal): Promise<LocalAiStatus> {
+    if (callerSignal?.aborted) throw new LocalAiCancelledError();
     if (!this.config.enabled) return { enabled: false, status: 'disabled' };
     if (!this.config.model) return { enabled: true, status: 'not_configured' };
     const now = Date.now();
     if (this.cachedStatus && this.cachedStatus.expiresAt > now) return this.cachedStatus.value;
-    if (this.statusInFlight) return this.statusInFlight;
+    if (this.statusInFlight) return this.waitForCaller(this.statusInFlight, callerSignal);
 
     const generation = this.statusGeneration;
-    const pending = this.checkStatus();
-    this.statusInFlight = pending;
-    try {
-      const value = await pending;
+    const pending = this.checkStatus().then((value) => {
       if (generation === this.statusGeneration) {
         this.cachedStatus = { value, expiresAt: Date.now() + STATUS_CACHE_TTL_MS };
       }
       return value;
-    } finally {
+    });
+    this.statusInFlight = pending;
+    void pending.finally(() => {
       if (this.statusInFlight === pending) this.statusInFlight = undefined;
-    }
+    });
+    return this.waitForCaller(pending, callerSignal);
   }
 
   public async explain(context: AssistantContext, callerSignal?: AbortSignal): Promise<string> {
@@ -270,7 +272,7 @@ export class LocalAiClient {
       return this.subscribe(existing, callerSignal);
     }
 
-    const status = await this.status();
+    const status = await this.status(callerSignal);
     if (callerSignal?.aborted) throw new LocalAiCancelledError();
     if (status.status !== 'available') throw new LocalAiUnavailableError();
 
@@ -289,7 +291,7 @@ export class LocalAiClient {
     const inferenceSignal = AbortSignal.any([controller.signal, timeoutSignal]);
     const entry: SharedInference = {
       key, controller, signal: inferenceSignal, subscribers: new Set<symbol>(),
-      promise: Promise.resolve(''), settled: false, queueWaitMs: 0,
+      promise: Promise.resolve(''), settled: false, queueWaitMs: 0, modelCallStarted: false,
       contextChars: prompt.contextJSON.length,
       estimatedInputTokens: prompt.estimatedInputTokens,
       submittedAt: Date.now(),
@@ -298,6 +300,7 @@ export class LocalAiClient {
     entry.promise = this.runLimited(
       async () => {
         entry.queueWaitMs = Math.max(0, Date.now() - entry.submittedAt);
+        entry.modelCallStarted = true;
         return this.callModel(prompt, inferenceSignal);
       },
       inferenceSignal,
@@ -314,7 +317,7 @@ export class LocalAiClient {
       if (outcome === 'unavailable') this.invalidateStatus();
       this.emitMetric({
         event: outcome === 'busy' ? 'rejected' : 'inference', outcome,
-        modelCalls: outcome === 'busy' ? 0 : 1,
+        modelCalls: outcome === 'busy' || !entry.modelCallStarted ? 0 : 1,
         durationMs: Math.max(0, Date.now() - entry.submittedAt), queueWaitMs: entry.queueWaitMs,
         contextChars: entry.contextChars, estimatedInputTokens: entry.estimatedInputTokens,
       });
@@ -458,6 +461,26 @@ export class LocalAiClient {
       }
       queued.start();
     }
+  }
+
+  private waitForCaller<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+    if (!signal) return promise;
+    if (signal.aborted) return Promise.reject(new LocalAiCancelledError());
+    return new Promise<T>((resolve, reject) => {
+      const cleanup = () => signal.removeEventListener('abort', onAbort);
+      const onAbort = () => {
+        cleanup();
+        reject(new LocalAiCancelledError());
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+      promise.then((value) => {
+        cleanup();
+        resolve(value);
+      }, (error: unknown) => {
+        cleanup();
+        reject(error);
+      });
+    });
   }
 
   private invalidateStatus(): void {
