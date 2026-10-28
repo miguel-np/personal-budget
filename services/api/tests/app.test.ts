@@ -374,10 +374,16 @@ describe('local API', () => {
       });
     }
 
+    // Regression ceilings are deliberately generous multiples of the recorded baseline
+    // so ordinary CI scheduling variance does not cause false failures.
+    expect(measurements.every((measurement) => measurement.medianLatencyMs < 3_000)).toBe(true);
+    expect(measurements.every((measurement) => measurement.maxObservedHeapDeltaBytes < 128 * 1024 * 1024)).toBe(true);
+
     console.info('TRANSACTION_PAGINATION_BENCHMARK ' + JSON.stringify({
       node: process.version,
       syntheticOnly: true,
       measurements,
+      regressionCeilings: { medianLatencyMs: 3_000, maxObservedHeapDeltaBytes: 128 * 1024 * 1024 },
     }));
 
     const overBudgetRows: readonly BudgetTransaction[] = Array.from({ length: 100_001 }, (_, index) => ({
