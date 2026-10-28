@@ -3,6 +3,7 @@ import { MovementTools } from './MovementTools.js';
 import { BudgetPanel } from './BudgetPanel.js';
 import { AssistantPanel } from './AssistantPanel.js';
 import { PlanningPanel } from './PlanningPanel.js';
+import { GoalsPanel, GoalsDashboardSummary } from './GoalsPanel.js';
 import { MovementManager } from './MovementManager.js';
 import { ReportExportPanel } from './ReportExportPanel.js';
 import { SettingsCenter, type AppPreferences } from './SettingsCenter.js';
@@ -132,6 +133,7 @@ const NAV_ITEMS = [
   { href: '/reports', label: 'Informes', icon: '▥' },
   { href: '/budgets', label: 'Presupuestos', icon: '◷' },
   { href: '/planning', label: 'Planificación', icon: '◎' },
+  { href: '/goals', label: 'Objetivos', icon: '↗' },
   { href: '/assistant', label: 'Asistente', icon: '✧' },
   { href: '/settings', label: 'Configuración', icon: '⚙' },
 ] as const;
@@ -747,6 +749,7 @@ export function App() {
                       ))}</div>
                     </details> : null}
                     <MonthlyTrendPanel points={trendPoints} currency={currency} loading={trendLoading} error={trendError} />
+                    <GoalsDashboardSummary currency={currency} onNavigate={navigateTo} reloadKey={refreshKey} />
                     <div className="section-footnote">Importes calculados con reglas deterministas en el backend. Los movimientos divididos se normalizan antes de agregarse; no se suman divisas distintas.</div>
                   </>
                 ) : <EmptyState title="No hay resumen disponible" body="Selecciona un periodo válido o comprueba la conexión con Actual Budget." />}
@@ -844,6 +847,7 @@ export function App() {
 
             {route === '/assistant' && <AssistantPanel currency={currency} />}
             {route === '/planning' && <PlanningPanel currency={currency} />}
+            {route === '/goals' && <GoalsPanel currency={currency} />}
 
             {route === '/settings' && (
               <section className="content-section">
@@ -937,7 +941,7 @@ export function App() {
               </section>
             )}
 
-            {!['/', '/movements', '/accounts', '/reports', '/budgets', '/planning', '/assistant', '/settings'].includes(route) && (
+            {!['/', '/movements', '/accounts', '/reports', '/budgets', '/planning', '/goals', '/assistant', '/settings'].includes(route) && (
               <section className="content-section"><EmptyState title="Sección no encontrada" body="Utiliza la navegación principal para abrir una sección disponible." /><a className="button primary" href="/">Volver al resumen</a></section>
             )}
           </>
