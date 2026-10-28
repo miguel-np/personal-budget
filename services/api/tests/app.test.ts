@@ -390,17 +390,31 @@ describe('local API', () => {
       for (let repeat = 0; repeat < 3; repeat += 1) {
         listTransactions.mockClear();
         const heapBefore = process.memoryUsage().heapUsed;
+        let sampledPeakHeapDeltaBytes = 0;
+        const sampleHeap = () => {
+          sampledPeakHeapDeltaBytes = Math.max(
+            sampledPeakHeapDeltaBytes,
+            process.memoryUsage().heapUsed - heapBefore,
+          );
+        };
+        // Heap deltas measured only before/after a request can miss transient
+        // allocations that are reclaimed before the response resolves. Sample
+        // while the request is in flight and once more after it completes.
+        const heapSampler = setInterval(sampleHeap, 1);
         const started = performance.now();
-        const response = await app.inject({
-          method: 'GET',
-          url: '/api/v1/transactions?startDate=2026-01-01&endDate=2026-12-31&limit=20&offset=0&sortBy=amount&order=asc',
-        });
+        let response;
+        try {
+          response = await app.inject({
+            method: 'GET',
+            url: '/api/v1/transactions?startDate=2026-01-01&endDate=2026-12-31&limit=20&offset=0&sortBy=amount&order=asc',
+          });
+        } finally {
+          clearInterval(heapSampler);
+          sampleHeap();
+        }
         latencies.push(performance.now() - started);
-        maxObservedHeapDeltaBytes = Math.max(
-          maxObservedHeapDeltaBytes,
-          process.memoryUsage().heapUsed - heapBefore,
-        );
-        expect(response.statusCode).toBe(200);
+        maxObservedHeapDeltaBytes = Math.max(maxObservedHeapDeltaBytes, sampledPeakHeapDeltaBytes);
+        expect(response!.statusCode).toBe(200);
         expect(response.json().pagination.total).toBe(size);
         expect(response.json().data).toHaveLength(20);
         const expectedFirstPage = [...syntheticTransactions]
