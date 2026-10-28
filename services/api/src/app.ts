@@ -587,10 +587,10 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
           .some((value) => value.toLocaleLowerCase('es').includes(queryText));
       };
 
-      // The official Actual SDK returns the complete account/date result; it has
-      // no limit/cursor parameter. Process one account at a time and keep only
-      // the best offset+limit candidates instead of materializing three full lists
-      // (flattened, filtered and sorted) for every request.
+      // The official Actual SDK has no limit/cursor parameter. Read calendar-month
+      // windows sequentially so multi-year ranges are not materialized as one result.
+      // Keep only the best offset+limit candidates; do not build flattened/filtered
+      // collections. The scan budget prevents fetching later months after it is exceeded.
       const maxSelected = query.offset + query.limit;
       const selected: PresentedTransaction[] = [];
       let total = 0;
