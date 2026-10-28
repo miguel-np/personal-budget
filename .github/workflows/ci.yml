@@ -204,10 +204,12 @@ jobs:
       - name: Verify category batch commit, stale preflight, and retry against isolated Actual
         run: npx tsx scripts/category-batch-acceptance.ts
       - name: Explicitly restore the pre-update synthetic backup
+        if: always() && hashFiles('.local/update-state.json') != ''
         run: |
           BACKUP_PATH="$(node -e "const s=require('./.local/update-state.json');process.stdout.write(s.backupArchive)")"
           npm run update:actual -- restore-backup --backup "$BACKUP_PATH" --to-image actualbudget/actual-server:26.9.0 --confirm-data-restore
       - name: Verify inventory after explicit recovery
+        if: always() && hashFiles('.local/update-acceptance/expected-inventory.json') != ''
         run: npm run test:update:acceptance -- verify
       - name: Inject a failure after the target container starts
         run: |
