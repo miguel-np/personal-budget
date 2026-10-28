@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { LocalAiClient, LocalAiUnavailableError } from '../src/local-ai.js';
+import { LocalAiBusyError, LocalAiCancelledError, LocalAiClient, LocalAiUnavailableError } from '../src/local-ai.js';
 import type { AssistantContext } from '../src/local-ai.js';
 
 const config = { enabled: true, baseURL: 'http://127.0.0.1:11434', model: 'synthetic-model', timeoutMs: 1_000, maxContextChars: 2_000 };
