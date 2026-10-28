@@ -330,16 +330,18 @@ export class LocalAiClient {
   }
 
   private async checkStatus(): Promise<LocalAiStatus> {
+    const model = this.config.model;
+    if (!model) return { enabled: true, status: 'not_configured' };
     try {
       const response = await this.fetcher(urlWithPath(this.baseURL, 'api/tags'), {
         method: 'GET', headers: { Accept: 'application/json' },
         signal: AbortSignal.timeout(this.config.timeoutMs),
       });
-      if (!response.ok) return { enabled: true, status: 'unavailable', model: this.config.model };
+      if (!response.ok) return { enabled: true, status: 'unavailable', model };
       const payload = await response.json() as OllamaTagsPayload;
-      const found = (payload.models ?? []).some((item) => item.name === this.config.model || item.model === this.config.model);
-      return { enabled: true, status: found ? 'available' : 'model_missing', model: this.config.model };
-    } catch { return { enabled: true, status: 'unavailable', model: this.config.model }; }
+      const found = (payload.models ?? []).some((item) => item.name === model || item.model === model);
+      return { enabled: true, status: found ? 'available' : 'model_missing', model };
+    } catch { return { enabled: true, status: 'unavailable', model }; }
   }
 
   private async callModel(prompt: BoundedPrompt, signal: AbortSignal): Promise<string> {
