@@ -147,6 +147,14 @@ const AssistantRequestSchema = z.object({
   }
 });
 const MAX_REPORT_DAYS = 366 * 5;
+const MAX_TRANSACTION_SCAN = 100_000;
+
+class TransactionQueryTooBroadError extends Error {
+  public constructor() {
+    super('The transaction query exceeded the bounded scan budget.');
+    this.name = 'TransactionQueryTooBroadError';
+  }
+}
 
 export interface AppDependencies {
   readonly repository: BudgetRepository;
@@ -507,16 +515,11 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     try {
       const query = TransactionQuerySchema.parse(request.query);
       assertPeriod(query.startDate, query.endDate);
-      const [allAccounts, preferences, preference] = await Promise.all([
-        repository.listAccounts(), currencyPreferences(), accountScopePreference(),
+      const [allAccounts, preferences, preference, categories] = await Promise.all([
+        repository.listAccounts(), currencyPreferences(), accountScopePreference(), repository.listCategories(),
       ]);
       const scope = resolveAccountScope(allAccounts, preference, query.accountId);
       const accounts = scope.accounts;
-      const groups = await Promise.all(accounts.map(async (account) => {
-        const nativeCurrency = accountNativeCurrency(account, preferences);
-        const transactions = await repository.listTransactions(account.id, query.startDate, query.endDate);
-        return transactions.map((transaction) => withNativeCurrency(transaction, nativeCurrency));
-      }));
       type PresentedTransaction = BudgetTransaction & {
         readonly payee_name?: string | null;
         readonly imported_payee?: string | null;
@@ -524,64 +527,133 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         readonly parent_transaction_id?: string;
         readonly is_split_editable?: boolean;
       };
-      const flattened: PresentedTransaction[] = groups.flat().flatMap((source): PresentedTransaction[] => {
-        const transaction = source as PresentedTransaction;
-        if (transaction.is_child === true || transaction.parent_id) return [];
-        if (transaction.subtransactions && transaction.subtransactions.length > 0) {
-          return transaction.subtransactions.map((sourceChild, index): PresentedTransaction => {
-            const child = sourceChild as PresentedTransaction;
-            const payeeId = child.payee_id ?? transaction.payee_id;
-            const payeeName = child.payee_name ?? transaction.payee_name;
-            const importedPayee = child.imported_payee ?? transaction.imported_payee;
-            return {
-              ...child,
-              id: child.id || transaction.id + ':split:' + index,
-              account: child.account || transaction.account,
-              date: child.date || transaction.date,
-              currencyCode: normalizeCurrencyCode(child.currencyCode ?? child.currency_code) ?? normalizeCurrencyCode(transaction.currencyCode) ?? null,
-              ...(payeeId === undefined ? {} : { payee_id: payeeId }),
-              ...(payeeName === undefined ? {} : { payee_name: payeeName }),
-              ...(importedPayee === undefined ? {} : { imported_payee: importedPayee }),
-              is_child: false,
-              parent_id: null,
-              is_split_child: true,
-              parent_transaction_id: transaction.id,
-              is_split_editable: Boolean(child.id),
-            };
-          });
-        }
-        return [transaction];
-      });
-      const categories = await repository.listCategories();
       const categoriesById = new Map(categories.map((category) => [category.id, category]));
       const accountsById = new Map(accounts.map((account) => [account.id, account]));
       const queryText = query.search?.toLocaleLowerCase('es') ?? '';
-      const filtered = flattened.filter((transaction) => {
+      const descriptionOf = (transaction: PresentedTransaction): string =>
+        transaction.payee_name || transaction.imported_payee || transaction.notes || transaction.payee_id || '';
+      const compareText = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
+      const compareTransactions = (left: PresentedTransaction, right: PresentedTransaction): number => {
+        let comparison = 0;
+        if (query.sortBy === 'amount') {
+          comparison = left.amount < right.amount ? -1 : left.amount > right.amount ? 1 : 0;
+        } else if (query.sortBy === 'description') {
+          comparison = descriptionOf(left).localeCompare(descriptionOf(right), 'es');
+        } else {
+          comparison = compareText(left.date, right.date);
+        }
+        if (comparison !== 0) return query.order === 'asc' ? comparison : -comparison;
+
+        if (query.sortBy !== 'date') {
+          comparison = compareText(left.date, right.date);
+          if (comparison !== 0) return query.order === 'asc' ? comparison : -comparison;
+        }
+        // IDs are the final, direction-independent tie-breaker. This makes offset
+        // pages deterministic when date, amount or description are identical.
+        comparison = compareText(left.id, right.id);
+        return comparison !== 0 ? comparison : compareText(left.account, right.account);
+      };
+      const matchesFilters = (transaction: PresentedTransaction): boolean => {
         if (query.categoryId && transaction.category !== query.categoryId) return false;
         if (query.uncategorized === 'true' && transaction.category) return false;
         if (query.uncategorized === 'false' && !transaction.category) return false;
         if (!queryText) return true;
-        const extra = transaction as typeof transaction & { payee_name?: string | null; imported_payee?: string | null };
-        const description = extra.payee_name || extra.imported_payee || transaction.notes || transaction.payee_id || '';
+        const description = descriptionOf(transaction);
         const accountName = accountsById.get(transaction.account)?.name ?? '';
         const categoryName = categoriesById.get(transaction.category ?? '')?.name ?? '';
         return [description, accountName, categoryName, transaction.notes ?? '']
           .some((value) => value.toLocaleLowerCase('es').includes(queryText));
-      });
-      filtered.sort((left, right) => {
-        let comparison = 0;
-        if (query.sortBy === 'amount') comparison = left.amount - right.amount;
-        else if (query.sortBy === 'description') {
-          const leftExtra = left as typeof left & { payee_name?: string | null; imported_payee?: string | null };
-          const rightExtra = right as typeof right & { payee_name?: string | null; imported_payee?: string | null };
-          const leftDescription = leftExtra.payee_name || leftExtra.imported_payee || left.notes || left.payee_id || '';
-          const rightDescription = rightExtra.payee_name || rightExtra.imported_payee || right.notes || right.payee_id || '';
-          comparison = leftDescription.localeCompare(rightDescription, 'es');
-        } else comparison = left.date.localeCompare(right.date);
-        return query.order === 'asc' ? comparison : -comparison;
-      });
-      const total = filtered.length;
-      const page = filtered.slice(query.offset, query.offset + query.limit).map((transaction) => {
+      };
+
+      // The official Actual SDK returns the complete account/date result; it has
+      // no limit/cursor parameter. Process one account at a time and keep only
+      // the best offset+limit candidates instead of materializing three full lists
+      // (flattened, filtered and sorted) for every request.
+      const maxSelected = query.offset + query.limit;
+      const selected: PresentedTransaction[] = [];
+      let total = 0;
+      let scanned = 0;
+
+      const siftUp = (index: number): void => {
+        let child = index;
+        while (child > 0) {
+          const parent = Math.floor((child - 1) / 2);
+          if (compareTransactions(selected[child]!, selected[parent]!) <= 0) break;
+          [selected[parent], selected[child]] = [selected[child]!, selected[parent]!];
+          child = parent;
+        }
+      };
+      const siftDown = (index: number): void => {
+        let parent = index;
+        while (true) {
+          const left = parent * 2 + 1;
+          const right = left + 1;
+          let worst = parent;
+          if (left < selected.length && compareTransactions(selected[left]!, selected[worst]!) > 0) worst = left;
+          if (right < selected.length && compareTransactions(selected[right]!, selected[worst]!) > 0) worst = right;
+          if (worst === parent) return;
+          [selected[parent], selected[worst]] = [selected[worst]!, selected[parent]!];
+          parent = worst;
+        }
+      };
+      const collectCandidate = (transaction: PresentedTransaction): void => {
+        scanned += 1;
+        if (scanned > MAX_TRANSACTION_SCAN) throw new TransactionQueryTooBroadError();
+        if (!matchesFilters(transaction)) return;
+        total += 1;
+        if (selected.length < maxSelected) {
+          selected.push(transaction);
+          siftUp(selected.length - 1);
+          return;
+        }
+        // The heap root is the worst item currently retained. Replace it only
+        // when this candidate sorts ahead of that item.
+        if (compareTransactions(transaction, selected[0]!) < 0) {
+          selected[0] = transaction;
+          siftDown(0);
+        }
+      };
+
+      for (const account of accounts) {
+        const nativeCurrency = accountNativeCurrency(account, preferences);
+        const transactions = await repository.listTransactions(account.id, query.startDate, query.endDate);
+        for (const source of transactions) {
+          const transaction = source as PresentedTransaction;
+          if (transaction.is_child === true || transaction.parent_id) continue;
+          const parentCurrency = normalizeCurrencyCode(transaction.currencyCode) ??
+            normalizeCurrencyCode(transaction.currency_code) ?? nativeCurrency;
+          if (transaction.subtransactions && transaction.subtransactions.length > 0) {
+            for (let index = 0; index < transaction.subtransactions.length; index += 1) {
+              const child = transaction.subtransactions[index]! as PresentedTransaction;
+              const payeeId = child.payee_id ?? transaction.payee_id;
+              const payeeName = child.payee_name ?? transaction.payee_name;
+              const importedPayee = child.imported_payee ?? transaction.imported_payee;
+              const childCurrency = normalizeCurrencyCode(child.currencyCode) ??
+                normalizeCurrencyCode(child.currency_code) ?? parentCurrency;
+              collectCandidate({
+                ...child,
+                id: child.id || transaction.id + ':split:' + index,
+                account: child.account || transaction.account || account.id,
+                date: child.date || transaction.date,
+                currencyCode: childCurrency,
+                ...(payeeId === undefined ? {} : { payee_id: payeeId }),
+                ...(payeeName === undefined ? {} : { payee_name: payeeName }),
+                ...(importedPayee === undefined ? {} : { imported_payee: importedPayee }),
+                is_child: false,
+                parent_id: null,
+                is_split_child: true,
+                parent_transaction_id: transaction.id,
+                is_split_editable: Boolean(child.id),
+              });
+            }
+          } else {
+            collectCandidate({ ...transaction, currencyCode: parentCurrency });
+          }
+        }
+      }
+
+      selected.sort(compareTransactions);
+      const page = selected.slice(query.offset, query.offset + query.limit).map((transaction) => {
         const sourceCurrency = normalizeCurrencyCode(transaction.currencyCode) ?? normalizeCurrencyCode(transaction.currency_code);
         const conversion = convertAmountMinor(transaction.amount, sourceCurrency, preferences.displayCurrency, transaction.date, preferences.exchangeRates);
         return {
@@ -598,6 +670,12 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       });
       return { data: page, pagination: { total, limit: query.limit, offset: query.offset, sortBy: query.sortBy, order: query.order }, accountScope: scope.metadata };
     } catch (error) {
+      if (error instanceof TransactionQueryTooBroadError) {
+        return reply.code(422).send({ error: {
+          code: 'TRANSACTION_QUERY_TOO_BROAD',
+          message: 'La consulta supera el límite de 100.000 movimientos. Reduce el rango de fechas o selecciona una cuenta.',
+        } });
+      }
       const normalized = sanitizedErrorResponse(error);
       return reply.code(normalized.statusCode).send(normalized.body);
     }
