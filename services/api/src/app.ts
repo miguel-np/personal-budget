@@ -7,7 +7,7 @@ import { ActualAdapterError } from '@personal-budget/actual-adapter';
 import type { ActualBudgetMonthRecord, ActualImportRecord, ActualImportResult } from '@personal-budget/actual-adapter';
 import { z, ZodError } from 'zod';
 import type { AppConfig } from './config.js';
-import { LocalAiClient, LocalAiUnavailableError } from './local-ai.js';
+import { LocalAiBusyError, LocalAiCancelledError, LocalAiClient, LocalAiContextBudgetError, LocalAiUnavailableError } from './local-ai.js';
 import type { AssistantContext } from './local-ai.js';
 import { CurrencyPreferencesSchema, defaultCurrencyPreferences, readCurrencyPreferences, writeCurrencyPreferences } from './currency-preferences.js';
 import type { CurrencyPreferences } from './currency-preferences.js';
@@ -185,13 +185,6 @@ function assertPeriod(startDate: string, endDate: string): void {
 
 export async function buildApp(dependencies: AppDependencies): Promise<FastifyInstance> {
   const { repository, config } = dependencies;
-  const localAi = new LocalAiClient({
-    enabled: config.aiEnabled,
-    baseURL: config.ollamaBaseURL,
-    ...(config.ollamaModel ? { model: config.ollamaModel } : {}),
-    timeoutMs: config.ollamaTimeoutMs,
-    maxContextChars: config.aiMaxContextChars,
-  });
   const app = Fastify({
     logger: dependencies.logger ?? {
       level: config.logLevel,
@@ -203,6 +196,16 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     requestTimeout: 30_000,
     routerOptions: { maxParamLength: 128 },
     forceCloseConnections: true,
+  });
+
+  const localAi = new LocalAiClient({
+    enabled: config.aiEnabled,
+    baseURL: config.ollamaBaseURL,
+    ...(config.ollamaModel ? { model: config.ollamaModel } : {}),
+    timeoutMs: config.ollamaTimeoutMs,
+    maxContextChars: config.aiMaxContextChars,
+  }, fetch, (metric) => {
+    app.log.info({ component: 'local-ai', ...metric }, 'Local AI request metrics.');
   });
 
   await app.register(helmet, {
@@ -324,6 +327,11 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   app.get('/api/v1/assistant/status', async () => localAi.status());
 
   app.post('/api/v1/assistant/chat', async (request, reply) => {
+    const requestAbort = new AbortController();
+    const abortRequest = () => requestAbort.abort();
+    const abortResponse = () => { if (!reply.raw.writableEnded) requestAbort.abort(); };
+    request.raw.once('aborted', abortRequest);
+    reply.raw.once('close', abortResponse);
     try {
       const query = AssistantRequestSchema.parse(request.body);
       assertPeriod(query.startDate, query.endDate);
@@ -333,7 +341,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       if (!config.aiEnabled) {
         return reply.code(503).send({ error: { code: 'AI_DISABLED', message: 'El asistente local está desactivado. La aplicación financiera sigue disponible.' } });
       }
-      const status = await localAi.status();
+      const status = await localAi.status(requestAbort.signal);
       if (status.status !== 'available') {
         return reply.code(503).send({ error: { code: 'AI_UNAVAILABLE', message: 'Ollama o el modelo configurado no están disponibles en local.' } });
       }
@@ -353,6 +361,12 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         ? await summarize(query.previousStartDate, query.previousEndDate) : undefined;
       const context: AssistantContext = {
         question: query.question,
+        deduplicationKey: JSON.stringify({
+          accountIds: scope.accounts.map((account) => account.id).sort(),
+          currency: summary.currency,
+          period: [query.startDate, query.endDate],
+          comparison: [query.previousStartDate ?? null, query.previousEndDate ?? null],
+        }),
         summary: {
           currency: summary.currency, startDate: summary.startDate, endDate: summary.endDate,
           incomeMinor: summary.incomeMinor, expenseMinor: summary.expenseMinor,
@@ -368,14 +382,29 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
           incomeMinor: comparison.incomeMinor, expenseMinor: comparison.expenseMinor, savingsMinor: comparison.savingsMinor,
         } } : {}),
       };
-      const answer = await localAi.explain(context);
+      const answer = await localAi.explain(context, requestAbort.signal);
       return { data: { summary, ...(comparison ? { comparison } : {}), answer, answerKind: 'qualitative_explanation', accountScope: scope.metadata } };
     } catch (error) {
+      if (error instanceof LocalAiCancelledError) {
+        if (request.raw.aborted || reply.raw.destroyed) return;
+        return reply.code(499).send({ error: { code: 'AI_CANCELLED', message: 'La consulta local se ha cancelado.' } });
+      }
+      if (error instanceof LocalAiBusyError) {
+        return reply.code(503).header('retry-after', '1').send({
+          error: { code: 'AI_BUSY', message: 'El asistente local está ocupado; vuelve a intentarlo en unos segundos.' },
+        });
+      }
+      if (error instanceof LocalAiContextBudgetError) {
+        return reply.code(413).send({ error: { code: 'AI_CONTEXT_TOO_LARGE', message: 'El contexto de la consulta supera el límite local permitido.' } });
+      }
       if (error instanceof LocalAiUnavailableError) {
         return reply.code(503).send({ error: { code: 'AI_UNAVAILABLE', message: 'Ollama no ha podido completar la explicación local.' } });
       }
       const normalized = sanitizedErrorResponse(error);
       return reply.code(normalized.statusCode).send(normalized.body);
+    } finally {
+      request.raw.removeListener('aborted', abortRequest);
+      reply.raw.removeListener('close', abortResponse);
     }
   });
 
