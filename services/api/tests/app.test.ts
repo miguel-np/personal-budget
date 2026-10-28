@@ -739,6 +739,84 @@ describe('local API', () => {
     }]);
   });
 
+  it('returns exact applied and pending ids after a partial category batch', async () => {
+    const secondExpense: BudgetTransaction = {
+      id: 'expense-2', account: 'account-1', currencyCode: 'EUR',
+      date: '2026-10-03', amount: -2_500, category: null,
+    };
+    const listTransactions = vi.fn(async () => [...transactions, secondExpense]);
+    const updateTransactionCategoriesBatch = vi.fn(async (
+      changes: readonly TransactionCategoryBatchChange[],
+    ): Promise<TransactionCategoryBatchResult> => ({
+      requested: changes.length,
+      updatedTransactionIds: ['expense-1'],
+      failedTransactionId: 'expense-2',
+      persisted: false,
+    }));
+    const app = await createTestApp(createRepository({ listTransactions, updateTransactionCategoriesBatch }));
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/insights/categorize',
+      payload: {
+        startDate: '2026-10-01',
+        endDate: '2026-10-31',
+        commit: true,
+        transactions: [
+          { transactionId: 'expense-1', categoryId: 'food', expectedCategoryId: 'food' },
+          { transactionId: 'expense-2', categoryId: 'food', expectedCategoryId: null },
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(207);
+    expect(response.json().data).toMatchObject({
+      preview: false,
+      requested: 2,
+      applied: 1,
+      appliedTransactionIds: ['expense-1'],
+      pendingTransactionIds: ['expense-2'],
+      failedTransactionId: 'expense-2',
+      persisted: false,
+      partial: true,
+    });
+    expect(updateTransactionCategoriesBatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('validates all categories before invoking a category batch write', async () => {
+    const secondExpense: BudgetTransaction = {
+      id: 'expense-2', account: 'account-1', currencyCode: 'EUR',
+      date: '2026-10-03', amount: -2_500, category: null,
+    };
+    const updateTransactionCategoriesBatch = vi.fn(async (
+      changes: readonly TransactionCategoryBatchChange[],
+    ): Promise<TransactionCategoryBatchResult> => ({
+      requested: changes.length,
+      updatedTransactionIds: changes.map((change) => change.transactionId),
+      persisted: true,
+    }));
+    const app = await createTestApp(createRepository({
+      listTransactions: vi.fn(async () => [...transactions, secondExpense]),
+      updateTransactionCategoriesBatch,
+    }));
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/insights/categorize',
+      payload: {
+        startDate: '2026-10-01',
+        endDate: '2026-10-31',
+        commit: true,
+        transactions: [
+          { transactionId: 'expense-1', categoryId: 'food', expectedCategoryId: 'food' },
+          { transactionId: 'expense-2', categoryId: 'not-an-expense-category', expectedCategoryId: null },
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe('INVALID_CATEGORY');
+    expect(updateTransactionCategoriesBatch).not.toHaveBeenCalled();
+  });
+
   it('fails closed on unknown transactions, income categories and missing update capability', async () => {
     const updateTransactionCategory = vi.fn(async () => undefined);
     const listTransactions = vi.fn(async () => transactions);
