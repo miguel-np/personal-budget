@@ -351,6 +351,39 @@ describe('ActualBudgetAdapter', () => {
     expect(updateTransaction).toHaveBeenCalledTimes(callsBeforeDuplicate);
   });
 
+  it('preflights the entire category batch before the first write', async () => {
+    const rows: BudgetTransaction[] = [
+      { id: 'transaction-1', account: 'account-1', date: '2026-10-10', amount: -1_000, category: null },
+      // This later row changed after the preview; the first row must remain untouched.
+      { id: 'transaction-2', account: 'account-1', date: '2026-10-10', amount: -2_000, category: 'restaurants' },
+    ];
+    const updateTransaction = vi.fn(async (id: string, fields: TransactionStructureUpdate) => {
+      const row = rows.find((item) => item.id === id);
+      if (row) Object.assign(row, fields);
+    });
+    const api = createApi({
+      updateTransaction,
+      getTransactions: vi.fn(async (accountId: string, startDate: string, endDate: string) =>
+        rows.filter((row) => row.account === accountId && row.date >= startDate && row.date <= endDate)),
+    });
+    const adapter = new ActualBudgetAdapter(config, api);
+    const outcome = await adapter.updateTransactionCategoriesBatch([
+      { transactionId: 'transaction-1', categoryId: 'food', accountId: 'account-1', date: '2026-10-10', expectedCategoryId: null },
+      { transactionId: 'transaction-2', categoryId: 'food', accountId: 'account-1', date: '2026-10-10', expectedCategoryId: null },
+    ]);
+
+    expect(outcome).toEqual({
+      requested: 2,
+      updatedTransactionIds: [],
+      failedTransactionId: 'transaction-2',
+      conflictTransactionId: 'transaction-2',
+      persisted: true,
+    });
+    expect(updateTransaction).not.toHaveBeenCalled();
+    expect(rows.map((row) => row.category)).toEqual([null, 'restaurants']);
+    expect(api.sync).toHaveBeenCalledTimes(1);
+  });
+
   it('reports partial category batches without claiming unverified writes were persisted', async () => {
     const rows: BudgetTransaction[] = [
       { id: 'transaction-1', account: 'account-1', date: '2026-10-10', amount: -1_000, category: null },
