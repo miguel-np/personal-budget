@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { performance } from 'node:perf_hooks';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BudgetAccount, BudgetCategory, BudgetRepository, BudgetTransaction, TransactionCategoryBatchChange, TransactionCategoryBatchResult, TransactionStructureUpdate, TransactionUpdate, TransactionWriteResult } from '@personal-budget/finance-core';
@@ -272,6 +273,82 @@ describe('local API', () => {
     expect(response.json().pagination).toMatchObject({ total: 1, limit: 1, offset: 0, sortBy: 'amount', order: 'asc' });
     expect(repository.listAccounts).toHaveBeenCalledTimes(1);
     expect(repository.listTransactions).toHaveBeenCalledTimes(1);
+  });
+
+  it('records a reproducible bounded-page benchmark at 10k/50k/100k synthetic movements', async () => {
+    let syntheticTransactions: readonly BudgetTransaction[] = [];
+    const listTransactions = vi.fn(async () => syntheticTransactions);
+    const app = await createTestApp(createRepository({ listTransactions }));
+    const measurements: Array<{
+      records: number;
+      medianLatencyMs: number;
+      maxObservedHeapDeltaBytes: number;
+      repositoryReadsPerRequest: number;
+    }> = [];
+
+    for (const size of [10_000, 50_000, 100_000]) {
+      // Reverse source order and deliberately share date/amount to exercise the
+      // ID tie-breaker rather than relying on insertion order.
+      syntheticTransactions = Array.from({ length: size }, (_, index) => ({
+        id: 'synthetic-' + String(size - index - 1).padStart(6, '0'),
+        account: 'account-1',
+        currencyCode: 'EUR',
+        date: '2026-10-01',
+        amount: -100,
+        category: 'food',
+      }));
+      const latencies: number[] = [];
+      let maxObservedHeapDeltaBytes = 0;
+      for (let repeat = 0; repeat < 3; repeat += 1) {
+        listTransactions.mockClear();
+        const heapBefore = process.memoryUsage().heapUsed;
+        const started = performance.now();
+        const response = await app.inject({
+          method: 'GET',
+          url: '/api/v1/transactions?startDate=2026-10-01&endDate=2026-10-31&limit=20&offset=0&sortBy=amount&order=asc',
+        });
+        latencies.push(performance.now() - started);
+        maxObservedHeapDeltaBytes = Math.max(
+          maxObservedHeapDeltaBytes,
+          process.memoryUsage().heapUsed - heapBefore,
+        );
+        expect(response.statusCode).toBe(200);
+        expect(response.json().pagination.total).toBe(size);
+        expect(response.json().data).toHaveLength(20);
+        expect(response.json().data.map((item: BudgetTransaction) => item.id)).toEqual(
+          Array.from({ length: 20 }, (_, index) => 'synthetic-' + String(index).padStart(6, '0')),
+        );
+        expect(listTransactions).toHaveBeenCalledTimes(1);
+      }
+      latencies.sort((left, right) => left - right);
+      measurements.push({
+        records: size,
+        medianLatencyMs: Number(latencies[1]!.toFixed(2)),
+        maxObservedHeapDeltaBytes,
+        repositoryReadsPerRequest: 1,
+      });
+    }
+
+    console.info('TRANSACTION_PAGINATION_BENCHMARK ' + JSON.stringify({
+      node: process.version,
+      syntheticOnly: true,
+      measurements,
+    }));
+
+    syntheticTransactions = Array.from({ length: 100_001 }, (_, index) => ({
+      id: 'over-budget-' + String(index).padStart(6, '0'),
+      account: 'account-1',
+      currencyCode: 'EUR',
+      date: '2026-10-01',
+      amount: -100,
+      category: 'food',
+    }));
+    const overBudget = await app.inject({
+      method: 'GET',
+      url: '/api/v1/transactions?startDate=2026-10-01&endDate=2026-10-31&limit=20&offset=0',
+    });
+    expect(overBudget.statusCode).toBe(422);
+    expect(overBudget.json().error.code).toBe('TRANSACTION_QUERY_TOO_BROAD');
   });
 
   it('reports unsupported budget read and write capabilities without exposing details', async () => {
