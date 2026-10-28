@@ -41,3 +41,18 @@ En Movimientos, aplica el periodo y los filtros deseados y pulsa Preparar export
 
 ## Datos que no deben compartirse
 Los CSV, OFX, QFX, QIF, CAMT y las bases de datos de presupuestos pueden revelar hábitos, ingresos, comercios, ubicaciones y obligaciones financieras. Trátalos como datos altamente sensibles. No los adjuntes a issues, commits ni conversaciones de soporte.
+
+
+## Rendimiento y límites de historiales
+
+GET /api/v1/transactions filtra por cuenta y fechas en el límite del repositorio, y conserva el contrato paginado por limit/offset. La API oficial de @actual-app/api usa getTransactions(accountId, startDate, endDate) y no expone limit, offset ni cursor. No se debe presentar la paginación actual como paginación ejecutada por la base de datos de Actual ni leer/escribir su base de datos por vías no oficiales.
+
+La API procesa como máximo **100.000 movimientos presentados por petición** (los hijos de splits cuentan como filas presentadas). Una consulta que exceda el límite devuelve HTTP 422 con TRANSACTION_QUERY_TOO_BROAD; reduce el intervalo de fechas o selecciona una cuenta. La respuesta mantiene el total exacto dentro de ese presupuesto. Para reducir memoria adicional, los movimientos se procesan cuenta por cuenta y una selección de tamaño offset + limit conserva los candidatos que corresponden a la página, en lugar de materializar listas intermedias completas y ordenar todos los resultados. El orden incorpora un desempate determinista por ID.
+
+El endpoint consulta el periodo solicitado en **ventanas secuenciales por mes natural** y deja de pedir meses posteriores cuando agota el presupuesto de 100.000 movimientos presentados. Esto evita materializar a la vez el resultado de todo un periodo de varios años, sin alterar el orden global, los filtros o la semántica de los splits. El SDK sigue materializando las filas de cada mes individual: un solo mes excepcionalmente denso aún puede causar un pico de memoria elevado, y esta estrategia no equivale a paginación por cursor dentro de Actual. No se introduce una caché ni una base financiera paralela sin evidencia de perfilado.
+
+Para reproducir medidas sintéticas (10.000, 50.000 y 100.000 filas; tres repeticiones por tamaño), ejecuta desde la raíz después de instalar dependencias:
+
+npx vitest run services/api/tests/app.test.ts -t "records a reproducible bounded-page benchmark" --reporter=verbose
+
+La prueba registra la versión de Node, la mediana de latencia, el máximo incremento observado de heap y las llamadas al repositorio por petición. Además aplica techos de regresión deliberadamente holgados para cada tamaño: mediana por debajo de 3 s y aumento observado de heap inferior a 128 MiB; son umbrales de CI derivados con margen del benchmark sintético, no objetivos de latencia real ni una medición del trabajo interno de Actual.

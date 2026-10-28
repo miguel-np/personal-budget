@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { performance } from 'node:perf_hooks';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BudgetAccount, BudgetCategory, BudgetRepository, BudgetTransaction, TransactionCategoryBatchChange, TransactionCategoryBatchResult, TransactionStructureUpdate, TransactionUpdate, TransactionWriteResult } from '@personal-budget/finance-core';
@@ -272,6 +273,183 @@ describe('local API', () => {
     expect(response.json().pagination).toMatchObject({ total: 1, limit: 1, offset: 0, sortBy: 'amount', order: 'asc' });
     expect(repository.listAccounts).toHaveBeenCalledTimes(1);
     expect(repository.listTransactions).toHaveBeenCalledTimes(1);
+  });
+
+  it('scans multi-month transaction history in disjoint month windows without duplicates across pages', async () => {
+    const rows: BudgetTransaction[] = Array.from({ length: 80 }, (_, index) => {
+      const date = index < 40
+        ? new Date(Date.UTC(2026, 8, 25 + (index % 6))).toISOString().slice(0, 10)
+        : new Date(Date.UTC(2026, 9, 1 + ((index - 40) % 6))).toISOString().slice(0, 10);
+      return {
+        id: 'month-' + String(index).padStart(3, '0'),
+        account: 'account-1',
+        currencyCode: 'EUR',
+        date,
+        amount: -100,
+        category: 'food',
+      };
+    });
+    const listTransactions = vi.fn(async (_accountId: string, startDate: string, endDate: string) =>
+      rows.filter((transaction) => transaction.date >= startDate && transaction.date <= endDate));
+    const app = await createTestApp(createRepository({ listTransactions }));
+    const firstPage = await app.inject({
+      method: 'GET',
+      url: '/api/v1/transactions?startDate=2026-09-25&endDate=2026-10-06&limit=40&offset=0&sortBy=date&order=asc',
+    });
+    const secondPage = await app.inject({
+      method: 'GET',
+      url: '/api/v1/transactions?startDate=2026-09-25&endDate=2026-10-06&limit=40&offset=40&sortBy=date&order=asc',
+    });
+
+    expect(firstPage.statusCode).toBe(200);
+    expect(secondPage.statusCode).toBe(200);
+    expect(firstPage.json().pagination.total).toBe(80);
+    expect(secondPage.json().pagination.total).toBe(80);
+    const firstIds = firstPage.json().data.map((item: BudgetTransaction) => item.id);
+    const secondIds = secondPage.json().data.map((item: BudgetTransaction) => item.id);
+    const allIds = [...firstIds, ...secondIds];
+    const expectedIds = [...rows]
+      .sort((left, right) => left.date.localeCompare(right.date) || left.id.localeCompare(right.id))
+      .map((transaction) => transaction.id);
+    expect(allIds).toEqual(expectedIds);
+    expect(new Set(allIds).size).toBe(80);
+    expect(listTransactions).toHaveBeenCalledTimes(4);
+    expect(listTransactions.mock.calls.slice(0, 2)).toEqual([
+      ['account-1', '2026-09-25', '2026-09-30'],
+      ['account-1', '2026-10-01', '2026-10-06'],
+    ]);
+  });
+
+  it('preserves split semantics when child dates cross monthly scan windows', async () => {
+    const splitParent: BudgetTransaction = {
+      id: 'split-parent-cross-month',
+      account: 'account-1',
+      currencyCode: 'EUR',
+      date: '2026-09-30',
+      amount: -1_000,
+      is_parent: true,
+      subtransactions: [
+        { id: 'split-child-september', account: 'account-1', date: '2026-09-30', amount: -400, parent_id: 'split-parent-cross-month', is_child: true },
+        { id: 'split-child-october', account: 'account-1', date: '2026-10-01', amount: -600, parent_id: 'split-parent-cross-month', is_child: true },
+      ],
+    };
+    const rows: readonly BudgetTransaction[] = [
+      splitParent,
+      { id: 'split-child-september', account: 'account-1', currencyCode: 'EUR', date: '2026-09-30', amount: -400, parent_id: splitParent.id, is_child: true },
+      { id: 'split-child-october', account: 'account-1', currencyCode: 'EUR', date: '2026-10-01', amount: -600, parent_id: splitParent.id, is_child: true },
+      { id: 'independent-october', account: 'account-1', currencyCode: 'EUR', date: '2026-10-02', amount: -200 },
+    ];
+    const listTransactions = vi.fn(async (_accountId: string, startDate: string, endDate: string) =>
+      rows.filter((transaction) => transaction.date >= startDate && transaction.date <= endDate));
+    const app = await createTestApp(createRepository({ listTransactions }));
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/transactions?startDate=2026-09-25&endDate=2026-10-06&limit=20&offset=0&sortBy=date&order=asc',
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().pagination.total).toBe(3);
+    expect(response.json().data.map((item: BudgetTransaction) => item.id)).toEqual([
+      'split-child-september',
+      'split-child-october',
+      'independent-october',
+    ]);
+    expect(new Set(response.json().data.map((item: BudgetTransaction) => item.id)).size).toBe(3);
+    expect(listTransactions).toHaveBeenCalledTimes(2);
+    expect(listTransactions.mock.calls).toEqual([
+      ['account-1', '2026-09-25', '2026-09-30'],
+      ['account-1', '2026-10-01', '2026-10-06'],
+    ]);
+  });
+
+  it('records a reproducible bounded-page benchmark at 10k/50k/100k synthetic movements', async () => {
+    let syntheticTransactions: readonly BudgetTransaction[] = [];
+    const listTransactions = vi.fn(async (_accountId: string, startDate: string, endDate: string) =>
+      syntheticTransactions.filter((transaction) => transaction.date >= startDate && transaction.date <= endDate));
+    const app = await createTestApp(createRepository({ listTransactions }));
+    const measurements: Array<{
+      records: number;
+      medianLatencyMs: number;
+      maxObservedHeapDeltaBytes: number;
+      repositoryReadsPerRequest: number;
+    }> = [];
+
+    for (const size of [10_000, 50_000, 100_000]) {
+      // Reverse source order and deliberately share date/amount to exercise the
+      // ID tie-breaker rather than relying on insertion order.
+      syntheticTransactions = Array.from({ length: size }, (_, index) => ({
+        id: 'synthetic-' + String(size - index - 1).padStart(6, '0'),
+        account: 'account-1',
+        currencyCode: 'EUR',
+        date: '2026-' + String((index % 12) + 1).padStart(2, '0') + '-15',
+        amount: -100,
+        category: 'food',
+      }));
+      const latencies: number[] = [];
+      let maxObservedHeapDeltaBytes = 0;
+      for (let repeat = 0; repeat < 3; repeat += 1) {
+        listTransactions.mockClear();
+        const heapBefore = process.memoryUsage().heapUsed;
+        const started = performance.now();
+        const response = await app.inject({
+          method: 'GET',
+          url: '/api/v1/transactions?startDate=2026-01-01&endDate=2026-12-31&limit=20&offset=0&sortBy=amount&order=asc',
+        });
+        latencies.push(performance.now() - started);
+        maxObservedHeapDeltaBytes = Math.max(
+          maxObservedHeapDeltaBytes,
+          process.memoryUsage().heapUsed - heapBefore,
+        );
+        expect(response.statusCode).toBe(200);
+        expect(response.json().pagination.total).toBe(size);
+        expect(response.json().data).toHaveLength(20);
+        const expectedFirstPage = [...syntheticTransactions]
+          .sort((left, right) => left.date.localeCompare(right.date) || left.id.localeCompare(right.id))
+          .slice(0, 20)
+          .map((transaction) => transaction.id);
+        expect(response.json().data.map((item: BudgetTransaction) => item.id)).toEqual(expectedFirstPage);
+        expect(listTransactions).toHaveBeenCalledTimes(12);
+      }
+      latencies.sort((left, right) => left - right);
+      measurements.push({
+        records: size,
+        medianLatencyMs: Number(latencies[1]!.toFixed(2)),
+        maxObservedHeapDeltaBytes,
+        repositoryReadsPerRequest: 12,
+      });
+    }
+
+    // Regression ceilings are deliberately generous multiples of the recorded baseline
+    // so ordinary CI scheduling variance does not cause false failures.
+    expect(measurements.every((measurement) => measurement.medianLatencyMs < 3_000)).toBe(true);
+    expect(measurements.every((measurement) => measurement.maxObservedHeapDeltaBytes < 128 * 1024 * 1024)).toBe(true);
+
+    console.info('TRANSACTION_PAGINATION_BENCHMARK ' + JSON.stringify({
+      node: process.version,
+      syntheticOnly: true,
+      measurements,
+      regressionCeilings: { medianLatencyMs: 3_000, maxObservedHeapDeltaBytes: 128 * 1024 * 1024 },
+    }));
+
+    const overBudgetRows: readonly BudgetTransaction[] = Array.from({ length: 100_001 }, (_, index) => ({
+      id: 'over-budget-' + String(index).padStart(6, '0'),
+      account: 'account-1',
+      currencyCode: 'EUR',
+      date: '2026-09-01',
+      amount: -100,
+      category: 'food',
+    }));
+    const overBudgetReads = vi.fn(async (_accountId: string, startDate: string, endDate: string) =>
+      startDate === '2026-09-01' && endDate === '2026-09-30' ? overBudgetRows : []);
+    const broadApp = await createTestApp(createRepository({ listTransactions: overBudgetReads }));
+    const overBudget = await broadApp.inject({
+      method: 'GET',
+      url: '/api/v1/transactions?startDate=2026-09-01&endDate=2026-10-31&limit=20&offset=0',
+    });
+    expect(overBudget.statusCode).toBe(422);
+    expect(overBudget.json().error.code).toBe('TRANSACTION_QUERY_TOO_BROAD');
+    expect(overBudgetReads).toHaveBeenCalledTimes(1);
+    expect(overBudgetReads).toHaveBeenCalledWith('account-1', '2026-09-01', '2026-09-30');
   });
 
   it('reports unsupported budget read and write capabilities without exposing details', async () => {
