@@ -49,7 +49,7 @@ async function main(): Promise<void> {
   };
   const adapter = new ActualBudgetAdapter(config, ActualApiNamespace as unknown as ActualApiContract);
   try {
-    const [accounts] = await Promise.all([adapter.listAccounts(), adapter.listCategories()]);
+    const accounts = await adapter.listAccounts();
     assert(accounts.some((account) => account.id === fixture.accountId),
       'Synthetic source account is missing from the live Actual budget.');
 
