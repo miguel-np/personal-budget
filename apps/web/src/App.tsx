@@ -3,7 +3,9 @@ import { MovementTools } from './MovementTools.js';
 import { BudgetPanel } from './BudgetPanel.js';
 import { AssistantPanel } from './AssistantPanel.js';
 import { PlanningPanel } from './PlanningPanel.js';
+import { GoalsPanel, GoalsDashboardSummary } from './GoalsPanel.js';
 import { MovementManager } from './MovementManager.js';
+import { ReportExportPanel } from './ReportExportPanel.js';
 import { SettingsCenter, type AppPreferences } from './SettingsCenter.js';
 import { AccountsPanel } from './AccountsPanel.js';
 import { DashboardSignals } from './DashboardSignals.js';
@@ -131,6 +133,7 @@ const NAV_ITEMS = [
   { href: '/reports', label: 'Informes', icon: '▥' },
   { href: '/budgets', label: 'Presupuestos', icon: '◷' },
   { href: '/planning', label: 'Planificación', icon: '◎' },
+  { href: '/goals', label: 'Objetivos', icon: '↗' },
   { href: '/assistant', label: 'Asistente', icon: '✧' },
   { href: '/settings', label: 'Configuración', icon: '⚙' },
 ] as const;
@@ -746,6 +749,7 @@ export function App() {
                       ))}</div>
                     </details> : null}
                     <MonthlyTrendPanel points={trendPoints} currency={currency} loading={trendLoading} error={trendError} />
+                    <GoalsDashboardSummary currency={currency} onNavigate={navigateTo} reloadKey={refreshKey} />
                     <div className="section-footnote">Importes calculados con reglas deterministas en el backend. Los movimientos divididos se normalizan antes de agregarse; no se suman divisas distintas.</div>
                   </>
                 ) : <EmptyState title="No hay resumen disponible" body="Selecciona un periodo válido o comprueba la conexión con Actual Budget." />}
@@ -796,6 +800,7 @@ export function App() {
                       sortKey={sortKey}
                       sortAscending={sortAscending}
                       filterKey={[period.startDate, period.endDate, accountFilter, categoryFilter, searchText, uncategorizedOnly, page, sortKey, sortAscending].join('|')}
+                      accountScopeLabel={accountScope?.label ?? (accountScope?.mode === 'selected' ? 'Cuentas seleccionadas' : 'Todas las cuentas abiertas')}
                       onSort={changeSort}
                       onUpdated={(notice, refresh = true) => { setMovementNotice(notice); if (refresh) setRefreshKey((value) => value + 1); }}
                     />
@@ -827,6 +832,7 @@ export function App() {
                       </article>
                     </div>
                     <div className="section-footnote">La comparación utiliza el mismo tipo de periodo y cálculos de finance-core. No se consideran transferencias internas como ingresos o gastos consolidados.</div>
+                    <ReportExportPanel current={summary} previous={comparison} period={period} comparisonPeriod={previous} />
                   </>
                 ) : <EmptyState title="No hay datos suficientes" body="El informe necesita un presupuesto configurado y datos devueltos por Actual Budget." />}
               </section>
@@ -841,6 +847,7 @@ export function App() {
 
             {route === '/assistant' && <AssistantPanel currency={currency} />}
             {route === '/planning' && <PlanningPanel currency={currency} />}
+            {route === '/goals' && <GoalsPanel currency={currency} />}
 
             {route === '/settings' && (
               <section className="content-section">
@@ -934,7 +941,7 @@ export function App() {
               </section>
             )}
 
-            {!['/', '/movements', '/accounts', '/reports', '/budgets', '/planning', '/assistant', '/settings'].includes(route) && (
+            {!['/', '/movements', '/accounts', '/reports', '/budgets', '/planning', '/goals', '/assistant', '/settings'].includes(route) && (
               <section className="content-section"><EmptyState title="Sección no encontrada" body="Utiliza la navegación principal para abrir una sección disponible." /><a className="button primary" href="/">Volver al resumen</a></section>
             )}
           </>

@@ -30,6 +30,14 @@ No existe garantía de compatibilidad universal con todos los formatos propietar
 
 La importación CSV de la aplicación mantiene el mapeo de columnas existente. La importación OFX propia está limitada a SGML 1.02/1.03 y XML OFX 2.x, y se procesa en el navegador. Para límites, codificaciones, deduplicación y divisas, consulta la [guía de importación OFX](ofx-import.md). Los demás formatos admitidos por Actual no están habilitados en el flujo propio. La app debe usar el flujo de Actual o llamar a sus operaciones soportadas mediante `@actual-app/api`; no debe modificar archivos internos, SQLite de Actual ni ficheros de sincronización. Actual continúa siendo la fuente de verdad.
 
-## Datos que no deben compartirse
+## Exportación local de movimientos e informes
 
+En Movimientos, aplica el periodo y los filtros deseados y pulsa Preparar exportación. La previsualización muestra periodo, ámbito de cuentas guardado, cuenta/categoría, búsqueda, filtro de movimientos sin categoría y número exacto de registros. La descarga requiere una segunda acción explícita. Se consultan todas las páginas filtradas, no solo la página visible; por seguridad la interfaz limita cada exportación a 10.000 movimientos.
+
+- CSV: UTF-8 con BOM, separador punto y coma, comillas dobles escapadas, registros CRLF y fechas ISO AAAA-MM-DD. Los importes se representan como enteros en unidades menores (importe_minor), con divisa nativa y, si existe, importe/divisa de análisis y metadatos de conversión. Las columnas de texto neutralizan prefijos que algunas hojas de cálculo interpretarían como fórmulas.
+- JSON: incluye esquema/versionado, filtros, marca temporal, IDs de movimiento/cuenta/categoría, vínculos de transferencia y desglose disponibles, importes nativos/de análisis y metadatos de conversión devueltos por la API.
+- Informes: CSV y JSON documentan periodo actual/comparado, ámbito de cuentas, divisa de análisis, tasas utilizadas y advertencias. Si las divisas de los periodos no coinciden, se omiten las variaciones monetarias. Los importes agregados se exportan como valores calculados por la API, en unidades menores, sin volver a calcularlos en el navegador.
+- Si no hay resultados o la API devuelve una consulta incompleta, no se genera ningún archivo engañoso. La exportación es de solo lectura y sucede en el navegador; no sube archivos, no usa telemetría y no sustituye un backup completo de Actual Budget. No incluye necesariamente preferencias, configuración, historial ni datos privados que la API no exponga.
+
+## Datos que no deben compartirse
 Los CSV, OFX, QFX, QIF, CAMT y las bases de datos de presupuestos pueden revelar hábitos, ingresos, comercios, ubicaciones y obligaciones financieras. Trátalos como datos altamente sensibles. No los adjuntes a issues, commits ni conversaciones de soporte.
