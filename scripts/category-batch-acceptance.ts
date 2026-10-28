@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -52,15 +53,29 @@ async function main(): Promise<void> {
     assert(accounts.some((account) => account.id === fixture.accountId),
       'Synthetic source account is missing from the live Actual budget.');
 
+    const expenseGroup = (categories as readonly BudgetCategory[]).find((category) => !category.isIncome);
+    assert(expenseGroup, 'Actual must expose an expense category group for isolated synthetic acceptance.');
+    // Seed a unique, synthetic destination category so the test does not depend on
+    // how automatic categorization may have assigned the two expense fixtures.
+    const categoryWriter = ActualApiNamespace as unknown as {
+      createCategory(category: { readonly name: string; readonly group_id: string }): Promise<string>;
+      sync(): Promise<void>;
+    };
+    const targetCategoryId = await categoryWriter.createCategory({
+      name: 'Synthetic category batch ' + randomUUID().slice(0, 8),
+      group_id: expenseGroup.groupId,
+    });
+    await categoryWriter.sync();
+    const target = (await adapter.listCategories()).find((category) => category.id === targetCategoryId);
+    assert(target && !target.isIncome, 'Actual did not persist the synthetic expense category.');
+
     const transactions = await adapter.listTransactions(fixture.accountId, '2026-01-01', '2026-01-31');
     const expenses = fixture.transactions
       .filter((item) => item.amount < 0)
       .map((item) => byId(transactions, item.id));
     assert(expenses.length >= 2, 'At least two synthetic expense transactions are required for batch acceptance.');
-
-    const target = (categories as readonly BudgetCategory[]).find((category) =>
-      !category.isIncome && expenses.every((transaction) => categoryOf(transaction) !== category.id));
-    assert(target, 'Actual must expose an expense category distinct from the current categories of the synthetic expenses.');
+    assert(expenses.every((transaction) => categoryOf(transaction) !== targetCategoryId),
+      'The new synthetic category must differ from the starting category of every test transaction.');
 
     const [first, second] = expenses;
     assert(first && second, 'Synthetic batch rows are missing.');
