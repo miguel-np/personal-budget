@@ -1140,6 +1140,44 @@ describe('local API', () => {
     expect(updateTransactionCategoriesBatch).not.toHaveBeenCalled();
   });
 
+  it('rejects existing but inapplicable income categories from the local model', async () => {
+    const ollama = await createOllamaFixture(200, JSON.stringify({
+      suggestions: [{
+        reference: 'c1',
+        categoryId: 'salary',
+        rationale: 'Respuesta sintética que propone una categoría de ingreso.',
+        uncertainty: 'low',
+      }],
+    }));
+    const history: readonly BudgetTransaction[] = [
+      { id: 'u-income-category', account: 'account-1', date: '2026-10-07', amount: -1200, category: null, payee_name: 'Comercio de gasto nuevo' },
+    ];
+    const updateTransactionCategoriesBatch = vi.fn();
+    const app = await createTestApp(createRepository({
+      listTransactions: vi.fn(async () => history),
+      updateTransactionCategoriesBatch,
+    }), {
+      ...config,
+      aiEnabled: true,
+      aiCategoryClassificationEnabled: true,
+      aiCategoryClassificationIncludePayee: true,
+      ollamaBaseURL: ollama.url,
+      ollamaModel: 'synthetic-model',
+    });
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/insights/category-suggestions?startDate=2026-10-01&endDate=2026-10-31',
+    });
+    await ollama.close();
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data[0]).toMatchObject({
+      transactionId: 'u-income-category', source: 'none', suggestedCategoryId: null, confidence: 'none',
+    });
+    expect(response.json().classification.outcome).toBe('invalid_response');
+    expect(updateTransactionCategoriesBatch).not.toHaveBeenCalled();
+  });
+
   it('degrades to manual review when the local model is unavailable', async () => {
     const ollama = await createOllamaFixture(503);
     const history: readonly BudgetTransaction[] = [
