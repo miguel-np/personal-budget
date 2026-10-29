@@ -1437,9 +1437,9 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         uncertainty: 'not_assessed' as const,
         rationale: null,
       }));
-      const rulesById = new Map(ruleSuggestions.map((suggestion) => [suggestion.transactionId, suggestion]));
+      const rulesById = new Map(ruleSuggestions.map((suggestion) => [suggestion.transactionId, suggestion] as const));
       const expenseCategories = categories.filter((category) => !category.isIncome);
-      const expenseCategoryById = new Map(expenseCategories.map((category) => [category.id, category]));
+      const expenseCategoryById = new Map(expenseCategories.map((category) => [category.id, category] as const));
       const entries = normalizeTransactions(converted.transactions);
       const fallbackEntries = entries
         .filter((entry) => !entry.isTransfer && entry.amountMinor < 0 && entry.categoryId === null &&
@@ -1484,7 +1484,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
           classificationOutcome = 'not_configured';
         } else if (!config.aiCategoryClassificationIncludePayee) {
           classificationOutcome = 'payee_sharing_disabled';
-        } else if (expenseCategories.length > 100) {
+        } else if (expenseCategories.length === 0 || expenseCategories.length > 100) {
           classificationOutcome = 'context_limited';
         } else {
           const referenceToEntry = new Map(selectedFallbackEntries.map((entry, index) =>
@@ -1516,7 +1516,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
               throw new Error('Incomplete category classification response.');
             }
 
-            const byReference = new Map(payload.suggestions.map((candidate) => [candidate.reference, candidate]));
+            const byReference = new Map(payload.suggestions.map((candidate) => [candidate.reference, candidate] as const));
             for (const entry of selectedFallbackEntries) {
               const deterministic = rulesById.get(entry.id);
               if (deterministic && deterministic.evidenceCount < 2) {
@@ -1577,7 +1577,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
             ? 'Ollama no tiene un modelo configurado; elige una categoría manualmente.'
             : classificationOutcome === 'payee_sharing_disabled'
               ? 'No se ha enviado el beneficiario al modelo por configuración; elige una categoría manualmente.'
-              : 'El catálogo de categorías supera el límite de contexto; elige una categoría manualmente.';
+              : 'El catálogo de categorías está vacío o supera el límite de contexto; elige una categoría manualmente.';
           for (const entry of selectedFallbackEntries) {
             if (!rulesById.has(entry.id) && !suggestions.some((candidate) => candidate.transactionId === entry.id)) {
               suggestions.push(noneSuggestion(entry, rationale, 'not_assessed'));
