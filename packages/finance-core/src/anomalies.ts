@@ -82,7 +82,8 @@ function mad(values: readonly number[], center: number): number {
 }
 function normalizedPayee(value: string | null | undefined): string {
   return (value ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
-    .toLocaleLowerCase('es').replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+    .toLocaleLowerCase('es').replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ')
+    .replace(/\b([a-z])\s+(?=[a-z]\b)/g, '$1').trim();
 }
 function addSafe(current: number, value: number, label: string): number {
   const result = current + value;
