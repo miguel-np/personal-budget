@@ -1732,7 +1732,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         ...finding,
         reviewStatus: review.status,
         ...(review.snoozedUntil ? { snoozedUntil: review.snoozedUntil } : {}),
-      });
+      }) as FinancialFinding;
     });
     if (findings.length > validated.length) warnings.push('Se muestran los 100 hallazgos con mayor prioridad; el resto queda fuera de esta respuesta para mantener acotado el panel.');
     return {
