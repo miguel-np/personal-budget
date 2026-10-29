@@ -306,14 +306,6 @@ describe('local API', () => {
     expect(anomalyFindings).toHaveLength(1);
     expect(anomalyFindings[0].metrics.anomalyKind).toBe('possible-duplicate');
     expect(anomalyFindings[0].reviewStatus).toBe('new');
-    const expected = await app.inject({
-      method: 'POST', url: '/api/v1/intelligence/review',
-      payload: { findingId: anomalyFindings[0].id, startDate: '2026-09-01', endDate: '2026-09-30', status: 'expected', referenceWindows: 3, minimumAbsoluteChangeMinor: 2500, minimumRelativeChangePercent: 20, enabledAnomalyKinds: ['possible-duplicate'] },
-    });
-    expect(expected.statusCode).toBe(200);
-    const expectedState = await app.inject({ method: 'GET', url: '/api/v1/intelligence/findings?startDate=2026-09-01&endDate=2026-09-30&referenceWindows=3&minimumAbsoluteChangeMinor=2500&minimumRelativeChangePercent=20&enabledAnomalyKinds=possible-duplicate' });
-    expect(expectedState.json().data.findings.find((item: { id: string }) => item.id === anomalyFindings[0].id).reviewStatus).toBe('expected');
-    expect(expectedState.json().data.qualityMetrics.expectedCount).toBe(1);
 
     const pending = findings.find((item) => item.type === 'pending-categorization');
     expect(pending?.reviewStatus).toBe('new');
@@ -340,6 +332,14 @@ describe('local API', () => {
       payload: { findingId: 'fi-v1-not-present', startDate: '2026-09-01', endDate: '2026-09-30', status: 'reviewed' },
     });
     expect(invalidReview.statusCode).toBe(404);
+    const expected = await app.inject({
+      method: 'POST', url: '/api/v1/intelligence/review',
+      payload: { findingId: anomalyFindings[0].id, startDate: '2026-09-01', endDate: '2026-09-30', status: 'expected', referenceWindows: 3, minimumAbsoluteChangeMinor: 2500, minimumRelativeChangePercent: 20, enabledAnomalyKinds: ['possible-duplicate'] },
+    });
+    expect(expected.statusCode).toBe(200);
+    const expectedState = await app.inject({ method: 'GET', url: '/api/v1/intelligence/findings?startDate=2026-09-01&endDate=2026-09-30&referenceWindows=3&minimumAbsoluteChangeMinor=2500&minimumRelativeChangePercent=20&enabledAnomalyKinds=possible-duplicate' });
+    expect(expectedState.json().data.findings.find((item: { id: string }) => item.id === anomalyFindings[0].id).reviewStatus).toBe('expected');
+    expect(expectedState.json().data.qualityMetrics.expectedCount).toBe(1);
   });
 
   it('explains a verified deterministic finding through local Ollama and rejects an unknown finding', async () => {
