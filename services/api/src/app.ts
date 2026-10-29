@@ -126,7 +126,11 @@ const IntelligenceAnomalyOptionsSchema = z.object({
   referenceWindows: z.coerce.number().int().min(3).max(24).default(6),
   minimumAbsoluteChangeMinor: z.coerce.number().int().min(1).max(1_000_000_000).default(5_000),
   minimumRelativeChangePercent: z.coerce.number().finite().min(1).max(1_000).default(30),
-  enabledAnomalyKinds: z.array(AnomalyKindSchema).max(8).refine((kinds) => new Set(kinds).size === kinds.length, 'Anomaly kinds must be unique.').default(['transaction-outlier', 'total-expense-change', 'category-change', 'payee-change', 'possible-duplicate', 'income-change', 'refund-change', 'frequency-change']),
+  enabledAnomalyKinds: z.preprocess(
+    (value) => typeof value === 'string' ? [value] : value,
+    z.array(AnomalyKindSchema).max(8).refine((kinds) => new Set(kinds).size === kinds.length, 'Anomaly kinds must be unique.')
+      .default(['transaction-outlier', 'total-expense-change', 'category-change', 'payee-change', 'possible-duplicate', 'income-change', 'refund-change', 'frequency-change']),
+  ),
 }).strict();
 type IntelligenceAnomalyOptions = z.infer<typeof IntelligenceAnomalyOptionsSchema>;
 const IntelligenceFindingsQuerySchema = IntelligenceDatesSchema.extend(IntelligenceAnomalyOptionsSchema.shape).strict();

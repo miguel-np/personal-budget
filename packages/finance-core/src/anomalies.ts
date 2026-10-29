@@ -225,14 +225,15 @@ function aggregateFinding(args: {
   readonly seasonal: boolean;
   readonly frequency?: boolean;
 }): FinancialFinding | null {
-  const observations = args.baseline.filter((v) => v > 0).length;
+  const observedBaseline = args.baseline.filter((value) => value > 0);
+  const observations = observedBaseline.length;
   if (observations < args.minimumObservations) return null;
-  const center = median(args.baseline);
+  const center = median(observedBaseline);
   if (!Number.isSafeInteger(center) || center <= 0) return null;
   const delta = args.current - center;
   if (!Number.isSafeInteger(delta) || delta === 0) return null;
   const percent = delta / center * 100;
-  const dispersion = mad(args.baseline, center);
+  const dispersion = mad(observedBaseline, center);
   const threshold = args.frequency
     ? Math.max(3, Math.ceil(center * args.minimumRelativeChangePercent / 100))
     : Math.max(args.minimumAbsoluteChangeMinor, Math.ceil(center * args.minimumRelativeChangePercent / 100), Math.ceil(3 * 1.4826 * dispersion));
@@ -488,7 +489,7 @@ export function buildFinancialAnomalyFindings(
     if (enabled.has('frequency-change')) {
       const frequencyValues = new Map([...totals.frequency].map(([w, groups]) => [w, groups.size]));
       const b = withMinimum(getBaseline({ key: 'frequency', bucketValues: frequencyValues, monthlySets: totals.frequencyByMonth, matchingMonths: seasons, eligibleWindows }));
-      const center = median(b.values);
+      const center = median(b.values.filter((value) => value > 0));
       const currentCount = totals.frequency.get(0)?.size ?? 0;
       const observations = b.values.filter((v) => v > 0).length;
       if (observations >= b.required && center > 0) {

@@ -314,7 +314,12 @@ export function FinancialIntelligencePanel({
         </label>
         <div className="intelligence-anomaly-types" role="group" aria-label="Tipos de anomalía activados"><strong>Tipos de alerta</strong>
           {Object.entries(ANOMALY_KIND_LABELS).map(([kind, label]) => <label key={kind} className="field-label">
-            <input type="checkbox" checked={enabledAnomalyKinds.includes(kind as AnomalyKind)} onChange={(event) => setEnabledAnomalyKinds((current) => event.currentTarget.checked ? [...current, kind as AnomalyKind] : current.filter((item) => item !== kind))} />{label}
+            <input type="checkbox" checked={enabledAnomalyKinds.includes(kind as AnomalyKind)} onChange={(event) => {
+              const checked = event.currentTarget.checked;
+              setEnabledAnomalyKinds((current) => checked
+                ? current.includes(kind as AnomalyKind) ? current : [...current, kind as AnomalyKind]
+                : current.length > 1 ? current.filter((item) => item !== kind) : current);
+            }} />{label}
           </label>)}
         </div>
       </div>

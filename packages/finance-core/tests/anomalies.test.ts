@@ -58,6 +58,17 @@ describe('financial anomaly detection', () => {
     ], { enabledKinds: ['transaction-outlier'] }), 'transaction-outlier')).toBeUndefined();
   });
 
+  it('does not mistake inactive reference windows for a lower typical spend', () => {
+    const entries = [
+      entry({ id: 'june', date: '2026-06-15', amountMinor: -12_000, payeeLabel: 'Electricidad' }),
+      entry({ id: 'july', date: '2026-07-15', amountMinor: -12_000, payeeLabel: 'Electricidad' }),
+      entry({ id: 'august', date: '2026-08-15', amountMinor: -12_000, payeeLabel: 'Electricidad' }),
+      entry({ id: 'october', date: '2026-10-15', amountMinor: -12_000, payeeLabel: 'Electricidad' }),
+    ];
+    const result = run(entries, { enabledKinds: ['total-expense-change', 'category-change', 'payee-change'] });
+    expect(result.findings).toHaveLength(0);
+  });
+
   it('normalizes accents and punctuation for exact possible-duplicate matches but does not fuzzy-match similar names', () => {
     const exact = run([
       entry({ id: 'cafe-1', date: '2026-10-12', amountMinor: -4_500, payeeLabel: 'Café-Norte' }),
