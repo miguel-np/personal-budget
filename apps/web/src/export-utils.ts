@@ -420,8 +420,8 @@ export function buildPrintableDocument(title: string, bodyHtml: string): string 
     '<meta name="viewport" content="width=device-width, initial-scale=1">' +
     '<meta name="referrer" content="no-referrer"><title>' + escapeHtml(title) + '</title>' +
     '<style>' +
-    '@page{size:A4;margin:14mm}*{box-sizing:border-box}body{font:11px/1.45 Arial,Helvetica,sans-serif;color:#172033;margin:0}' +
-    'h1{font-size:22px;margin:0 0 4px}h2{font-size:15px;margin:22px 0 8px;break-after:avoid}' +
+    '@page{size:A4;margin:14mm}@page appendix{size:A4 landscape;margin:10mm}*{box-sizing:border-box}body{font:11px/1.45 Arial,Helvetica,sans-serif;color:#172033;margin:0}' +
+    'h1{font-size:22px;margin:0 0 4px}h2{font-size:15px;margin:22px 0 8px;break-after:avoid}.appendix{page:appendix;break-before:page;page-break-before:always}' +
     'p{margin:4px 0 10px}.muted{color:#596579}.metadata{display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;margin:12px 0 18px}' +
     '.metadata div{overflow-wrap:anywhere}.notice{border:1px solid #b8c3d4;padding:8px;margin:10px 0}' +
     'table{width:100%;border-collapse:collapse;margin:6px 0 16px;font-size:10px;table-layout:auto}' +
