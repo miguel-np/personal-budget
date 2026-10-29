@@ -1433,8 +1433,8 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       });
       const suggestions: HybridCategorySuggestion[] = ruleSuggestions.map((suggestion) => ({
         ...suggestion,
-        source: 'rule_based',
-        uncertainty: 'not_assessed',
+        source: 'rule_based' as const,
+        uncertainty: 'not_assessed' as const,
         rationale: null,
       }));
       const rulesById = new Map(ruleSuggestions.map((suggestion) => [suggestion.transactionId, suggestion]));
@@ -1519,9 +1519,8 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
             for (const entry of selectedFallbackEntries) {
               const deterministic = rulesById.get(entry.id);
               if (deterministic && deterministic.evidenceCount < 2) {
-                const index = selectedFallbackEntries.findIndex((candidate) => candidate.id === entry.id);
-                suggestions.splice(suggestions.findIndex((candidate) => candidate.transactionId === entry.id), 1);
-                void index;
+                const suggestionIndex = suggestions.findIndex((candidate) => candidate.transactionId === entry.id);
+                if (suggestionIndex >= 0) suggestions.splice(suggestionIndex, 1);
               }
               const reference = [...referenceToEntry.entries()].find(([, candidate]) => candidate.id === entry.id)?.[0];
               const candidate = reference ? byReference.get(reference) : undefined;
@@ -1551,14 +1550,21 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
             }
             classificationOutcome = suggestions.some((candidate) => selectedIds.has(candidate.transactionId) && candidate.source === 'local_ai')
               ? 'completed' : 'abstained';
-          } catch {
+          } catch (error) {
             inferenceDurationMs = Math.max(0, Date.now() - startedAt);
-            // Never use an invalid category or malformed response. Preserve existing
-            // deterministic suggestions and expose only manual-review rows for new payees.
-            classificationOutcome = 'invalid_response';
+            // Readiness/queue/timeout failures degrade safely; malformed JSON or an
+            // unknown category is rejected as a structured-response failure.
+            classificationOutcome = error instanceof LocalAiUnavailableError || error instanceof LocalAiBusyError ||
+              error instanceof LocalAiCancelledError ? 'unavailable'
+              : error instanceof LocalAiContextBudgetError ? 'context_limited' : 'invalid_response';
+            const fallbackRationale = classificationOutcome === 'unavailable'
+              ? 'La IA local no está disponible; elige una categoría manualmente.'
+              : classificationOutcome === 'context_limited'
+                ? 'El contexto supera el límite local; elige una categoría manualmente.'
+                : 'La respuesta local no fue válida; elige una categoría manualmente.';
             for (const entry of selectedFallbackEntries) {
               if (!rulesById.has(entry.id) && !suggestions.some((candidate) => candidate.transactionId === entry.id)) {
-                suggestions.push(noneSuggestion(entry, 'La respuesta local no fue válida; elige una categoría manualmente.', 'not_assessed'));
+                suggestions.push(noneSuggestion(entry, fallbackRationale, 'not_assessed'));
               }
             }
           }
