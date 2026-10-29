@@ -1128,6 +1128,37 @@ describe('local API', () => {
     expect(updateTransactionCategoriesBatch).not.toHaveBeenCalled();
   });
 
+  it('degrades to manual review when the local model is unavailable', async () => {
+    const ollama = await createOllamaFixture(503);
+    const history: readonly BudgetTransaction[] = [
+      { id: 'u-model-down', account: 'account-1', date: '2026-10-07', amount: -1200, category: null, payee_name: 'Comercio nuevo' },
+    ];
+    const updateTransactionCategoriesBatch = vi.fn();
+    const app = await createTestApp(createRepository({
+      listTransactions: vi.fn(async () => history),
+      updateTransactionCategoriesBatch,
+    }), {
+      ...config,
+      aiEnabled: true,
+      aiCategoryClassificationEnabled: true,
+      aiCategoryClassificationIncludePayee: true,
+      ollamaBaseURL: ollama.url,
+      ollamaModel: 'synthetic-model',
+    });
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/insights/category-suggestions?startDate=2026-10-01&endDate=2026-10-31',
+    });
+    await ollama.close();
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toMatchObject([
+      { transactionId: 'u-model-down', source: 'none', suggestedCategoryId: null, confidence: 'none' },
+    ]);
+    expect(response.json().classification.outcome).toBe('unavailable');
+    expect(updateTransactionCategoriesBatch).not.toHaveBeenCalled();
+  });
+
   it('previews categorization without writing and commits only when asked', async () => {
     const updateTransactionCategoriesBatch = vi.fn(async (
       changes: readonly TransactionCategoryBatchChange[],
