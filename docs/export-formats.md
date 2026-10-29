@@ -7,7 +7,8 @@ Personal Budget genera los archivos en el navegador local. Las exportaciones no 
 En **Informes del periodo → Exportar informe**:
 
 - **Imprimir / Guardar como PDF** abre una vista imprimible independiente con los periodos actual y comparado, ámbito de cuentas, métricas, ingresos y gastos por categoría, tipos de cambio declarados y advertencias. En el diálogo de impresión del navegador, selecciona **Guardar como PDF**. El contenido se construye localmente y no carga fuentes, scripts ni servicios externos. Si el navegador bloquea ventanas emergentes, permite la apertura para Personal Budget y repite la acción.
-- **Excel (XLSX)** crea un libro con hojas Resumen, Gastos por categoría e Ingresos por categoría, encabezados, filtros en tablas de categorías y formatos de fecha/número.
+- La casilla opcional **Incluir anexo con movimientos del periodo actual en PDF/XLSX** añade un anexo separado, con página apaisada para PDF. Se consulta el periodo actual, no el periodo comparativo; se respeta el ámbito de cuentas y se verifica el total, la unicidad de identificadores y la integridad de las páginas. Si no es posible comprobar el conjunto completo, no se produce el archivo.
+- **Excel (XLSX)** crea un libro con hojas Resumen, Gastos por categoría e Ingresos por categoría, encabezados, filtros en tablas de categorías y formatos de fecha/número. Si seleccionas el anexo, se añade una hoja Movimientos con celdas de fecha, importes nativos/convertidos separados y los identificadores que permiten rastrear transferencias y desgloses.
 - **CSV y JSON** mantienen los contratos de exportación existentes.
 
 ## Movimientos
