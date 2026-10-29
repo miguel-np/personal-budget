@@ -433,7 +433,7 @@ export class LocalAiClient {
       // Structured classification JSON must not pass through narrative sanitization,
       // because sanitization deliberately rewrites digits that are valid category IDs.
       const answer = jsonMode
-        ? rawAnswer.replace(/[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F]/g, '').trim().slice(0, 5_000)
+        ? rawAnswer.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').trim().slice(0, 5_000)
         : sanitizeNarrative(rawAnswer);
       if (jsonMode) {
         if (!answer) throw new LocalAiUnavailableError();
