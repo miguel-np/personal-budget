@@ -291,8 +291,6 @@ export function buildFinancialAnomalyFindings(
   const duration = day(context.period.endDate) - day(context.period.startDate) + 1;
   const historyStart = context.historyStartDate ?? addDays(context.period.startDate, -duration * windows);
   const historyDay = day(historyStart);
-  const startDay = day(context.period.startDate);
-  const endDay = day(context.period.endDate);
   const accountIds = new Set(context.accountScope.accountIds);
   const categoryById = new Map(context.categories.map((category) => [category.id, category]));
   const limitations = new Set(context.sourceWarnings ?? []);
