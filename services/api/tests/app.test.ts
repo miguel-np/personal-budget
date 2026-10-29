@@ -1041,17 +1041,26 @@ describe('local API', () => {
 
   it('uses local AI only for fallback candidates and returns a validated, review-only category suggestion', async () => {
     const ollama = await createOllamaFixture(200, JSON.stringify({
-      suggestions: [{
-        reference: 'c1',
-        categoryId: 'food',
-        rationale: 'La etiqueta contiene un término explícito de panadería.',
-        uncertainty: 'low',
-      }],
+      suggestions: [
+        {
+          reference: 'c1',
+          categoryId: 'food',
+          rationale: 'La etiqueta coincide con una variante ortográfica del comercio histórico.',
+          uncertainty: 'low',
+        },
+        {
+          reference: 'c2',
+          categoryId: 'food',
+          rationale: 'La etiqueta contiene un término explícito de panadería.',
+          uncertainty: 'low',
+        },
+      ],
     }));
     const history: readonly BudgetTransaction[] = [
       { id: 'h-1', account: 'account-1', date: '2026-08-03', amount: -4200, category: 'food', payee_name: 'Supermercado' },
       { id: 'h-2', account: 'account-1', date: '2026-09-03', amount: -3100, category: 'food', payee_name: 'Supermercado' },
       { id: 'u-rule', account: 'account-1', date: '2026-10-04', amount: -3900, category: null, payee_name: 'Supermercado' },
+      { id: 'u-typo', account: 'account-1', date: '2026-10-06', amount: -1600, category: null, payee_name: 'Supermercdo Valle' },
       { id: 'u-new', account: 'account-1', date: '2026-10-07', amount: -1200, category: null, payee_name: 'Panadería Aurora', notes: 'nota financiera que no debe enviarse' },
       { id: 'u-income', account: 'account-1', date: '2026-10-08', amount: 4000, category: null, payee_name: 'Ingreso de prueba' },
       { id: 'u-transfer', account: 'account-1', date: '2026-10-09', amount: -5000, category: null, payee_name: 'Traspaso', transfer_id: 'transfer-pair' },
@@ -1080,6 +1089,9 @@ describe('local API', () => {
     const data = response.json().data as Array<Record<string, unknown>>;
     expect(data.find((entry) => entry.transactionId === 'u-rule')).toMatchObject({
       source: 'rule_based', suggestedCategoryId: 'food', confidence: 'rule_based',
+    });
+    expect(data.find((entry) => entry.transactionId === 'u-typo')).toMatchObject({
+      source: 'local_ai', suggestedCategoryId: 'food', confidence: 'local_ai', uncertainty: 'low',
     });
     expect(data.find((entry) => entry.transactionId === 'u-new')).toMatchObject({
       source: 'local_ai', suggestedCategoryId: 'food', confidence: 'local_ai', uncertainty: 'low',
