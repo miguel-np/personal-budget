@@ -433,8 +433,8 @@ export function buildPrintableDocument(title: string, bodyHtml: string): string 
     '</style></head><body>' + bodyHtml + '</body></html>';
 }
 
-export function printHtmlDocument(title: string, bodyHtml: string): void {
-  const printWindow = window.open('', '_blank');
+export function printHtmlDocument(title: string, bodyHtml: string, targetWindow?: Window | null): void {
+  const printWindow = targetWindow ?? window.open('', '_blank');
   if (!printWindow) {
     throw new Error('El navegador ha bloqueado la ventana de impresión. Permite ventanas emergentes para esta aplicación y vuelve a intentarlo.');
   }
