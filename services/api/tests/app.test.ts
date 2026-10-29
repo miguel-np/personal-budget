@@ -7,7 +7,7 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BudgetAccount, BudgetCategory, BudgetRepository, BudgetTransaction, TransactionCategoryBatchChange, TransactionCategoryBatchResult, TransactionStructureUpdate, TransactionUpdate, TransactionWriteResult } from '@personal-budget/finance-core';
 import { ActualAdapterError } from '@personal-budget/actual-adapter';
-import type { ActualImportRecord, ActualImportResult } from '@personal-budget/actual-adapter';
+import type { ActualBudgetMonthRecord, ActualImportRecord, ActualImportResult } from '@personal-budget/actual-adapter';
 import { buildApp } from '../src/app.js';
 import type { AppConfig } from '../src/config.js';
 
@@ -320,6 +320,108 @@ describe('local API', () => {
       payload: { findingId: 'fi-v1-not-present', startDate: '2026-09-01', endDate: '2026-09-30', status: 'reviewed' },
     });
     expect(invalidReview.statusCode).toBe(404);
+  });
+
+  it('explains a verified deterministic finding through local Ollama and rejects an unknown finding', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'financial-intelligence-ai-api-'));
+    temporaryDirectories.push(directory);
+    const ollama = await createOllamaFixture(200, 'Explicación cualitativa sintética sin cifras nuevas.');
+    const historicalTransactions: readonly BudgetTransaction[] = [
+      { id: 'aug-income-1', account: 'account-1', currencyCode: 'EUR', date: '2026-08-03', amount: 30_000, category: 'salary' },
+      { id: 'aug-income-2', account: 'account-1', currencyCode: 'EUR', date: '2026-08-10', amount: 30_000, category: 'salary' },
+      { id: 'aug-income-3', account: 'account-1', currencyCode: 'EUR', date: '2026-08-20', amount: 30_000, category: 'salary' },
+      { id: 'aug-expense-1', account: 'account-1', currencyCode: 'EUR', date: '2026-08-04', amount: -10_000, category: 'food' },
+      { id: 'aug-expense-2', account: 'account-1', currencyCode: 'EUR', date: '2026-08-11', amount: -10_000, category: 'food' },
+      { id: 'aug-expense-3', account: 'account-1', currencyCode: 'EUR', date: '2026-08-21', amount: -10_000, category: 'food' },
+      { id: 'sep-income-1', account: 'account-1', currencyCode: 'EUR', date: '2026-09-03', amount: 20_000, category: 'salary' },
+      { id: 'sep-income-2', account: 'account-1', currencyCode: 'EUR', date: '2026-09-10', amount: 20_000, category: 'salary' },
+      { id: 'sep-income-3', account: 'account-1', currencyCode: 'EUR', date: '2026-09-20', amount: 20_000, category: 'salary' },
+      { id: 'sep-expense-1', account: 'account-1', currencyCode: 'EUR', date: '2026-09-04', amount: -20_000, category: 'food' },
+      { id: 'sep-expense-2', account: 'account-1', currencyCode: 'EUR', date: '2026-09-11', amount: -20_000, category: 'food' },
+      { id: 'sep-expense-3', account: 'account-1', currencyCode: 'EUR', date: '2026-09-21', amount: -20_000, category: 'food' },
+    ];
+    const listTransactions = vi.fn(async (_accountId: string, startDate: string, endDate: string) =>
+      historicalTransactions.filter((transaction) => transaction.date >= startDate && transaction.date <= endDate));
+    const app = await createTestApp(createRepository({ listTransactions }), {
+      ...config, actualDataDir: directory, aiEnabled: true, ollamaBaseURL: ollama.url, ollamaModel: 'synthetic-model',
+    });
+    try {
+      const url = '/api/v1/intelligence/findings?startDate=2026-09-01&endDate=2026-09-30';
+      const findingsResponse = await app.inject({ method: 'GET', url });
+      expect(findingsResponse.statusCode).toBe(200);
+      const finding = findingsResponse.json().data.findings.find((item: { type: string }) => item.type === 'expense-change');
+      expect(finding).toBeDefined();
+
+      const explained = await app.inject({
+        method: 'POST',
+        url: '/api/v1/intelligence/explain',
+        payload: { findingId: finding.id, startDate: '2026-09-01', endDate: '2026-09-30' },
+      });
+      expect(explained.statusCode).toBe(200);
+      expect(explained.json().data).toMatchObject({
+        findingId: finding.id,
+        explanation: 'Explicación cualitativa sintética sin cifras nuevas.',
+        kind: 'qualitative_explanation',
+        source: 'local',
+      });
+
+      const unknown = await app.inject({
+        method: 'POST', url: '/api/v1/intelligence/explain',
+        payload: { findingId: 'fi-v1-not-present', startDate: '2026-09-01', endDate: '2026-09-30' },
+      });
+      expect(unknown.statusCode).toBe(404);
+      expect(unknown.json().error.code).toBe('FINDING_NOT_FOUND');
+    } finally {
+      await ollama.close();
+    }
+  });
+
+  it('rejects stale snooze dates before computing any findings', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'financial-intelligence-snooze-api-'));
+    temporaryDirectories.push(directory);
+    const app = await createTestApp(createRepository(), { ...config, actualDataDir: directory });
+    const today = new Date().toISOString().slice(0, 10);
+    const yesterday = new Date(Date.parse(today + 'T00:00:00.000Z') - 86_400_000).toISOString().slice(0, 10);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/intelligence/review',
+      payload: { findingId: 'fi-v1-not-present', startDate: '2026-10-01', endDate: today, status: 'snoozed', snoozedUntil: yesterday },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe('INVALID_SNOOZE_WINDOW');
+  });
+
+  it('surfaces budget deviations only for a full completed calendar month', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'financial-intelligence-budget-window-'));
+    temporaryDirectories.push(directory);
+    const listTransactions = vi.fn(async (_accountId: string, startDate: string, endDate: string) =>
+      transactions.filter((transaction) => transaction.date >= startDate && transaction.date <= endDate));
+    const getBudgetMonth = vi.fn(async (month: string) => ({
+      month,
+      categoryGroups: [{
+        id: 'spending', name: 'Gastos', is_income: false,
+        categories: [{ id: 'food', name: 'Alimentación', budgeted: 10_000, spent: 50_000 }],
+      }],
+    }));
+    const repository = {
+      ...createRepository({ listTransactions }),
+      getBudgetMonth,
+    } as BudgetRepository & { getBudgetMonth: (month: string) => Promise<ActualBudgetMonthRecord> };
+    const app = await createTestApp(repository, { ...config, actualDataDir: directory });
+    const partial = await app.inject({
+      method: 'GET', url: '/api/v1/intelligence/findings?startDate=2026-09-01&endDate=2026-09-15',
+    });
+    expect(partial.statusCode).toBe(200);
+    expect(partial.json().data.findings.some((item: { type: string }) => item.type === 'budget-overspend')).toBe(false);
+    expect(partial.json().data.warnings).toContain('Desviaciones de presupuesto no incluidas: el intervalo no cubre un mes natural completo ya cerrado.');
+    expect(getBudgetMonth).not.toHaveBeenCalled();
+
+    const complete = await app.inject({
+      method: 'GET', url: '/api/v1/intelligence/findings?startDate=2026-09-01&endDate=2026-09-30',
+    });
+    expect(complete.statusCode).toBe(200);
+    expect(complete.json().data.findings.some((item: { type: string }) => item.type === 'budget-overspend')).toBe(true);
+    expect(getBudgetMonth).toHaveBeenCalledWith('2026-09');
   });
 
   it('filters transactions and bounds each page at the API boundary', async () => {

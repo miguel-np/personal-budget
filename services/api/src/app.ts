@@ -1664,9 +1664,17 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     const budgetRepository = repository as BudgetRepository & {
       getBudgetMonth?: (month: string) => Promise<ActualBudgetMonthRecord>;
     };
-    if (startDate.slice(0, 7) === endDate.slice(0, 7) &&
-        typeof budgetRepository.getBudgetMonth === 'function') {
-      if (accountPreference.mode !== 'all' || preferences.displayCurrency !== config.budgetCurrency) {
+    const sameCalendarMonth = startDate.slice(0, 7) === endDate.slice(0, 7);
+    const month = startDate.slice(0, 7);
+    const lastCalendarDay = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).toISOString().slice(0, 10);
+    const isFullCompletedMonth = sameCalendarMonth &&
+      startDate === month + '-01' &&
+      endDate === lastCalendarDay &&
+      endDate < asOfDate;
+    if (sameCalendarMonth && typeof budgetRepository.getBudgetMonth === 'function') {
+      if (!isFullCompletedMonth) {
+        warnings.push('Desviaciones de presupuesto no incluidas: el intervalo no cubre un mes natural completo ya cerrado.');
+      } else if (accountPreference.mode !== 'all' || preferences.displayCurrency !== config.budgetCurrency) {
         warnings.push('Desviaciones de presupuesto no incluidas: el presupuesto de Actual es global y/o su divisa no coincide con la divisa de análisis seleccionada.');
       } else {
         try {

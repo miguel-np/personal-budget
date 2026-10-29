@@ -944,7 +944,7 @@ export function App() {
               </section>
             )}
 
-            {!['/', '/movements', '/accounts', '/reports', '/budgets', '/planning', '/goals', '/assistant', '/settings'].includes(route) && (
+            {!['/', '/movements', '/accounts', '/reports', '/budgets', '/planning', '/intelligence', '/goals', '/assistant', '/settings'].includes(route) && (
               <section className="content-section"><EmptyState title="Sección no encontrada" body="Utiliza la navegación principal para abrir una sección disponible." /><a className="button primary" href="/">Volver al resumen</a></section>
             )}
           </>

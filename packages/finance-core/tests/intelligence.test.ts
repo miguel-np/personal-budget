@@ -128,5 +128,51 @@ describe('financial intelligence findings', () => {
     expect(first.fingerprint).toBe(repeated.fingerprint);
     expect(first.fingerprint).not.toBe(changed.fingerprint);
     expect(first.fingerprint).not.toBe(changedCurrency.fingerprint);
+    expect(() => createFinancialFinding({ ...draft, currency: 'eur' })).toThrow(RangeError);
+    expect(() => createFinancialFinding({ ...draft, calculatedAt: 'not-a-date' })).toThrow(RangeError);
+    expect(() => evaluateFindingQuality([{ expectedPositive: 'yes', detected: true } as never])).toThrow(TypeError);
+  });
+
+  it('abstains when no uncategorized movement exists and handles zero-only/inflow-only evidence', () => {
+    const context = {
+      period: { startDate: '2026-10-01', endDate: '2026-10-31' },
+      accountScope: scope,
+      currency: 'EUR',
+      calculatedAt,
+      sourceWarnings: ['Falta conversión para un movimiento ajeno a este hallazgo.'],
+    };
+    expect(buildUncategorizedFinding([], context)).toBeNull();
+
+    const zero = buildUncategorizedFinding([{
+      id: 'zero', accountId: 'account-1', currencyCode: 'EUR', date: '2026-10-03',
+      amountMinor: 0, categoryId: null, transferId: null, isTransfer: false,
+    }], context);
+    expect(zero).toMatchObject({
+      impactMinor: null,
+      metrics: { transactionCount: 1, uncategorizedOutflowMinor: 0, unclassifiedInflowMinor: 0 },
+    });
+    expect(zero?.evidence).toHaveLength(1);
+    expect(zero?.limitations).toContain(context.sourceWarnings[0]);
+
+    const inflow = buildUncategorizedFinding([{
+      id: 'uncategorized-inflow', accountId: 'account-1', currencyCode: 'EUR', date: '2026-10-04',
+      amountMinor: 12_500, categoryId: null, transferId: null, isTransfer: false,
+    }], context);
+    expect(inflow).toMatchObject({
+      impactMinor: 12_500,
+      metrics: { transactionCount: 1, uncategorizedOutflowMinor: 0, unclassifiedInflowMinor: 12_500 },
+    });
+    expect(inflow?.evidence.map((item) => item.label)).toContain('Entrada sin categoría');
+  });
+
+  it('rejects uncategorized aggregates that exceed the safe integer range', () => {
+    const context = {
+      period: { startDate: '2026-10-01', endDate: '2026-10-31' },
+      accountScope: scope, currency: 'EUR', calculatedAt,
+    };
+    expect(() => buildUncategorizedFinding([
+      { id: 'large-1', accountId: 'account-1', currencyCode: 'EUR', date: '2026-10-03', amountMinor: Number.MAX_SAFE_INTEGER, categoryId: null, transferId: null, isTransfer: false },
+      { id: 'large-2', accountId: 'account-1', currencyCode: 'EUR', date: '2026-10-04', amountMinor: 1, categoryId: null, transferId: null, isTransfer: false },
+    ], context)).toThrow(RangeError);
   });
 });
