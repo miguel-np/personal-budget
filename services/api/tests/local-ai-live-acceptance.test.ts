@@ -68,6 +68,7 @@ describe.skipIf(!enabled)('Ollama live acceptance (synthetic data only)', () => 
     const historicalRows: readonly BudgetTransaction[] = [
       { id: 'history-supermarket-1', account: 'synthetic-account', date: '2026-08-03', amount: -3200, category: 'food', payee_name: 'Supermercado Sintético Norte' },
       { id: 'history-supermarket-2', account: 'synthetic-account', date: '2026-09-03', amount: -2900, category: 'food', payee_name: 'Supermercado Sintético Norte' },
+      { id: 'history-pharmacy', account: 'synthetic-account', date: '2026-09-08', amount: -1800, category: 'health', payee_name: 'Farmacia Aurora' },
     ];
     const uncategorizedRows: readonly BudgetTransaction[] = fixture.map((item, index) => ({
       id: item.id,
