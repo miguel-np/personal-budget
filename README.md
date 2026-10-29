@@ -110,3 +110,7 @@ La ejecución local reduce la exposición externa, pero no elimina los riesgos d
 ## Licencia
 
 El código y la documentación originales están bajo MIT. Los datos financieros del usuario no forman parte de esta licencia; las dependencias, componentes y modelos de terceros conservan sus propias licencias.
+
+## Exportación local
+
+La exportación de informes y movimientos a PDF imprimible, XLSX, CSV y JSON, con sus límites y convenciones monetarias, está documentada en [docs/export-formats.md](docs/export-formats.md).
