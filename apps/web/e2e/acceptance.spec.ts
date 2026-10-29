@@ -664,6 +664,11 @@ test('movement export previews all filtered rows before downloading CSV or JSON'
   await preview.getByRole('button', { name: 'Descargar JSON' }).click();
   const jsonDownload = await jsonPromise;
   expect(jsonDownload.suggestedFilename()).toMatch(/^movimientos-filtrados-\d{4}-\d{2}-\d{2}\.json$/);
+
+  const xlsxPromise = page.waitForEvent('download');
+  await preview.getByRole('button', { name: 'Descargar Excel (XLSX)' }).click();
+  const xlsxDownload = await xlsxPromise;
+  expect(xlsxDownload.suggestedFilename()).toMatch(/^movimientos-filtrados-\d{4}-\d{2}-\d{2}\.xlsx$/);
 });
 
 test('report export previews period, account scope and analysis currency before download', async ({ page }) => {
@@ -686,6 +691,19 @@ test('report export previews period, account scope and analysis currency before 
   await preview.getByRole('button', { name: 'Descargar informe JSON' }).click();
   const jsonDownload = await jsonPromise;
   expect(jsonDownload.suggestedFilename()).toMatch(/^informe-financiero-\d{4}-\d{2}-\d{2}\.json$/);
+
+  await preview.getByRole('checkbox').check();
+
+  const xlsxPromise = page.waitForEvent('download');
+  await preview.getByRole('button', { name: 'Descargar libro Excel (XLSX)' }).click();
+  const xlsxDownload = await xlsxPromise;
+  expect(xlsxDownload.suggestedFilename()).toMatch(/^informe-financiero-\d{4}-\d{2}-\d{2}\.xlsx$/);
+
+  const popupPromise = page.waitForEvent('popup');
+  await preview.getByRole('button', { name: 'Imprimir / Guardar como PDF' }).click();
+  const pdfPreview = await popupPromise;
+  await expect(pdfPreview.locator('h1')).toHaveText('Informe financiero');
+  await expect(pdfPreview.getByRole('heading', { name: 'Anexo de movimientos del periodo actual' })).toBeVisible();
 });
 
 test('settings persist theme and regional formatting and reset only local preferences', async ({ page, request }) => {

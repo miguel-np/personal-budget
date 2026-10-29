@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { formatCivilDate, formatMoney } from './finance-format.js';
-import { downloadTextFile, exportDateStamp, serializeCsv } from './export-utils.js';
+import { downloadTextFile, downloadXlsxFile, exportDateStamp, escapeHtml, formatMinorAmount, minorUnitsToMajor, printHtmlDocument, serializeCsv, type XlsxCellValue, type XlsxSheet } from './export-utils.js';
 
 type SortKey = 'date' | 'amount' | 'description';
 interface MovementTransaction {
@@ -87,6 +87,153 @@ interface UpdateFields {
   category?: string | null;
   notes?: string;
   cleared?: boolean;
+}
+
+
+function excelDateValue(value: string): Date | string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = new Date(value + 'T00:00:00.000Z');
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value ? date : value;
+}
+
+function exportedMajorAmount(value: number | null | undefined, currency: string | null | undefined): number | null {
+  if (typeof value !== 'number' || !currency) return null;
+  try { return minorUnitsToMajor(value, currency); } catch { return null; }
+}
+
+function exportedAmountText(
+  value: number | null | undefined,
+  currency: string | null | undefined,
+  locale: 'es-ES' | 'en-GB',
+): string {
+  if (value === null || value === undefined) return 'No disponible';
+  if (!currency) return String(value) + ' unidades menores; divisa no disponible';
+  try { return formatMinorAmount(value, currency, locale); }
+  catch { return String(value) + ' unidades menores; precisión de ' + currency + ' no disponible'; }
+}
+
+function movementWorkbookSheets(
+  preview: MovementExportPreview,
+  accountNames: ReadonlyMap<string, string>,
+  categoryNames: ReadonlyMap<string, string>,
+): readonly XlsxSheet[] {
+  const headings = [
+    'Fecha', 'Concepto', 'Cuenta', 'Categoría', 'Importe nativo', 'Divisa nativa',
+    'Importe nativo (unidades menores)', 'Importe de análisis', 'Divisa de análisis',
+    'Importe análisis (unidades menores)', 'Tipo de cambio', 'Fecha de conversión',
+    'Fuente de conversión', 'Notas', 'Conciliado', 'ID movimiento', 'ID transferencia',
+    'ID padre', 'ID movimiento padre', 'Es padre', 'Es hijo', 'Es parte de desglose',
+  ];
+  const rows: XlsxCellValue[][] = [headings];
+  let missingNativeScale = 0;
+  let missingAnalysisScale = 0;
+  for (const item of preview.rows) {
+    const nativeCurrency = item.currencyCode ?? item.currency_code ?? null;
+    const analysisCurrency = item.displayCurrency ?? null;
+    const nativeMajor = exportedMajorAmount(item.amount, nativeCurrency);
+    const analysisMajor = exportedMajorAmount(item.displayAmountMinor, analysisCurrency);
+    if (nativeMajor === null) missingNativeScale += 1;
+    if (item.displayAmountMinor !== null && item.displayAmountMinor !== undefined && analysisMajor === null) {
+      missingAnalysisScale += 1;
+    }
+    rows.push([
+      excelDateValue(item.date),
+      transactionDescription(item),
+      accountNames.get(item.account) ?? 'Cuenta desconocida',
+      categoryNames.get(item.category ?? '') ?? '',
+      nativeMajor,
+      nativeCurrency,
+      item.amount,
+      analysisMajor,
+      analysisCurrency,
+      item.displayAmountMinor ?? null,
+      item.conversion?.rate ?? null,
+      item.conversion?.effectiveDate ? excelDateValue(item.conversion.effectiveDate) : null,
+      item.conversion?.source ?? null,
+      item.notes ?? null,
+      Boolean(item.cleared),
+      item.id,
+      item.transfer_id ?? null,
+      item.parent_id ?? null,
+      item.parent_transaction_id ?? null,
+      Boolean(item.is_parent),
+      Boolean(item.is_child),
+      Boolean(item.is_split_child),
+    ]);
+  }
+  const notesRows: XlsxCellValue[][] = [
+    ['Criterio', 'Detalle'],
+    ['Generado (UTC)', preview.generatedAt],
+    ['Periodo', preview.filters.startDate + ' — ' + preview.filters.endDate],
+    ['Ámbito de cuentas', preview.filters.accountScope],
+    ['Cuenta', preview.filters.account],
+    ['Categoría', preview.filters.category],
+    ['Búsqueda', preview.filters.search || 'Sin búsqueda textual'],
+    ['Filtro sin categoría', preview.filters.uncategorizedOnly ? 'Sí' : 'No'],
+    ['Orden', preview.filters.sortBy + ' (' + preview.filters.sortOrder + ')'],
+    ['Registros exportados', preview.rows.length],
+    ['Importe nativo', 'La columna Importe nativo contiene un número en unidades principales solo cuando se conoce la precisión de la divisa. Se conserva siempre el entero original en unidades menores.'],
+    ['Importe de análisis', 'La columna Importe de análisis solo contiene un número convertido cuando la API proporciona el importe y la divisa de análisis. No se crea ninguna conversión durante la exportación.'],
+    ['Divisas sin precisión conocida', 'Importes nativos sin una precisión monetaria válida: ' + missingNativeScale + '. Sus unidades menores originales se conservan; el importe principal queda vacío.'],
+    ['Conversiones no disponibles', 'Importes de análisis con conversión disponible pero sin precisión monetaria válida: ' + missingAnalysisScale + '. No se sustituyen por cero.'],
+    ['Seguridad de celdas', 'Todos los campos de texto se serializan como texto, nunca como fórmulas.'],
+    ['Limitación', 'Este archivo contiene los movimientos incluidos por los filtros; no constituye una copia de seguridad completa ni incluye toda la configuración de Actual Budget o Personal Budget.'],
+  ];
+  return [
+    {
+      name: 'Movimientos',
+      rows,
+      widths: [14, 34, 24, 24, 18, 14, 24, 18, 18, 25, 16, 18, 22, 36, 14, 38, 38, 38, 38, 12, 12, 18],
+      headerRows: [1],
+      filterHeaderRow: 1,
+    },
+    {
+      name: 'Notas y criterios',
+      rows: notesRows,
+      widths: [30, 100],
+      headerRows: [1],
+    },
+  ];
+}
+
+function movementPrintHtml(
+  preview: MovementExportPreview,
+  accountNames: ReadonlyMap<string, string>,
+  categoryNames: ReadonlyMap<string, string>,
+  locale: 'es-ES' | 'en-GB',
+): string {
+  const rows = preview.rows.map((item) => {
+    const currency = item.currencyCode ?? item.currency_code ?? null;
+    const analysis = item.displayAmountMinor === null || item.displayAmountMinor === undefined
+      ? 'No disponible'
+      : exportedAmountText(item.displayAmountMinor, item.displayCurrency, locale);
+    const details = [
+      accountNames.get(item.account) ?? 'Cuenta desconocida',
+      categoryNames.get(item.category ?? '') ?? 'Sin categoría',
+    ].map(escapeHtml).join(' · ');
+    const notes = item.notes ? '<br><small>Notas: ' + escapeHtml(item.notes) + '</small>' : '';
+    const conversion = item.conversion?.warning
+      ? '<br><small>' + escapeHtml(item.conversion.warning) + '</small>'
+      : '';
+    return '<tr><td class="nowrap">' + escapeHtml(item.date) + '</td><td><strong>' +
+      escapeHtml(transactionDescription(item)) + '</strong><br><small>' + details + '</small>' + notes + conversion +
+      '</td><td class="numeric">' + escapeHtml(exportedAmountText(item.amount, currency, locale)) +
+      '</td><td class="numeric">' + escapeHtml(analysis) + '</td><td>' +
+      escapeHtml(item.cleared ? 'Conciliado' : 'Pendiente') + '</td></tr>';
+  }).join('');
+  return '<header><h1>Movimientos financieros</h1><p class="muted">Exportación local de Personal Budget · Generado (UTC): ' +
+    escapeHtml(preview.generatedAt) + '</p></header>' +
+    '<section class="metadata">' +
+    '<div><strong>Periodo:</strong> ' + escapeHtml(preview.filters.startDate + ' — ' + preview.filters.endDate) + '</div>' +
+    '<div><strong>Ámbito de cuentas:</strong> ' + escapeHtml(preview.filters.accountScope) + '</div>' +
+    '<div><strong>Cuenta:</strong> ' + escapeHtml(preview.filters.account) + '</div>' +
+    '<div><strong>Categoría:</strong> ' + escapeHtml(preview.filters.category) + '</div>' +
+    '<div><strong>Búsqueda:</strong> ' + escapeHtml(preview.filters.search || 'Sin búsqueda textual') + '</div>' +
+    '<div><strong>Movimientos:</strong> ' + preview.rows.length + '</div>' +
+    '</section><div class="notice">Se incluyen solo los filtros indicados. La divisa nativa y la conversión de análisis aparecen separadas; cuando no hay conversión válida se indica como no disponible. Los importes de análisis no se recalculan al exportar.</div>' +
+    '<table><thead><tr><th>Fecha</th><th>Concepto, cuenta y categoría</th><th>Importe nativo</th><th>Importe de análisis</th><th>Conciliación</th></tr></thead><tbody>' +
+    (rows || '<tr><td colspan="5">Sin movimientos.</td></tr>') + '</tbody></table>' +
+    '<div class="footer">El documento contiene movimientos incluidos en los filtros; no es una copia de seguridad. La generación se realiza localmente y no envía los datos a terceros.</div>';
 }
 
 function transactionDescription(transaction: MovementTransaction): string {
@@ -518,18 +665,29 @@ export function MovementManager(props: MovementManagerProps) {
       setExportMessage('Previsualización preparada para ' + allRows.length + (allRows.length === 1 ? ' movimiento.' : ' movimientos.') + ' Todavía no se ha creado ningún archivo; confirma el formato para descargarlo.');
     } catch (error) {
       setExportPreview(null);
-      setExportError(error instanceof Error ? error.message : 'No se ha podido preparar la exportación CSV/JSON.');
+      setExportError(error instanceof Error ? error.message : 'No se ha podido preparar la exportación.');
     } finally {
       setExportBusy(false);
     }
   }
 
-  function downloadExport(format: 'csv' | 'json'): void {
+  function downloadExport(format: 'csv' | 'json' | 'xlsx' | 'pdf'): void {
     if (!exportPreview) return;
     setExportError('');
     try {
       const filename = 'movimientos-filtrados-' + exportDateStamp(new Date(exportPreview.generatedAt));
-      if (format === 'csv') {
+      if (format === 'pdf') {
+        const maxPdfRows = 1_000;
+        if (exportPreview.rows.length > maxPdfRows) {
+          throw new Error('El PDF contiene ' + exportPreview.rows.length + ' movimientos. Acota los filtros a ' + maxPdfRows + ' movimientos o menos para evitar un documento excesivo. Excel admite hasta 10.000 movimientos por exportación.');
+        }
+        printHtmlDocument('Movimientos financieros', movementPrintHtml(exportPreview, accountNames, categoryNames, locale));
+        setExportMessage('Se ha abierto el listado imprimible. En el diálogo del navegador elige “Guardar como PDF”; los datos permanecen en este equipo.');
+        return;
+      }
+      if (format === 'xlsx') {
+        downloadXlsxFile(filename + '.xlsx', movementWorkbookSheets(exportPreview, accountNames, categoryNames));
+      } else if (format === 'csv') {
         const headers = [
           'fecha', 'concepto', 'cuenta', 'categoria', 'importe_minor', 'divisa_nativa',
           'importe_analisis_minor', 'divisa_analisis', 'tipo_cambio', 'fecha_conversion',
@@ -639,9 +797,11 @@ export function MovementManager(props: MovementManagerProps) {
               <div><dt>Resultados</dt><dd>{exportPreview.rows.length} {exportPreview.rows.length === 1 ? 'movimiento' : 'movimientos'}</dd></div>
               <div><dt>Ámbito guardado</dt><dd>{exportPreview.filters.accountScope}</dd></div>
             </dl>
-            <p className="setting-hint">CSV: UTF-8 con BOM, separador punto y coma, fechas ISO y cantidades enteras en unidades menores. JSON conserva identificadores, relaciones e información de conversión disponible. La exportación es local y no sustituye a una copia de seguridad completa.</p>
+            <p className="setting-hint">CSV: UTF-8 con BOM, separador punto y coma, fechas ISO y cantidades enteras en unidades menores. JSON conserva identificadores, relaciones e información de conversión disponible. La exportación es local y no sustituye a una copia de seguridad completa. XLSX conserva fechas y cantidades en celdas tipadas y añade una hoja de criterios; el PDF imprimible está limitado a 1.000 movimientos. Texto y notas nunca se interpretan como fórmulas.</p>
             <div className="button-row">
-              <button className="button primary" type="button" onClick={() => downloadExport('csv')}>Descargar CSV</button>
+              <button className="button primary" type="button" onClick={() => downloadExport('xlsx')}>Descargar Excel (XLSX)</button>
+              <button className="button secondary" type="button" onClick={() => downloadExport('pdf')}>Imprimir / Guardar como PDF</button>
+              <button className="button secondary" type="button" onClick={() => downloadExport('csv')}>Descargar CSV</button>
               <button className="button secondary" type="button" onClick={() => downloadExport('json')}>Descargar JSON</button>
               <button className="button secondary" type="button" onClick={() => { setExportPreview(null); setExportMessage('Previsualización cancelada; no se ha creado ningún archivo.'); setExportError(''); }}>Cancelar</button>
             </div>
