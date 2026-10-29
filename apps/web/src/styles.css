@@ -1018,3 +1018,60 @@ textarea::placeholder {
   .goals-scenario-form, .scenario-comparison-grid { grid-template-columns: minmax(0, 1fr); }
   .scenario-submit .button { width: 100%; }
 }
+
+
+/* Financial intelligence center */
+.intelligence-page { margin-top: 8px; }
+.intelligence-method-note { padding: 16px 18px; margin: 0 0 16px; border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--surface-panel); }
+.intelligence-method-note strong { display: block; font-size: 12px; }
+.intelligence-method-note p { margin: 8px 0 0; color: var(--text-secondary); font-size: 11px; line-height: 1.65; }
+.intelligence-filters { align-items: flex-end; }
+.intelligence-period { display: grid; gap: 5px; min-width: 190px; color: var(--text-tertiary); font-size: 10px; }
+.intelligence-period strong { color: var(--text-primary); font-size: 12px; }
+.intelligence-period small { color: var(--text-secondary); font-size: 10px; }
+.intelligence-list { display: grid; gap: 14px; margin-top: 16px; }
+.intelligence-card { padding: 20px; }
+.intelligence-card.priority-high { border-color: var(--warning-border); }
+.intelligence-card-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.intelligence-card-heading h3 { margin-top: 10px; font-size: 16px; line-height: 1.4; }
+.intelligence-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.intelligence-priority, .intelligence-confidence, .intelligence-type, .intelligence-review-state { display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 999px; padding: 5px 8px; font-size: 9px; font-weight: 650; white-space: nowrap; }
+.intelligence-priority.high { border-color: var(--warning-border); color: var(--warning); }
+.intelligence-priority.medium { color: var(--accent); }
+.intelligence-priority.low { color: var(--text-secondary); }
+.intelligence-confidence { color: var(--text-secondary); }
+.intelligence-type { color: var(--text-tertiary); }
+.intelligence-review-state { flex: 0 0 auto; color: var(--text-secondary); }
+.intelligence-card-period { margin: 6px 0 0; color: var(--text-tertiary); font-size: 10px; line-height: 1.6; }
+.intelligence-explanation { margin: 16px 0; color: var(--text-secondary); font-size: 12px; line-height: 1.75; }
+.intelligence-impact { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 12px 14px; margin-bottom: 15px; border-radius: 9px; background: var(--surface-recessed); }
+.intelligence-impact span { color: var(--text-tertiary); font-size: 10px; }
+.intelligence-impact strong { font-size: 15px; font-variant-numeric: tabular-nums; }
+.intelligence-evidence, .intelligence-limitations, .intelligence-warnings { border-top: 1px solid var(--border-subtle); padding-top: 12px; margin-top: 12px; }
+.intelligence-evidence summary, .intelligence-limitations summary, .intelligence-warnings summary { cursor: pointer; color: var(--text-primary); font-size: 11px; font-weight: 650; }
+.intelligence-evidence dl { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; margin: 14px 0 0; }
+.intelligence-evidence dl > div { min-width: 0; padding: 11px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--surface-recessed); }
+.intelligence-evidence dt { color: var(--text-tertiary); font-size: 10px; }
+.intelligence-evidence dd { margin: 6px 0 7px; color: var(--text-primary); font-size: 12px; font-weight: 650; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.intelligence-evidence small, .intelligence-ai-note small { color: var(--text-tertiary); font-size: 10px; line-height: 1.6; }
+.intelligence-priority-reason { margin: 13px 0 4px; color: var(--text-secondary); font-size: 10px; line-height: 1.7; }
+.intelligence-limitations ul, .intelligence-warnings ul { padding-left: 20px; margin: 10px 0 0; color: var(--text-secondary); font-size: 11px; line-height: 1.7; }
+.intelligence-warnings { padding: 14px 16px; border: 1px solid var(--border-subtle); border-radius: 10px; }
+.intelligence-ai-note { border-left: 2px solid var(--accent); margin-top: 14px; padding: 10px 12px; background: var(--surface-recessed); }
+.intelligence-ai-note strong { font-size: 11px; }
+.intelligence-ai-note p { font-size: 11px; color: var(--text-secondary); line-height: 1.7; margin: 7px 0; }
+.intelligence-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 18px; }
+.intelligence-actions .button { min-height: 34px; }
+.intelligence-actions .text-button { border-color: transparent; color: var(--text-secondary); }
+@media (max-width: 760px) {
+  .intelligence-card-heading { display: block; }
+  .intelligence-review-state { margin-top: 10px; }
+  .intelligence-evidence dl { grid-template-columns: minmax(0,1fr); }
+}
+
+.intelligence-quality { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; padding: 14px 16px; margin: 0 0 16px; border: 1px solid var(--border-subtle); border-radius: 10px; }
+.intelligence-quality > div { display: grid; gap: 5px; }
+.intelligence-quality span { color: var(--text-tertiary); font-size: 10px; }
+.intelligence-quality strong { font-size: 17px; font-variant-numeric: tabular-nums; }
+.intelligence-quality p { grid-column: 1 / -1; margin: 4px 0 0; color: var(--text-secondary); font-size: 10px; line-height: 1.65; }
+@media (max-width: 760px) { .intelligence-quality { grid-template-columns: repeat(2, minmax(0,1fr)); } }

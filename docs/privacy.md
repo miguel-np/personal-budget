@@ -34,6 +34,10 @@ El valor por defecto propuesto es no persistir conversaciones. Si se añade hist
 
 Los logs operativos deben limitarse a estado de servicio, duración, código de error y un identificador no sensible. No registrar textos completos de transacciones, saldos, mensajes de usuario, resultados de herramientas, tokens ni contraseñas.
 
+## Centro de inteligencia financiera
+
+El centro calcula hallazgos en la API local. El estado de revisión almacena solo ID, huella y metadatos de estado; no conserva importes, descripciones ni movimientos. El panel calcula la tasa de descarte localmente a partir de revisiones explícitas, sin enviarla fuera del dispositivo. La explicación con IA es explícita y opcional: envía una síntesis agregada y reglas/limitaciones a Ollama local; no se envían filas de transacciones ni notas. Si Ollama está desactivado o no disponible, el análisis determinista continúa. El archivo financial-intelligence-state.json está en el directorio local de datos de la API y no forma parte del backup cifrado del volumen de Actual Budget; consérvalo por separado si deseas preservar las revisiones.
+
 ## Límites
 
 «Local» no equivale a «cifrado automáticamente». Los archivos locales pueden ser leídos por otros procesos o usuarios con acceso al mismo sistema. Protege la cuenta del sistema operativo, cifra el disco y cifra las copias de seguridad. Revisa también las políticas y la configuración de Docker Desktop, Windows, WSL y el proveedor de modelos.

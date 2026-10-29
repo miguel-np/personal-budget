@@ -20,6 +20,7 @@ let lastCommittedChanges = [];
 let budgetedMinor = 50_000;
 let currencyPreferences = { displayCurrency: 'EUR', accountCurrencyOverrides: {}, exchangeRates: [] };
 let accountScope = { mode: 'all', accountIds: [] };
+const intelligenceReviews = new Map();
 const now = new Date();
 const iso = (date) => date.toISOString().slice(0, 10);
 const currentMonthStart = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-01';
@@ -169,7 +170,7 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url || '/', 'http://127.0.0.1:3000');
   try {
     if (req.method === 'POST' && url.pathname === '/__test__/reset') {
-      readiness = 'configured'; failImportPreview = false; batchFailAtTransactionId = null; commitCount = 0; importPreviewCount = 0; lastImportPreview = null; lastImportCommit = null; transferPreviewCount = 0; transferCommitCount = 0; lastTransferPayload = null; categoryWrites = 0; transactionWrites = 0; lastTransactionUpdate = null; appPreferences = { theme: 'system', locale: 'es-ES' }; lastPreviewChanges = []; lastCommittedChanges = []; budgetedMinor = 50_000; currencyPreferences = { displayCurrency: 'EUR', accountCurrencyOverrides: {}, exchangeRates: [] }; accountScope = { mode: 'all', accountIds: [] }; resetTransactions(); resetLinkedTransactions();
+      readiness = 'configured'; failImportPreview = false; batchFailAtTransactionId = null; commitCount = 0; importPreviewCount = 0; lastImportPreview = null; lastImportCommit = null; transferPreviewCount = 0; transferCommitCount = 0; lastTransferPayload = null; categoryWrites = 0; transactionWrites = 0; lastTransactionUpdate = null; appPreferences = { theme: 'system', locale: 'es-ES' }; lastPreviewChanges = []; lastCommittedChanges = []; budgetedMinor = 50_000; currencyPreferences = { displayCurrency: 'EUR', accountCurrencyOverrides: {}, exchangeRates: [] }; accountScope = { mode: 'all', accountIds: [] }; intelligenceReviews.clear(); resetTransactions(); resetLinkedTransactions();
       return send(res, 200, { ok: true });
     }
     if (req.method === 'POST' && url.pathname === '/__test__/mode') {
@@ -466,6 +467,41 @@ const server = createServer(async (req, res) => {
         ...(baseline ? { baseline } : {}),
         ...(body.commit === true ? { applied: requested, appliedTransactionIds: batchRows.map((item) => item.transactionId), persisted: true, partial: false } : {}),
       } });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/v1/intelligence/findings') {
+      const startDate = url.searchParams.get('startDate') || currentMonthStart;
+      const endDate = url.searchParams.get('endDate') || iso(now);
+      const findingId = 'fi-v1-pending-categorization-' + startDate + '-' + endDate + '-fixture';
+      const review = intelligenceReviews.get(findingId) || { status: 'new' };
+      const finding = {
+        schemaVersion: 1, id: findingId, fingerprint: '0123456789abcdef',
+        type: 'pending-categorization', title: 'Hay movimientos pendientes de clasificar',
+        explanation: 'Hay movimientos sintéticos sin categoría en el periodo. No se aplican categorías automáticamente.',
+        period: { startDate, endDate },
+        accountScope: { mode: accountScope.mode, accountIds: accountScope.mode === 'selected' ? accountScope.accountIds : accounts.filter((item) => !item.closed).map((item) => item.id), label: accountScope.mode === 'selected' ? 'Ámbito seleccionado' : 'Todas las cuentas abiertas' },
+        currency: currencyPreferences.displayCurrency, confidence: 'observed', priority: 'low',
+        priorityReason: 'Prioridad informativa en el fixture sintético.',
+        impactMinor: 2700,
+        metrics: { transactionCount: 1, uncategorizedOutflowMinor: 2700, unclassifiedInflowMinor: 0 },
+        evidence: [{ label: 'Movimientos sin categoría', value: 1, source: 'finance-core.normalizeTransactions', rule: 'Cuenta movimientos normalizados una vez; excluye traspasos internos.' }],
+        limitations: ['Datos ficticios para las pruebas E2E.'],
+        calculatedAt: now.toISOString(), reviewStatus: review.status,
+        ...(review.snoozedUntil ? { snoozedUntil: review.snoozedUntil } : {}),
+        navigationTarget: '/movements',
+      };
+      return send(res, 200, { data: { schemaVersion: 1, findings: [finding], warnings: [], period: { startDate, endDate }, accountScope: finding.accountScope, currency: currencyPreferences.displayCurrency, calculatedAt: now.toISOString(), aiEnabled: false, qualityMetrics: (() => { const feedback = [...intelligenceReviews.values()].filter((item) => item.status === 'reviewed' || item.status === 'dismissed'); const dismissedCount = feedback.filter((item) => item.status === 'dismissed').length; return { feedbackCount: feedback.length, usefulCount: feedback.filter((item) => item.status === 'reviewed').length, dismissedCount, dismissalRatePercent: feedback.length ? dismissedCount / feedback.length * 100 : null, note: 'Métrica sintética de E2E.' }; })() } });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/v1/intelligence/review') {
+      const body = await readBody(req);
+      const expectedId = 'fi-v1-pending-categorization-' + body.startDate + '-' + body.endDate + '-fixture';
+      if (body.findingId !== expectedId || !['reviewed', 'dismissed', 'snoozed'].includes(body.status)) {
+        return send(res, 404, { error: { code: 'FINDING_NOT_FOUND', message: 'Hallazgo sintético no disponible.' } });
+      }
+      intelligenceReviews.set(expectedId, { status: body.status, ...(body.status === 'snoozed' ? { snoozedUntil: body.snoozedUntil } : {}) });
+      return send(res, 200, { data: { findingId: expectedId, status: body.status } });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/v1/intelligence/explain') {
+      return send(res, 503, { error: { code: 'AI_DISABLED', message: 'La IA local está desactivada en el fixture.' } });
     }
     if (req.method === 'GET' && url.pathname === '/api/v1/assistant/status') return send(res, 200, { enabled: false, status: 'disabled' });
     if (req.method === 'POST' && url.pathname === '/api/v1/assistant/chat') return send(res, 503, { error: { code: 'AI_DISABLED', message: 'El asistente local está desactivado.' } });

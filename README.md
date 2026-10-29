@@ -10,7 +10,7 @@ Aplicación local de finanzas personales con una única interfaz web para gastos
 - **@actual-app/api:** acceso programático oficial; no se presupone una API REST de Actual.
 - **packages/finance-core:** normalización de movimientos y cálculos deterministas con importes en unidades monetarias menores.
 - **services/api:** API Fastify local, configuración validada y errores saneados.
-- **apps/web:** shell React/Vite con dashboard, movimientos, informes, importación CSV/OFX local y edición de presupuestos en una sola interfaz local.
+- **apps/web:** shell React/Vite con dashboard, movimientos, informes, importación CSV/OFX local, edición de presupuestos y centro de inteligencia financiera en una sola interfaz local.
 - **Ollama y MCP:** asistente local opcional conectado a la interfaz y servidor MCP de solo lectura por stdio, validados con `qwen3:8b`.
 
 ## Requisitos

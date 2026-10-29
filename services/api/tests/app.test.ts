@@ -260,6 +260,68 @@ describe('local API', () => {
   });
 
 
+  it('serves versioned financial findings, persists review state and works without local AI', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'financial-intelligence-api-'));
+    temporaryDirectories.push(directory);
+    const historicalTransactions: readonly BudgetTransaction[] = [
+      { id: 'old-income-1', account: 'account-1', currencyCode: 'EUR', date: '2026-08-03', amount: 30_000, category: 'salary' },
+      { id: 'old-income-2', account: 'account-1', currencyCode: 'EUR', date: '2026-08-10', amount: 30_000, category: 'salary' },
+      { id: 'old-income-3', account: 'account-1', currencyCode: 'EUR', date: '2026-08-20', amount: 30_000, category: 'salary' },
+      { id: 'old-expense-1', account: 'account-1', currencyCode: 'EUR', date: '2026-08-04', amount: -10_000, category: 'food' },
+      { id: 'old-expense-2', account: 'account-1', currencyCode: 'EUR', date: '2026-08-11', amount: -10_000, category: 'food' },
+      { id: 'old-expense-3', account: 'account-1', currencyCode: 'EUR', date: '2026-08-21', amount: -10_000, category: 'food' },
+      { id: 'new-income-1', account: 'account-1', currencyCode: 'EUR', date: '2026-09-03', amount: 20_000, category: 'salary' },
+      { id: 'new-income-2', account: 'account-1', currencyCode: 'EUR', date: '2026-09-10', amount: 20_000, category: 'salary' },
+      { id: 'new-income-3', account: 'account-1', currencyCode: 'EUR', date: '2026-09-20', amount: 20_000, category: 'salary' },
+      { id: 'new-expense-1', account: 'account-1', currencyCode: 'EUR', date: '2026-09-04', amount: -20_000, category: 'food' },
+      { id: 'new-expense-2', account: 'account-1', currencyCode: 'EUR', date: '2026-09-11', amount: -20_000, category: 'food' },
+      { id: 'new-expense-3', account: 'account-1', currencyCode: 'EUR', date: '2026-09-21', amount: -20_000, category: 'food' },
+      { id: 'uncategorized-expense', account: 'account-1', currencyCode: 'EUR', date: '2026-09-23', amount: -8_000 },
+      { id: 'internal-transfer', account: 'account-1', currencyCode: 'EUR', date: '2026-09-24', amount: -90_000, transfer_id: 'transfer-pair' },
+    ];
+    const listTransactions = vi.fn(async (_accountId: string, startDate: string, endDate: string) =>
+      historicalTransactions.filter((transaction) => transaction.date >= startDate && transaction.date <= endDate));
+    const repository = createRepository({ listTransactions });
+    const app = await createTestApp(repository, { ...config, actualDataDir: directory });
+    const url = '/api/v1/intelligence/findings?startDate=2026-09-01&endDate=2026-09-30';
+    const initial = await app.inject({ method: 'GET', url });
+    expect(initial.statusCode).toBe(200);
+    expect(initial.json().data.schemaVersion).toBe(1);
+    expect(initial.json().data.qualityMetrics).toMatchObject({ feedbackCount: 0, usefulCount: 0, dismissedCount: 0, dismissalRatePercent: null });
+    const findings = initial.json().data.findings as Array<{ id: string; fingerprint: string; type: string; reviewStatus: string; evidence: unknown[] }>;
+    expect(findings.map((item) => item.type)).toContain('expense-change');
+    expect(findings.map((item) => item.type)).toContain('income-change');
+    expect(findings.map((item) => item.type)).toContain('pending-categorization');
+    expect(findings.every((item) => item.id.length > 0 && /^[0-9a-f]{16}$/.test(item.fingerprint))).toBe(true);
+    expect(findings.find((item) => item.type === 'expense-change')?.evidence.length).toBeGreaterThan(0);
+
+    const pending = findings.find((item) => item.type === 'pending-categorization');
+    expect(pending?.reviewStatus).toBe('new');
+    const review = await app.inject({
+      method: 'POST',
+      url: '/api/v1/intelligence/review',
+      payload: { findingId: pending!.id, startDate: '2026-09-01', endDate: '2026-09-30', status: 'dismissed' },
+    });
+    expect(review.statusCode).toBe(200);
+    const afterReview = await app.inject({ method: 'GET', url });
+    expect(afterReview.json().data.findings.find((item: { id: string }) => item.id === pending!.id).reviewStatus).toBe('dismissed');
+    expect(afterReview.json().data.qualityMetrics).toMatchObject({ feedbackCount: 1, usefulCount: 0, dismissedCount: 1, dismissalRatePercent: 100 });
+
+    const explanation = await app.inject({
+      method: 'POST',
+      url: '/api/v1/intelligence/explain',
+      payload: { findingId: pending!.id, startDate: '2026-09-01', endDate: '2026-09-30' },
+    });
+    expect(explanation.statusCode).toBe(503);
+    expect(explanation.json().error.code).toBe('AI_DISABLED');
+
+    const invalidReview = await app.inject({
+      method: 'POST', url: '/api/v1/intelligence/review',
+      payload: { findingId: 'fi-v1-not-present', startDate: '2026-09-01', endDate: '2026-09-30', status: 'reviewed' },
+    });
+    expect(invalidReview.statusCode).toBe(404);
+  });
+
   it('filters transactions and bounds each page at the API boundary', async () => {
     const repository = createRepository();
     const app = await createTestApp(repository);

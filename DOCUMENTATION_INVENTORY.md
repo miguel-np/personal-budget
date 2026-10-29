@@ -15,6 +15,7 @@
 - docs/privacy.md — privacidad y flujo de datos.
 - docs/backup-restore.md — copias y recuperación.
 - docs/planning.md — recurrentes, sugerencias y previsiones P3.
+- docs/financial-intelligence.md — contrato de hallazgos, reglas, prioridades, revisión y límites de IA local.
 - docs/p2-acceptance.md — criterios y resultados de aceptación P2.
 - docs/operations.md — operación local.
 - docs/troubleshooting.md — resolución de problemas.
