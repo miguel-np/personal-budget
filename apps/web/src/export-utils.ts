@@ -64,8 +64,12 @@ export function currencyMinorUnitExponent(currency: string): number {
     throw new Error('No se puede convertir un importe sin un código de divisa válido.');
   }
   try {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: normalized })
+    const digits = new Intl.NumberFormat('en-US', { style: 'currency', currency: normalized })
       .resolvedOptions().maximumFractionDigits;
+    if (digits === undefined) {
+      throw new Error('No se conoce la precisión monetaria de la divisa ' + normalized + '.');
+    }
+    return digits;
   } catch {
     throw new Error('No se conoce la precisión monetaria de la divisa ' + normalized + '.');
   }
