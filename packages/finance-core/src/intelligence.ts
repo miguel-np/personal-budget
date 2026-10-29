@@ -13,7 +13,7 @@ export type FindingType =
 
 export type FindingConfidence = 'observed' | 'estimated' | 'candidate' | 'suggestion';
 export type FindingPriority = 'low' | 'medium' | 'high';
-export type FindingReviewStatus = 'new' | 'reviewed' | 'dismissed' | 'snoozed';
+export type FindingReviewStatus = 'new' | 'reviewed' | 'expected' | 'dismissed' | 'snoozed';
 export type FindingNavigationTarget = '/reports' | '/movements' | '/budgets' | '/planning' | '/goals';
 
 export interface FindingAccountScope {

@@ -70,3 +70,6 @@ Los umbrales y tipos de alerta se envían al recalcular, revisar o solicitar exp
 ### Validación de calidad
 
 Las pruebas sintéticas cubren cambios puntuales, variación normal, historial corto, normalización de beneficiarios, nombres similares, reembolsos, monedas no comparables, transferencias, splits, duplicados legítimos que son falsos positivos y estacionalidad. \`evaluateFindingQuality\` calcula precisión y tasa de falsos positivos a partir de etiquetas independientes; esos valores describen solo el conjunto etiquetado usado y no se presentan como calidad medida en datos reales. No hay telemetría externa.
+
+
+La revisión contempla cuatro decisiones: **útil**, **esperado**, **descartado** y **aplazado** (7 días desde el panel). «Esperado» es distinto de descartar y permanece aplicado mientras la huella de evidencia siga igual. Si la evidencia cambia materialmente, el estado efectivo vuelve a «pendiente». El almacén persiste solo ID, huella, estado y fecha de actualización; no conserva importes ni filas de movimientos.

@@ -7,7 +7,7 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ReviewRecordSchema = z.object({
   findingId: z.string().trim().min(1).max(200),
   fingerprint: z.string().regex(/^[0-9a-f]{16}$/),
-  status: z.enum(['reviewed', 'dismissed', 'snoozed']),
+  status: z.enum(['reviewed', 'expected', 'dismissed', 'snoozed']),
   snoozedUntil: z.string().regex(ISO_DATE).optional(),
   updatedAt: z.string().datetime(),
 }).strict().superRefine((record, context) => {
@@ -113,7 +113,7 @@ export function effectiveFindingReview(
   record: FindingReviewRecord | undefined,
   fingerprint: string,
   today: string,
-): { readonly status: 'new' | 'reviewed' | 'dismissed' | 'snoozed'; readonly snoozedUntil?: string } {
+): { readonly status: 'new' | 'reviewed' | 'expected' | 'dismissed' | 'snoozed'; readonly snoozedUntil?: string } {
   if (!record || record.fingerprint !== fingerprint) return { status: 'new' };
   if (record.status === 'snoozed') {
     if (!record.snoozedUntil || record.snoozedUntil < today) return { status: 'new' };

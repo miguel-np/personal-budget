@@ -5,7 +5,7 @@ type FindingType =
   | 'expense-change' | 'income-change' | 'budget-overspend' | 'pending-categorization'
   | 'commitment-upcoming' | 'recurring-candidate-upcoming' | 'goal-at-risk' | 'goal-progress' | 'financial-anomaly';
 type AnomalyKind = 'transaction-outlier' | 'total-expense-change' | 'category-change' | 'payee-change' | 'possible-duplicate' | 'income-change' | 'refund-change' | 'frequency-change';
-type ReviewStatus = 'new' | 'reviewed' | 'dismissed' | 'snoozed';
+type ReviewStatus = 'new' | 'reviewed' | 'expected' | 'dismissed' | 'snoozed';
 type Confidence = 'observed' | 'estimated' | 'candidate' | 'suggestion';
 type NavigationTarget = '/reports' | '/movements' | '/budgets' | '/planning' | '/goals';
 
@@ -43,6 +43,7 @@ interface FindingsPayload {
   qualityMetrics: {
     feedbackCount: number;
     usefulCount: number;
+    expectedCount: number;
     dismissedCount: number;
     dismissalRatePercent: number | null;
     note: string;
@@ -76,7 +77,7 @@ const CONFIDENCE_LABELS: Record<Confidence, string> = {
 };
 const PRIORITY_LABELS = { high: 'Alta', medium: 'Media', low: 'Baja' } as const;
 const REVIEW_LABELS: Record<ReviewStatus, string> = {
-  new: 'Pendiente', reviewed: 'Útil confirmado', dismissed: 'Descartado', snoozed: 'Aplazado',
+  new: 'Pendiente', reviewed: 'Útil confirmado', expected: 'Esperada', dismissed: 'Descartado', snoozed: 'Aplazado',
 };
 const MONEY_KEYS = new Set([
   'currentMinor', 'previousMinor', 'deltaMinor', 'budgetedMinor', 'spentMinor', 'overByMinor',
@@ -194,7 +195,7 @@ export function FinancialIntelligencePanel({
   }), [payload, typeFilter, statusFilter]);
   const pendingCount = (payload?.findings ?? []).filter((finding) => finding.reviewStatus === 'new').length;
 
-  async function updateReview(finding: Finding, status: 'reviewed' | 'dismissed' | 'snoozed'): Promise<void> {
+  async function updateReview(finding: Finding, status: 'reviewed' | 'expected' | 'dismissed' | 'snoozed'): Promise<void> {
     setBusyFinding(finding.id);
     setActionError('');
     setNotice('');
@@ -210,7 +211,7 @@ export function FinancialIntelligencePanel({
       });
       const result = await request.json() as ApiPayload<{ findingId: string; status: ReviewStatus }>;
       if (!request.ok || !result.data) throw new Error(result.error?.message ?? 'No se pudo guardar el estado de revisión.');
-      setNotice(status === 'reviewed' ? 'Hallazgo marcado como útil.' : status === 'dismissed' ? 'Hallazgo descartado.' : 'Hallazgo aplazado durante 7 días.');
+      setNotice(status === 'reviewed' ? 'Hallazgo marcado como útil.' : status === 'expected' ? 'Hallazgo marcado como esperado.' : status === 'dismissed' ? 'Hallazgo descartado.' : 'Hallazgo aplazado durante 7 días.');
       setReloadKey((value) => value + 1);
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : 'No se pudo guardar el estado de revisión.');
@@ -255,6 +256,7 @@ export function FinancialIntelligencePanel({
         <div className="intelligence-quality" aria-label="Métricas locales de utilidad">
           <div><span>Feedback explícito</span><strong>{payload.qualityMetrics.feedbackCount}</strong></div>
           <div><span>Marcados útiles</span><strong>{payload.qualityMetrics.usefulCount}</strong></div>
+          <div><span>Esperados</span><strong>{payload.qualityMetrics.expectedCount}</strong></div>
           <div><span>Descartados</span><strong>{payload.qualityMetrics.dismissedCount}</strong></div>
           <div><span>Tasa de descarte</span><strong>{payload.qualityMetrics.dismissalRatePercent === null ? 'Sin datos' : new Intl.NumberFormat('es-ES', { maximumFractionDigits: 1 }).format(payload.qualityMetrics.dismissalRatePercent) + ' %'}</strong></div>
           <p>{payload.qualityMetrics.note} La precisión y la tasa de falsos positivos solo se calculan con casos etiquetados de forma independiente; las pruebas del proyecto usan fixtures sintéticos, sin telemetría externa.</p>
@@ -284,6 +286,7 @@ export function FinancialIntelligencePanel({
             <option value="new">Pendientes</option>
             <option value="all">Todos los estados</option>
             <option value="reviewed">Útiles confirmados</option>
+            <option value="expected">Esperados</option>
             <option value="dismissed">Descartados</option>
             <option value="snoozed">Aplazados</option>
           </select>
@@ -393,6 +396,7 @@ export function FinancialIntelligencePanel({
               {finding.reviewStatus === 'new' ? (
                 <>
                   <button className="button secondary" type="button" disabled={Boolean(busyFinding)} onClick={() => { void updateReview(finding, 'reviewed'); }}>Marcar útil</button>
+                  <button className="button secondary" type="button" disabled={Boolean(busyFinding)} onClick={() => { void updateReview(finding, 'expected'); }}>Marcar como esperado</button>
                   <button className="button secondary" type="button" disabled={Boolean(busyFinding)} onClick={() => { void updateReview(finding, 'snoozed'); }}>Aplazar 7 días</button>
                   <button className="button text-button" type="button" disabled={Boolean(busyFinding)} onClick={() => { void updateReview(finding, 'dismissed'); }}>Descartar</button>
                 </>

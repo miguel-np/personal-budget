@@ -47,6 +47,18 @@ describe('financial intelligence review state', () => {
     expect(effectiveFindingReview(state.reviews[0]!, 'fedcba0987654321', '2026-10-29')).toEqual({ status: 'dismissed' });
   });
 
+  it('persists an expected decision until evidence changes materially', async () => {
+    const path = await makeDirectory();
+    const expected = {
+      findingId: 'fi-v1-expected', fingerprint: '1234567890abcdef', status: 'expected' as const,
+      updatedAt: '2026-10-29T12:00:00.000Z',
+    };
+    await updateFindingReviewState(path, expected);
+    const record = (await readFindingReviewState(path)).reviews[0]!;
+    expect(effectiveFindingReview(record, expected.fingerprint, '2026-10-29')).toEqual({ status: 'expected' });
+    expect(effectiveFindingReview(record, 'fedcba0987654321', '2026-10-29')).toEqual({ status: 'new' });
+  });
+
   it('expires snoozes after the stored date and rejects an invalid snooze record', async () => {
     const path = await makeDirectory();
     const snoozed = {

@@ -106,7 +106,7 @@ const FinancialFindingContractSchema = z.object({
   }).strict()).max(100),
   limitations: z.array(z.string().min(1).max(1_000)).max(100),
   calculatedAt: z.string().datetime(),
-  reviewStatus: z.enum(['new', 'reviewed', 'dismissed', 'snoozed']),
+  reviewStatus: z.enum(['new', 'reviewed', 'expected', 'dismissed', 'snoozed']),
   snoozedUntil: z.string().refine(isIsoDate).optional(),
   navigationTarget: z.enum(['/reports', '/movements', '/budgets', '/planning', '/goals']),
 }).strict().superRefine((finding, context) => {
@@ -136,7 +136,7 @@ type IntelligenceAnomalyOptions = z.infer<typeof IntelligenceAnomalyOptionsSchem
 const IntelligenceFindingsQuerySchema = IntelligenceDatesSchema.extend(IntelligenceAnomalyOptionsSchema.shape).strict();
 const IntelligenceReviewRequestSchema = IntelligenceDatesSchema.extend(IntelligenceAnomalyOptionsSchema.shape).extend({
   findingId: z.string().trim().min(1).max(200),
-  status: z.enum(['reviewed', 'dismissed', 'snoozed']),
+  status: z.enum(['reviewed', 'expected', 'dismissed', 'snoozed']),
   snoozedUntil: z.string().refine(isIsoDate, 'snoozedUntil must be a valid YYYY-MM-DD date.').optional(),
 }).strict().superRefine((value, context) => {
   if (value.status === 'snoozed' && !value.snoozedUntil) {
@@ -1802,9 +1802,10 @@ function monthsBefore(date: string, months: number): string {
       const query = IntelligenceFindingsQuerySchema.parse(request.query);
       const result = await generateIntelligenceData(query.startDate, query.endDate, query);
       const feedback = result.findings.filter((finding) =>
-        finding.reviewStatus === 'reviewed' || finding.reviewStatus === 'dismissed');
+        finding.reviewStatus === 'reviewed' || finding.reviewStatus === 'expected' || finding.reviewStatus === 'dismissed');
       const dismissedCount = feedback.filter((finding) => finding.reviewStatus === 'dismissed').length;
       const usefulCount = feedback.filter((finding) => finding.reviewStatus === 'reviewed').length;
+      const expectedCount = feedback.filter((finding) => finding.reviewStatus === 'expected').length;
       return {
         data: {
           schemaVersion: 1,
@@ -1818,9 +1819,10 @@ function monthsBefore(date: string, months: number): string {
           qualityMetrics: {
             feedbackCount: feedback.length,
             usefulCount,
+            expectedCount,
             dismissedCount,
             dismissalRatePercent: feedback.length > 0 ? dismissedCount / feedback.length * 100 : null,
-            note: 'La tasa de descarte refleja feedback explícito del usuario, no precisión estadística ni tasa real de falsos positivos.',
+            note: 'Los hallazgos esperados son feedback explícito, no confirman por sí solos la precisión del detector. La tasa de descarte no equivale a la tasa real de falsos positivos.',
           },
         },
       };
