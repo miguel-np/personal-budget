@@ -407,6 +407,7 @@ export function buildFinancialAnomalyFindings(
         ],
         limitations: [
           'El cambio puede deberse a consumo, tarifas, cambios de servicio u otras circunstancias puntuales.',
+          'La desviación estadística no demuestra error ni fraude.',
           'Solo compara el mismo beneficiario normalizado y tipo de flujo.',
           ...(context.sourceWarnings?.length ? ['La referencia puede ser incompleta debido a movimientos excluidos sin conversión válida.'] : []),
         ],
