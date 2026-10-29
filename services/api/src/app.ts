@@ -1456,8 +1456,10 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       const MAX_CLASSIFICATION_CANDIDATES = 12;
       const selectedFallbackEntries = fallbackEntries.slice(0, MAX_CLASSIFICATION_CANDIDATES);
       const selectedIds = new Set(selectedFallbackEntries.map((entry) => entry.id));
-      let classificationOutcome: 'disabled' | 'not_configured' | 'payee_sharing_disabled' |
-        'completed' | 'abstained' | 'invalid_response' | 'unavailable' | 'context_limited' = 'disabled';
+      const classificationEnabled = config.aiEnabled && config.aiCategoryClassificationEnabled;
+      let classificationOutcome: 'disabled' | 'no_candidates' | 'not_configured' | 'payee_sharing_disabled' |
+        'completed' | 'abstained' | 'invalid_response' | 'unavailable' | 'context_limited' =
+        classificationEnabled ? 'no_candidates' : 'disabled';
       let inferenceDurationMs = 0;
       let batchAttempted = false;
 
@@ -1477,7 +1479,6 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         rationale,
       });
 
-      const classificationEnabled = config.aiEnabled && config.aiCategoryClassificationEnabled;
       if (classificationEnabled && selectedFallbackEntries.length > 0) {
         if (!config.ollamaModel) {
           classificationOutcome = 'not_configured';
