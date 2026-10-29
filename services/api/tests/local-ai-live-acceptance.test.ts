@@ -118,7 +118,7 @@ describe.skipIf(!enabled)('Ollama live acceptance (synthetic data only)', () => 
         abstentionRate: 1 - predicted.length / fixture.length,
       };
     };
-    const deterministicPredictions = new Map(fixture.map((item) => [item.id, item.deterministic as string | null]));
+    const deterministicPredictions = new Map(fixture.map((item) => [item.id, item.deterministic as string | null] as const));
     const aiByReference = new Map(aiResults.map((item) => [item.reference, item.categoryId]));
     const hybridPredictions = new Map(fixture.map((item) => {
       if (item.deterministic !== null) return [item.id, item.deterministic] as const;
