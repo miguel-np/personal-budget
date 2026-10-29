@@ -44,6 +44,8 @@ const EnvironmentSchema = z.object({
   OLLAMA_BASE_URL: z.string().url().default('http://127.0.0.1:11434').refine(isLoopbackUrl, { message: 'OLLAMA_BASE_URL must target a loopback host for local-only deployments.' }),
   OLLAMA_MODEL: z.preprocess((value) => (value === '' ? undefined : value), z.string().trim().min(1).max(128).optional()),
   AI_ENABLED: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
+  AI_CATEGORY_CLASSIFICATION_ENABLED: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
+  AI_CATEGORY_CLASSIFICATION_INCLUDE_PAYEE: z.enum(['true', 'false']).default('true').transform((value) => value === 'true'),
   OLLAMA_REQUEST_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(180).default(120),
   AI_MAX_CONTEXT_CHARS: z.coerce.number().int().min(512).max(8_000).default(4_000),
   ACTUAL_BUDGET_ID: z.string().trim().max(128).optional(),
@@ -62,6 +64,8 @@ export interface AppConfig {
   readonly ollamaBaseURL: string;
   readonly ollamaModel?: string;
   readonly aiEnabled: boolean;
+  readonly aiCategoryClassificationEnabled: boolean;
+  readonly aiCategoryClassificationIncludePayee: boolean;
   readonly ollamaTimeoutMs: number;
   readonly aiMaxContextChars: number;
   readonly actualBudgetId?: string;
@@ -86,6 +90,8 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
     ollamaBaseURL: parsed.OLLAMA_BASE_URL,
     ...(normalizedModel ? { ollamaModel: normalizedModel } : {}),
     aiEnabled: parsed.AI_ENABLED,
+    aiCategoryClassificationEnabled: parsed.AI_CATEGORY_CLASSIFICATION_ENABLED,
+    aiCategoryClassificationIncludePayee: parsed.AI_CATEGORY_CLASSIFICATION_INCLUDE_PAYEE,
     ollamaTimeoutMs: parsed.OLLAMA_REQUEST_TIMEOUT_SECONDS * 1_000,
     aiMaxContextChars: parsed.AI_MAX_CONTEXT_CHARS,
     ...(normalizedBudgetId ? { actualBudgetId: normalizedBudgetId } : {}),
