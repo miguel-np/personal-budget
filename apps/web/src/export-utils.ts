@@ -111,7 +111,7 @@ function validSheetNames(sheets: readonly XlsxSheet[]): string[] {
   const used = new Set<string>();
   return sheets.map((sheet, index) => {
     const base = (sheet.name || ('Hoja ' + (index + 1)))
-      .replace(/[\[\]:*?/\\]/g, ' ')
+      .replace(/[\[\]:*?\/\\]/g, ' ')
       .replace(/^'+|'+$/g, '')
       .slice(0, 31) || ('Hoja ' + (index + 1));
     let name = base;
@@ -143,7 +143,7 @@ function excelDateSerial(value: Date): number {
   return timestamp / 86_400_000 + 25_569;
 }
 
-function worksheetXml(sheet: XlsxSheet, sheetName: string): string {
+function worksheetXml(sheet: XlsxSheet): string {
   const rows = sheet.rows;
   const maximumColumns = rows.reduce((max, row) => Math.max(max, row.length), 0);
   if (maximumColumns > 16_384 || rows.length > 1_048_576) {
@@ -341,7 +341,7 @@ export function buildXlsxBytes(sheets: readonly XlsxSheet[]): Uint8Array {
   ).join('');
   const worksheets = sheets.map((sheet, index) => ({
     name: 'xl/worksheets/sheet' + (index + 1) + '.xml',
-    content: worksheetXml(sheet, names[index]!),
+    content: worksheetXml(sheet),
   }));
   const entries = [
     {
