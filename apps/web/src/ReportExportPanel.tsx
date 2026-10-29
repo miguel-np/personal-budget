@@ -711,7 +711,7 @@ export function ReportExportPanel({ current, previous, period, comparisonPeriod 
             <div><dt>Ámbito de cuentas</dt><dd>{scopeLabel}</dd></div>
             <div><dt>Cuentas</dt><dd>{accountNames}</dd></div>
             <div><dt>Divisa de análisis</dt><dd>{current.currency}</dd></div>
-            <div><dt>Divisas nativas por movimiento</dt><dd>No se desglosan en el resumen agregado; exporta los movimientos para consultar la moneda original. ; este informe agregado expresa los importes en la divisa de análisis.</dd></div>
+            <div><dt>Divisas nativas por movimiento</dt><dd>No se desglosan en el resumen agregado; exporta los movimientos para consultar la moneda original; este informe agregado expresa los importes en la divisa de análisis.</dd></div>
             <div><dt>Contenido</dt><dd>9 indicadores, {current.expensesByCategory.length} categorías de gasto y {current.incomeByCategory.length} categorías de ingreso; CSV/JSON mantienen importes en unidades menores y XLSX usa unidades principales según la precisión de cada divisa.</dd></div>
             <div><dt>Conversión</dt><dd>{ratesText}</dd></div>
             <div><dt>Advertencias</dt><dd>{warningsText}</dd></div>
