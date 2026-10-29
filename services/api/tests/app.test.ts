@@ -276,6 +276,8 @@ describe('local API', () => {
       { id: 'new-expense-1', account: 'account-1', currencyCode: 'EUR', date: '2026-09-04', amount: -20_000, category: 'food' },
       { id: 'new-expense-2', account: 'account-1', currencyCode: 'EUR', date: '2026-09-11', amount: -20_000, category: 'food' },
       { id: 'new-expense-3', account: 'account-1', currencyCode: 'EUR', date: '2026-09-21', amount: -20_000, category: 'food' },
+      { id: 'possible-duplicate-1', account: 'account-1', currencyCode: 'EUR', date: '2026-09-25', amount: -3_000, category: 'food', payee_name: 'Café Norte' },
+      { id: 'possible-duplicate-2', account: 'account-1', currencyCode: 'EUR', date: '2026-09-25', amount: -3_000, category: 'food', payee_name: 'cafe-norte' },
       { id: 'uncategorized-expense', account: 'account-1', currencyCode: 'EUR', date: '2026-09-23', amount: -8_000 },
       { id: 'internal-transfer', account: 'account-1', currencyCode: 'EUR', date: '2026-09-24', amount: -90_000, transfer_id: 'transfer-pair' },
     ];
@@ -294,6 +296,16 @@ describe('local API', () => {
     expect(findings.map((item) => item.type)).toContain('pending-categorization');
     expect(findings.every((item) => item.id.length > 0 && /^[0-9a-f]{16}$/.test(item.fingerprint))).toBe(true);
     expect(findings.find((item) => item.type === 'expense-change')?.evidence.length).toBeGreaterThan(0);
+
+    const configured = await app.inject({
+      method: 'GET',
+      url: '/api/v1/intelligence/findings?startDate=2026-09-01&endDate=2026-09-30&referenceWindows=3&minimumAbsoluteChangeMinor=2500&minimumRelativeChangePercent=20&enabledAnomalyKinds=possible-duplicate',
+    });
+    expect(configured.statusCode).toBe(200);
+    const anomalyFindings = configured.json().data.findings.filter((item: { type: string }) => item.type === 'financial-anomaly');
+    expect(anomalyFindings).toHaveLength(1);
+    expect(anomalyFindings[0].metrics.anomalyKind).toBe('possible-duplicate');
+    expect(anomalyFindings[0].reviewStatus).toBe('new');
 
     const pending = findings.find((item) => item.type === 'pending-categorization');
     expect(pending?.reviewStatus).toBe('new');
@@ -320,6 +332,14 @@ describe('local API', () => {
       payload: { findingId: 'fi-v1-not-present', startDate: '2026-09-01', endDate: '2026-09-30', status: 'reviewed' },
     });
     expect(invalidReview.statusCode).toBe(404);
+    const expected = await app.inject({
+      method: 'POST', url: '/api/v1/intelligence/review',
+      payload: { findingId: anomalyFindings[0].id, startDate: '2026-09-01', endDate: '2026-09-30', status: 'expected', referenceWindows: 3, minimumAbsoluteChangeMinor: 2500, minimumRelativeChangePercent: 20, enabledAnomalyKinds: ['possible-duplicate'] },
+    });
+    expect(expected.statusCode).toBe(200);
+    const expectedState = await app.inject({ method: 'GET', url: '/api/v1/intelligence/findings?startDate=2026-09-01&endDate=2026-09-30&referenceWindows=3&minimumAbsoluteChangeMinor=2500&minimumRelativeChangePercent=20&enabledAnomalyKinds=possible-duplicate' });
+    expect(expectedState.json().data.findings.find((item: { id: string }) => item.id === anomalyFindings[0].id).reviewStatus).toBe('expected');
+    expect(expectedState.json().data.qualityMetrics.expectedCount).toBe(1);
   });
 
   it('explains a verified deterministic finding through local Ollama and rejects an unknown finding', async () => {

@@ -8,3 +8,4 @@ export * from './category-suggestions.js';
 export * from './forecast.js';
 export * from './planning.js';
 export * from './intelligence.js';
+export * from './anomalies.js';

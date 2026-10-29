@@ -3,8 +3,9 @@ import { formatCivilDate, formatMoney as sharedFormatMoney } from './finance-for
 
 type FindingType =
   | 'expense-change' | 'income-change' | 'budget-overspend' | 'pending-categorization'
-  | 'commitment-upcoming' | 'recurring-candidate-upcoming' | 'goal-at-risk' | 'goal-progress';
-type ReviewStatus = 'new' | 'reviewed' | 'dismissed' | 'snoozed';
+  | 'commitment-upcoming' | 'recurring-candidate-upcoming' | 'goal-at-risk' | 'goal-progress' | 'financial-anomaly';
+type AnomalyKind = 'transaction-outlier' | 'total-expense-change' | 'category-change' | 'payee-change' | 'possible-duplicate' | 'income-change' | 'refund-change' | 'frequency-change';
+type ReviewStatus = 'new' | 'reviewed' | 'expected' | 'dismissed' | 'snoozed';
 type Confidence = 'observed' | 'estimated' | 'candidate' | 'suggestion';
 type NavigationTarget = '/reports' | '/movements' | '/budgets' | '/planning' | '/goals';
 
@@ -42,6 +43,7 @@ interface FindingsPayload {
   qualityMetrics: {
     feedbackCount: number;
     usefulCount: number;
+    expectedCount: number;
     dismissedCount: number;
     dismissalRatePercent: number | null;
     note: string;
@@ -58,7 +60,15 @@ const TYPE_LABELS: Record<FindingType, string> = {
   'recurring-candidate-upcoming': 'Posible recurrencia',
   'goal-at-risk': 'Objetivo en riesgo',
   'goal-progress': 'Progreso de objetivo',
+  'financial-anomaly': 'Anomalía financiera',
 };
+const ANOMALY_KIND_LABELS: Record<AnomalyKind, string> = {
+  'transaction-outlier': 'Importe individual inusual', 'total-expense-change': 'Cambio en gasto total',
+  'category-change': 'Cambio por categoría', 'payee-change': 'Cambio por beneficiario',
+  'possible-duplicate': 'Posibles duplicados', 'income-change': 'Cambio en ingresos',
+  'refund-change': 'Cambio en reembolsos', 'frequency-change': 'Cambio en frecuencia',
+};
+const ANOMALY_KIND_DEFAULTS = Object.keys(ANOMALY_KIND_LABELS) as AnomalyKind[];
 const CONFIDENCE_LABELS: Record<Confidence, string> = {
   observed: 'Hecho observado',
   estimated: 'Estimación',
@@ -67,12 +77,13 @@ const CONFIDENCE_LABELS: Record<Confidence, string> = {
 };
 const PRIORITY_LABELS = { high: 'Alta', medium: 'Media', low: 'Baja' } as const;
 const REVIEW_LABELS: Record<ReviewStatus, string> = {
-  new: 'Pendiente', reviewed: 'Útil confirmado', dismissed: 'Descartado', snoozed: 'Aplazado',
+  new: 'Pendiente', reviewed: 'Útil confirmado', expected: 'Esperada', dismissed: 'Descartado', snoozed: 'Aplazado',
 };
 const MONEY_KEYS = new Set([
   'currentMinor', 'previousMinor', 'deltaMinor', 'budgetedMinor', 'spentMinor', 'overByMinor',
   'uncategorizedOutflowMinor', 'unclassifiedInflowMinor', 'amountMinor', 'meanAbsoluteAmountMinor',
-  'targetAmountMinor', 'projectedBalanceMinor', 'gapMinor',
+  'targetAmountMinor', 'projectedBalanceMinor', 'gapMinor', 'baselineMedianMinor', 'observedMinor',
+  'minimumAbsoluteChangeMinor', 'triggerThresholdMinor', 'medianAbsoluteDeviationMinor', 'potentiallyRepeatedAmountMinor',
 ]);
 
 function money(value: number, currency: string): string {
@@ -91,8 +102,21 @@ function valueText(key: string, value: number | string | boolean | null, currenc
   return value;
 }
 function formatEvidence(value: string | number, label: string, currency: string): string {
-  if (typeof value !== 'number') return value;
-  const key = /valor del periodo|variación absoluta|umbral de activación|importe|gasto|ingreso|presupuesto|saldo|exceso|brecha estimada/i.test(label) ? 'impactMinor' : label.toLowerCase().includes('%') ? 'percentageChange' : 'count';
+  if (typeof value === 'string') {
+    if (label.toLocaleLowerCase('es').includes('serie histórica')) {
+      try {
+        const series: unknown = JSON.parse(value);
+        if (Array.isArray(series)) return series.flatMap((point: unknown) => {
+          if (!point || typeof point !== 'object') return [];
+          const item = point as { date?: unknown; amountMinor?: unknown };
+          return typeof item.date === 'string' && typeof item.amountMinor === 'number' && Number.isFinite(item.amountMinor)
+            ? [item.date + ': ' + money(item.amountMinor, currency)] : [];
+        }).join(' · ');
+      } catch { return value; }
+    }
+    return value;
+  }
+  const key = /valor del periodo|variación absoluta|umbral de activación|importe|gasto|ingreso|presupuesto|saldo|exceso|brecha estimada|mediana de importes|mediana de referencia/i.test(label) ? 'impactMinor' : label.toLowerCase().includes('%') ? 'percentageChange' : 'count';
   return valueText(key, value, currency);
 }
 function dateRange(period: { startDate: string; endDate: string }): string {
@@ -117,6 +141,10 @@ export function FinancialIntelligencePanel({
   const [payload, setPayload] = useState<FindingsPayload | null>(null);
   const [rangeStart, setRangeStart] = useState(startDate);
   const [rangeEnd, setRangeEnd] = useState(endDate);
+  const [referenceWindows, setReferenceWindows] = useState(6);
+  const [minimumAbsoluteChangeMinor, setMinimumAbsoluteChangeMinor] = useState(5_000);
+  const [minimumRelativeChangePercent, setMinimumRelativeChangePercent] = useState(30);
+  const [enabledAnomalyKinds, setEnabledAnomalyKinds] = useState<AnomalyKind[]>(ANOMALY_KIND_DEFAULTS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | FindingType>('all');
@@ -139,7 +167,8 @@ export function FinancialIntelligencePanel({
       setLoading(false);
       return () => controller.abort();
     }
-    const query = new URLSearchParams({ startDate: rangeStart, endDate: rangeEnd });
+    const query = new URLSearchParams({ startDate: rangeStart, endDate: rangeEnd, referenceWindows: String(referenceWindows), minimumAbsoluteChangeMinor: String(minimumAbsoluteChangeMinor), minimumRelativeChangePercent: String(minimumRelativeChangePercent) });
+    enabledAnomalyKinds.forEach((kind) => query.append('enabledAnomalyKinds', kind));
     void fetch('/api/v1/intelligence/findings?' + query.toString(), {
       signal: controller.signal, headers: { Accept: 'application/json' },
     }).then(async (response) => {
@@ -157,7 +186,7 @@ export function FinancialIntelligencePanel({
       if (!controller.signal.aborted) setLoading(false);
     });
     return () => controller.abort();
-  }, [rangeStart, rangeEnd, refreshKey, reloadKey]);
+  }, [rangeStart, rangeEnd, refreshKey, reloadKey, referenceWindows, minimumAbsoluteChangeMinor, minimumRelativeChangePercent, enabledAnomalyKinds]);
 
   const findings = useMemo(() => (payload?.findings ?? []).filter((finding) => {
     if (typeFilter !== 'all' && finding.type !== typeFilter) return false;
@@ -166,7 +195,7 @@ export function FinancialIntelligencePanel({
   }), [payload, typeFilter, statusFilter]);
   const pendingCount = (payload?.findings ?? []).filter((finding) => finding.reviewStatus === 'new').length;
 
-  async function updateReview(finding: Finding, status: 'reviewed' | 'dismissed' | 'snoozed'): Promise<void> {
+  async function updateReview(finding: Finding, status: 'reviewed' | 'expected' | 'dismissed' | 'snoozed'): Promise<void> {
     setBusyFinding(finding.id);
     setActionError('');
     setNotice('');
@@ -176,12 +205,13 @@ export function FinancialIntelligencePanel({
         headers: { 'content-type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({
           findingId: finding.id, startDate: rangeStart, endDate: rangeEnd, status,
+          referenceWindows, minimumAbsoluteChangeMinor, minimumRelativeChangePercent, enabledAnomalyKinds,
           ...(status === 'snoozed' ? { snoozedUntil: snoozeDate(7) } : {}),
         }),
       });
       const result = await request.json() as ApiPayload<{ findingId: string; status: ReviewStatus }>;
       if (!request.ok || !result.data) throw new Error(result.error?.message ?? 'No se pudo guardar el estado de revisión.');
-      setNotice(status === 'reviewed' ? 'Hallazgo marcado como útil.' : status === 'dismissed' ? 'Hallazgo descartado.' : 'Hallazgo aplazado durante 7 días.');
+      setNotice(status === 'reviewed' ? 'Hallazgo marcado como útil.' : status === 'expected' ? 'Hallazgo marcado como esperado.' : status === 'dismissed' ? 'Hallazgo descartado.' : 'Hallazgo aplazado durante 7 días.');
       setReloadKey((value) => value + 1);
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : 'No se pudo guardar el estado de revisión.');
@@ -197,7 +227,7 @@ export function FinancialIntelligencePanel({
       const response = await fetch('/api/v1/intelligence/explain', {
         method: 'POST',
         headers: { 'content-type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ findingId: finding.id, startDate: rangeStart, endDate: rangeEnd }),
+        body: JSON.stringify({ findingId: finding.id, startDate: rangeStart, endDate: rangeEnd, referenceWindows, minimumAbsoluteChangeMinor, minimumRelativeChangePercent, enabledAnomalyKinds }),
       });
       const result = await response.json() as ApiPayload<{ explanation: string }>;
       if (!response.ok || !result.data) throw new Error(result.error?.message ?? 'La explicación local no está disponible; el hallazgo calculado no cambia.');
@@ -226,6 +256,7 @@ export function FinancialIntelligencePanel({
         <div className="intelligence-quality" aria-label="Métricas locales de utilidad">
           <div><span>Feedback explícito</span><strong>{payload.qualityMetrics.feedbackCount}</strong></div>
           <div><span>Marcados útiles</span><strong>{payload.qualityMetrics.usefulCount}</strong></div>
+          <div><span>Esperados</span><strong>{payload.qualityMetrics.expectedCount}</strong></div>
           <div><span>Descartados</span><strong>{payload.qualityMetrics.dismissedCount}</strong></div>
           <div><span>Tasa de descarte</span><strong>{payload.qualityMetrics.dismissalRatePercent === null ? 'Sin datos' : new Intl.NumberFormat('es-ES', { maximumFractionDigits: 1 }).format(payload.qualityMetrics.dismissalRatePercent) + ' %'}</strong></div>
           <p>{payload.qualityMetrics.note} La precisión y la tasa de falsos positivos solo se calculan con casos etiquetados de forma independiente; las pruebas del proyecto usan fixtures sintéticos, sin telemetría externa.</p>
@@ -234,7 +265,7 @@ export function FinancialIntelligencePanel({
 
       <div className="intelligence-method-note">
         <strong>Cómo se calculan las prioridades</strong>
-        <p>Variaciones: al menos 5.000 unidades menores y un 20 % respecto a un periodo anterior de igual duración, con historial suficiente y sin conversiones pendientes. La proximidad y el impacto elevan la prioridad de compromisos y candidatos. La prioridad no es una medida de certeza.</p>
+        <p>Las variaciones entre periodos requieren al menos 5.000 unidades menores y un 20 % respecto a una ventana equivalente. Las anomalías usan medianas, desviación absoluta mediana y umbrales configurables. La prioridad no es una medida de certeza.</p>
       </div>
 
       <div className="filters-panel intelligence-filters">
@@ -255,6 +286,7 @@ export function FinancialIntelligencePanel({
             <option value="new">Pendientes</option>
             <option value="all">Todos los estados</option>
             <option value="reviewed">Útiles confirmados</option>
+            <option value="expected">Esperados</option>
             <option value="dismissed">Descartados</option>
             <option value="snoozed">Aplazados</option>
           </select>
@@ -263,6 +295,35 @@ export function FinancialIntelligencePanel({
           <span>Periodo de análisis</span>
           <strong>{dateRange({ startDate: rangeStart, endDate: rangeEnd })}</strong>
           <small>{payload?.accountScope.label ?? 'Cargando ámbito de cuentas'}</small>
+        </div>
+      </div>
+
+      <div className="filters-panel intelligence-anomaly-settings" aria-label="Configuración de detección de anomalías">
+        <div className="intelligence-period"><strong>Detección de anomalías</strong><small>Los ajustes solo cambian las reglas de detección; no modifican movimientos ni contabilidad.</small></div>
+        <label className="field-label">Ventanas de referencia
+          <select aria-label="Ventanas históricas de referencia" value={referenceWindows} onChange={(event) => setReferenceWindows(Number(event.currentTarget.value))}>
+            <option value={3}>3 ventanas</option><option value={6}>6 ventanas</option><option value={12}>12 ventanas</option><option value={24}>24 ventanas (hasta 2 años)</option>
+          </select>
+        </label>
+        <label className="field-label">Cambio absoluto mínimo
+          <select aria-label="Cambio absoluto mínimo" value={minimumAbsoluteChangeMinor} onChange={(event) => setMinimumAbsoluteChangeMinor(Number(event.currentTarget.value))}>
+            {[2_500, 5_000, 10_000, 25_000].map((value) => <option key={value} value={value}>{payload?.currency ? money(value, payload.currency) : value.toLocaleString('es-ES') + ' unidades menores'}</option>)}
+          </select>
+        </label>
+        <label className="field-label">Cambio relativo mínimo
+          <select aria-label="Cambio relativo mínimo" value={minimumRelativeChangePercent} onChange={(event) => setMinimumRelativeChangePercent(Number(event.currentTarget.value))}>
+            {[20, 30, 50, 75].map((value) => <option key={value} value={value}>{value} %</option>)}
+          </select>
+        </label>
+        <div className="intelligence-anomaly-types" role="group" aria-label="Tipos de anomalía activados"><strong>Tipos de alerta</strong>
+          {Object.entries(ANOMALY_KIND_LABELS).map(([kind, label]) => <label key={kind} className="field-label">
+            <input type="checkbox" checked={enabledAnomalyKinds.includes(kind as AnomalyKind)} onChange={(event) => {
+              const checked = event.currentTarget.checked;
+              setEnabledAnomalyKinds((current) => checked
+                ? current.includes(kind as AnomalyKind) ? current : [...current, kind as AnomalyKind]
+                : current.length > 1 ? current.filter((item) => item !== kind) : current);
+            }} />{label}
+          </label>)}
         </div>
       </div>
 
@@ -335,6 +396,7 @@ export function FinancialIntelligencePanel({
               {finding.reviewStatus === 'new' ? (
                 <>
                   <button className="button secondary" type="button" disabled={Boolean(busyFinding)} onClick={() => { void updateReview(finding, 'reviewed'); }}>Marcar útil</button>
+                  <button className="button secondary" type="button" disabled={Boolean(busyFinding)} onClick={() => { void updateReview(finding, 'expected'); }}>Marcar como esperado</button>
                   <button className="button secondary" type="button" disabled={Boolean(busyFinding)} onClick={() => { void updateReview(finding, 'snoozed'); }}>Aplazar 7 días</button>
                   <button className="button text-button" type="button" disabled={Boolean(busyFinding)} onClick={() => { void updateReview(finding, 'dismissed'); }}>Descartar</button>
                 </>

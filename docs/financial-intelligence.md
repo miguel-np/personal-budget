@@ -47,3 +47,29 @@ Para validar el repositorio completo:
     npm run test:e2e
 
 El centro es informativo: no detecta fraude, no ofrece asesoramiento fiscal, de inversión o crédito y no aplica cambios automáticos al presupuesto.
+
+
+## Detección de anomalías financieras (issue #69)
+
+La detección se integra con el centro mediante el tipo versionado \`financial-anomaly\`. El motor en \`packages/finance-core/src/anomalies.ts\` es determinista, usa datos locales y no depende de la IA. Cada candidato incluye subtipo, periodo, ámbito, divisa, observaciones, mediana, diferencia absoluta y relativa, umbral aplicado y limitaciones.
+
+### Reglas v1
+
+- **Ventanas:** selección de 3, 6, 12 o 24 periodos históricos de igual duración. Se consultan como máximo los 730 días anteriores para acotar el coste; la API lo indica cuando el horizonte pedido excede ese límite.
+- **Umbrales configurables:** el usuario elige un mínimo absoluto (2.500, 5.000, 10.000 o 25.000 unidades menores de la divisa activa) y un porcentaje (20, 30, 50 o 75 %). Para agregados y operaciones individuales el umbral efectivo es el máximo entre mínimo absoluto, cambio relativo y tres desviaciones absolutas medianas escaladas (\`3 × 1,4826 × MAD\`).
+- **Gasto total, categoría y beneficiario:** comparación con medianas de ventanas equivalentes. Los beneficiarios se normalizan por acentos, mayúsculas, puntuación y espacios, pero no se emplean similitudes difusas.
+- **Ingresos y reembolsos:** se agregan aparte según categoría y signo. Los movimientos positivos sin categoría no se suponen ingresos; los reembolsos no se incorporan a ingresos clasificados ni se tratan como gasto negativo.
+- **Frecuencia:** cuenta grupos de movimientos únicos; las líneas de un split comparten identidad de grupo.
+- **Duplicados candidatos:** igualdad exacta de cuenta, fecha, importe firmado, beneficiario normalizado y divisa. La regla es deliberadamente precisa, no demuestra duplicidad y no elimina, fusiona ni modifica operaciones.
+- **Estacionalidad:** para un mes natural completo y al menos 12 ventanas, se comparan meses homólogos de años previos si hay dos o más observaciones completas disponibles. Si no se puede ajustar, la evidencia lo declara.
+- **Ámbito y divisa:** se usan las cuentas incluidas en la preferencia global activa. Movimientos sin conversión válida se excluyen; si la cobertura no es completa, se omiten de forma conservadora las comparaciones agregadas.
+- **Historial insuficiente:** las reglas estadísticas se abstienen hasta contar con el mínimo de observaciones necesarias.
+
+Los umbrales y tipos de alerta se envían al recalcular, revisar o solicitar explicación, para que la misma configuración regenere la identidad y huella correspondientes. Los estados de revisión siguen usando el almacén local existente y no guardan importes ni detalles de movimientos.
+
+### Validación de calidad
+
+Las pruebas sintéticas cubren cambios puntuales, variación normal, historial corto, normalización de beneficiarios, nombres similares, reembolsos, monedas no comparables, transferencias, splits, duplicados legítimos que son falsos positivos y estacionalidad. \`evaluateFindingQuality\` calcula precisión y tasa de falsos positivos a partir de etiquetas independientes; esos valores describen solo el conjunto etiquetado usado y no se presentan como calidad medida en datos reales. No hay telemetría externa.
+
+
+La revisión contempla cuatro decisiones: **útil**, **esperado**, **descartado** y **aplazado** (7 días desde el panel). «Esperado» es distinto de descartar y permanece aplicado mientras la huella de evidencia siga igual. Si la evidencia cambia materialmente, el estado efectivo vuelve a «pendiente». El almacén persiste solo ID, huella, estado y fecha de actualización; no conserva importes ni filas de movimientos.

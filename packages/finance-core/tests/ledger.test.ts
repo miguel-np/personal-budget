@@ -12,6 +12,7 @@ describe('normalizeTransactions', () => {
     expect(normalizeTransactions([raw()])).toEqual([{
       id: 'tx-1', accountId: 'account-1', date: '2026-10-01', amountMinor: -1_000,
       categoryId: 'food', transferId: null, isTransfer: false, payeeLabel: null,
+      transactionGroupId: 'tx-1', isSplitLine: false,
     }]);
   });
   it('normalizes payee labels for grouping and falls back to imported payee', () => {
