@@ -52,6 +52,10 @@ export interface LedgerEntry {
   readonly isTransfer: boolean;
   /** Normalized beneficiary label, when the source transaction carries one. */
   readonly payeeLabel?: string | null;
+  /** Shared parent identity for transaction splits; falls back to the transaction ID. */
+  readonly transactionGroupId?: string;
+  /** True for a split line, which must not be treated as an independent charge. */
+  readonly isSplitLine?: boolean;
 }
 
 export interface Period {

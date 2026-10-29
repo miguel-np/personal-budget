@@ -8,7 +8,8 @@ export type FindingType =
   | 'commitment-upcoming'
   | 'recurring-candidate-upcoming'
   | 'goal-at-risk'
-  | 'goal-progress';
+  | 'goal-progress'
+  | 'financial-anomaly';
 
 export type FindingConfidence = 'observed' | 'estimated' | 'candidate' | 'suggestion';
 export type FindingPriority = 'low' | 'medium' | 'high';
