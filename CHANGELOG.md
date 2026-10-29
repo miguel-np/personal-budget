@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Añadido el centro de inteligencia financiera de la issue #68: hallazgos deterministas versionados, comparaciones de periodos equivalentes, prioridad explicada, revisión persistente, filtros, evidencia, IA local opcional y pruebas unitarias/API/E2E.
+
 - Añadido workspace npm/TypeScript con núcleo financiero, adaptador de Actual Budget, API local y shell web.
 - Añadido núcleo financiero determinista con importes en unidades menores, validación de fechas, exclusión de transferencias y normalización de transacciones divididas.
 - Añadido adaptador inyectable para la API oficial de Actual, operaciones serializadas y dry-run por defecto para importaciones.

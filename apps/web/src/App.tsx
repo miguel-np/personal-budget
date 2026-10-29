@@ -9,6 +9,7 @@ import { ReportExportPanel } from './ReportExportPanel.js';
 import { SettingsCenter, type AppPreferences } from './SettingsCenter.js';
 import { AccountsPanel } from './AccountsPanel.js';
 import { DashboardSignals } from './DashboardSignals.js';
+import { FinancialIntelligencePanel } from './FinancialIntelligencePanel.js';
 import { formatAccountBalance, formatCivilDate, formatMoney as sharedFormatMoney, setFinanceLocale } from './finance-format.js';
 
 type ConnectionState = 'checking' | 'connected' | 'unconfigured' | 'error';
@@ -133,6 +134,7 @@ const NAV_ITEMS = [
   { href: '/reports', label: 'Informes', icon: '▥' },
   { href: '/budgets', label: 'Presupuestos', icon: '◷' },
   { href: '/planning', label: 'Planificación', icon: '◎' },
+  { href: '/intelligence', label: 'Inteligencia financiera', icon: '◈' },
   { href: '/goals', label: 'Objetivos', icon: '↗' },
   { href: '/assistant', label: 'Asistente', icon: '✧' },
   { href: '/settings', label: 'Configuración', icon: '⚙' },
@@ -847,6 +849,7 @@ export function App() {
 
             {route === '/assistant' && <AssistantPanel currency={currency} />}
             {route === '/planning' && <PlanningPanel currency={currency} />}
+            {route === '/intelligence' && <FinancialIntelligencePanel key={period.startDate + ':' + period.endDate} startDate={period.startDate} endDate={period.endDate} refreshKey={refreshKey} onNavigate={(target) => navigateTo(target)} />}
             {route === '/goals' && <GoalsPanel currency={currency} />}
 
             {route === '/settings' && (
@@ -941,7 +944,7 @@ export function App() {
               </section>
             )}
 
-            {!['/', '/movements', '/accounts', '/reports', '/budgets', '/planning', '/goals', '/assistant', '/settings'].includes(route) && (
+            {!['/', '/movements', '/accounts', '/reports', '/budgets', '/planning', '/intelligence', '/goals', '/assistant', '/settings'].includes(route) && (
               <section className="content-section"><EmptyState title="Sección no encontrada" body="Utiliza la navegación principal para abrir una sección disponible." /><a className="button primary" href="/">Volver al resumen</a></section>
             )}
           </>

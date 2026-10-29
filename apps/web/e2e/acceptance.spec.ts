@@ -55,6 +55,57 @@ test('dashboard loads synthetic finance figures and supports period changes', as
   await expect(page.locator('input[type="month"]')).toBeVisible();
 });
 
+test('financial intelligence exposes evidence and persists review state without local AI', async ({ page }) => {
+  await page.goto('/intelligence');
+  await expect(page.getByRole('heading', { name: 'Centro de inteligencia financiera' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Sección no encontrada' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Hay movimientos pendientes de clasificar' })).toBeVisible();
+  await expect(page.getByText(/Fuente: finance-core\.normalizeTransactions/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Explicar con IA local' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Marcar útil' }).click();
+  await expect(page.locator('.form-alert.success')).toContainText('Hallazgo marcado como útil.');
+  await page.getByLabel('Estado de revisión').selectOption('reviewed');
+  await expect(page.getByRole('heading', { name: 'Hay movimientos pendientes de clasificar' })).toBeVisible();
+  await expect(page.getByText('Útil confirmado', { exact: true })).toBeVisible();
+});
+
+test('financial intelligence handles empty and API error states', async ({ page }) => {
+  let mode: 'empty' | 'error' = 'empty';
+  await page.route('**/api/v1/intelligence/findings*', async (route) => {
+    if (mode === 'empty') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            schemaVersion: 1, findings: [], warnings: [], period: { startDate: '2026-10-01', endDate: '2026-10-29' },
+            accountScope: { label: 'Todas las cuentas abiertas' }, currency: 'EUR',
+            calculatedAt: new Date().toISOString(), aiEnabled: false,
+            qualityMetrics: { feedbackCount: 0, usefulCount: 0, dismissedCount: 0, dismissalRatePercent: null, note: 'Métrica sintética.' },
+          },
+        }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 502,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: { code: 'UPSTREAM_ERROR', message: 'Error sintético de API' } }),
+    });
+  });
+  await page.goto('/intelligence');
+  await expect(page.getByRole('heading', { name: 'Sin hallazgos para este periodo' })).toBeVisible();
+  await page.getByLabel('Desde').fill('2026-09-01');
+  await page.getByLabel('Hasta').fill('2026-09-30');
+  await expect(page.getByLabel('Desde')).toHaveValue('2026-09-01');
+  await expect(page.getByLabel('Hasta')).toHaveValue('2026-09-30');
+  mode = 'error';
+  await page.goto('/intelligence');
+  await expect(page.getByText('No se ha podido cargar la inteligencia financiera')).toBeVisible();
+  await expect(page.getByRole('alert')).toContainText('Error sintético de API');
+  await expect(page.getByRole('button', { name: 'Reintentar' })).toBeVisible();
+});
+
 test('reports show current and previous period context', async ({ page }) => {
   await page.goto('/reports');
   await expect(page.getByRole('heading', { name: 'Informes del periodo' })).toBeVisible();
@@ -304,7 +355,7 @@ test('skip navigation and section changes keep keyboard focus predictable', asyn
 });
 
 test('visible form controls have programmatic labels across core sections', async ({ page }) => {
-  for (const route of ['/', '/movements', '/reports', '/budgets', '/planning', '/assistant', '/settings']) {
+  for (const route of ['/', '/movements', '/reports', '/budgets', '/planning', '/intelligence', '/assistant', '/settings']) {
     await page.goto(route);
     await expect(page.getByRole('main')).toBeVisible();
     const unlabeled = await page.locator('input:not([type="hidden"]), select, textarea').evaluateAll((elements) => {
@@ -385,6 +436,7 @@ test('core sections reflow at desktop, tablet and mobile widths without page-lev
     { route: '/reports', heading: 'Informes' },
     { route: '/budgets', heading: 'Presupuestos' },
     { route: '/planning', heading: 'Planificación' },
+    { route: '/intelligence', heading: 'Inteligencia financiera' },
     { route: '/assistant', heading: 'Asistente' },
     { route: '/settings', heading: 'Configuración' },
   ];

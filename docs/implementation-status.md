@@ -2,6 +2,10 @@
 
 **Roadmap completo (P0–P3, 25-oct-2026):** stack de Actual, adaptador oficial, API, shell financiera, IA local, MCP, recuperación y mejoras P3 (recurrentes, sugerencias y previsiones) implementados y validados en vivo en el entorno objetivo Windows + WSL2. CI de `main` verde en Linux y Windows.
 
+## Centro de inteligencia financiera (issue #68)
+
+La implementación añade hallazgos versionados y verificables, comparaciones de igual duración, límites explícitos por divisa/ámbito, prioridades explicadas, revisiones persistentes, filtros de fechas/tipo, evidencia, métricas locales de utilidad y explicación cualitativa opcional con IA local. El cierre depende de que CI y E2E confirmen los criterios en la rama; la documentación no afirma una prueba manual de Windows + WSL2 por estos cambios.
+
 ## Aceptación P3 (25-oct-2026)
 
 - Detección de pagos recurrentes con señales deterministas en `finance-core` (`recurring.ts`): beneficiario, frecuencia, importe y fechas; candidatos explicados con avisos de falso positivo (reembolsos, fechas desplazadas, importes variables, nombres similares). Validado en vivo: candidato `supermercado` con cadencia mensual de 30 días.
