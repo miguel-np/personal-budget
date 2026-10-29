@@ -85,6 +85,8 @@ export function PlanningPanel({ currency }: { currency: string }) {
   const detectionPeriod = useMemo(() => monthOffset(5), []);
   const visibleSuggestions = useMemo(() =>
     suggestions.filter((suggestion) => !discarded.includes(suggestion.transactionId)), [suggestions, discarded]);
+  const canPreviewAll = visibleSuggestions.length > 0 && visibleSuggestions.every((suggestion) =>
+    Boolean(chosenCategory[suggestion.transactionId] ?? suggestion.suggestedCategoryId));
   const expenseCategories = useMemo(() => categories.filter((category) => !category.isIncome), [categories]);
 
   useEffect(() => {
@@ -252,7 +254,7 @@ export function PlanningPanel({ currency }: { currency: string }) {
         {visibleSuggestions.length > 0 ? (
           <div className="suggestion-block">
             <h4>Sugerencias de categoría ({visibleSuggestions.length})</h4>
-            <p className="section-footnote">La fuente se identifica por movimiento: reglas deterministas, IA local o ausencia de sugerencia. La incertidumbre de IA es cualitativa, no una probabilidad. Nada se modifica sin previsualización y confirmación explícita.</p>
+            <p className="section-footnote">La fuente se identifica por movimiento: reglas deterministas, IA local o ausencia de sugerencia. La incertidumbre de IA es cualitativa, no una probabilidad. En los casos sin sugerencia, selecciona una categoría manualmente. Nada se modifica sin previsualización y confirmación explícita.</p>
             {visibleSuggestions.map((suggestion) => (
               <div className="comparison-row" key={suggestion.transactionId}>
                 <div><span>{suggestion.payeeLabel} · {suggestion.date}</span><strong>{money(suggestion.amountMinor, currency)}</strong></div>
@@ -284,7 +286,7 @@ export function PlanningPanel({ currency }: { currency: string }) {
               </div>
             ))}
             <div className="button-row">
-              <button className="button primary" type="button" disabled={busy || pendingChanges.length > 0 || visibleSuggestions.length === 0} onClick={() => { void previewApply(visibleSuggestions.map((suggestion) => suggestion.transactionId)); }}>
+              <button className="button primary" type="button" disabled={busy || pendingChanges.length > 0 || !canPreviewAll} onClick={() => { void previewApply(visibleSuggestions.map((suggestion) => suggestion.transactionId)); }}>
                 {busy ? 'Preparando…' : 'Previsualizar todas las sugerencias visibles'}
               </button>
             </div>
