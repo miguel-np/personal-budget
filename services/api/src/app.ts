@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import Fastify, { LogController, type FastifyInstance, type FastifyReply, type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import helmet from '@fastify/helmet';
-import { buildPeriodChangeFindings, buildUncategorizedFinding, calculateSummary, convertAmountMinor, createFinancialFinding, detectRecurringCandidates, estimatePlanningCashFlow, expandCommitmentOccurrences, isIsoDate, normalizeCurrencyCode, normalizeTransactions, projectSavings, projectSavingsGoal, sortFinancialFindings, suggestCategories, validatePeriod } from '@personal-budget/finance-core';
+import { buildFinancialAnomalyFindings, buildPeriodChangeFindings, buildUncategorizedFinding, calculateSummary, convertAmountMinor, createFinancialFinding, detectRecurringCandidates, estimatePlanningCashFlow, expandCommitmentOccurrences, isIsoDate, normalizeCurrencyCode, normalizeTransactions, projectSavings, projectSavingsGoal, sortFinancialFindings, suggestCategories, validatePeriod } from '@personal-budget/finance-core';
 import type { BudgetRepository, BudgetTransaction, FinancialFinding, FindingPriority, ForecastScenario, PlanningCommitment, TransactionCategoryBatchChange, TransactionStructureUpdate } from '@personal-budget/finance-core';
 import { ActualAdapterError } from '@personal-budget/actual-adapter';
 import type { ActualBudgetMonthRecord, ActualImportRecord, ActualImportResult } from '@personal-budget/actual-adapter';
@@ -78,7 +78,7 @@ const FinancialFindingContractSchema = z.object({
   schemaVersion: z.literal(1),
   id: z.string().min(1).max(200),
   fingerprint: z.string().regex(/^[0-9a-f]{16}$/),
-  type: z.enum(['expense-change', 'income-change', 'budget-overspend', 'pending-categorization', 'commitment-upcoming', 'recurring-candidate-upcoming', 'goal-at-risk', 'goal-progress']),
+  type: z.enum(['expense-change', 'income-change', 'budget-overspend', 'pending-categorization', 'commitment-upcoming', 'recurring-candidate-upcoming', 'goal-at-risk', 'goal-progress', 'financial-anomaly']),
   title: z.string().min(1).max(200),
   explanation: z.string().min(1).max(2_000),
   period: z.object({
@@ -121,7 +121,16 @@ const IntelligenceDatesSchema = z.object({
   startDate: z.string().refine(isIsoDate, 'startDate must be a valid YYYY-MM-DD date.'),
   endDate: z.string().refine(isIsoDate, 'endDate must be a valid YYYY-MM-DD date.'),
 }).strict();
-const IntelligenceReviewRequestSchema = IntelligenceDatesSchema.extend({
+const AnomalyKindSchema = z.enum(['transaction-outlier', 'total-expense-change', 'category-change', 'payee-change', 'possible-duplicate', 'income-change', 'refund-change', 'frequency-change']);
+const IntelligenceAnomalyOptionsSchema = z.object({
+  referenceWindows: z.coerce.number().int().min(3).max(24).default(6),
+  minimumAbsoluteChangeMinor: z.coerce.number().int().min(1).max(1_000_000_000).default(5_000),
+  minimumRelativeChangePercent: z.coerce.number().finite().min(1).max(1_000).default(30),
+  enabledAnomalyKinds: z.array(AnomalyKindSchema).max(8).refine((kinds) => new Set(kinds).size === kinds.length, 'Anomaly kinds must be unique.').default(['transaction-outlier', 'total-expense-change', 'category-change', 'payee-change', 'possible-duplicate', 'income-change', 'refund-change', 'frequency-change']),
+}).strict();
+type IntelligenceAnomalyOptions = z.infer<typeof IntelligenceAnomalyOptionsSchema>;
+const IntelligenceFindingsQuerySchema = IntelligenceDatesSchema.extend(IntelligenceAnomalyOptionsSchema.shape).strict();
+const IntelligenceReviewRequestSchema = IntelligenceDatesSchema.extend(IntelligenceAnomalyOptionsSchema.shape).extend({
   findingId: z.string().trim().min(1).max(200),
   status: z.enum(['reviewed', 'dismissed', 'snoozed']),
   snoozedUntil: z.string().refine(isIsoDate, 'snoozedUntil must be a valid YYYY-MM-DD date.').optional(),
@@ -133,7 +142,7 @@ const IntelligenceReviewRequestSchema = IntelligenceDatesSchema.extend({
     context.addIssue({ code: 'custom', path: ['snoozedUntil'], message: 'Only snoozed findings may have an expiry date.' });
   }
 });
-const IntelligenceExplainRequestSchema = IntelligenceDatesSchema.extend({
+const IntelligenceExplainRequestSchema = IntelligenceDatesSchema.extend(IntelligenceAnomalyOptionsSchema.shape).extend({
   findingId: z.string().trim().min(1).max(200),
 }).strict();
 const CategorizeRequestSchema = z.object({
@@ -1364,7 +1373,11 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     return { accounts: resolved.accounts, transactions, scope: resolved.metadata };
   }
 
-  function monthsBefore(date: string, months: number): string {
+  function durationDaysBetween(startDate: string, endDate: string): number {
+  return Math.floor((Date.parse(endDate + 'T00:00:00.000Z') - Date.parse(startDate + 'T00:00:00.000Z')) / 86_400_000) + 1;
+}
+
+function monthsBefore(date: string, months: number): string {
     const year = Number(date.slice(0, 4));
     const month = Number(date.slice(5, 7));
     const shifted = new Date(Date.UTC(year, month - 1 - months, 1));
@@ -1444,7 +1457,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     return { priority: 'low', reason: 'Vence dentro de los próximos 30 días sin alcanzar los umbrales de prioridad superiores (regla v1).' };
   }
 
-  async function generateIntelligenceData(startDate: string, endDate: string): Promise<{
+  async function generateIntelligenceData(startDate: string, endDate: string, anomalyOptions: IntelligenceAnomalyOptions = IntelligenceAnomalyOptionsSchema.parse({})): Promise<{
     readonly findings: readonly FinancialFinding[];
     readonly warnings: readonly string[];
     readonly currentSummary: ReturnType<typeof calculateSummary>;
@@ -1476,6 +1489,32 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     const convertedCurrent = convertTransactionsForAnalysis(currentTransactions, preferences);
     const findings: FinancialFinding[] = [];
     const warnings: string[] = [...convertedCurrent.warnings];
+
+    const anomalyDurationDays = durationDaysBetween(startDate, endDate);
+    const anomalyHistoryDays = Math.min(730, Math.max(90, anomalyDurationDays * anomalyOptions.referenceWindows));
+    const anomalyHistoryStartDate = addIntelligenceDays(startDate, -anomalyHistoryDays);
+    const anomalyHistoryEndDate = addIntelligenceDays(startDate, -1);
+    const rawAnomalyHistory = await transactionsForAccounts(scope.accounts, anomalyHistoryStartDate, anomalyHistoryEndDate, preferences);
+    const convertedAnomalyHistory = convertTransactionsForAnalysis(rawAnomalyHistory, preferences);
+    warnings.push(...convertedAnomalyHistory.warnings);
+    const anomalyResult = buildFinancialAnomalyFindings([
+      ...normalizeTransactions(convertedAnomalyHistory.transactions),
+      ...normalizeTransactions(convertedCurrent.transactions),
+    ], {
+      period: { startDate, endDate }, accountScope: findingScope, currency: preferences.displayCurrency,
+      calculatedAt, categories, referenceWindows: anomalyOptions.referenceWindows,
+      minimumAbsoluteChangeMinor: anomalyOptions.minimumAbsoluteChangeMinor,
+      minimumRelativeChangePercent: anomalyOptions.minimumRelativeChangePercent,
+      enabledKinds: anomalyOptions.enabledAnomalyKinds, historyStartDate: anomalyHistoryStartDate,
+      allowPeriodComparisons: endDate < asOfDate && convertedCurrent.warnings.length === 0 && convertedAnomalyHistory.warnings.length === 0,
+      allowTransactionOutliers: convertedCurrent.warnings.length === 0 && convertedAnomalyHistory.warnings.length === 0,
+      sourceWarnings: [...convertedCurrent.warnings, ...convertedAnomalyHistory.warnings],
+    });
+    findings.push(...anomalyResult.findings);
+    warnings.push(...anomalyResult.limitations);
+    if (anomalyHistoryDays === 730 && anomalyDurationDays * anomalyOptions.referenceWindows > 730) {
+      warnings.push('El historial de anomalías está limitado a los 730 días anteriores por razones de rendimiento.');
+    }
 
     if (endDate < asOfDate) {
       const durationDays = Math.floor((Date.parse(endDate + 'T00:00:00.000Z') - Date.parse(startDate + 'T00:00:00.000Z')) / 86_400_000) + 1;
@@ -1756,8 +1795,8 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
 
   app.get('/api/v1/intelligence/findings', async (request, reply) => {
     try {
-      const query = IntelligenceDatesSchema.parse(request.query);
-      const result = await generateIntelligenceData(query.startDate, query.endDate);
+      const query = IntelligenceFindingsQuerySchema.parse(request.query);
+      const result = await generateIntelligenceData(query.startDate, query.endDate, query);
       const feedback = result.findings.filter((finding) =>
         finding.reviewStatus === 'reviewed' || finding.reviewStatus === 'dismissed');
       const dismissedCount = feedback.filter((finding) => finding.reviewStatus === 'dismissed').length;
@@ -1798,7 +1837,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
           return reply.code(400).send({ error: { code: 'INVALID_SNOOZE_WINDOW', message: 'El aplazamiento debe vencer entre hoy y los próximos 90 días.' } });
         }
       }
-      const result = await generateIntelligenceData(parsed.startDate, parsed.endDate);
+      const result = await generateIntelligenceData(parsed.startDate, parsed.endDate, parsed);
       const finding = result.findings.find((item) => item.id === parsed.findingId);
       if (!finding) return reply.code(404).send({ error: { code: 'FINDING_NOT_FOUND', message: 'El hallazgo ya no existe en el periodo y ámbito actuales.' } });
       const record = {
@@ -1828,7 +1867,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       if (!config.aiEnabled) {
         return reply.code(503).send({ error: { code: 'AI_DISABLED', message: 'La explicación con IA local está desactivada; los hallazgos deterministas siguen disponibles.' } });
       }
-      const result = await generateIntelligenceData(parsed.startDate, parsed.endDate);
+      const result = await generateIntelligenceData(parsed.startDate, parsed.endDate, parsed);
       const finding = result.findings.find((item) => item.id === parsed.findingId);
       if (!finding) return reply.code(404).send({ error: { code: 'FINDING_NOT_FOUND', message: 'El hallazgo ya no existe en el periodo y ámbito actuales.' } });
       const context: AssistantContext = {
