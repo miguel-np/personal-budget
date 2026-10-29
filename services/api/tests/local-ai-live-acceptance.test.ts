@@ -53,7 +53,8 @@ describe.skipIf(!enabled)('Ollama live acceptance (synthetic data only)', () => 
     // deterministic result; remaining cases exercise the optional local fallback.
     const fixture = [
       { id: 'known-supermarket', payee: 'Supermercado Sintético Norte', expected: 'food', deterministic: 'food' },
-      { id: 'new-pharmacy', payee: 'Farmacia Aurora de prueba', expected: 'health', deterministic: null },
+      // Intentional typo of a familiar category cue: the rule engine keys on the exact normalized payee.
+      { id: 'new-pharmacy', payee: 'Farmacia Auroa de prueba', expected: 'health', deterministic: null },
       { id: 'new-fuel', payee: 'Gasolinera Demo Local', expected: 'transport', deterministic: null },
       { id: 'new-bakery', payee: 'Panadería Ejemplo', expected: 'food', deterministic: null },
       { id: 'new-repair', payee: 'Taller Mecánico Sintético', expected: 'transport', deterministic: null },
