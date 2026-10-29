@@ -19,6 +19,23 @@ describe('loadConfig', () => {
     expect(config.ollamaBaseURL).toBe('http://127.0.0.1:11434');
     expect(config.ollamaTimeoutMs).toBe(120_000);
   });
+  it('keeps hybrid category classification opt-in and allows disabling payee names', () => {
+    expect(loadConfig({})).toMatchObject({
+      aiCategoryClassificationEnabled: false,
+      aiCategoryClassificationIncludePayee: true,
+    });
+    expect(loadConfig({
+      AI_ENABLED: 'true',
+      AI_CATEGORY_CLASSIFICATION_ENABLED: 'true',
+      AI_CATEGORY_CLASSIFICATION_INCLUDE_PAYEE: 'false',
+    })).toMatchObject({
+      aiEnabled: true,
+      aiCategoryClassificationEnabled: true,
+      aiCategoryClassificationIncludePayee: false,
+    });
+    expect(() => loadConfig({ AI_CATEGORY_CLASSIFICATION_ENABLED: 'yes' })).toThrow();
+  });
+
   it('rejects remote Ollama endpoints and invalid timeout values', () => {
     expect(() => loadConfig({ OLLAMA_BASE_URL: 'https://ollama.example.com' })).toThrow();
     expect(() => loadConfig({ OLLAMA_REQUEST_TIMEOUT_SECONDS: '0' })).toThrow();
