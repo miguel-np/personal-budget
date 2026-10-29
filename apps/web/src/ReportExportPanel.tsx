@@ -376,7 +376,7 @@ export function ReportExportPanel({ current, previous, period, comparisonPeriod 
         value === null ? '' : value, metric.unit === 'minor' ? 'unidades menores (minor units)' : metric.unit,
         current.currency, 'No desglosada en informe agregado; consulta exportación de movimientos para ver divisa nativa', previousValue === null ? '' : previousValue, delta === null ? '' : delta,
         deltaPercent === null ? '' : deltaPercent, current.transactionCount,
-        current.unconvertedTransactionCount ?? 0, current.excludedTransferCount,
+        current.unconvertedTransactionCount ?? '', current.excludedTransferCount,
         conversionCriteria, ratesText, warningsText,
       ];
     };
