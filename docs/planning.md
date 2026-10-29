@@ -37,7 +37,7 @@ El contrato distingue `source: rule_based | local_ai | none`, `confidence` de fu
 
 ### Evaluación sintética y métricas
 
-La prueba optativa `services/api/tests/local-ai-live-acceptance.test.ts` incluye etiquetas de comercio inventadas y resultados esperados (sin datos financieros personales). Contrasta la cobertura, precisión, tasa de falsos positivos en casos etiquetados como ambiguos y tasa de abstención de la capa determinista frente al híbrido. La evaluación marca como abstención toda respuesta inválida y solo cuenta las sugerencias de IA de incertidumbre baja y categoría permitida.
+La prueba optativa `services/api/tests/local-ai-live-acceptance.test.ts` incluye etiquetas de comercio inventadas y resultados esperados (sin datos financieros personales) y obtiene la línea base ejecutando el `suggestCategories` real de `finance-core`. Contrasta las métricas de la base con el híbrido: **cobertura** = ejemplos con categoría asignada / total; **precisión** = asignaciones correctas / asignaciones realizadas; **tasa de falsos positivos** = casos etiquetados como ambiguos o sin categoría que reciben una asignación / casos ambiguos; **tasa de abstención** = ejemplos sin categoría aceptada / total. La evaluación marca como abstención toda respuesta inválida y solo cuenta las sugerencias de IA de incertidumbre baja y categoría permitida.
 
 Con Ollama local ejecutándose y el modelo descargado, ejecuta:
 
