@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { suggestCategories, type BudgetCategory, type BudgetTransaction } from '@personal-budget/finance-core';
 import { LocalAiClient } from '../src/local-ai.js';
 import type { AssistantContext } from '../src/local-ai.js';
 
@@ -49,19 +50,43 @@ describe.skipIf(!enabled)('Ollama live acceptance (synthetic data only)', () => 
       { id: 'home', name: 'Hogar' },
       { id: 'other', name: 'Otros gastos' },
     ] as const;
-    // Entirely synthetic labels. The first case represents the existing strong-history
-    // deterministic result; remaining cases exercise the optional local fallback.
+    // Entirely synthetic labels. The deterministic baseline below is produced by the
+    // real finance-core function from two matching historical rows, not hard-coded.
     const fixture = [
-      { id: 'known-supermarket', payee: 'Supermercado Sintético Norte', expected: 'food', deterministic: 'food' },
-      // Intentional typo of a familiar category cue: the rule engine keys on the exact normalized payee.
-      { id: 'new-pharmacy', payee: 'Farmacia Auroa de prueba', expected: 'health', deterministic: null },
-      { id: 'new-fuel', payee: 'Gasolinera Demo Local', expected: 'transport', deterministic: null },
-      { id: 'new-bakery', payee: 'Panadería Ejemplo', expected: 'food', deterministic: null },
-      { id: 'new-repair', payee: 'Taller Mecánico Sintético', expected: 'transport', deterministic: null },
-      { id: 'ambiguous-mixed', payee: 'Comercio mixto de prueba', expected: null, deterministic: null },
-      { id: 'ambiguous-unknown', payee: 'Movimiento desconocido sintético', expected: null, deterministic: null },
+      { id: 'known-supermarket', payee: 'Supermercado Sintético Norte', expected: 'food' },
+      // Intentional typo of a familiar category cue; exact-payee rules should abstain.
+      { id: 'new-pharmacy', payee: 'Farmacia Auroa de prueba', expected: 'health' },
+      { id: 'new-fuel', payee: 'Gasolinera Demo Local', expected: 'transport' },
+      { id: 'new-bakery', payee: 'Panadería Ejemplo', expected: 'food' },
+      { id: 'new-repair', payee: 'Taller Mecánico Sintético', expected: 'transport' },
+      { id: 'ambiguous-mixed', payee: 'Comercio mixto de prueba', expected: null },
+      { id: 'ambiguous-unknown', payee: 'Movimiento desconocido sintético', expected: null },
     ] as const;
-    const fallback = fixture.filter((item) => item.deterministic === null);
+    const financeCategories: readonly BudgetCategory[] = categories.map((category) => ({
+      ...category, groupId: 'synthetic-expenses', isIncome: false,
+    }));
+    const historicalRows: readonly BudgetTransaction[] = [
+      { id: 'history-supermarket-1', account: 'synthetic-account', date: '2026-08-03', amount: -3200, category: 'food', payee_name: 'Supermercado Sintético Norte' },
+      { id: 'history-supermarket-2', account: 'synthetic-account', date: '2026-09-03', amount: -2900, category: 'food', payee_name: 'Supermercado Sintético Norte' },
+    ];
+    const uncategorizedRows: readonly BudgetTransaction[] = fixture.map((item, index) => ({
+      id: item.id,
+      account: 'synthetic-account',
+      date: '2026-10-' + String(index + 3).padStart(2, '0'),
+      amount: -2100,
+      category: null,
+      payee_name: item.payee,
+    }));
+    const baselineSuggestions = suggestCategories(
+      [...historicalRows, ...uncategorizedRows],
+      financeCategories,
+      { startDate: '2026-10-01', endDate: '2026-10-31' },
+    );
+    const baselineById = new Map(baselineSuggestions.map((suggestion) => [suggestion.transactionId, suggestion] as const));
+    const fallback = fixture.filter((item) => {
+      const suggestion = baselineById.get(item.id);
+      return !suggestion || suggestion.evidenceCount < 2;
+    });
     const client = new LocalAiClient({
       enabled: true, baseURL, model, timeoutMs: 120_000, maxContextChars: 4_000,
     });
@@ -118,10 +143,13 @@ describe.skipIf(!enabled)('Ollama live acceptance (synthetic data only)', () => 
         abstentionRate: 1 - predicted.length / fixture.length,
       };
     };
-    const deterministicPredictions = new Map(fixture.map((item) => [item.id, item.deterministic as string | null] as const));
+    const deterministicPredictions = new Map(fixture.map((item) => [item.id, baselineById.get(item.id)?.suggestedCategoryId ?? null] as const));
     const aiByReference = new Map(aiResults.map((item) => [item.reference, item.categoryId]));
     const hybridPredictions = new Map(fixture.map((item) => {
-      if (item.deterministic !== null) return [item.id, item.deterministic] as const;
+      const deterministic = baselineById.get(item.id);
+      if (deterministic && deterministic.evidenceCount >= 2) {
+        return [item.id, deterministic.suggestedCategoryId] as const;
+      }
       const index = fallback.findIndex((candidate) => candidate.id === item.id);
       return [item.id, responseValid ? aiByReference.get('c' + (index + 1)) ?? null : null] as const;
     }));
