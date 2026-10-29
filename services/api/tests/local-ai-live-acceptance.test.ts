@@ -105,7 +105,7 @@ describe.skipIf(!enabled)('Ollama live acceptance (synthetic data only)', () => 
       const payload = JSON.parse(raw) as {
         suggestions?: readonly { reference?: string; categoryId?: string | null; uncertainty?: string }[];
       };
-      const validIds = new Set(categories.map((category) => category.id));
+      const validIds = new Set<string>(categories.map((category) => category.id));
       const expectedRefs = new Set(fallback.map((_item, index) => 'c' + (index + 1)));
       const receivedRefs = new Set<string>();
       const candidates = payload.suggestions ?? [];
