@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import Fastify, { LogController, type FastifyInstance, type FastifyReply, type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import helmet from '@fastify/helmet';
 import { buildFinancialAnomalyFindings, buildPeriodChangeFindings, buildUncategorizedFinding, calculateSummary, convertAmountMinor, createFinancialFinding, detectRecurringCandidates, estimatePlanningCashFlow, expandCommitmentOccurrences, isIsoDate, normalizeCurrencyCode, normalizeTransactions, projectSavings, projectSavingsGoal, sortFinancialFindings, suggestCategories, validatePeriod } from '@personal-budget/finance-core';
@@ -2036,13 +2036,17 @@ function monthsBefore(date: string, months: number): string {
         exchangeRates: preferences.exchangeRates,
       });
       const previousState = await readPeriodicReviewState(config.actualDataDir);
+      const accountScopeFingerprint = createHash('sha256')
+        .update([...result.accountScope.accountIds].sort().join('\0'))
+        .digest('hex')
+        .slice(0, 16);
       const previousRun = previousState.reviews.find((review) =>
         review.periodType === parsed.periodType &&
         review.startDate === period.startDate &&
         review.endDate === period.endDate &&
         review.currency === result.currency &&
         review.accountScope.mode === result.accountScope.mode &&
-        review.accountScope.label === result.accountScope.label);
+        review.accountScope.fingerprint === accountScopeFingerprint);
       const previousItems = new Map((previousRun?.items ?? []).map((item) => [item.findingId, item]));
       const items = result.findings
         .filter((finding) => finding.reviewStatus !== 'dismissed' && finding.reviewStatus !== 'expected')
@@ -2073,7 +2077,11 @@ function monthsBefore(date: string, months: number): string {
         startDate: period.startDate,
         endDate: period.endDate,
         currency: result.currency,
-        accountScope: { mode: result.accountScope.mode, label: result.accountScope.label },
+        accountScope: {
+          mode: result.accountScope.mode,
+          label: result.accountScope.label,
+          fingerprint: accountScopeFingerprint,
+        },
         items,
       });
       const warnings = [...result.warnings, ...result.currentSummary.warnings, ...previousSummary.warnings];
