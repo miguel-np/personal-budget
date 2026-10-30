@@ -229,7 +229,8 @@ const PlanningIntentDraftSchema = z.object({
   currency: z.string().regex(/^[A-Z]{3}$/).nullable(),
   clarificationQuestion: z.string().trim().min(1).max(240).nullable(),
 }).strict();
-\nconst DeletePlanningDataRequestSchema = z.object({ confirmation: z.literal('DELETE_PLANNING_DATA') }).strict();
+
+const DeletePlanningDataRequestSchema = z.object({ confirmation: z.literal('DELETE_PLANNING_DATA') }).strict();
 const AssistantRequestSchema = z.object({
   question: z.string().trim().min(1).max(2_000),
   startDate: z.string().refine(isIsoDate, 'startDate must be a valid YYYY-MM-DD date.'),
@@ -2223,7 +2224,8 @@ function monthsBefore(date: string, months: number): string {
       validateGoalWindow(targetDate, asOfDate);
       if (draft.intent === 'test_expense' && draft.expenseDate! <= asOfDate) {
         return clarification('La fecha del gasto debe ser futura. ¿Qué día ocurriría ese gasto?');
-      }\n      if (draft.intent === 'test_expense' && draft.expenseDate! > targetDate) {
+      }
+      if (draft.intent === 'test_expense' && draft.expenseDate! > targetDate) {
         return clarification('El gasto indicado cae después de la fecha objetivo. ¿Quieres comprobar otro gasto anterior a esa fecha?');
       }
       const initialAmountMinor = selectedGoal?.initialAmountMinor ??
@@ -2246,7 +2248,8 @@ function monthsBefore(date: string, months: number): string {
         : majorToMinor(draft.monthlyExpenseMajor, preferences.displayCurrency, 'gastos mensuales');
       const recurringCandidates = detectRecurringCandidates(convertedHistory.transactions, {
         startDate: historyStartDate, endDate: asOfDate,
-      });\n      const commitments = stored.commitments.filter((item) =>
+      });
+      const commitments = stored.commitments.filter((item) =>
         item.status === 'active' && item.currency === preferences.displayCurrency &&
         planningScopeMatches(item.scope, preference),
       ).map(toPlanningCommitment);
