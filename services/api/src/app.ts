@@ -8,7 +8,7 @@ import type { ActualBudgetMonthRecord, ActualImportRecord, ActualImportResult } 
 import { z, ZodError } from 'zod';
 import type { AppConfig } from './config.js';
 import { LocalAiBusyError, LocalAiCancelledError, LocalAiClient, LocalAiContextBudgetError, LocalAiUnavailableError } from './local-ai.js';
-import type { AssistantContext } from './local-ai.js';
+import type { AssistantContext, PlanningIntentDraft } from './local-ai.js';
 import { CurrencyPreferencesSchema, defaultCurrencyPreferences, readCurrencyPreferences, writeCurrencyPreferences } from './currency-preferences.js';
 import type { CurrencyPreferences } from './currency-preferences.js';
 import { AccountScopeError, AccountScopePreferenceSchema, defaultAccountScope, readAccountScope, resolveAccountScope, writeAccountScope } from './account-scope.js';
@@ -209,6 +209,27 @@ const PlanningScenarioRequestSchema = z.object({
   monthlyIncomeMinor: SafeMinorAmountSchema,
   monthlyExpenseMinor: SafeMinorAmountSchema.nonnegative(),
 }).strict();
+
+const PlanningConversationRequestSchema = z.object({
+  message: z.string().trim().min(1).max(1_600),
+}).strict();
+const PlanningIntentDraftSchema = z.object({
+  intent: z.enum(['goal_plan', 'compare_contributions', 'test_expense']),
+  goalId: z.string().uuid().nullable(),
+  goalName: z.string().trim().min(1).max(100).nullable(),
+  targetAmountMajor: z.number().finite().positive().max(1_000_000_000).nullable(),
+  targetDate: z.string().refine(isIsoDate).nullable(),
+  initialAmountMajor: z.number().finite().nonnegative().max(1_000_000_000).nullable(),
+  monthlyContributionMajor: z.number().finite().nonnegative().max(1_000_000_000).nullable(),
+  contributionOptionsMajor: z.array(z.number().finite().nonnegative().max(1_000_000_000)).max(5),
+  monthlyIncomeMajor: z.number().finite().min(-1_000_000_000).max(1_000_000_000).nullable(),
+  monthlyExpenseMajor: z.number().finite().nonnegative().max(1_000_000_000).nullable(),
+  expenseAmountMajor: z.number().finite().positive().max(1_000_000_000).nullable(),
+  expenseDate: z.string().refine(isIsoDate).nullable(),
+  currency: z.string().regex(/^[A-Z]{3}$/).nullable(),
+  clarificationQuestion: z.string().trim().min(1).max(240).nullable(),
+}).strict();
+
 const DeletePlanningDataRequestSchema = z.object({ confirmation: z.literal('DELETE_PLANNING_DATA') }).strict();
 const AssistantRequestSchema = z.object({
   question: z.string().trim().min(1).max(2_000),
@@ -282,6 +303,23 @@ function sanitizedErrorResponse(error: unknown): { statusCode: number; body: { e
     return { statusCode: 400, body: { error: { code: 'INVALID_PERIOD', message: error.message } } };
   }
   return { statusCode: 502, body: { error: { code: 'UPSTREAM_FAILURE', message: 'The local finance service could not complete this request.' } } };
+}
+
+
+function currencyFractionDigits(currency: string): number {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency }).resolvedOptions().maximumFractionDigits ?? 2;
+}
+function majorToMinor(amount: number, currency: string, label: string): number {
+  if (!Number.isFinite(amount) || Math.abs(amount) > 1_000_000_000) {
+    throw new RangeError(label + ' supera el límite permitido para una simulación.');
+  }
+  const scale = Math.pow(10, currencyFractionDigits(currency));
+  const scaled = amount * scale;
+  const rounded = Math.round(scaled);
+  if (!Number.isSafeInteger(rounded) || Math.abs(scaled - rounded) > 0.00001) {
+    throw new RangeError(label + ' contiene más decimales de los permitidos por ' + currency + '.');
+  }
+  return rounded;
 }
 
 function assertPeriod(startDate: string, endDate: string): void {
@@ -2094,6 +2132,276 @@ function monthsBefore(date: string, months: number): string {
     const targetMonth = Number(targetDate.slice(0, 4)) * 12 + Number(targetDate.slice(5, 7)) - 1;
     if (targetMonth - currentMonth > 120) throw new RangeError('La fecha objetivo no puede superar diez años desde hoy.');
   }
+
+
+  app.post('/api/v1/planning/conversation/preview', async (request, reply) => {
+    const requestAbort = new AbortController();
+    const abortRequest = () => requestAbort.abort();
+    const abortResponse = () => { if (!reply.raw.writableEnded) requestAbort.abort(); };
+    request.raw.once('aborted', abortRequest);
+    reply.raw.once('close', abortResponse);
+    try {
+      const body = PlanningConversationRequestSchema.parse(request.body);
+      if (!config.aiEnabled) {
+        return reply.code(503).send({ error: {
+          code: 'AI_DISABLED',
+          message: 'El planificador conversacional requiere activar la IA local. Los formularios de planificación siguen disponibles.',
+        } });
+      }
+      const [stored, accounts, categories, preferences, preference] = await Promise.all([
+        readPlanningData(config.actualDataDir), repository.listAccounts(), repository.listCategories(),
+        currencyPreferences(), accountScopePreference(),
+      ]);
+      const scope = resolveAccountScope(accounts, preference);
+      const asOfDate = new Date().toISOString().slice(0, 10);
+      const eligibleGoals = stored.goals.filter((goal) =>
+        goal.status === 'active' && goal.currency === preferences.displayCurrency &&
+        planningScopeMatches(goal.scope, preference) && goal.targetDate > asOfDate,
+      );
+      const draftUnknown = await localAi.extractPlanningIntent(body.message, {
+        asOfDate,
+        currency: preferences.displayCurrency,
+        goals: eligibleGoals.map((goal) => ({ id: goal.id, name: goal.name })),
+      }, requestAbort.signal);
+      const parsedDraft = PlanningIntentDraftSchema.safeParse(draftUnknown);
+      if (!parsedDraft.success) {
+        return reply.code(422).send({ error: {
+          code: 'PLANNING_INTENT_INVALID',
+          message: 'La IA local no ha devuelto una intención válida. Utiliza el formulario de planificación o reformula la petición.',
+        } });
+      }
+      const draft = parsedDraft.data as PlanningIntentDraft;
+      const clarification = (question: string) => ({
+        data: {
+          status: 'clarification_required' as const,
+          question,
+          saved: false,
+          message: 'No se ha ejecutado ni guardado ninguna modificación.',
+        },
+      });
+      if (draft.clarificationQuestion) return clarification(draft.clarificationQuestion);
+      if (draft.currency && draft.currency !== preferences.displayCurrency) {
+        return clarification('La planificación utiliza actualmente ' + preferences.displayCurrency +
+          '. ¿Puedes expresar los importes en esa divisa? No convertiré importes futuros sin una tasa explícita y fechada.');
+      }
+
+      let selectedGoal = draft.goalId ? stored.goals.find((goal) => goal.id === draft.goalId) : undefined;
+      if (draft.goalId && !selectedGoal) {
+        return reply.code(409).send({ error: {
+          code: 'PLANNING_GOAL_CONTEXT_CHANGED',
+          message: 'El objetivo indicado ya no existe o no está disponible. Actualiza la planificación y vuelve a intentarlo.',
+        } });
+      }
+      if (selectedGoal && selectedGoal.status !== 'active') {
+        return reply.code(409).send({ error: {
+          code: 'PLANNING_GOAL_PAUSED',
+          message: 'El objetivo seleccionado está pausado. Reanúdalo desde Objetivos antes de simularlo.',
+        } });
+      }
+      if (selectedGoal && (!planningScopeMatches(selectedGoal.scope, preference) || selectedGoal.currency !== preferences.displayCurrency)) {
+        return reply.code(409).send({ error: {
+          code: 'PLANNING_CONTEXT_CHANGED',
+          message: 'El ámbito de cuentas o la divisa del objetivo han cambiado. Revísalo desde Objetivos antes de simularlo.',
+        } });
+      }
+      if (draft.intent === 'test_expense' && !selectedGoal) {
+        if (eligibleGoals.length === 1) selectedGoal = eligibleGoals[0];
+        else if (eligibleGoals.length > 1) return clarification('¿Sobre cuál de tus objetivos activos quieres comprobar el impacto de ese gasto?');
+        else return clarification('Primero necesito un objetivo de ahorro activo para comprobar si el gasto retrasaría su fecha prevista.');
+      }
+      if (draft.intent === 'test_expense' && (!draft.expenseAmountMajor || !draft.expenseDate)) {
+        return clarification('¿Qué importe tendría el gasto extraordinario y en qué fecha se produciría?');
+      }
+      if (draft.intent === 'compare_contributions' && draft.contributionOptionsMajor.length < 2) {
+        return clarification('Indica al menos dos aportaciones mensuales que quieras comparar, por ejemplo 150 € y 250 €.');
+      }
+
+      const targetAmountMinor = selectedGoal?.targetAmountMinor ??
+        (draft.targetAmountMajor === null ? null : majorToMinor(draft.targetAmountMajor, preferences.displayCurrency, 'objetivo'));
+      const targetDate = selectedGoal?.targetDate ?? draft.targetDate;
+      if (targetAmountMinor === null) return clarification('¿Qué cantidad total quieres alcanzar con el objetivo de ahorro?');
+      if (!targetDate) return clarification('¿Para qué fecha quieres alcanzar el objetivo? Indica mes y año para evitar ambigüedades.');
+      validateGoalWindow(targetDate, asOfDate);
+      if (draft.intent === 'test_expense' && draft.expenseDate! <= asOfDate) {
+        return clarification('La fecha del gasto debe ser futura. ¿Qué día ocurriría ese gasto?');
+      }
+      if (draft.intent === 'test_expense' && draft.expenseDate! > targetDate) {
+        return clarification('El gasto indicado cae después de la fecha objetivo. ¿Quieres comprobar otro gasto anterior a esa fecha?');
+      }
+      const initialAmountMinor = selectedGoal?.initialAmountMinor ??
+        (draft.initialAmountMajor === null ? 0 : majorToMinor(draft.initialAmountMajor, preferences.displayCurrency, 'ahorro inicial'));
+      const goalName = selectedGoal?.name ?? draft.goalName ?? 'Objetivo hipotético';
+
+      const historyStartDate = shiftPlanningMonth(asOfDate.slice(0, 7), -11) + '-01';
+      const historyTransactions = await transactionsForAccounts(scope.accounts, historyStartDate, asOfDate, preferences);
+      const convertedHistory = convertTransactionsForAnalysis(historyTransactions, preferences);
+      const estimate = estimatePlanningCashFlow(convertedHistory.transactions, categories, {
+        currency: preferences.displayCurrency,
+        startDate: historyStartDate,
+        endDate: asOfDate,
+      });
+      const monthlyIncomeMinor = draft.monthlyIncomeMajor === null
+        ? (selectedGoal?.monthlyIncomeMinor ?? estimate.monthlyIncomeMinor)
+        : majorToMinor(draft.monthlyIncomeMajor, preferences.displayCurrency, 'ingresos mensuales');
+      const monthlyExpenseMinor = draft.monthlyExpenseMajor === null
+        ? (selectedGoal?.monthlyExpenseMinor ?? estimate.monthlyExpenseMinor)
+        : majorToMinor(draft.monthlyExpenseMajor, preferences.displayCurrency, 'gastos mensuales');
+      const recurringCandidates = detectRecurringCandidates(convertedHistory.transactions, {
+        startDate: historyStartDate, endDate: asOfDate,
+      });
+      const commitments = stored.commitments.filter((item) =>
+        item.status === 'active' && item.currency === preferences.displayCurrency &&
+        planningScopeMatches(item.scope, preference),
+      ).map(toPlanningCommitment);
+      const baseContributionMinor = selectedGoal?.monthlyContributionMinor ??
+        (draft.monthlyContributionMajor === null ? 0 :
+          majorToMinor(draft.monthlyContributionMajor, preferences.displayCurrency, 'aportación mensual'));
+      const makeProjection = (monthlyContribution: number, activeCommitments: readonly PlanningCommitment[]) =>
+        projectSavingsGoal({
+          asOfDate,
+          targetDate,
+          targetAmountMinor,
+          initialAmountMinor,
+          currency: preferences.displayCurrency,
+          monthlyContributionMinor: monthlyContribution,
+          monthlyIncomeMinor,
+          monthlyExpenseMinor,
+          commitments: activeCommitments,
+        });
+      const scenarios: Array<{ label: string; monthlyContributionMinor: number; projection: ReturnType<typeof projectSavingsGoal> }> = [];
+
+      if (draft.intent === 'compare_contributions') {
+        const distinctOptions = [...new Set(draft.contributionOptionsMajor)]
+          .map((amount) => majorToMinor(amount, preferences.displayCurrency, 'aportación comparada'))
+          .sort((left, right) => left - right);
+        if (distinctOptions.length < 2) return clarification('Las aportaciones comparadas deben ser diferentes. ¿Qué dos importes quieres contrastar?');
+        for (const amount of distinctOptions) {
+          scenarios.push({
+            label: 'Aportación mensual de ' + new Intl.NumberFormat('es-ES', {
+              style: 'currency', currency: preferences.displayCurrency,
+            }).format(amount / Math.pow(10, currencyFractionDigits(preferences.displayCurrency))),
+            monthlyContributionMinor: amount,
+            projection: makeProjection(amount, commitments),
+          });
+        }
+      } else if (draft.intent === 'test_expense') {
+        const expenseAmountMinor = majorToMinor(draft.expenseAmountMajor!, preferences.displayCurrency, 'gasto hipotético');
+        const hypotheticalCommitment: PlanningCommitment = {
+          id: 'hypothetical:' + randomUUID(),
+          title: 'Gasto extraordinario hipotético',
+          amountMinor: expenseAmountMinor,
+          date: draft.expenseDate!,
+          direction: 'expense',
+          frequency: 'once',
+          currency: preferences.displayCurrency,
+          status: 'active',
+          source: 'manual',
+        };
+        scenarios.push({
+          label: 'Sin el gasto extraordinario',
+          monthlyContributionMinor: baseContributionMinor,
+          projection: makeProjection(baseContributionMinor, commitments),
+        });
+        scenarios.push({
+          label: 'Incluyendo el gasto extraordinario',
+          monthlyContributionMinor: baseContributionMinor,
+          projection: makeProjection(baseContributionMinor, [...commitments, hypotheticalCommitment]),
+        });
+      } else {
+        const initialProjection = makeProjection(baseContributionMinor, commitments);
+        if (!selectedGoal && draft.monthlyContributionMajor === null &&
+            initialProjection.requiredMonthlyContributionMinor !== null &&
+            initialProjection.requiredMonthlyContributionMinor > 0) {
+          const requiredContribution = initialProjection.requiredMonthlyContributionMinor;
+          scenarios.push({
+            label: 'Aportación mensual necesaria estimada',
+            monthlyContributionMinor: requiredContribution,
+            projection: makeProjection(requiredContribution, commitments),
+          });
+        } else {
+          scenarios.push({
+            label: selectedGoal ? 'Objetivo existente · simulación sin guardar' : 'Nuevo objetivo hipotético · sin guardar',
+            monthlyContributionMinor: baseContributionMinor,
+            projection: initialProjection,
+          });
+        }
+      }
+
+      const warnings = [...new Set([
+        ...convertedHistory.warnings,
+        ...estimate.warnings,
+        ...scenarios.flatMap((scenario) => scenario.projection.warnings),
+      ])];
+      return {
+        data: {
+          status: 'ready' as const,
+          saved: false,
+          label: 'Simulación conversacional · no guardada',
+          intent: draft.intent,
+          goal: {
+            id: selectedGoal?.id ?? null,
+            name: goalName,
+            targetAmountMinor,
+            initialAmountMinor,
+            targetDate,
+            currency: preferences.displayCurrency,
+          },
+          scenarios,
+          hypotheticalExpense: draft.intent === 'test_expense' ? {
+            amountMinor: majorToMinor(draft.expenseAmountMajor!, preferences.displayCurrency, 'gasto hipotético'),
+            date: draft.expenseDate!,
+            currency: preferences.displayCurrency,
+          } : null,
+          manualCommitments: commitments.map((item) => ({
+            title: item.title, amountMinor: item.amountMinor, date: item.date,
+            direction: item.direction, frequency: item.frequency, currency: item.currency,
+          })),
+          sources: {
+            historyStartDate,
+            historyEndDate: asOfDate,
+            monthsWithData: estimate.monthsWithData,
+            transactionCount: estimate.transactionCount,
+            monthlyIncomeSource: draft.monthlyIncomeMajor === null && selectedGoal?.monthlyIncomeMinor == null
+              ? 'observed_median' : 'user_or_goal_assumption',
+            monthlyExpenseSource: draft.monthlyExpenseMajor === null && selectedGoal?.monthlyExpenseMinor == null
+              ? 'observed_median' : 'user_or_goal_assumption',
+            accountScope: scope.metadata,
+            currency: preferences.displayCurrency,
+            commitmentsConsidered: commitments.length,
+            unconfirmedRecurringCandidatesExcluded: recurringCandidates.length,
+          },
+          assumptions: [
+            ...estimate.assumptions,
+            'Los importes propuestos por la IA se consideran entradas del usuario, se validan en el backend y no son cálculos del modelo.',
+            'Ingresos y gastos proceden de la mediana mensual observada o de supuestos explícitos del objetivo o de la petición.',
+            'Las simulaciones no aplican intereses, inflación ni revalorización y no constituyen una garantía.',
+            'Los escenarios y el gasto extraordinario conversacional son efímeros; no crean ni modifican objetivos, compromisos ni movimientos.',
+          ],
+          warnings,
+          notes: convertedHistory.warnings,
+        },
+      };
+    } catch (error) {
+      if (error instanceof LocalAiCancelledError) {
+        if (request.raw.aborted || reply.raw.destroyed) return;
+        return reply.code(499).send({ error: { code: 'AI_CANCELLED', message: 'La consulta de planificación se ha cancelado.' } });
+      }
+      if (error instanceof LocalAiBusyError) {
+        return reply.code(503).header('retry-after', '1').send({ error: { code: 'AI_BUSY', message: 'La IA local está ocupada; vuelve a intentarlo.' } });
+      }
+      if (error instanceof LocalAiContextBudgetError) {
+        return reply.code(413).send({ error: { code: 'AI_CONTEXT_TOO_LARGE', message: 'La petición supera el límite de contexto local permitido.' } });
+      }
+      if (error instanceof LocalAiUnavailableError) {
+        return reply.code(503).send({ error: { code: 'AI_UNAVAILABLE', message: 'Ollama o el modelo local no están disponibles o no han devuelto una extracción válida.' } });
+      }
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    } finally {
+      request.raw.removeListener('aborted', abortRequest);
+      reply.raw.removeListener('close', abortResponse);
+    }
+  });
 
   app.get('/api/v1/planning', async (request, reply) => {
     try {

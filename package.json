@@ -36,7 +36,8 @@
     "test:e2e": "playwright test",
     "update:actual": "tsx scripts/safe-update.ts",
     "test:update:acceptance": "tsx scripts/actual-update-acceptance.ts",
-    "test:runtime:lifecycle": "node scripts/runtime-lifecycle-smoke.mjs"
+    "test:runtime:lifecycle": "node scripts/runtime-lifecycle-smoke.mjs",
+    "test:planning-ai:acceptance": "vitest run services/api/tests/planning-intent-live-acceptance.test.ts"
   },
   "dependencies": {
     "@actual-app/api": "26.10.0",

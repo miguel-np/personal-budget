@@ -353,4 +353,65 @@ describe('LocalAiClient', () => {
     expect(tagCalls).toBe(2);
   });
 
+
+  it('extracts a constrained planning intent with a JSON schema and minimal context', async () => {
+    const draft = {
+      intent: 'compare_contributions',
+      goalId: null,
+      goalName: 'Fondo',
+      targetAmountMajor: 5_000,
+      targetDate: '2027-06-30',
+      initialAmountMajor: 0,
+      monthlyContributionMajor: null,
+      contributionOptionsMajor: [150, 250],
+      monthlyIncomeMajor: null,
+      monthlyExpenseMajor: null,
+      expenseAmountMajor: null,
+      expenseDate: null,
+      currency: 'EUR',
+      clarificationQuestion: null,
+    };
+    let captured: Record<string, unknown> | undefined;
+    const metrics: Array<Record<string, unknown>> = [];
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input).endsWith('/api/tags')) {
+        return new Response(JSON.stringify({ models: [{ name: 'synthetic-model' }] }), { status: 200 });
+      }
+      captured = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({ message: { content: JSON.stringify(draft) } }), { status: 200 });
+    });
+    const client = new LocalAiClient(config, fetcher, (metric) => metrics.push({ ...metric }));
+    await expect(client.extractPlanningIntent(
+      'Compara 150 y 250 euros al mes para ahorrar 5.000 euros.',
+      {
+        asOfDate: '2026-10-30',
+        currency: 'EUR',
+        goals: [{ id: '4d7c23a8-bcc8-49df-94ba-d64851df8aa2', name: 'Fondo' }],
+      },
+    )).resolves.toEqual(draft);
+
+    expect(captured?.format).toMatchObject({ type: 'object' });
+    expect(JSON.stringify(captured)).toContain('additionalProperties');
+    expect(JSON.stringify(captured)).not.toContain('income-1');
+    expect(JSON.stringify(captured)).not.toContain('account-1');
+    expect(JSON.stringify(captured)).not.toContain('Alimentación');
+    expect(metrics).toContainEqual(expect.objectContaining({
+      event: 'inference', outcome: 'success', modelCalls: 1,
+    }));
+    expect(JSON.stringify(metrics)).not.toContain('Compara 150 y 250');
+  });
+
+  it('rejects malformed structured output rather than treating it as a financial answer', async () => {
+    const fetcher = vi.fn<typeof fetch>(async (input) => {
+      if (String(input).endsWith('/api/tags')) {
+        return new Response(JSON.stringify({ models: [{ name: 'synthetic-model' }] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ message: { content: 'No puedo interpretar la petición.' } }), { status: 200 });
+    });
+    const client = new LocalAiClient(config, fetcher);
+    await expect(client.extractPlanningIntent('Quiero ahorrar.', {
+      asOfDate: '2026-10-30', currency: 'EUR', goals: [],
+    })).rejects.toBeInstanceOf(LocalAiUnavailableError);
+  });
+
 });

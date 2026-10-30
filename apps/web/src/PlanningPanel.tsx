@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { formatMoney as sharedFormatMoney } from './finance-format.js';
+import { PlanningConversationPanel } from './PlanningConversationPanel.js';
 
 interface Account { id: string; name: string; closed: boolean; }
 interface Category { id: string; name: string; groupId: string; isIncome: boolean; }
@@ -226,6 +227,7 @@ export function PlanningPanel({ currency }: { currency: string }) {
         <span className="date-badge">Todo el procesamiento permanece local</span>
       </div>
       {loadError ? <p className="form-alert error" role="alert">{loadError}</p> : null}
+      <PlanningConversationPanel currency={currency} />
 
       <article className="panel planning-panel">
         <div className="panel-heading"><div><p className="eyebrow">SUGERENCIAS</p><h3>Pagos recurrentes y categorías para revisar</h3></div></div>

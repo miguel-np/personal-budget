@@ -46,3 +46,8 @@ Las cifras son estimaciones deterministas, no asesoramiento financiero ni garant
 ## Pruebas
 
 Las pruebas usan repositorios y fechas sintéticos. Cubren meses sin movimientos, transferencias excluidas, recurrencias ancladas a fin de mes, objetivos alcanzados o inalcanzables, aportaciones limitadas por flujo, fechas/importes inválidos, persistencia entre instancias, CRUD, cambios de divisa/ámbito, y separación de la agenda respecto de los movimientos reales.
+
+
+## Planificador conversacional
+
+La capa conversacional de #70 reutiliza este almacenamiento y el motor de proyección, pero no persiste cambios. Puede seleccionar un objetivo existente compatible y probar aportaciones o gastos hipotéticos; un objetivo nuevo se presenta como hipótesis y no se crea en `planning-data.json`. Los compromisos reales y guardados permanecen intactos. Para guardar o modificar objetivos y compromisos, el usuario debe usar las acciones separadas de esta sección y revisar la previsualización disponible.
