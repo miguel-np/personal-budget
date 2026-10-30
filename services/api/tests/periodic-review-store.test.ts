@@ -82,6 +82,21 @@ describe('periodic review store', () => {
     expect((await readPeriodicReviewState(directory)).reviews[0]?.status).toBe('completed');
   });
 
+  it('rejects repeated references to the same finding in one review', async () => {
+    const directory = await makeDirectory();
+    await expect(createPeriodicReview(directory, {
+      periodType: 'monthly',
+      startDate: '2026-10-01',
+      endDate: '2026-10-30',
+      currency: 'EUR',
+      accountScope: { mode: 'all', label: 'Todas las cuentas abiertas' },
+      items: [
+        { findingId: 'same-finding', findingType: 'expense-change', fingerprint: '0123456789abcdef', status: 'pending' },
+        { findingId: 'same-finding', findingType: 'expense-change', fingerprint: '0123456789abcdef', status: 'pending' },
+      ],
+    })).rejects.toThrow();
+  });
+
   it('rejects malformed persisted schemas rather than silently discarding review history', async () => {
     const directory = await makeDirectory();
         await writeFile(join(directory, 'periodic-reviews.json'), JSON.stringify({ version: 2, reviews: [] }));
