@@ -1999,16 +1999,39 @@ function monthsBefore(date: string, months: number): string {
         currency: preferences.displayCurrency,
         exchangeRates: preferences.exchangeRates,
       });
+      const previousState = await readPeriodicReviewState(config.actualDataDir);
+      const previousRun = previousState.reviews.find((review) =>
+        review.periodType === parsed.periodType &&
+        review.startDate === period.startDate &&
+        review.endDate === period.endDate &&
+        review.currency === result.currency &&
+        review.accountScope.mode === result.accountScope.mode &&
+        review.accountScope.label === result.accountScope.label);
+      const previousItems = new Map((previousRun?.items ?? []).map((item) => [item.findingId, item]));
       const items = result.findings
         .filter((finding) => finding.reviewStatus !== 'dismissed' && finding.reviewStatus !== 'expected')
-        .map((finding) => ({
-          findingId: finding.id,
-          findingType: finding.type,
-          status: finding.reviewStatus === 'reviewed'
-            ? 'reviewed' as const
-            : finding.reviewStatus === 'snoozed' ? 'postponed' as const : 'pending' as const,
-          ...(finding.reviewStatus === 'snoozed' && finding.snoozedUntil ? { postponedUntil: finding.snoozedUntil } : {}),
-        }));
+        .map((finding) => {
+          const previousItem = previousItems.get(finding.id);
+          const reusableDecision = previousItem?.fingerprint === finding.fingerprint &&
+            (previousItem.status === 'reviewed' ||
+              (previousItem.status === 'postponed' && Boolean(previousItem.postponedUntil) && previousItem.postponedUntil! >= asOfDate));
+          if (reusableDecision && previousItem) return {
+            findingId: finding.id,
+            findingType: finding.type,
+            fingerprint: finding.fingerprint,
+            status: previousItem.status,
+            ...(previousItem.status === 'postponed' && previousItem.postponedUntil ? { postponedUntil: previousItem.postponedUntil } : {}),
+          };
+          return {
+            findingId: finding.id,
+            findingType: finding.type,
+            fingerprint: finding.fingerprint,
+            status: finding.reviewStatus === 'reviewed'
+              ? 'reviewed' as const
+              : finding.reviewStatus === 'snoozed' ? 'postponed' as const : 'pending' as const,
+            ...(finding.reviewStatus === 'snoozed' && finding.snoozedUntil ? { postponedUntil: finding.snoozedUntil } : {}),
+          };
+        });
       const run = await createPeriodicReview(config.actualDataDir, {
         periodType: parsed.periodType,
         startDate: period.startDate,
