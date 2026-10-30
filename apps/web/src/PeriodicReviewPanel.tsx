@@ -54,6 +54,7 @@ interface Finding {
   priority: 'low' | 'medium' | 'high';
   priorityReason: string;
   impactMinor: number | null;
+  metrics: Readonly<Record<string, number | string | boolean | null>>;
   evidence: readonly { label: string; value: string | number; source: string; rule: string }[];
   limitations: readonly string[];
   reviewStatus: ReviewStatus;
@@ -75,6 +76,27 @@ interface ReviewPayload {
   currency: string;
   accountScope: { label: string };
   summary: FinancialSummary;
+  budgetAssessment: {
+    available: boolean;
+    reason: string | null;
+    overBudgetCategoryCount: number;
+    scope: string;
+  };
+  goalAssessment: {
+    evaluatedGoalCount: number;
+    onTrackCount: number;
+    atRiskCount: number;
+    projections: readonly {
+      findingId: string;
+      title: string;
+      type: 'goal-progress' | 'goal-at-risk';
+      projectedProgressPercent: number | null;
+      targetDate: string | null;
+      impactMinor: number | null;
+      currency: string;
+      confidence: string;
+    }[];
+  };
   comparison: { period: { startDate: string; endDate: string }; summary: FinancialSummary };
   findings: readonly Finding[];
   warnings: readonly string[];
@@ -213,8 +235,19 @@ export function PeriodicReviewPanel({ onNavigate }: { onNavigate: (target: Navig
   const findingsById = useMemo(() => new Map((payload?.findings ?? []).map((finding) => [finding.id, finding])), [payload]);
   const activeItems = payload?.run.items ?? [];
   const pendingCount = activeItems.filter((item) => item.status === 'pending').length;
-  const budgetIssues = activeItems.filter((item) => item.findingType === 'budget-overspend').length;
-  const goalFindings = activeItems.filter((item) => item.findingType === 'goal-at-risk' || item.findingType === 'goal-progress').length;
+  const budgetFindings = payload?.findings.filter((finding) => finding.type === 'budget-overspend') ?? [];
+  const budgetIssues = payload?.budgetAssessment.overBudgetCategoryCount ?? 0;
+  const maximumBudgetUsage = budgetFindings.reduce<number | null>((maximum, finding) => {
+    const value = finding.metrics.percentUsed;
+    return typeof value === 'number' && Number.isFinite(value) ? Math.max(maximum ?? 0, value) : maximum;
+  }, null);
+  const goalProjections = payload?.goalAssessment.projections ?? [];
+  const projectedGoalProgress = goalProjections
+    .map((goal) => goal.projectedProgressPercent)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  const averageGoalProgress = projectedGoalProgress.length
+    ? projectedGoalProgress.reduce((sum, value) => sum + value, 0) / projectedGoalProgress.length
+    : null;
   const upcoming = activeItems.filter((item) => item.findingType === 'commitment-upcoming' || item.findingType === 'recurring-candidate-upcoming').length;
   const unclassified = payload?.summary.uncategorizedOutflowMinor ?? 0;
 
@@ -276,8 +309,18 @@ export function PeriodicReviewPanel({ onNavigate }: { onNavigate: (target: Navig
 
           <div className="two-column periodic-review-secondary">
             <article className="panel"><div className="panel-heading"><div><p className="eyebrow">PLANIFICACIÓN</p><h3>Presupuesto y objetivos</h3></div></div>
-              <div className="detail-line"><span>Desviaciones presupuestarias detectadas</span><strong>{budgetIssues}</strong></div>
-              <div className="detail-line"><span>Hallazgos sobre objetivos</span><strong>{goalFindings}</strong></div>
+              <div className="detail-line"><span>Evaluación presupuestaria</span><strong>{payload.budgetAssessment.available ? 'Evaluable' : 'No evaluable'}</strong></div>
+              {payload.budgetAssessment.available ? <>
+                <div className="detail-line"><span>Categorías con desviación</span><strong>{budgetIssues}</strong></div>
+                {maximumBudgetUsage !== null ? <div className="detail-line"><span>Mayor porcentaje de presupuesto consumido</span><strong>{new Intl.NumberFormat('es-ES', { maximumFractionDigits: 1 }).format(maximumBudgetUsage)} %</strong></div> : null}
+                <p className="setting-hint">{budgetIssues === 0 ? 'No se han detectado excesos en categorías con asignación positiva y datos comparables.' : payload.budgetAssessment.scope}</p>
+              </> : <p className="setting-hint">{payload.budgetAssessment.reason}</p>}
+              <div className="detail-line"><span>Objetivos con proyección</span><strong>{payload.goalAssessment.evaluatedGoalCount}</strong></div>
+              <div className="detail-line"><span>Objetivos proyectados en plazo / en riesgo</span><strong>{payload.goalAssessment.onTrackCount} / {payload.goalAssessment.atRiskCount}</strong></div>
+              <div className="detail-line"><span>Avance proyectado medio</span><strong>{averageGoalProgress === null ? 'No disponible' : new Intl.NumberFormat('es-ES', { maximumFractionDigits: 1 }).format(averageGoalProgress) + ' %'}</strong></div>
+              {goalProjections.length > 0 ? <div className="periodic-review-goals">
+                {goalProjections.map((goal) => <div className="detail-line" key={goal.findingId}><span>{goal.title}<small>{goal.targetDate ? 'Fecha objetivo: ' + formatCivilDate(goal.targetDate) : 'Proyección estimada'}</small></span><strong>{goal.projectedProgressPercent === null ? 'No disponible' : new Intl.NumberFormat('es-ES', { maximumFractionDigits: 1 }).format(goal.projectedProgressPercent) + ' %'}</strong></div>)}
+              </div> : null}
               <div className="detail-line"><span>Compromisos y recurrencias próximos</span><strong>{upcoming}</strong></div>
               <div className="detail-line"><span>Importe de salidas sin categoría</span><strong>{formatMoney(unclassified, payload.currency)}</strong></div>
               <div className="detail-line"><span>Movimientos sin conversión</span><strong>{payload.summary.unconvertedTransactionCount}</strong></div>
