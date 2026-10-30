@@ -28,7 +28,7 @@ Cada revisión tiene un ID, frecuencia, fechas, fecha de generación, divisa, á
 
 Las decisiones de una revisión anterior se reaplican al regenerar solo cuando coinciden el periodo, divisa, ámbito, identificador del hallazgo y huella de evidencia. Si cambia materialmente la evidencia, el punto vuelve a quedar pendiente. Los aplazamientos vencidos también vuelven a quedar pendientes. Así no se arrastra una decisión antigua sobre un hallazgo que ya cambió.
 
-El almacén periodic-reviews.json reside en ACTUAL_DATA_DIR y usa esquema versionado (version: 1), validación estricta, límite de tamaño, escritura atómica, permisos locales restrictivos y serialización de escrituras concurrentes. Guarda únicamente fechas, IDs/tipos/huellas de hallazgos, estado, divisa y etiqueta de ámbito. No guarda movimientos, importes transaccionales, descripciones, evidencia completa ni conversaciones. No es una fuente financiera ni permite modificar Actual Budget.
+El almacén periodic-reviews.json reside en ACTUAL_DATA_DIR y usa esquema versionado (version: 1), validación estricta, límite de tamaño, escritura atómica, permisos locales restrictivos y serialización de escrituras concurrentes. Guarda únicamente fechas, IDs/tipos/huellas de hallazgos, estado, divisa, etiqueta de ámbito y una huella SHA-256 truncada del conjunto de cuentas. No conserva los IDs ni nombres de las cuentas en el historial. No guarda movimientos, importes transaccionales, descripciones, evidencia completa ni conversaciones. No es una fuente financiera ni permite modificar Actual Budget.
 
 ## IA, privacidad y límites
 
