@@ -71,7 +71,7 @@ describe('periodic review store', () => {
       currency: 'EUR',
       accountScope: { mode: 'all', label: 'Todas las cuentas abiertas' },
       items: [
-        { findingId: 'finding-a', findingType: 'expense-change', status: 'pending' },
+        { findingId: 'finding-a', findingType: 'expense-change', fingerprint: '0123456789abcdef', status: 'pending' },
         { findingId: 'finding-b', findingType: 'income-change', fingerprint: 'abcdef0123456789', status: 'pending' },
       ],
     });
