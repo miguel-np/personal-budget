@@ -8,7 +8,7 @@ La revisión periódica (#72) reúne en un recorrido explícito el resumen de un
 - **Mensual:** mes natural de la fecha de referencia.
 - Si el periodo incluye hoy, el corte termina en la fecha actual y el informe queda identificado como incompleto. El cierre futuro no se anticipa ni se rellenan días sin datos.
 - **Semanal:** compara los mismos días de lunes-domingo de la semana anterior. **Mensual:** compara el mes natural anterior; si el mes actual todavía está incompleto, compara el mismo tramo de días del mes anterior, limitado al último día disponible de ese mes. En ambos casos se muestra el rango exacto y no se extrapolan días.
-- Las fechas se interpretan como fechas civiles ISO (YYYY-MM-DD); la API rechaza fechas inválidas o futuras.
+- Las fechas se interpretan como fechas civiles ISO (YYYY-MM-DD) en la zona IANA del navegador (por ejemplo, Europe/Madrid), que se valida y se devuelve en el informe para que el corte no cambie cerca de medianoche. Las llamadas sin zona explícita usan UTC; la API rechaza zonas inválidas y fechas futuras.
 
 ## Cálculos y procedencia
 
