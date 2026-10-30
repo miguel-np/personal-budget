@@ -22,7 +22,7 @@ interface ReviewRun {
   endDate: string;
   generatedAt: string;
   currency: string;
-  accountScope: { mode: 'all' | 'selected'; label: string };
+  accountScope: { mode: 'all' | 'selected'; label: string; fingerprint: string };
   status: 'in_progress' | 'completed';
   completedAt?: string;
   items: readonly ReviewItem[];
