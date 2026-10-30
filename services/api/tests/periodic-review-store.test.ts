@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -23,7 +23,7 @@ describe('periodic review store', () => {
       endDate: '2026-10-30',
       currency: 'EUR',
       accountScope: { mode: 'all', label: 'Todas las cuentas abiertas' },
-      items: [{ findingId: 'pending-categorization:2026-10', findingType: 'pending-categorization', status: 'pending' }],
+      items: [{ findingId: 'pending-categorization:2026-10', findingType: 'pending-categorization', fingerprint: '0123456789abcdef', status: 'pending' }],
     });
 
     expect(review).toMatchObject({ periodType: 'monthly', status: 'in_progress', currency: 'EUR' });
@@ -45,8 +45,8 @@ describe('periodic review store', () => {
       currency: 'EUR',
       accountScope: { mode: 'selected', label: 'Dos cuentas seleccionadas' },
       items: [
-        { findingId: 'finding-a', findingType: 'expense-change', status: 'pending' },
-        { findingId: 'finding-b', findingType: 'financial-anomaly', status: 'pending' },
+        { findingId: 'finding-a', findingType: 'expense-change', fingerprint: '0123456789abcdef', status: 'pending' },
+        { findingId: 'finding-b', findingType: 'financial-anomaly', fingerprint: 'fedcba9876543210', status: 'pending' },
       ],
     });
 
@@ -72,7 +72,7 @@ describe('periodic review store', () => {
       accountScope: { mode: 'all', label: 'Todas las cuentas abiertas' },
       items: [
         { findingId: 'finding-a', findingType: 'expense-change', status: 'pending' },
-        { findingId: 'finding-b', findingType: 'income-change', status: 'pending' },
+        { findingId: 'finding-b', findingType: 'income-change', fingerprint: 'abcdef0123456789', status: 'pending' },
       ],
     });
     await Promise.all([
@@ -84,9 +84,7 @@ describe('periodic review store', () => {
 
   it('rejects malformed persisted schemas rather than silently discarding review history', async () => {
     const directory = await makeDirectory();
-    await readFile(join(directory, 'periodic-reviews.json'), 'utf8').catch(() => undefined);
-    const { writeFile } = await import('node:fs/promises');
-    await writeFile(join(directory, 'periodic-reviews.json'), JSON.stringify({ version: 2, reviews: [] }));
+        await writeFile(join(directory, 'periodic-reviews.json'), JSON.stringify({ version: 2, reviews: [] }));
     await expect(readPeriodicReviewState(directory)).rejects.toThrow();
   });
 });
