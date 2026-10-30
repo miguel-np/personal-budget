@@ -25,3 +25,14 @@ Fecha 25-oct-2026, WSL2 (kernel 6.18.33.2-microsoft-standard-WSL2) con Ollama de
 - El fallo del runtime (Ollama caído) está cubierto por tests sintéticos: el chat devuelve 503 saneado y el resto de la aplicación sigue operativo. Los prompts y respuestas no se registran.
 
 La IA no constituye asesoramiento financiero profesional. Revisa los indicadores deterministas antes de tomar decisiones.
+
+
+## Extracción de intenciones del planificador de ahorro
+
+El planificador usa el mismo cliente local y los mismos límites de concurrencia de Ollama. La petición de extracción contiene solo el texto escrito por el usuario, la fecha local del backend, la divisa de análisis y una lista acotada de objetivos activos compatibles (identificador y nombre para resolver referencias inequívocas). No incluye cuentas, movimientos, descripciones, categorías, notas, importes históricos ni saldos.
+
+Ollama devuelve JSON conforme a un esquema estricto. Los importes se extraen como números en unidades principales de la divisa; la API valida rangos y precisión monetaria y realiza la conversión a unidades menores. El modelo no calcula proyecciones ni decide viabilidad. Fechas o importes ausentes, referencias ambiguas y divisas distintas provocan una pregunta aclaratoria o el rechazo seguro de la simulación.
+
+La IA no dispone de endpoints de escritura. El único endpoint conversacional es `POST /api/v1/planning/conversation/preview` y siempre devuelve `saved: false`. La prueba de un gasto extraordinario usa un compromiso temporal en memoria que desaparece al terminar la petición. Los objetivos y compromisos guardados solo pueden cambiarse mediante los flujos separados de Objetivos.
+
+La aceptación opcional `PERSONAL_BUDGET_RUN_PLANNING_AI_ACCEPTANCE=1 OLLAMA_MODEL=<modelo-local> npm run test:planning-ai:acceptance` ejecuta una pequeña suite de prompts totalmente sintéticos y mide exactitud de campos y detección de aclaraciones. CI valida el contrato con respuestas sintéticas; no descarga ni presupone un modelo local.
