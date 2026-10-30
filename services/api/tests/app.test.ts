@@ -364,16 +364,23 @@ describe('local API', () => {
       payload: { periodType: 'weekly', anchorDate: '9999-01-01' },
     });
     expect(invalidFuture.statusCode).toBe(400);
+    const invalidTimeZone = await app.inject({
+      method: 'POST',
+      url: '/api/v1/reviews/periodic',
+      payload: { periodType: 'weekly', anchorDate: today, timeZone: 'Not/A-Time-Zone' },
+    });
+    expect(invalidTimeZone.statusCode).toBe(400);
 
     const generated = await app.inject({
       method: 'POST',
       url: '/api/v1/reviews/periodic',
-      payload: { periodType: 'monthly', anchorDate: today },
+      payload: { periodType: 'monthly', anchorDate: today, timeZone: 'Europe/Madrid' },
     });
     expect(generated.statusCode).toBe(201);
     const data = generated.json().data;
     expect(data.schemaVersion).toBe(1);
-    expect(data.asOfDate).toBe(today);
+    expect(data.asOfDate).toBe(new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid' }).format(new Date()));
+    expect(data.timeZone).toBe('Europe/Madrid');
     expect(data.summary).toMatchObject({ currency: 'EUR', incomeMinor: 0, expenseMinor: 5_000, savingsMinor: -5_000, savingsRatePercent: null });
     expect(data.budgetAssessment).toMatchObject({ available: false, overBudgetCategoryCount: 0 });
     expect(data.budgetAssessment.reason).toBeTruthy();
