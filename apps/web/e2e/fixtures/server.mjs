@@ -537,6 +537,13 @@ const server = createServer(async (req, res) => {
         period: { periodType: body.periodType, startDate, endDate, scheduledEndDate, complete: endDate === scheduledEndDate },
         asOfDate: iso(now), timeZone: body.timeZone || 'UTC', calculatedAt: now.toISOString(), currency: currencyPreferences.displayCurrency,
         accountScope: finding.accountScope, summary: currentSummary,
+        budgetAssessment: {
+          available: false,
+          reason: 'Evaluación presupuestaria omitida en el fixture sintético.',
+          overBudgetCategoryCount: 0,
+          scope: 'Datos sintéticos; no se evalúa un presupuesto real.',
+        },
+        goalAssessment: { evaluatedGoalCount: 0, onTrackCount: 0, atRiskCount: 0, projections: [] },
         comparison: { period: comparisonPeriod, summary: previousSummary },
         findings: [finding],
         warnings: endDate === scheduledEndDate ? [] : ['El periodo está incompleto; datos sintéticos de corte.'],
