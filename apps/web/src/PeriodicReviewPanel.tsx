@@ -98,6 +98,18 @@ interface ReviewPayload {
       confidence: string;
     }[];
   };
+  comparisonToPreviousReview: null | {
+    previousReview: {
+      startDate: string;
+      endDate: string;
+      generatedAt: string;
+      status: 'in_progress' | 'completed';
+    };
+    newFindingCount: number;
+    repeatedFindingCount: number;
+    changedEvidenceCount: number;
+    noLongerPresentCount: number;
+  };
   comparison: { period: { startDate: string; endDate: string }; summary: FinancialSummary };
   findings: readonly Finding[];
   warnings: readonly string[];
@@ -336,6 +348,15 @@ export function PeriodicReviewPanel({ onNavigate }: { onNavigate: (target: Navig
               <div className="detail-line"><span>Ingresos</span><strong>{deltaText(payload.summary.incomeMinor, payload.comparison.summary.incomeMinor, payload.currency)}</strong></div>
               <div className="detail-line"><span>Gastos</span><strong>{deltaText(payload.summary.expenseMinor, payload.comparison.summary.expenseMinor, payload.currency)}</strong></div>
               <div className="detail-line"><span>Ahorro neto</span><strong>{deltaText(payload.summary.savingsMinor, payload.comparison.summary.savingsMinor, payload.currency)}</strong></div>
+              <div className="divider" />
+              <p className="eyebrow">ÚLTIMA REVISIÓN COMPARABLE</p>
+              {payload.comparisonToPreviousReview ? <>
+                <p className="setting-hint">{dateRange(payload.comparisonToPreviousReview.previousReview.startDate, payload.comparisonToPreviousReview.previousReview.endDate)} · {formatCivilDate(payload.comparisonToPreviousReview.previousReview.generatedAt.slice(0, 10))}</p>
+                <div className="detail-line"><span>Hallazgos nuevos</span><strong>{payload.comparisonToPreviousReview.newFindingCount}</strong></div>
+                <div className="detail-line"><span>Hallazgos repetidos</span><strong>{payload.comparisonToPreviousReview.repeatedFindingCount}</strong></div>
+                <div className="detail-line"><span>Hallazgos con evidencia cambiada</span><strong>{payload.comparisonToPreviousReview.changedEvidenceCount}</strong></div>
+                <div className="detail-line"><span>Ya no aparecen</span><strong>{payload.comparisonToPreviousReview.noLongerPresentCount}</strong></div>
+              </> : <p className="setting-hint">Todavía no existe una revisión anterior del mismo tipo, divisa y conjunto de cuentas.</p>}
             </article>
           </div>
 
