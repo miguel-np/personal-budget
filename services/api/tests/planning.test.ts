@@ -44,7 +44,7 @@ function appConfig(dataDirectory: string): AppConfig {
   return {
     environment: 'test', host: '127.0.0.1', port: 3000, logLevel: 'silent',
     actualServerURL: 'http://127.0.0.1:5006', actualDataDir: dataDirectory,
-    ollamaBaseURL: 'http://127.0.0.1:11434', aiEnabled: false, ollamaTimeoutMs: 120_000, aiMaxContextChars: 4_000,
+    ollamaBaseURL: 'http://127.0.0.1:11434', aiEnabled: false, aiCategoryClassificationEnabled: false, aiCategoryClassificationIncludePayee: true, ollamaTimeoutMs: 120_000, aiMaxContextChars: 4_000,
     budgetCurrency: 'EUR', allowedOrigins: ['http://127.0.0.1:5173', 'http://localhost:5173'],
   };
 }

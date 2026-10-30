@@ -27,11 +27,14 @@ interface CategorySuggestion {
   date: string;
   payeeLabel: string;
   amountMinor: number;
-  suggestedCategoryId: string;
-  suggestedCategoryName: string;
+  suggestedCategoryId: string | null;
+  suggestedCategoryName: string | null;
   evidenceCount: number;
-  lastEvidenceDate: string;
+  lastEvidenceDate: string | null;
   confidence: string;
+  source: 'rule_based' | 'local_ai' | 'none';
+  uncertainty: 'low' | 'medium' | 'high' | 'not_assessed';
+  rationale: string | null;
 }
 interface ForecastMonthlyRow { month: string; incomeMinor: number; expenseMinor: number; savingsMinor: number; }
 interface ForecastResult {
@@ -83,6 +86,8 @@ export function PlanningPanel({ currency }: { currency: string }) {
   const detectionPeriod = useMemo(() => monthOffset(5), []);
   const visibleSuggestions = useMemo(() =>
     suggestions.filter((suggestion) => !discarded.includes(suggestion.transactionId)), [suggestions, discarded]);
+  const canPreviewAll = visibleSuggestions.length > 0 && visibleSuggestions.every((suggestion) =>
+    Boolean(chosenCategory[suggestion.transactionId] ?? suggestion.suggestedCategoryId));
   const expenseCategories = useMemo(() => categories.filter((category) => !category.isIncome), [categories]);
 
   useEffect(() => {
@@ -251,34 +256,39 @@ export function PlanningPanel({ currency }: { currency: string }) {
         {visibleSuggestions.length > 0 ? (
           <div className="suggestion-block">
             <h4>Sugerencias de categoría ({visibleSuggestions.length})</h4>
-            <p className="section-footnote">Reglas deterministas sobre el historial local. Nada se modifica sin tu confirmación; descartar o aplicar son acciones explícitas.</p>
+            <p className="section-footnote">La fuente se identifica por movimiento: reglas deterministas, IA local o ausencia de sugerencia. La incertidumbre de IA es cualitativa, no una probabilidad. En los casos sin sugerencia, selecciona una categoría manualmente. Nada se modifica sin previsualización y confirmación explícita.</p>
             {visibleSuggestions.map((suggestion) => (
               <div className="comparison-row" key={suggestion.transactionId}>
                 <div><span>{suggestion.payeeLabel} · {suggestion.date}</span><strong>{money(suggestion.amountMinor, currency)}</strong></div>
                 <div className="comparison-meta">
-                  <span>Evidencia: {suggestion.evidenceCount} movimiento(s) en {suggestion.suggestedCategoryName} (último {suggestion.lastEvidenceDate})</span>
+                  {suggestion.source === 'rule_based'
+                    ? <span>Reglas deterministas: {suggestion.evidenceCount} evidencia(s) en {suggestion.suggestedCategoryName} (última {suggestion.lastEvidenceDate}).</span>
+                    : suggestion.source === 'local_ai'
+                      ? <span>IA local · incertidumbre cualitativa baja (no es una probabilidad). {suggestion.rationale}</span>
+                      : <span>Sin sugerencia automática. {suggestion.rationale ?? 'Elige una categoría manualmente.'}</span>}
                   <label className="field-label compact-label">
                     Categoría
                     <select
                       disabled={busy || pendingChanges.length > 0}
-                      value={chosenCategory[suggestion.transactionId] ?? suggestion.suggestedCategoryId}
+                      value={chosenCategory[suggestion.transactionId] ?? suggestion.suggestedCategoryId ?? ''}
                       onChange={(event) => {
                       const categoryId = event.currentTarget.value;
                       setChosenCategory((previous) => ({ ...previous, [suggestion.transactionId]: categoryId }));
                     }}
                     >
+                      <option value="">Selecciona una categoría…</option>
                       {expenseCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
                     </select>
                   </label>
                   <div className="button-row">
-                    <button className="button primary small" type="button" disabled={busy || pendingChanges.length > 0} onClick={() => { void previewApply([suggestion.transactionId]); }}>Previsualizar</button>
+                    <button className="button primary small" type="button" disabled={busy || pendingChanges.length > 0 || !(chosenCategory[suggestion.transactionId] ?? suggestion.suggestedCategoryId)} onClick={() => { void previewApply([suggestion.transactionId]); }}>Previsualizar</button>
                     <button className="button small" type="button" disabled={busy || pendingChanges.length > 0} onClick={() => discard(suggestion.transactionId)}>Descartar</button>
                   </div>
                 </div>
               </div>
             ))}
             <div className="button-row">
-              <button className="button primary" type="button" disabled={busy || pendingChanges.length > 0 || visibleSuggestions.length === 0} onClick={() => { void previewApply(visibleSuggestions.map((suggestion) => suggestion.transactionId)); }}>
+              <button className="button primary" type="button" disabled={busy || pendingChanges.length > 0 || !canPreviewAll} onClick={() => { void previewApply(visibleSuggestions.map((suggestion) => suggestion.transactionId)); }}>
                 {busy ? 'Preparando…' : 'Previsualizar todas las sugerencias visibles'}
               </button>
             </div>

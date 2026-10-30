@@ -45,6 +45,15 @@ describe('suggestCategories', () => {
     expect(suggestions[0]!.suggestedCategoryId).toBe('home');
   });
 
+  it('abstains when the strongest categories have identical evidence and recency', () => {
+    const transactions = [
+      expense('h1', '2026-09-01', -1000, 'Comercio ambiguo', 'food'),
+      expense('h2', '2026-09-01', -1000, 'Comercio ambiguo', 'home'),
+      expense('u1', '2026-10-02', -1100, 'Comercio ambiguo'),
+    ];
+    expect(suggestCategories(transactions, categories, october)).toHaveLength(0);
+  });
+
   it('never suggests income categories', () => {
     const transactions = [
       expense('h1', '2026-09-01', -1000, 'Empresa', 'salary'),

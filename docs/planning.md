@@ -12,9 +12,40 @@ La salida de cada candidato incluye:
 - `warnings`: riesgos de falso positivo conocidos — abonos/reembolsos excluidos, fechas desplazadas, importes variables y agrupación por texto normalizado de nombres similares.
 - `confidence: candidate_only`: un candidato no garantiza que el gasto se repita.
 
-## Sugerencias de categoría
+## Sugerencias híbridas de categoría (reglas + IA local opcional)
 
-`GET /api/v1/insights/category-suggestions` propone una categoría para movimientos de gasto sin clasificar usando el historial local de los últimos 12 meses: el beneficiario normalizado vota con sus movimientos categorizados previos; gana la categoría con más evidencia (la más reciente en caso de empate). No se sugieren categorías de ingreso y no se aprenden ni almacenan reglas nuevas.
+`GET /api/v1/insights/category-suggestions` aplica siempre primero las reglas deterministas sobre el historial local de los últimos 12 meses. El beneficiario normalizado vota con sus movimientos previamente categorizados; se conserva el número de evidencias y la fecha más reciente. No se sugieren categorías de ingreso, y las reglas nunca aprenden ni se almacenan de forma implícita. Si las dos categorías más fuertes tienen exactamente el mismo número de votos y fecha de evidencia, la capa determinista se abstiene en lugar de decidir por orden alfabético.
+
+La clasificación híbrida está **desactivada por defecto** y requiere activar ambas opciones explícitamente:
+
+- `AI_ENABLED=true`
+- `AI_CATEGORY_CLASSIFICATION_ENABLED=true`
+- `OLLAMA_MODEL` con el nombre de un modelo ya instalado en el Ollama local.
+
+`OLLAMA_BASE_URL` solo admite loopback. `AI_CATEGORY_CLASSIFICATION_INCLUDE_PAYEE=true` (por defecto) permite enviar al modelo local las etiquetas normalizadas de los beneficiarios pendientes; al establecerlo en `false`, no se invoca la IA de clasificación y la interfaz solicita una categoría manual. La configuración no habilita APIs remotas ni servicios externos.
+
+### Orden de decisión, contexto y contrato
+
+1. Las coincidencias de reglas con al menos dos movimientos históricos se mantienen como sugerencias deterministas y no se envían al modelo.
+2. Solo se consideran como fallback las salidas de gasto sin categoría, sin traspaso y con beneficiario disponible que no tienen evidencia determinista suficiente. Los abonos/reembolsos reconocidos quedan excluidos.
+3. Se procesa como máximo una tanda de 12 movimientos por petición; catálogos con más de 100 categorías no se envían al modelo. Los candidatos diferidos se indican en la respuesta y no se presentan como clasificados por IA.
+4. El contexto de Ollama contiene únicamente referencias efímeras (`c1`…`c12`), IDs/nombres de categorías de gasto habilitadas y, si la opción lo permite, la etiqueta normalizada del beneficiario. No incluye IDs reales de movimiento, cuentas, importes, fechas, notas, filas históricas ni el lote financiero original. Las referencias efímeras no se registran como datos de usuario.
+5. Se exige JSON estructurado con una referencia por candidato, `categoryId` del catálogo permitido o `null`, justificación breve y `uncertainty` cualitativa (`low`, `medium` o `high`). La API rechaza la respuesta entera si tiene referencias ausentes/duplicadas, forma inválida o una categoría no existente/no habilitada. Solo `low` con una categoría permitida puede producir una sugerencia de IA; el resto se representa como **sin sugerencia** y exige decisión humana. No se trata la etiqueta del modelo como probabilidad calibrada.
+6. Un error de Ollama, el timeout, la cola saturada, el contexto excesivo o una respuesta inválida degradan a revisión manual; las sugerencias deterministas existentes siguen disponibles. Una petición de sugerencias no realiza escrituras.
+
+El contrato distingue `source: rule_based | local_ai | none`, `confidence` de fuente, incertidumbre cualitativa y justificación. La UI de Planificación muestra la procedencia, permite editar/descartar y solo permite iniciar la previsualización cuando hay una categoría elegida. El guardado continúa usando la ruta de previsualización, baseline de concurrencia optimista, confirmación explícita, verificación de persistencia y resultado parcial inequívoco del flujo existente.
+
+### Evaluación sintética y métricas
+
+La prueba optativa `services/api/tests/local-ai-live-acceptance.test.ts` incluye etiquetas de comercio inventadas y resultados esperados (sin datos financieros personales) y obtiene la línea base ejecutando el `suggestCategories` real de `finance-core`. Contrasta las métricas de la base con el híbrido: **cobertura** = ejemplos con categoría asignada / total; **precisión** = asignaciones correctas / asignaciones realizadas; **tasa de falsos positivos** = casos etiquetados como ambiguos o sin categoría que reciben una asignación / casos ambiguos; **tasa de abstención** = ejemplos sin categoría aceptada / total. La evaluación marca como abstención toda respuesta inválida y solo cuenta las sugerencias de IA de incertidumbre baja y categoría permitida.
+
+Con Ollama local ejecutándose y el modelo descargado, ejecuta:
+
+```bash
+PERSONAL_BUDGET_RUN_OLLAMA_ACCEPTANCE=1 OLLAMA_MODEL=qwen3:8b npm run test:ollama:acceptance
+```
+
+El test informa métricas agregadas y deltas por consola; no guarda prompts, ejemplos personales ni resultados fuera del proceso local. Es un ensayo de calidad sobre el modelo instalado, no una garantía de precisión universal. La métrica de tiempo y número de inferencias también se emite mediante la telemetría estructurada local existente, sin texto de prompts, categorías, beneficiarios ni importes.
 
 ## Confirmación con previsualización
 

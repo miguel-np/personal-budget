@@ -37,7 +37,7 @@ function createRepository(overrides: Partial<BudgetRepository> = {}): BudgetRepo
 const config: AppConfig = {
   environment: 'test', host: '127.0.0.1', port: 3000, logLevel: 'silent',
   actualServerURL: 'http://127.0.0.1:5006', actualDataDir: './.local/actual-api',
-  ollamaBaseURL: 'http://127.0.0.1:11434', aiEnabled: false, ollamaTimeoutMs: 120_000, aiMaxContextChars: 4_000,
+  ollamaBaseURL: 'http://127.0.0.1:11434', aiEnabled: false, aiCategoryClassificationEnabled: false, aiCategoryClassificationIncludePayee: true, ollamaTimeoutMs: 120_000, aiMaxContextChars: 4_000,
   budgetCurrency: 'EUR', allowedOrigins: ['http://127.0.0.1:5173', 'http://localhost:5173'],
 };
 const openApps: Array<{ close: () => Promise<void> }> = [];
@@ -1069,8 +1069,178 @@ describe('local API', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().data).toHaveLength(1);
     expect(response.json().data[0]).toMatchObject({
-      transactionId: 'u-1', suggestedCategoryId: 'food', suggestedCategoryName: 'Alimentación', confidence: 'rule_based',
+      transactionId: 'u-1', suggestedCategoryId: 'food', suggestedCategoryName: 'Alimentación', confidence: 'rule_based', source: 'rule_based',
     });
+  });
+
+  it('uses local AI only for fallback candidates and returns a validated, review-only category suggestion', async () => {
+    const ollama = await createOllamaFixture(200, JSON.stringify({
+      suggestions: [
+        {
+          reference: 'c1',
+          categoryId: 'food',
+          rationale: 'La etiqueta coincide con una variante ortográfica del comercio histórico.',
+          uncertainty: 'low',
+        },
+        {
+          reference: 'c2',
+          categoryId: 'food',
+          rationale: 'La etiqueta contiene un término explícito de panadería.',
+          uncertainty: 'low',
+        },
+      ],
+    }));
+    const history: readonly BudgetTransaction[] = [
+      { id: 'h-1', account: 'account-1', date: '2026-08-03', amount: -4200, category: 'food', payee_name: 'Supermercado' },
+      { id: 'h-2', account: 'account-1', date: '2026-09-03', amount: -3100, category: 'food', payee_name: 'Supermercado' },
+      { id: 'u-rule', account: 'account-1', date: '2026-10-04', amount: -3900, category: null, payee_name: 'Supermercado' },
+      { id: 'u-typo', account: 'account-1', date: '2026-10-06', amount: -1600, category: null, payee_name: 'Supermercdo Valle' },
+      { id: 'u-new', account: 'account-1', date: '2026-10-07', amount: -1200, category: null, payee_name: 'Panadería Aurora', notes: 'nota financiera que no debe enviarse' },
+      { id: 'u-income', account: 'account-1', date: '2026-10-08', amount: 4000, category: null, payee_name: 'Ingreso de prueba' },
+      { id: 'u-transfer', account: 'account-1', date: '2026-10-09', amount: -5000, category: null, payee_name: 'Traspaso', transfer_id: 'transfer-pair' },
+      { id: 'u-refund', account: 'account-1', date: '2026-10-10', amount: 500, category: null, payee_name: 'Reembolso comercio' },
+    ];
+    const updateTransactionCategoriesBatch = vi.fn();
+    const repository = createRepository({
+      listTransactions: vi.fn(async () => history),
+      updateTransactionCategoriesBatch,
+    });
+    const app = await createTestApp(repository, {
+      ...config,
+      aiEnabled: true,
+      aiCategoryClassificationEnabled: true,
+      aiCategoryClassificationIncludePayee: true,
+      ollamaBaseURL: ollama.url,
+      ollamaModel: 'synthetic-model',
+    });
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/insights/category-suggestions?startDate=2026-10-01&endDate=2026-10-31',
+    });
+    await ollama.close();
+
+    expect(response.statusCode).toBe(200);
+    const data = response.json().data as Array<Record<string, unknown>>;
+    expect(data.find((entry) => entry.transactionId === 'u-rule')).toMatchObject({
+      source: 'rule_based', suggestedCategoryId: 'food', confidence: 'rule_based',
+    });
+    expect(data.find((entry) => entry.transactionId === 'u-typo')).toMatchObject({
+      source: 'local_ai', suggestedCategoryId: 'food', confidence: 'local_ai', uncertainty: 'low',
+    });
+    expect(data.find((entry) => entry.transactionId === 'u-new')).toMatchObject({
+      source: 'local_ai', suggestedCategoryId: 'food', confidence: 'local_ai', uncertainty: 'low',
+    });
+    expect(data.some((entry) => ['u-income', 'u-transfer', 'u-refund'].includes(String(entry.transactionId)))).toBe(false);
+    expect(response.json().classification).toMatchObject({ enabled: true, outcome: 'completed', batchesAttempted: 1 });
+    expect(updateTransactionCategoriesBatch).not.toHaveBeenCalled();
+  });
+
+  it('rejects unknown category IDs and non-structured model output without writing', async () => {
+    const ollama = await createOllamaFixture(200, JSON.stringify({
+      suggestions: [{
+        reference: 'c1',
+        categoryId: 'not-in-the-real-catalog',
+        rationale: 'Respuesta sintética inválida.',
+        uncertainty: 'low',
+      }],
+    }));
+    const history: readonly BudgetTransaction[] = [
+      { id: 'u-invalid', account: 'account-1', date: '2026-10-07', amount: -1200, category: null, payee_name: 'Comercio nuevo' },
+    ];
+    const updateTransactionCategoriesBatch = vi.fn();
+    const app = await createTestApp(createRepository({
+      listTransactions: vi.fn(async () => history),
+      updateTransactionCategoriesBatch,
+    }), {
+      ...config,
+      aiEnabled: true,
+      aiCategoryClassificationEnabled: true,
+      aiCategoryClassificationIncludePayee: true,
+      ollamaBaseURL: ollama.url,
+      ollamaModel: 'synthetic-model',
+    });
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/insights/category-suggestions?startDate=2026-10-01&endDate=2026-10-31',
+    });
+    await ollama.close();
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toHaveLength(1);
+    expect(response.json().data[0]).toMatchObject({
+      transactionId: 'u-invalid', source: 'none', confidence: 'none', suggestedCategoryId: null,
+    });
+    expect(response.json().classification.outcome).toBe('invalid_response');
+    expect(updateTransactionCategoriesBatch).not.toHaveBeenCalled();
+  });
+
+  it('rejects existing but inapplicable income categories from the local model', async () => {
+    const ollama = await createOllamaFixture(200, JSON.stringify({
+      suggestions: [{
+        reference: 'c1',
+        categoryId: 'salary',
+        rationale: 'Respuesta sintética que propone una categoría de ingreso.',
+        uncertainty: 'low',
+      }],
+    }));
+    const history: readonly BudgetTransaction[] = [
+      { id: 'u-income-category', account: 'account-1', date: '2026-10-07', amount: -1200, category: null, payee_name: 'Comercio de gasto nuevo' },
+    ];
+    const updateTransactionCategoriesBatch = vi.fn();
+    const app = await createTestApp(createRepository({
+      listTransactions: vi.fn(async () => history),
+      updateTransactionCategoriesBatch,
+    }), {
+      ...config,
+      aiEnabled: true,
+      aiCategoryClassificationEnabled: true,
+      aiCategoryClassificationIncludePayee: true,
+      ollamaBaseURL: ollama.url,
+      ollamaModel: 'synthetic-model',
+    });
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/insights/category-suggestions?startDate=2026-10-01&endDate=2026-10-31',
+    });
+    await ollama.close();
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data[0]).toMatchObject({
+      transactionId: 'u-income-category', source: 'none', suggestedCategoryId: null, confidence: 'none',
+    });
+    expect(response.json().classification.outcome).toBe('invalid_response');
+    expect(updateTransactionCategoriesBatch).not.toHaveBeenCalled();
+  });
+
+  it('degrades to manual review when the local model is unavailable', async () => {
+    const ollama = await createOllamaFixture(503);
+    const history: readonly BudgetTransaction[] = [
+      { id: 'u-model-down', account: 'account-1', date: '2026-10-07', amount: -1200, category: null, payee_name: 'Comercio nuevo' },
+    ];
+    const updateTransactionCategoriesBatch = vi.fn();
+    const app = await createTestApp(createRepository({
+      listTransactions: vi.fn(async () => history),
+      updateTransactionCategoriesBatch,
+    }), {
+      ...config,
+      aiEnabled: true,
+      aiCategoryClassificationEnabled: true,
+      aiCategoryClassificationIncludePayee: true,
+      ollamaBaseURL: ollama.url,
+      ollamaModel: 'synthetic-model',
+    });
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/insights/category-suggestions?startDate=2026-10-01&endDate=2026-10-31',
+    });
+    await ollama.close();
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toMatchObject([
+      { transactionId: 'u-model-down', source: 'none', suggestedCategoryId: null, confidence: 'none' },
+    ]);
+    expect(response.json().classification.outcome).toBe('unavailable');
+    expect(updateTransactionCategoriesBatch).not.toHaveBeenCalled();
   });
 
   it('previews categorization without writing and commits only when asked', async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { LocalAiBusyError, LocalAiCancelledError, LocalAiClient, LocalAiUnavailableError } from '../src/local-ai.js';
+import { LocalAiBusyError, LocalAiCancelledError, LocalAiClient, LocalAiContextBudgetError, LocalAiUnavailableError } from '../src/local-ai.js';
 import type { AssistantContext } from '../src/local-ai.js';
 
 const config = { enabled: true, baseURL: 'http://127.0.0.1:11434', model: 'synthetic-model', timeoutMs: 1_000, maxContextChars: 2_000 };
@@ -28,6 +28,55 @@ describe('LocalAiClient', () => {
     await expect(client.status()).resolves.toEqual({ enabled: true, status: 'not_configured' });
     expect(fetcher).not.toHaveBeenCalled();
     await expect(client.explain(context)).rejects.toBeInstanceOf(LocalAiUnavailableError);
+  });
+
+  it('returns structured category JSON without narrative sanitization and uses the JSON output format', async () => {
+    let chatBody: Record<string, unknown> | undefined;
+    const answer = JSON.stringify({
+      suggestions: [{
+        reference: 'c1', categoryId: 'food-42',
+        rationale: 'La etiqueta indica un comercio de alimentación.',
+        uncertainty: 'low',
+      }],
+    });
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith('/api/tags')) {
+        return new Response(JSON.stringify({ models: [{ name: 'synthetic-model' }] }), { status: 200 });
+      }
+      if (url.endsWith('/api/chat')) {
+        chatBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return new Response(JSON.stringify({ message: { content: answer } }), { status: 200 });
+      }
+      return new Response('{}', { status: 404 });
+    });
+    const client = new LocalAiClient(config, fetcher);
+    const result = await client.classifyCategories({
+      categories: [{ id: 'food-42', name: 'Alimentación' }],
+      transactions: [{ reference: 'c1', payee: 'panadería sintética' }],
+    });
+
+    expect(JSON.parse(result)).toEqual(JSON.parse(answer));
+    expect(chatBody?.format).toBe('json');
+    const messages = chatBody?.messages as readonly { role: string; content: string }[];
+    expect(messages[0]?.content).toContain('clasificador de categorías');
+    expect(messages[1]?.content).toContain('panadería sintética');
+    expect(messages[1]?.content).toContain('food-42');
+    expect(messages[1]?.content).not.toContain('notes');
+    expect(messages[1]?.content).not.toContain('account-1');
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it('bounds classification batches before contacting Ollama', async () => {
+    const fetcher = vi.fn<typeof fetch>();
+    const client = new LocalAiClient(config, fetcher);
+    await expect(client.classifyCategories({
+      categories: [{ id: 'food', name: 'Alimentación' }],
+      transactions: Array.from({ length: 13 }, (_value, index) => ({
+        reference: 'c' + (index + 1), payee: 'comercio sintético',
+      })),
+    })).rejects.toBeInstanceOf(LocalAiContextBudgetError);
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it('bounds readiness probes with an abort signal and degrades to unavailable', async () => {
