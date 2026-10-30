@@ -2162,7 +2162,14 @@ function monthsBefore(date: string, months: number): string {
         currency: preferences.displayCurrency,
         goals: eligibleGoals.map((goal) => ({ id: goal.id, name: goal.name })),
       }, requestAbort.signal);
-      const draft = PlanningIntentDraftSchema.parse(draftUnknown) as PlanningIntentDraft;
+      const parsedDraft = PlanningIntentDraftSchema.safeParse(draftUnknown);
+      if (!parsedDraft.success) {
+        return reply.code(422).send({ error: {
+          code: 'PLANNING_INTENT_INVALID',
+          message: 'La IA local no ha devuelto una intención válida. Utiliza el formulario de planificación o reformula la petición.',
+        } });
+      }
+      const draft = parsedDraft.data as PlanningIntentDraft;
       const clarification = (question: string) => ({
         data: {
           status: 'clarification_required' as const,
@@ -2214,7 +2221,7 @@ function monthsBefore(date: string, months: number): string {
       if (targetAmountMinor === null) return clarification('¿Qué cantidad total quieres alcanzar con el objetivo de ahorro?');
       if (!targetDate) return clarification('¿Para qué fecha quieres alcanzar el objetivo? Indica mes y año para evitar ambigüedades.');
       validateGoalWindow(targetDate, asOfDate);
-      if (draft.intent === 'test_expense' && draft.expenseDate! > targetDate) {
+      if (draft.intent === 'test_expense' && draft.expenseDate! <= asOfDate) {\n        return clarification('La fecha del gasto debe ser futura. ¿Qué día ocurriría ese gasto?');\n      }\n      if (draft.intent === 'test_expense' && draft.expenseDate! > targetDate) {
         return clarification('El gasto indicado cae después de la fecha objetivo. ¿Quieres comprobar otro gasto anterior a esa fecha?');
       }
       const initialAmountMinor = selectedGoal?.initialAmountMinor ??
@@ -2235,7 +2242,7 @@ function monthsBefore(date: string, months: number): string {
       const monthlyExpenseMinor = draft.monthlyExpenseMajor === null
         ? (selectedGoal?.monthlyExpenseMinor ?? estimate.monthlyExpenseMinor)
         : majorToMinor(draft.monthlyExpenseMajor, preferences.displayCurrency, 'gastos mensuales');
-      const commitments = stored.commitments.filter((item) =>
+      const recurringCandidates = detectRecurringCandidates(convertedHistory.transactions, {\n        startDate: historyStartDate, endDate: asOfDate,\n      });\n      const commitments = stored.commitments.filter((item) =>
         item.status === 'active' && item.currency === preferences.displayCurrency &&
         planningScopeMatches(item.scope, preference),
       ).map(toPlanningCommitment);
@@ -2294,11 +2301,23 @@ function monthsBefore(date: string, months: number): string {
           projection: makeProjection(baseContributionMinor, [...commitments, hypotheticalCommitment]),
         });
       } else {
-        scenarios.push({
-          label: selectedGoal ? 'Objetivo existente · simulación sin guardar' : 'Nuevo objetivo hipotético · sin guardar',
-          monthlyContributionMinor: baseContributionMinor,
-          projection: makeProjection(baseContributionMinor, commitments),
-        });
+        const initialProjection = makeProjection(baseContributionMinor, commitments);
+        if (!selectedGoal && draft.monthlyContributionMajor === null &&
+            initialProjection.requiredMonthlyContributionMinor !== null &&
+            initialProjection.requiredMonthlyContributionMinor > 0) {
+          const requiredContribution = initialProjection.requiredMonthlyContributionMinor;
+          scenarios.push({
+            label: 'Aportación mensual necesaria estimada',
+            monthlyContributionMinor: requiredContribution,
+            projection: makeProjection(requiredContribution, commitments),
+          });
+        } else {
+          scenarios.push({
+            label: selectedGoal ? 'Objetivo existente · simulación sin guardar' : 'Nuevo objetivo hipotético · sin guardar',
+            monthlyContributionMinor: baseContributionMinor,
+            projection: initialProjection,
+          });
+        }
       }
 
       const warnings = [...new Set([
@@ -2332,7 +2351,7 @@ function monthsBefore(date: string, months: number): string {
               ? 'observed_median' : 'user_or_goal_assumption',
             accountScope: scope.metadata,
             currency: preferences.displayCurrency,
-            commitmentsConsidered: commitments.length,
+            commitmentsConsidered: commitments.length,\n            unconfirmedRecurringCandidatesExcluded: recurringCandidates.length,
           },
           assumptions: [
             ...estimate.assumptions,
