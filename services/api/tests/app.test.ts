@@ -342,6 +342,74 @@ describe('local API', () => {
     expect(expectedState.json().data.qualityMetrics.expectedCount).toBe(1);
   });
 
+  it('generates and persists a guided periodic review without AI or financial mutations', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'periodic-review-api-'));
+    temporaryDirectories.push(directory);
+    const today = new Date().toISOString().slice(0, 10);
+    const syntheticTransactions: readonly BudgetTransaction[] = [
+      { id: 'review-uncategorized', account: 'account-1', currencyCode: 'EUR', date: today, amount: -5_000 },
+    ];
+    const listTransactions = vi.fn(async (_accountId: string, startDate: string, endDate: string) =>
+      syntheticTransactions.filter((transaction) => transaction.date >= startDate && transaction.date <= endDate));
+    const repository = createRepository({ listTransactions });
+    const app = await createTestApp(repository, { ...config, actualDataDir: directory });
+
+    const emptyHistory = await app.inject({ method: 'GET', url: '/api/v1/reviews/periodic' });
+    expect(emptyHistory.statusCode).toBe(200);
+    expect(emptyHistory.json().data).toEqual({ version: 1, reviews: [] });
+
+    const invalidFuture = await app.inject({
+      method: 'POST',
+      url: '/api/v1/reviews/periodic',
+      payload: { periodType: 'weekly', anchorDate: '9999-01-01' },
+    });
+    expect(invalidFuture.statusCode).toBe(400);
+
+    const generated = await app.inject({
+      method: 'POST',
+      url: '/api/v1/reviews/periodic',
+      payload: { periodType: 'monthly', anchorDate: today },
+    });
+    expect(generated.statusCode).toBe(201);
+    const data = generated.json().data;
+    expect(data.schemaVersion).toBe(1);
+    expect(data.asOfDate).toBe(today);
+    expect(data.summary).toMatchObject({ currency: 'EUR', incomeMinor: 0, expenseMinor: 5_000, savingsMinor: -5_000, savingsRatePercent: null });
+    expect(data.period.startDate).toBe(today.slice(0, 7) + '-01');
+    expect(data.period.endDate).toBe(today);
+    expect(data.warnings.some((warning: string) => warning.includes('incompleto'))).toBe(
+      today !== new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)), 0)).toISOString().slice(0, 10),
+    );
+    const item = data.run.items.find((candidate: { findingType: string }) => candidate.findingType === 'pending-categorization');
+    expect(item).toMatchObject({ status: 'pending', fingerprint: expect.stringMatching(/^[0-9a-f]{16}$/) });
+
+    const postponedUntilDate = new Date(today + 'T00:00:00.000Z');
+    postponedUntilDate.setUTCDate(postponedUntilDate.getUTCDate() + 7);
+    const postponedUntil = postponedUntilDate.toISOString().slice(0, 10);
+    const postponed = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/reviews/periodic/' + data.run.id + '/items',
+      payload: { findingId: item.findingId, status: 'postponed', postponedUntil },
+    });
+    expect(postponed.statusCode).toBe(200);
+    expect(postponed.json().data.items[0]).toMatchObject({ status: 'postponed', postponedUntil });
+
+    const regenerated = await app.inject({
+      method: 'POST',
+      url: '/api/v1/reviews/periodic',
+      payload: { periodType: 'monthly', anchorDate: today },
+    });
+    expect(regenerated.statusCode).toBe(201);
+    expect(regenerated.json().data.run.items.find((candidate: { findingId: string }) => candidate.findingId === item.findingId))
+      .toMatchObject({ status: 'postponed', postponedUntil });
+
+    const history = await app.inject({ method: 'GET', url: '/api/v1/reviews/periodic' });
+    expect(history.statusCode).toBe(200);
+    expect(history.json().data.reviews).toHaveLength(2);
+    expect(repository.listTransactions).toHaveBeenCalled();
+    expect(listTransactions.mock.calls.every(([, start, end]) => start <= end)).toBe(true);
+  });
+
   it('explains a verified deterministic finding through local Ollama and rejects an unknown finding', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'financial-intelligence-ai-api-'));
     temporaryDirectories.push(directory);
