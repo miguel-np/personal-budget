@@ -15,6 +15,7 @@ const FindingTypeSchema = z.enum([
 const ReviewItemSchema = z.object({
   findingId: z.string().trim().min(1).max(200),
   findingType: FindingTypeSchema,
+  fingerprint: z.string().regex(/^[0-9a-f]{16}$/),
   status: z.enum(['pending', 'reviewed', 'postponed']),
   postponedUntil: DateSchema.optional(),
 }).strict().superRefine((item, context) => {
@@ -170,6 +171,7 @@ export async function updatePeriodicReviewItem(
     const items = existing.items.map((item) => item.findingId !== findingId ? item : ReviewItemSchema.parse({
       findingId: item.findingId,
       findingType: item.findingType,
+      fingerprint: item.fingerprint,
       status,
       ...(status === 'postponed' && postponedUntil ? { postponedUntil } : {}),
     }));
