@@ -106,6 +106,36 @@ test('financial intelligence handles empty and API error states', async ({ page 
   await expect(page.getByRole('button', { name: 'Reintentar' })).toBeVisible();
 });
 
+test('guided periodic review can be generated, postponed, regenerated and navigated without financial writes', async ({ page, request }) => {
+  await page.goto('/review');
+  await expect(page.getByRole('heading', { name: 'Revisión financiera periódica' })).toBeVisible();
+  await page.getByRole('button', { name: 'Iniciar revisión' }).click();
+  await expect(page.getByRole('heading', { name: 'Qué conviene revisar' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Hay movimientos pendientes de clasificar' })).toBeVisible();
+  await expect(page.getByText('Periodo comparable:').first()).toBeVisible();
+
+  await page.getByRole('button', { name: 'Aplazar 7 días' }).click();
+  await expect(page.locator('.form-alert.success')).toContainText('Punto aplazado durante siete días.');
+  await expect(page.getByText(/Aplazado hasta/)).toBeVisible();
+
+  await page.getByRole('button', { name: 'Volver a generar' }).click();
+  await expect(page.getByText(/Aplazado hasta/)).toBeVisible();
+  await page.getByRole('button', { name: 'Abrir detalle' }).click();
+  await expect(page).toHaveURL('/movements');
+  await expect(page.getByRole('heading', { name: 'Transacciones' })).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL('/review');
+  await expect(page.getByRole('heading', { name: 'Revisiones anteriores' })).toBeVisible();
+  await page.getByRole('button', { name: 'Iniciar revisión' }).click();
+  await expect(page.getByText(/Aplazado hasta/)).toBeVisible();
+
+  const state = await (await request.get(fixtureApi + '/__test__/state')).json();
+  expect(state.transactionWrites).toBe(0);
+  expect(state.categoryWrites).toBe(0);
+  expect(state.commitCount).toBe(0);
+});
+
 test('reports show current and previous period context', async ({ page }) => {
   await page.goto('/reports');
   await expect(page.getByRole('heading', { name: 'Informes del periodo' })).toBeVisible();

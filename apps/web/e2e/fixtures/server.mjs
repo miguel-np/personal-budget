@@ -21,6 +21,8 @@ let budgetedMinor = 50_000;
 let currencyPreferences = { displayCurrency: 'EUR', accountCurrencyOverrides: {}, exchangeRates: [] };
 let accountScope = { mode: 'all', accountIds: [] };
 const intelligenceReviews = new Map();
+const periodicReviews = [];
+let periodicReviewSequence = 1;
 const now = new Date();
 const iso = (date) => date.toISOString().slice(0, 10);
 const currentMonthStart = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-01';
@@ -170,7 +172,7 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url || '/', 'http://127.0.0.1:3000');
   try {
     if (req.method === 'POST' && url.pathname === '/__test__/reset') {
-      readiness = 'configured'; failImportPreview = false; batchFailAtTransactionId = null; commitCount = 0; importPreviewCount = 0; lastImportPreview = null; lastImportCommit = null; transferPreviewCount = 0; transferCommitCount = 0; lastTransferPayload = null; categoryWrites = 0; transactionWrites = 0; lastTransactionUpdate = null; appPreferences = { theme: 'system', locale: 'es-ES' }; lastPreviewChanges = []; lastCommittedChanges = []; budgetedMinor = 50_000; currencyPreferences = { displayCurrency: 'EUR', accountCurrencyOverrides: {}, exchangeRates: [] }; accountScope = { mode: 'all', accountIds: [] }; intelligenceReviews.clear(); resetTransactions(); resetLinkedTransactions();
+      readiness = 'configured'; failImportPreview = false; batchFailAtTransactionId = null; commitCount = 0; importPreviewCount = 0; lastImportPreview = null; lastImportCommit = null; transferPreviewCount = 0; transferCommitCount = 0; lastTransferPayload = null; categoryWrites = 0; transactionWrites = 0; lastTransactionUpdate = null; appPreferences = { theme: 'system', locale: 'es-ES' }; lastPreviewChanges = []; lastCommittedChanges = []; budgetedMinor = 50_000; currencyPreferences = { displayCurrency: 'EUR', accountCurrencyOverrides: {}, exchangeRates: [] }; accountScope = { mode: 'all', accountIds: [] }; intelligenceReviews.clear(); periodicReviews.splice(0); periodicReviewSequence = 1; resetTransactions(); resetLinkedTransactions();
       return send(res, 200, { ok: true });
     }
     if (req.method === 'POST' && url.pathname === '/__test__/mode') {
@@ -467,6 +469,110 @@ const server = createServer(async (req, res) => {
         ...(baseline ? { baseline } : {}),
         ...(body.commit === true ? { applied: requested, appliedTransactionIds: batchRows.map((item) => item.transactionId), persisted: true, partial: false } : {}),
       } });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/v1/reviews/periodic') {
+      return send(res, 200, { data: { version: 1, reviews: periodicReviews } });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/v1/reviews/periodic') {
+      const body = await readBody(req);
+      if (!['weekly', 'monthly'].includes(body.periodType) || !/^\d{4}-\d{2}-\d{2}$/.test(body.anchorDate)) {
+        return send(res, 400, { error: { code: 'INVALID_REQUEST', message: 'Revisión sintética no válida.' } });
+      }
+      const anchor = new Date(body.anchorDate + 'T00:00:00.000Z');
+      if (!Number.isFinite(anchor.getTime()) || body.anchorDate > iso(now)) return send(res, 400, { error: { code: 'INVALID_PERIOD', message: 'Fecha de referencia no válida.' } });
+      let startDate;
+      let scheduledEndDate;
+      if (body.periodType === 'monthly') {
+        startDate = body.anchorDate.slice(0, 7) + '-01';
+        scheduledEndDate = iso(new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() + 1, 0)));
+      } else {
+        const weekday = (anchor.getUTCDay() + 6) % 7;
+        const start = new Date(anchor); start.setUTCDate(start.getUTCDate() - weekday);
+        startDate = iso(start);
+        const end = new Date(start); end.setUTCDate(end.getUTCDate() + 6);
+        scheduledEndDate = iso(end);
+      }
+      const endDate = scheduledEndDate > iso(now) ? iso(now) : scheduledEndDate;
+      const findingId = 'fi-v1-pending-categorization-' + startDate + '-' + endDate + '-fixture';
+      const previous = periodicReviews.find((item) => item.periodType === body.periodType && item.startDate === startDate && item.endDate === endDate && item.currency === currencyPreferences.displayCurrency);
+      const previousItem = previous?.items.find((item) => item.findingId === findingId && item.fingerprint === '0123456789abcdef');
+      const previousStatus = previousItem?.status === 'reviewed' || (previousItem?.status === 'postponed' && previousItem.postponedUntil >= iso(now))
+        ? previousItem.status : 'pending';
+      const item = {
+        findingId, findingType: 'pending-categorization', fingerprint: '0123456789abcdef',
+        status: previousStatus, ...(previousStatus === 'postponed' ? { postponedUntil: previousItem.postponedUntil } : {}),
+      };
+      const run = {
+        id: '00000000-0000-4000-8000-' + String(periodicReviewSequence++).padStart(12, '0'),
+        periodType: body.periodType, startDate, endDate, generatedAt: now.toISOString(),
+        currency: currencyPreferences.displayCurrency,
+        accountScope: {
+          mode: accountScope.mode,
+          label: accountScope.mode === 'all' ? 'Todas las cuentas abiertas (3)' : 'Ámbito seleccionado',
+          fingerprint: '0123456789abcdef',
+        },
+        status: previousStatus === 'pending' ? 'in_progress' : 'completed',
+        ...(previousStatus !== 'pending' ? { completedAt: now.toISOString() } : {}),
+        items: [item],
+      };
+      periodicReviews.unshift(run);
+      const currentSummary = summary(startDate, endDate);
+      const days = Math.floor((Date.parse(endDate + 'T00:00:00.000Z') - Date.parse(startDate + 'T00:00:00.000Z')) / 86400000) + 1;
+      const priorEnd = new Date(startDate + 'T00:00:00.000Z'); priorEnd.setUTCDate(priorEnd.getUTCDate() - 1);
+      const priorStart = new Date(priorEnd); priorStart.setUTCDate(priorStart.getUTCDate() - days + 1);
+      const comparisonPeriod = { startDate: iso(priorStart), endDate: iso(priorEnd) };
+      const previousSummary = summary(comparisonPeriod.startDate, comparisonPeriod.endDate);
+      const finding = {
+        schemaVersion: 1, id: findingId, fingerprint: '0123456789abcdef',
+        type: 'pending-categorization', title: 'Hay movimientos pendientes de clasificar',
+        explanation: 'Hay movimientos sintéticos sin categoría en el periodo. No se aplican categorías automáticamente.',
+        period: { startDate, endDate },
+        accountScope: { mode: accountScope.mode, accountIds: accountScope.mode === 'selected' ? accountScope.accountIds : accounts.filter((entry) => !entry.closed).map((entry) => entry.id), label: run.accountScope.label },
+        currency: currencyPreferences.displayCurrency, confidence: 'observed', priority: 'medium',
+        priorityReason: 'Prioridad sintética por evidencia de movimientos sin categoría.',
+        impactMinor: currentSummary.uncategorizedOutflowMinor,
+        metrics: { transactionCount: 1, uncategorizedOutflowMinor: currentSummary.uncategorizedOutflowMinor, unclassifiedInflowMinor: 0 },
+        evidence: [{ label: 'Movimientos sin categoría', value: 1, source: 'finance-core.normalizeTransactions', rule: 'Cuenta movimientos normalizados una vez; excluye traspasos internos.' }],
+        limitations: ['Datos ficticios para las pruebas E2E.'],
+        calculatedAt: now.toISOString(), reviewStatus: 'new', navigationTarget: '/movements',
+      };
+      return send(res, 201, { data: {
+        schemaVersion: 1, run,
+        period: { periodType: body.periodType, startDate, endDate, scheduledEndDate, complete: endDate === scheduledEndDate },
+        asOfDate: iso(now), timeZone: body.timeZone || 'UTC', calculatedAt: now.toISOString(), currency: currencyPreferences.displayCurrency,
+        accountScope: finding.accountScope, summary: currentSummary,
+        budgetAssessment: {
+          available: false,
+          reason: 'Evaluación presupuestaria omitida en el fixture sintético.',
+          overBudgetCategoryCount: 0,
+          scope: 'Datos sintéticos; no se evalúa un presupuesto real.',
+        },
+        goalAssessment: { evaluatedGoalCount: 0, onTrackCount: 0, atRiskCount: 0, projections: [] },
+        comparisonToPreviousReview: null,
+        comparison: { period: comparisonPeriod, summary: previousSummary },
+        findings: [finding],
+        warnings: endDate === scheduledEndDate ? [] : ['El periodo está incompleto; datos sintéticos de corte.'],
+        capabilities: { aiEnabled: false, deterministicReportAvailable: true },
+        notes: ['Fixture sintético; no se modifican movimientos ni presupuestos.'],
+      } });
+    }
+    const periodicItemMatch = url.pathname.match(/^\/api\/v1\/reviews\/periodic\/([^/]+)\/items$/);
+    if (req.method === 'PATCH' && periodicItemMatch) {
+      const body = await readBody(req);
+      const run = periodicReviews.find((entry) => entry.id === decodeURIComponent(periodicItemMatch[1]));
+      if (!run) return send(res, 404, { error: { code: 'REVIEW_ITEM_NOT_FOUND', message: 'Revisión sintética no disponible.' } });
+      const item = run.items.find((entry) => entry.findingId === body.findingId);
+      if (!item || !['reviewed', 'postponed'].includes(body.status)) return send(res, 404, { error: { code: 'REVIEW_ITEM_NOT_FOUND', message: 'Punto sintético no disponible.' } });
+      if (body.status === 'postponed' && (!/^\d{4}-\d{2}-\d{2}$/.test(body.postponedUntil) || body.postponedUntil < iso(now))) {
+        return send(res, 400, { error: { code: 'INVALID_POSTPONE_WINDOW', message: 'Aplazamiento sintético no válido.' } });
+      }
+      item.status = body.status;
+      if (body.status === 'postponed') item.postponedUntil = body.postponedUntil;
+      else delete item.postponedUntil;
+      run.status = run.items.every((entry) => entry.status !== 'pending') ? 'completed' : 'in_progress';
+      if (run.status === 'completed') run.completedAt = now.toISOString();
+      else delete run.completedAt;
+      return send(res, 200, { data: run });
     }
     if (req.method === 'GET' && url.pathname === '/api/v1/intelligence/findings') {
       const startDate = url.searchParams.get('startDate') || currentMonthStart;
