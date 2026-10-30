@@ -506,7 +506,11 @@ const server = createServer(async (req, res) => {
         id: '00000000-0000-4000-8000-' + String(periodicReviewSequence++).padStart(12, '0'),
         periodType: body.periodType, startDate, endDate, generatedAt: now.toISOString(),
         currency: currencyPreferences.displayCurrency,
-        accountScope: { mode: accountScope.mode, label: accountScope.mode === 'all' ? 'Todas las cuentas abiertas (3)' : 'Ámbito seleccionado' },
+        accountScope: {
+          mode: accountScope.mode,
+          label: accountScope.mode === 'all' ? 'Todas las cuentas abiertas (3)' : 'Ámbito seleccionado',
+          fingerprint: '0123456789abcdef',
+        },
         status: previousStatus === 'pending' ? 'in_progress' : 'completed',
         ...(previousStatus !== 'pending' ? { completedAt: now.toISOString() } : {}),
         items: [item],
