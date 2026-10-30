@@ -3,7 +3,7 @@ import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path';
 import { z } from 'zod';
 
-const ISO_DATE = /^\\d{4}-\\d{2}-\\d{2}$/;
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const DateSchema = z.string().regex(ISO_DATE).refine((value) => {
   const parsed = new Date(value + 'T00:00:00.000Z');
   return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
@@ -103,7 +103,7 @@ export async function readPeriodicReviewState(dataDirectory: string): Promise<Pe
 
 async function writeState(dataDirectory: string, state: PeriodicReviewState): Promise<void> {
   const parsed = StateSchema.parse(state);
-  const content = JSON.stringify(parsed, null, 2) + '\\n';
+  const content = JSON.stringify(parsed, null, 2) + '\n';
   if (Buffer.byteLength(content, 'utf8') > MAX_FILE_BYTES) throw new RangeError('Periodic review state exceeds its permitted size.');
   const path = statePath(dataDirectory);
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
