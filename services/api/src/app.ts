@@ -2133,7 +2133,7 @@ function monthsBefore(date: string, months: number): string {
           run,
           period: { periodType: parsed.periodType, ...period },
           timeZone,
-          asOfDate: result.asOfDate,
+          asOfDate,
           calculatedAt: result.calculatedAt,
           currency: result.currency,
           accountScope: result.accountScope,
