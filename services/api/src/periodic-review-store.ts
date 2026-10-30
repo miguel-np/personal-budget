@@ -37,6 +37,7 @@ export const PeriodicReviewRunSchema = z.object({
   accountScope: z.object({
     mode: z.enum(['all', 'selected']),
     label: z.string().trim().min(1).max(500),
+    fingerprint: z.string().regex(/^[0-9a-f]{16}$/),
   }).strict(),
   status: z.enum(['in_progress', 'completed']),
   completedAt: z.string().datetime().optional(),
