@@ -2087,6 +2087,32 @@ function monthsBefore(date: string, months: number): string {
         },
         items,
       });
+      const previousComparableRun = previousState.reviews
+        .filter((review) =>
+          review.periodType === parsed.periodType &&
+          review.currency === result.currency &&
+          review.accountScope.mode === result.accountScope.mode &&
+          review.accountScope.fingerprint === accountScopeFingerprint &&
+          review.endDate < period.startDate)
+        .sort((left, right) =>
+          right.endDate.localeCompare(left.endDate) || right.generatedAt.localeCompare(left.generatedAt))[0];
+      const previousComparableItems = new Map((previousComparableRun?.items ?? []).map((item) => [item.findingId, item]));
+      const currentItemsById = new Map(items.map((item) => [item.findingId, item]));
+      const reviewComparison = previousComparableRun ? {
+        previousReview: {
+          startDate: previousComparableRun.startDate,
+          endDate: previousComparableRun.endDate,
+          generatedAt: previousComparableRun.generatedAt,
+          status: previousComparableRun.status,
+        },
+        newFindingCount: items.filter((item) => !previousComparableItems.has(item.findingId)).length,
+        repeatedFindingCount: items.filter((item) => previousComparableItems.has(item.findingId)).length,
+        changedEvidenceCount: items.filter((item) => {
+          const previousItem = previousComparableItems.get(item.findingId);
+          return previousItem !== undefined && previousItem.fingerprint !== item.fingerprint;
+        }).length,
+        noLongerPresentCount: (previousComparableRun.items ?? []).filter((item) => !currentItemsById.has(item.findingId)).length,
+      } : null;
       const warnings = [...result.warnings, ...result.currentSummary.warnings, ...previousSummary.warnings];
       if (!period.complete) {
         warnings.push('El periodo está incompleto: solo se incluyen movimientos hasta la fecha de corte. Los resultados pueden cambiar al cerrarse el periodo.');
@@ -2157,6 +2183,7 @@ function monthsBefore(date: string, months: number): string {
           summary: result.currentSummary,
           budgetAssessment,
           goalAssessment,
+          comparisonToPreviousReview: reviewComparison,
           comparison: {
             period: { startDate: previousStartDate, endDate: previousEndDate },
             summary: previousSummary,
