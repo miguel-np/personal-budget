@@ -2221,7 +2221,9 @@ function monthsBefore(date: string, months: number): string {
       if (targetAmountMinor === null) return clarification('¿Qué cantidad total quieres alcanzar con el objetivo de ahorro?');
       if (!targetDate) return clarification('¿Para qué fecha quieres alcanzar el objetivo? Indica mes y año para evitar ambigüedades.');
       validateGoalWindow(targetDate, asOfDate);
-      if (draft.intent === 'test_expense' && draft.expenseDate! <= asOfDate) {\n        return clarification('La fecha del gasto debe ser futura. ¿Qué día ocurriría ese gasto?');\n      }\n      if (draft.intent === 'test_expense' && draft.expenseDate! > targetDate) {
+      if (draft.intent === 'test_expense' && draft.expenseDate! <= asOfDate) {
+        return clarification('La fecha del gasto debe ser futura. ¿Qué día ocurriría ese gasto?');
+      }\n      if (draft.intent === 'test_expense' && draft.expenseDate! > targetDate) {
         return clarification('El gasto indicado cae después de la fecha objetivo. ¿Quieres comprobar otro gasto anterior a esa fecha?');
       }
       const initialAmountMinor = selectedGoal?.initialAmountMinor ??
@@ -2242,7 +2244,9 @@ function monthsBefore(date: string, months: number): string {
       const monthlyExpenseMinor = draft.monthlyExpenseMajor === null
         ? (selectedGoal?.monthlyExpenseMinor ?? estimate.monthlyExpenseMinor)
         : majorToMinor(draft.monthlyExpenseMajor, preferences.displayCurrency, 'gastos mensuales');
-      const recurringCandidates = detectRecurringCandidates(convertedHistory.transactions, {\n        startDate: historyStartDate, endDate: asOfDate,\n      });\n      const commitments = stored.commitments.filter((item) =>
+      const recurringCandidates = detectRecurringCandidates(convertedHistory.transactions, {
+        startDate: historyStartDate, endDate: asOfDate,
+      });\n      const commitments = stored.commitments.filter((item) =>
         item.status === 'active' && item.currency === preferences.displayCurrency &&
         planningScopeMatches(item.scope, preference),
       ).map(toPlanningCommitment);
@@ -2340,6 +2344,15 @@ function monthsBefore(date: string, months: number): string {
             currency: preferences.displayCurrency,
           },
           scenarios,
+          hypotheticalExpense: draft.intent === 'test_expense' ? {
+            amountMinor: majorToMinor(draft.expenseAmountMajor!, preferences.displayCurrency, 'gasto hipotético'),
+            date: draft.expenseDate!,
+            currency: preferences.displayCurrency,
+          } : null,
+          manualCommitments: commitments.map((item) => ({
+            title: item.title, amountMinor: item.amountMinor, date: item.date,
+            direction: item.direction, frequency: item.frequency, currency: item.currency,
+          })),
           sources: {
             historyStartDate,
             historyEndDate: asOfDate,
@@ -2351,7 +2364,8 @@ function monthsBefore(date: string, months: number): string {
               ? 'observed_median' : 'user_or_goal_assumption',
             accountScope: scope.metadata,
             currency: preferences.displayCurrency,
-            commitmentsConsidered: commitments.length,\n            unconfirmedRecurringCandidatesExcluded: recurringCandidates.length,
+            commitmentsConsidered: commitments.length,
+            unconfirmedRecurringCandidatesExcluded: recurringCandidates.length,
           },
           assumptions: [
             ...estimate.assumptions,
