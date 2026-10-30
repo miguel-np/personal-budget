@@ -1985,8 +1985,20 @@ function monthsBefore(date: string, months: number): string {
       const result = await generateIntelligenceData(period.startDate, period.endDate);
       const durationDays = Math.floor((Date.parse(period.endDate + 'T00:00:00.000Z') -
         Date.parse(period.startDate + 'T00:00:00.000Z')) / 86_400_000) + 1;
-      const previousEndDate = addIntelligenceDays(period.startDate, -1);
-      const previousStartDate = addIntelligenceDays(previousEndDate, -(durationDays - 1));
+      let previousStartDate: string;
+      let previousEndDate: string;
+      if (parsed.periodType === 'monthly') {
+        const previousMonthLastDate = addIntelligenceDays(period.startDate, -1);
+        previousStartDate = previousMonthLastDate.slice(0, 7) + '-01';
+        const previousMonthDuration = Math.floor((Date.parse(previousMonthLastDate + 'T00:00:00.000Z') -
+          Date.parse(previousStartDate + 'T00:00:00.000Z')) / 86_400_000) + 1;
+        previousEndDate = period.complete
+          ? previousMonthLastDate
+          : addIntelligenceDays(previousStartDate, Math.min(durationDays, previousMonthDuration) - 1);
+      } else {
+        previousStartDate = addIntelligenceDays(period.startDate, -7);
+        previousEndDate = addIntelligenceDays(previousStartDate, durationDays - 1);
+      }
       assertPeriod(previousStartDate, previousEndDate);
       const [accounts, categories, preferences, preference] = await Promise.all([
         repository.listAccounts(), repository.listCategories(), currencyPreferences(), accountScopePreference(),
