@@ -1487,7 +1487,12 @@ function monthsBefore(date: string, months: number): string {
     return { priority: 'low', reason: 'Vence dentro de los próximos 30 días sin alcanzar los umbrales de prioridad superiores (regla v1).' };
   }
 
-  async function generateIntelligenceData(startDate: string, endDate: string, anomalyOptions: IntelligenceAnomalyOptions = IntelligenceAnomalyOptionsSchema.parse({})): Promise<{
+  async function generateIntelligenceData(
+    startDate: string,
+    endDate: string,
+    anomalyOptions: IntelligenceAnomalyOptions = IntelligenceAnomalyOptionsSchema.parse({}),
+    asOfDateOverride?: string,
+  ): Promise<{
     readonly findings: readonly FinancialFinding[];
     readonly warnings: readonly string[];
     readonly currentSummary: ReturnType<typeof calculateSummary>;
@@ -1498,7 +1503,8 @@ function monthsBefore(date: string, months: number): string {
   }> {
     assertPeriod(startDate, endDate);
     const calculatedAt = new Date().toISOString();
-    const asOfDate = calculatedAt.slice(0, 10);
+    const asOfDate = asOfDateOverride ?? calculatedAt.slice(0, 10);
+    if (!isIsoDate(asOfDate)) throw new RangeError('asOfDate must be a valid ISO calendar date.');
     const [accounts, categories, preferences, accountPreference, stored] = await Promise.all([
       repository.listAccounts(),
       repository.listCategories(),
@@ -2000,7 +2006,7 @@ function monthsBefore(date: string, months: number): string {
       if (!year || !month || !day) throw new Error('Could not determine the review date in the selected time zone.');
       const asOfDate = year + '-' + month + '-' + day;
       const period = periodicReviewPeriod(parsed.periodType, parsed.anchorDate, asOfDate);
-      const result = await generateIntelligenceData(period.startDate, period.endDate);
+      const result = await generateIntelligenceData(period.startDate, period.endDate, undefined, asOfDate);
       const durationDays = Math.floor((Date.parse(period.endDate + 'T00:00:00.000Z') -
         Date.parse(period.startDate + 'T00:00:00.000Z')) / 86_400_000) + 1;
       let previousStartDate: string;
