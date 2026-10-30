@@ -69,6 +69,7 @@ function validGoal(overrides: Record<string, unknown> = {}) {
 afterEach(async () => {
   await Promise.all(openApps.splice(0).map((app) => app.close()));
   await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
+  vi.unstubAllGlobals();
 });
 
 describe('local planning API', () => {
@@ -343,5 +344,201 @@ describe('local planning API', () => {
     const app = await createTestApp(directory);
     expect((await app.inject({ method: 'GET', url: '/api/v1/planning?month=2026-13' })).statusCode).toBe(400);
     expect((await app.inject({ method: 'DELETE', url: '/api/v1/planning/goals/not-a-uuid' })).statusCode).toBe(400);
+  });
+});
+
+
+describe('conversational savings planning API', () => {
+  function planningDraft(overrides: Record<string, unknown> = {}) {
+    return {
+      intent: 'goal_plan',
+      goalId: null,
+      goalName: 'Viaje',
+      targetAmountMajor: 5_000,
+      targetDate: futureMonth(6, 30),
+      initialAmountMajor: 0,
+      monthlyContributionMajor: null,
+      contributionOptionsMajor: [],
+      monthlyIncomeMajor: null,
+      monthlyExpenseMajor: null,
+      expenseAmountMajor: null,
+      expenseDate: null,
+      currency: null,
+      clarificationQuestion: null,
+      ...overrides,
+    };
+  }
+
+  function stubOllama(drafts: readonly Record<string, unknown>[]) {
+    let nextDraft = 0;
+    const fetcher = vi.fn<typeof fetch>(async (input) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith('/api/tags')) {
+        return new Response(JSON.stringify({ models: [{ name: 'synthetic-model' }] }), { status: 200 });
+      }
+      if (url.endsWith('/api/chat')) {
+        const draft = drafts[Math.min(nextDraft, drafts.length - 1)]!;
+        nextDraft += 1;
+        return new Response(JSON.stringify({ message: { content: JSON.stringify(draft) } }), { status: 200 });
+      }
+      return new Response('{}', { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetcher);
+    return fetcher;
+  }
+
+  async function createAiApp(directory: string, repository: BudgetRepository = createRepository()) {
+    const app = await buildApp({
+      repository,
+      config: { ...appConfig(directory), aiEnabled: true, ollamaModel: 'synthetic-model' },
+      logger: false,
+    });
+    openApps.push(app);
+    return app;
+  }
+
+  it('converts natural-language goal parameters into a deterministic, non-persistent preview', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'personal-budget-conversation-'));
+    temporaryDirectories.push(directory);
+    const repository = createRepository();
+    const fetcher = stubOllama([planningDraft()]);
+    const app = await createAiApp(directory, repository);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/planning/conversation/preview',
+      payload: { message: 'Quiero ahorrar 5.000 euros para dentro de seis meses.' },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toMatchObject({
+      status: 'ready',
+      saved: false,
+      goal: { name: 'Viaje', targetAmountMinor: 500_000, currency: 'EUR' },
+      scenarios: [{ projection: { isEstimate: true, targetAmountMinor: 500_000 } }],
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    const modelRequest = JSON.parse(String(fetcher.mock.calls.find((call) =>
+      String(call[0]).endsWith('/api/chat'))?.[1]?.body)) as Record<string, unknown>;
+    expect(modelRequest.format).toBeDefined();
+    expect(JSON.stringify(modelRequest)).not.toContain('income-1');
+    expect(repository.updateTransaction).not.toHaveBeenCalled();
+    expect(repository.updateTransactionSafely).not.toHaveBeenCalled();
+    expect(repository.updateTransactionCategory).not.toHaveBeenCalled();
+    const savedPlanning = await app.inject({ method: 'GET', url: '/api/v1/planning' });
+    expect(savedPlanning.json().data.goals).toHaveLength(0);
+    expect(savedPlanning.json().data.commitments).toHaveLength(0);
+  });
+
+  it('compares multiple contributions using finance-core results, not model-generated figures', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'personal-budget-conversation-'));
+    temporaryDirectories.push(directory);
+    stubOllama([planningDraft({
+      intent: 'compare_contributions',
+      contributionOptionsMajor: [150, 250],
+    })]);
+    const app = await createAiApp(directory);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/planning/conversation/preview',
+      payload: { message: 'Compara ahorrar 150 € frente a 250 € al mes para un objetivo de 5.000 €.' },
+    });
+    expect(response.statusCode).toBe(200);
+    const result = response.json().data;
+    expect(result.status).toBe('ready');
+    expect(result.saved).toBe(false);
+    expect(result.scenarios).toHaveLength(2);
+    expect(result.scenarios.map((scenario: { monthlyContributionMinor: number }) => scenario.monthlyContributionMinor))
+      .toEqual([15_000, 25_000]);
+    expect(result.scenarios[0].projection).toMatchObject({ monthlyContributionMinor: 15_000, isEstimate: true });
+    expect(result.scenarios[1].projection).toMatchObject({ monthlyContributionMinor: 25_000, isEstimate: true });
+  });
+
+  it('compares a hypothetical one-off expense without persisting a commitment or changing the saved goal', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'personal-budget-conversation-'));
+    temporaryDirectories.push(directory);
+    const repository = createRepository();
+    const fetcher = stubOllama([]);
+    const app = await createAiApp(directory, repository);
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/planning/goals',
+      payload: validGoal(),
+    });
+    expect(created.statusCode).toBe(201);
+    const goalId = created.json().data.id as string;
+    fetcher.mockImplementation(async (input) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith('/api/tags')) return new Response(JSON.stringify({ models: [{ name: 'synthetic-model' }] }), { status: 200 });
+      return new Response(JSON.stringify({ message: { content: JSON.stringify(planningDraft({
+        intent: 'test_expense',
+        goalId,
+        goalName: null,
+        targetAmountMajor: null,
+        targetDate: null,
+        initialAmountMajor: null,
+        expenseAmountMajor: 900,
+        expenseDate: futureMonth(2, 15),
+      })) } }), { status: 200 });
+    });
+
+    const before = await app.inject({ method: 'GET', url: '/api/v1/planning' });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/planning/conversation/preview',
+      payload: { message: '¿Puedo asumir un gasto de 900 € en dos meses sin retrasar mi objetivo?' },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toMatchObject({
+      status: 'ready',
+      saved: false,
+      scenarios: [
+        { label: 'Sin el gasto extraordinario' },
+        { label: 'Incluyendo el gasto extraordinario' },
+      ],
+    });
+    expect(response.json().data.scenarios[1].projection.projectedBalanceMinor)
+      .toBeLessThanOrEqual(response.json().data.scenarios[0].projection.projectedBalanceMinor);
+    const after = await app.inject({ method: 'GET', url: '/api/v1/planning' });
+    expect(after.json().data.goals).toEqual(before.json().data.goals);
+    expect(after.json().data.commitments).toEqual(before.json().data.commitments);
+    expect(repository.updateTransaction).not.toHaveBeenCalled();
+    expect(repository.updateTransactionSafely).not.toHaveBeenCalled();
+    expect(repository.updateTransactionCategory).not.toHaveBeenCalled();
+  });
+
+  it('asks for missing material information instead of inventing a target or deadline', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'personal-budget-conversation-'));
+    temporaryDirectories.push(directory);
+    stubOllama([planningDraft({
+      targetAmountMajor: null,
+      targetDate: null,
+      clarificationQuestion: '¿Qué importe y fecha objetivo tienes en mente?',
+    })]);
+    const app = await createAiApp(directory);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/planning/conversation/preview',
+      payload: { message: 'Quiero ahorrar para un viaje.' },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toMatchObject({
+      status: 'clarification_required',
+      saved: false,
+      question: '¿Qué importe y fecha objetivo tienes en mente?',
+    });
+  });
+
+  it('keeps conversational planning unavailable while local AI is disabled', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'personal-budget-conversation-'));
+    temporaryDirectories.push(directory);
+    const app = await createTestApp(directory);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/planning/conversation/preview',
+      payload: { message: 'Compara ahorrar 150 € y 250 € al mes.' },
+    });
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error.code).toBe('AI_DISABLED');
   });
 });
