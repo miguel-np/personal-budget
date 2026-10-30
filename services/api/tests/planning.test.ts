@@ -463,7 +463,7 @@ describe('conversational savings planning API', () => {
     const created = await app.inject({
       method: 'POST',
       url: '/api/v1/planning/goals',
-      payload: validGoal(),
+      payload: validGoal({ monthlyIncomeMinor: 150_000, monthlyExpenseMinor: 100_000 }),
     });
     expect(created.statusCode).toBe(201);
     const goalId = created.json().data.id as string;
@@ -498,7 +498,7 @@ describe('conversational savings planning API', () => {
       ],
     });
     expect(response.json().data.scenarios[1].projection.projectedBalanceMinor)
-      .toBeLessThanOrEqual(response.json().data.scenarios[0].projection.projectedBalanceMinor);
+      .toBeLessThan(response.json().data.scenarios[0].projection.projectedBalanceMinor);
     const after = await app.inject({ method: 'GET', url: '/api/v1/planning' });
     expect(after.json().data.goals).toEqual(before.json().data.goals);
     expect(after.json().data.commitments).toEqual(before.json().data.commitments);
