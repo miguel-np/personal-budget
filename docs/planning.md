@@ -43,3 +43,33 @@ La nueva sección **Objetivos** añade objetivos de ahorro, aportaciones deseada
 Las proyecciones incluyen doce meses naturales (los meses vacíos cuentan como cero), excluyen traspasos, aplican únicamente compromisos activos de la misma divisa y ámbito de cuentas y limitan cada aportación al efectivo mensual estimado disponible. No se aplican intereses ni se escriben movimientos en Actual. Si cambia la divisa o el ámbito guardado, el registro requiere revisión explícita antes de ser proyectado.
 
 La copia cifrada existente de Actual **no incluye** planning-data.json: el fichero está bajo ACTUAL_DATA_DIR, distinto del directorio de datos del servidor empaquetado por el backup de Actual. Consulta [Objetivos de ahorro y compromisos futuros](planning-goals.md) para el contrato API, supuestos financieros, límites y procedimiento de copia local.
+
+
+## Planificador conversacional de ahorro (#70)
+
+La sección Planificación incluye un planificador conversacional opcional. El usuario puede describir una meta, comparar aportaciones mensuales o comprobar el efecto de un gasto extraordinario sobre un objetivo existente. El flujo es una capa de entrada para las simulaciones deterministas; no sustituye a Objetivos ni a los formularios existentes.
+
+### Flujo y contrato
+
+- La UI envía únicamente el texto de la petición a `POST /api/v1/planning/conversation/preview`.
+- La extracción local devuelve un objeto JSON estructurado: tipo de intención, objetivo existente opcional, importe y fecha objetivo, ahorro inicial, aportación, alternativas comparables, supuestos de ingresos/gastos y gasto extraordinario opcional.
+- El modelo recibe la fecha actual, la divisa de análisis y como máximo 50 pares de identificador/nombre de objetivos activos compatibles. No recibe movimientos, descripciones bancarias, IDs de transacciones/cuentas, saldos, importes históricos, categorías, notas ni historial.
+- Zod valida la respuesta estrictamente en el backend. Se rechazan propiedades adicionales, fechas no válidas, importes fuera de rango, divisas no compatibles, opciones insuficientes y referencias a objetivos no disponibles.
+- Los campos ausentes o una pregunta ambigua producen `clarification_required`; no se completan con fechas, importes o divisas inventados.
+- Los importes del modelo se tratan únicamente como entradas propuestas en unidades principales de la divisa. El backend aplica la precisión monetaria de `Intl.NumberFormat`, convierte a unidades menores y comprueba enteros seguros.
+- El backend obtiene el historial de doce meses del ámbito actual, aplica conversiones locales ya configuradas y calcula con `estimatePlanningCashFlow` y `projectSavingsGoal`. El LLM no calcula cifras, porcentajes, viabilidad o fechas finales.
+- Las simulaciones de aportaciones comparan varias llamadas deterministas a finance-core. Una prueba de gasto crea un compromiso efímero en memoria para el escenario, sin guardarlo.
+- La respuesta identifica divisa, ámbito de cuentas, periodo histórico, meses con datos, número de movimientos, fuentes de ingresos/gastos, compromisos considerados, supuestos y advertencias.
+- El endpoint no ofrece una operación de guardado. La creación o edición de un objetivo sigue siendo una acción independiente desde Objetivos, con su propio formulario y confirmación explícita.
+
+### Seguridad, privacidad y degradación
+
+El planificador requiere `AI_ENABLED=true`, un modelo instalado y Ollama en loopback. Si AI está desactivada o el runtime falla, el endpoint devuelve un error saneado y los formularios deterministas siguen disponibles. La extracción usa JSON Schema, temperatura cero, timeout, cola y límites de concurrencia ya compartidos por `LocalAiClient`. Prompts y respuestas no se registran; las métricas solo contienen resultado, duración y tamaño aproximado del contexto.
+
+No se mezclan divisas. Si la petición especifica otra distinta de la divisa de análisis, se pide reformularla en la divisa actual; no se aplica una conversión futura implícita. Los objetivos pausados o cuyo ámbito/divisa haya cambiado no se simulan.
+
+### Evaluación y pruebas
+
+La suite sintética de CI cubre objetivo nuevo, comparación de varias aportaciones, gasto extraordinario, pregunta incompleta, IA desactivada, ausencia de escrituras en Actual y ausencia de cambios en objetivos/compromisos persistidos. Las pruebas de LocalAiClient verifican el contrato JSON Schema, la ausencia de datos de movimientos en el prompt y el rechazo de JSON mal formado.
+
+Hay una aceptación opcional con Ollama real y prompts sintéticos versionados. Ejecuta `PERSONAL_BUDGET_RUN_PLANNING_AI_ACCEPTANCE=1 OLLAMA_MODEL=<modelo-local> npm run test:planning-ai:acceptance`. La evaluación informa exactitud de campos estructurados y recall de aclaraciones; no forma parte de CI porque requiere el modelo local y el hardware del usuario. Sus resultados deben registrarse por modelo, versión y entorno, y no representan cobertura lingüística universal.
