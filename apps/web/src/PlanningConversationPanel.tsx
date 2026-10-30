@@ -106,7 +106,7 @@ export function PlanningConversationPanel({ currency }: { currency: string }) {
       </div>
       <p className="section-footnote">
         Describe un objetivo, compara aportaciones o comprueba el impacto de un gasto extraordinario. La IA local solo extrae los parámetros; el backend valida el contexto y finance-core calcula las cifras.
-        Requiere activar la IA local en la configuración. Los formularios habituales siguen disponibles sin IA.
+        Divisa de análisis actual: {currency}. Requiere activar la IA local en la configuración. Los formularios habituales siguen disponibles sin IA.
       </p>
       <form onSubmit={(event) => { void submit(event); }}>
         <label className="field-label" htmlFor="planning-conversation-message">¿Qué quieres planificar?</label>
