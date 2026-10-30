@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import Fastify, { LogController, type FastifyInstance, type FastifyReply, type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import helmet from '@fastify/helmet';
 import { buildFinancialAnomalyFindings, buildPeriodChangeFindings, buildUncategorizedFinding, calculateSummary, convertAmountMinor, createFinancialFinding, detectRecurringCandidates, estimatePlanningCashFlow, expandCommitmentOccurrences, isIsoDate, normalizeCurrencyCode, normalizeTransactions, projectSavings, projectSavingsGoal, sortFinancialFindings, suggestCategories, validatePeriod } from '@personal-budget/finance-core';
@@ -17,6 +17,7 @@ import type { AccountScopePreference, AccountScopeMetadata } from './account-sco
 import { PlanningCommitmentInputSchema, PlanningGoalInputSchema, readPlanningData, resetPlanningData, updatePlanningData, StoredPlanningCommitmentSchema, StoredPlanningGoalSchema } from './planning-store.js';
 import type { StoredPlanningCommitment } from './planning-store.js';
 import { effectiveFindingReview, readFindingReviewState, updateFindingReviewState } from './intelligence-store.js';
+import { createPeriodicReview, readPeriodicReviewState, updatePeriodicReviewItem } from './periodic-review-store.js';
 
 
 const TransactionQuerySchema = z.object({
@@ -134,6 +135,31 @@ const IntelligenceAnomalyOptionsSchema = z.object({
 }).strict();
 type IntelligenceAnomalyOptions = z.infer<typeof IntelligenceAnomalyOptionsSchema>;
 const IntelligenceFindingsQuerySchema = IntelligenceDatesSchema.extend(IntelligenceAnomalyOptionsSchema.shape).strict();
+const PeriodicReviewStartSchema = z.object({
+  periodType: z.enum(['weekly', 'monthly']),
+  anchorDate: z.string().refine(isIsoDate, 'anchorDate must be a valid YYYY-MM-DD date.'),
+  timeZone: z.string().trim().min(1).max(100).optional().refine((value) => {
+    if (!value) return true;
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: value });
+      return true;
+    } catch {
+      return false;
+    }
+  }, 'timeZone must be a valid IANA time zone.'),
+}).strict();
+const PeriodicReviewItemUpdateSchema = z.object({
+  findingId: z.string().trim().min(1).max(200),
+  status: z.enum(['reviewed', 'postponed']),
+  postponedUntil: z.string().refine(isIsoDate, 'postponedUntil must be a valid YYYY-MM-DD date.').optional(),
+}).strict().superRefine((value, context) => {
+  if (value.status === 'postponed' && !value.postponedUntil) {
+    context.addIssue({ code: 'custom', path: ['postponedUntil'], message: 'Choose an expiry date to postpone a review item.' });
+  }
+  if (value.status !== 'postponed' && value.postponedUntil !== undefined) {
+    context.addIssue({ code: 'custom', path: ['postponedUntil'], message: 'Only postponed items may include an expiry date.' });
+  }
+});
 const IntelligenceReviewRequestSchema = IntelligenceDatesSchema.extend(IntelligenceAnomalyOptionsSchema.shape).extend({
   findingId: z.string().trim().min(1).max(200),
   status: z.enum(['reviewed', 'expected', 'dismissed', 'snoozed']),
@@ -1708,7 +1734,12 @@ function monthsBefore(date: string, months: number): string {
     return { priority: 'low', reason: 'Vence dentro de los próximos 30 días sin alcanzar los umbrales de prioridad superiores (regla v1).' };
   }
 
-  async function generateIntelligenceData(startDate: string, endDate: string, anomalyOptions: IntelligenceAnomalyOptions = IntelligenceAnomalyOptionsSchema.parse({})): Promise<{
+  async function generateIntelligenceData(
+    startDate: string,
+    endDate: string,
+    anomalyOptions: IntelligenceAnomalyOptions = IntelligenceAnomalyOptionsSchema.parse({}),
+    asOfDateOverride?: string,
+  ): Promise<{
     readonly findings: readonly FinancialFinding[];
     readonly warnings: readonly string[];
     readonly currentSummary: ReturnType<typeof calculateSummary>;
@@ -1719,7 +1750,8 @@ function monthsBefore(date: string, months: number): string {
   }> {
     assertPeriod(startDate, endDate);
     const calculatedAt = new Date().toISOString();
-    const asOfDate = calculatedAt.slice(0, 10);
+    const asOfDate = asOfDateOverride ?? calculatedAt.slice(0, 10);
+    if (!isIsoDate(asOfDate)) throw new RangeError('asOfDate must be a valid ISO calendar date.');
     const [accounts, categories, preferences, accountPreference, stored] = await Promise.all([
       repository.listAccounts(),
       repository.listCategories(),
@@ -2169,6 +2201,277 @@ function monthsBefore(date: string, months: number): string {
     } finally {
       request.raw.removeListener('aborted', abortRequest);
       reply.raw.removeListener('close', abortResponse);
+    }
+  });
+
+
+  function periodicReviewPeriod(periodType: 'weekly' | 'monthly', anchorDate: string, asOfDate: string): {
+    readonly startDate: string;
+    readonly endDate: string;
+    readonly scheduledEndDate: string;
+    readonly complete: boolean;
+  } {
+    if (anchorDate > asOfDate) throw new RangeError('La fecha de referencia no puede estar en el futuro.');
+    let startDate: string;
+    let scheduledEndDate: string;
+    if (periodType === 'monthly') {
+      const year = Number(anchorDate.slice(0, 4));
+      const month = Number(anchorDate.slice(5, 7));
+      startDate = anchorDate.slice(0, 7) + '-01';
+      scheduledEndDate = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+    } else {
+      const weekdayFromMonday = (new Date(anchorDate + 'T00:00:00.000Z').getUTCDay() + 6) % 7;
+      startDate = addIntelligenceDays(anchorDate, -weekdayFromMonday);
+      scheduledEndDate = addIntelligenceDays(startDate, 6);
+    }
+    const endDate = scheduledEndDate > asOfDate ? asOfDate : scheduledEndDate;
+    assertPeriod(startDate, endDate);
+    return { startDate, endDate, scheduledEndDate, complete: endDate === scheduledEndDate };
+  }
+
+  app.get('/api/v1/reviews/periodic', async (_request, reply) => {
+    try {
+      const state = await readPeriodicReviewState(config.actualDataDir);
+      return { data: state };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.post('/api/v1/reviews/periodic', async (request, reply) => {
+    try {
+      const parsed = PeriodicReviewStartSchema.parse(request.body);
+      const timeZone = parsed.timeZone ?? 'UTC';
+      const dateParts = new Intl.DateTimeFormat('en-US', {
+        timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+      }).formatToParts(new Date());
+      const datePart = (type: 'year' | 'month' | 'day') => dateParts.find((part) => part.type === type)?.value;
+      const year = datePart('year');
+      const month = datePart('month');
+      const day = datePart('day');
+      if (!year || !month || !day) throw new Error('Could not determine the review date in the selected time zone.');
+      const asOfDate = year + '-' + month + '-' + day;
+      const period = periodicReviewPeriod(parsed.periodType, parsed.anchorDate, asOfDate);
+      const result = await generateIntelligenceData(period.startDate, period.endDate, undefined, asOfDate);
+      const durationDays = Math.floor((Date.parse(period.endDate + 'T00:00:00.000Z') -
+        Date.parse(period.startDate + 'T00:00:00.000Z')) / 86_400_000) + 1;
+      let previousStartDate: string;
+      let previousEndDate: string;
+      if (parsed.periodType === 'monthly') {
+        const previousMonthLastDate = addIntelligenceDays(period.startDate, -1);
+        previousStartDate = previousMonthLastDate.slice(0, 7) + '-01';
+        const previousMonthDuration = Math.floor((Date.parse(previousMonthLastDate + 'T00:00:00.000Z') -
+          Date.parse(previousStartDate + 'T00:00:00.000Z')) / 86_400_000) + 1;
+        previousEndDate = period.complete
+          ? previousMonthLastDate
+          : addIntelligenceDays(previousStartDate, Math.min(durationDays, previousMonthDuration) - 1);
+      } else {
+        previousStartDate = addIntelligenceDays(period.startDate, -7);
+        previousEndDate = addIntelligenceDays(previousStartDate, durationDays - 1);
+      }
+      assertPeriod(previousStartDate, previousEndDate);
+      const [accounts, categories, preferences, preference] = await Promise.all([
+        repository.listAccounts(), repository.listCategories(), currencyPreferences(), accountScopePreference(),
+      ]);
+      const scope = resolveAccountScope(accounts, preference);
+      const previousTransactions = await transactionsForAccounts(scope.accounts, previousStartDate, previousEndDate, preferences);
+      const previousSummary = calculateSummary(normalizeTransactions(previousTransactions), categories, {
+        startDate: previousStartDate,
+        endDate: previousEndDate,
+        currency: preferences.displayCurrency,
+        exchangeRates: preferences.exchangeRates,
+      });
+      const previousState = await readPeriodicReviewState(config.actualDataDir);
+      const accountScopeFingerprint = createHash('sha256')
+        .update([...result.accountScope.accountIds].sort().join('\0'))
+        .digest('hex')
+        .slice(0, 16);
+      const persistedAccountScopeLabel = result.accountScope.mode === 'all'
+        ? 'Todas las cuentas abiertas (' + result.accountScope.accountIds.length + ')'
+        : 'Ámbito seleccionado (' + result.accountScope.accountIds.length + ' cuentas)';
+      const previousRun = previousState.reviews.find((review) =>
+        review.periodType === parsed.periodType &&
+        review.startDate === period.startDate &&
+        review.endDate === period.endDate &&
+        review.currency === result.currency &&
+        review.accountScope.mode === result.accountScope.mode &&
+        review.accountScope.fingerprint === accountScopeFingerprint);
+      const previousItems = new Map((previousRun?.items ?? []).map((item) => [item.findingId, item]));
+      const items = result.findings
+        .filter((finding) => finding.reviewStatus !== 'dismissed' && finding.reviewStatus !== 'expected')
+        .map((finding) => {
+          const previousItem = previousItems.get(finding.id);
+          const reusableDecision = previousItem?.fingerprint === finding.fingerprint &&
+            (previousItem.status === 'reviewed' ||
+              (previousItem.status === 'postponed' && Boolean(previousItem.postponedUntil) && previousItem.postponedUntil! >= asOfDate));
+          if (reusableDecision && previousItem) return {
+            findingId: finding.id,
+            findingType: finding.type,
+            fingerprint: finding.fingerprint,
+            status: previousItem.status,
+            ...(previousItem.status === 'postponed' && previousItem.postponedUntil ? { postponedUntil: previousItem.postponedUntil } : {}),
+          };
+          return {
+            findingId: finding.id,
+            findingType: finding.type,
+            fingerprint: finding.fingerprint,
+            status: finding.reviewStatus === 'reviewed'
+              ? 'reviewed' as const
+              : finding.reviewStatus === 'snoozed' ? 'postponed' as const : 'pending' as const,
+            ...(finding.reviewStatus === 'snoozed' && finding.snoozedUntil ? { postponedUntil: finding.snoozedUntil } : {}),
+          };
+        });
+      const run = await createPeriodicReview(config.actualDataDir, {
+        periodType: parsed.periodType,
+        startDate: period.startDate,
+        endDate: period.endDate,
+        currency: result.currency,
+        accountScope: {
+          mode: result.accountScope.mode,
+          label: persistedAccountScopeLabel,
+          fingerprint: accountScopeFingerprint,
+        },
+        items,
+      });
+      const previousComparableRun = previousState.reviews
+        .filter((review) =>
+          review.periodType === parsed.periodType &&
+          review.currency === result.currency &&
+          review.accountScope.mode === result.accountScope.mode &&
+          review.accountScope.fingerprint === accountScopeFingerprint &&
+          review.endDate < period.startDate)
+        .sort((left, right) =>
+          right.endDate.localeCompare(left.endDate) || right.generatedAt.localeCompare(left.generatedAt))[0];
+      const previousComparableItems = new Map((previousComparableRun?.items ?? []).map((item) => [item.findingId, item]));
+      const currentItemsById = new Map(items.map((item) => [item.findingId, item]));
+      const reviewComparison = previousComparableRun ? {
+        previousReview: {
+          startDate: previousComparableRun.startDate,
+          endDate: previousComparableRun.endDate,
+          generatedAt: previousComparableRun.generatedAt,
+          status: previousComparableRun.status,
+        },
+        newFindingCount: items.filter((item) => !previousComparableItems.has(item.findingId)).length,
+        repeatedFindingCount: items.filter((item) => previousComparableItems.has(item.findingId)).length,
+        changedEvidenceCount: items.filter((item) => {
+          const previousItem = previousComparableItems.get(item.findingId);
+          return previousItem !== undefined && previousItem.fingerprint !== item.fingerprint;
+        }).length,
+        noLongerPresentCount: (previousComparableRun.items ?? []).filter((item) => !currentItemsById.has(item.findingId)).length,
+      } : null;
+      const warnings = [...result.warnings, ...result.currentSummary.warnings, ...previousSummary.warnings];
+      if (!period.complete) {
+        warnings.push('El periodo está incompleto: solo se incluyen movimientos hasta la fecha de corte. Los resultados pueden cambiar al cerrarse el periodo.');
+      }
+      if (result.currentSummary.unconvertedTransactionCount > 0 || previousSummary.unconvertedTransactionCount > 0) {
+        warnings.push('Hay movimientos sin conversión válida. Los importes no convertidos no se consolidan y la comparación puede estar incompleta.');
+      }
+      const reviewMonth = period.startDate.slice(0, 7);
+      const reviewMonthLastDate = new Date(Date.UTC(
+        Number(reviewMonth.slice(0, 4)), Number(reviewMonth.slice(5, 7)), 0,
+      )).toISOString().slice(0, 10);
+      const isFullClosedMonth = parsed.periodType === 'monthly' &&
+        period.startDate === reviewMonth + '-01' &&
+        period.endDate === reviewMonthLastDate &&
+        period.endDate < asOfDate;
+      const budgetRepository = repository as BudgetRepository & {
+        getBudgetMonth?: (month: string) => Promise<ActualBudgetMonthRecord>;
+      };
+      const budgetLimitations = warnings.filter((warning) => /desviaciones de presupuesto/i.test(warning));
+      let budgetUnavailabilityReason: string | null = null;
+      if (!isFullClosedMonth) {
+        budgetUnavailabilityReason = 'La comparación presupuestaria requiere un mes natural completo y cerrado.';
+      } else if (result.accountScope.mode !== 'all') {
+        budgetUnavailabilityReason = 'El presupuesto de Actual es global; el ámbito seleccionado no coincide con el presupuesto completo.';
+      } else if (result.currency !== config.budgetCurrency) {
+        budgetUnavailabilityReason = 'La divisa de análisis no coincide con la divisa base del presupuesto.';
+      } else if (typeof budgetRepository.getBudgetMonth !== 'function') {
+        budgetUnavailabilityReason = 'El adaptador de Actual no expone una consulta de presupuesto mensual.';
+      } else if (budgetLimitations.length > 0) {
+        budgetUnavailabilityReason = budgetLimitations[0]!;
+      }
+      const budgetAssessment = {
+        available: budgetUnavailabilityReason === null,
+        reason: budgetUnavailabilityReason,
+        overBudgetCategoryCount: result.findings.filter((finding) => finding.type === 'budget-overspend').length,
+        scope: 'Categorías con asignación positiva y gasto verificable; no incluye categorías sin asignación comparable.',
+      };
+      if (budgetUnavailabilityReason) warnings.push('Cumplimiento presupuestario no evaluable: ' + budgetUnavailabilityReason);
+      const goalFindings = result.findings.filter((finding) => finding.type === 'goal-progress' || finding.type === 'goal-at-risk');
+      const goalAssessment = {
+        evaluatedGoalCount: goalFindings.length,
+        onTrackCount: goalFindings.filter((finding) => finding.type === 'goal-progress').length,
+        atRiskCount: goalFindings.filter((finding) => finding.type === 'goal-at-risk').length,
+        projections: goalFindings.map((finding) => ({
+          findingId: finding.id,
+          title: finding.title,
+          type: finding.type,
+          projectedProgressPercent: finding.metrics.projectedProgressPercent ?? null,
+          targetDate: finding.metrics.targetDate ?? null,
+          impactMinor: finding.impactMinor,
+          currency: finding.currency,
+          confidence: finding.confidence,
+        })),
+      };
+      if (goalFindings.length === 0) {
+        warnings.push('No hay objetivos activos y comparables en el ámbito y divisa actuales, o no hay datos suficientes para proyectarlos.');
+      }
+      return reply.code(201).send({
+        data: {
+          schemaVersion: 1,
+          run,
+          period: { periodType: parsed.periodType, ...period },
+          timeZone,
+          asOfDate,
+          calculatedAt: result.calculatedAt,
+          currency: result.currency,
+          accountScope: result.accountScope,
+          summary: result.currentSummary,
+          budgetAssessment,
+          goalAssessment,
+          comparisonToPreviousReview: reviewComparison,
+          comparison: {
+            period: { startDate: previousStartDate, endDate: previousEndDate },
+            summary: previousSummary,
+          },
+          findings: result.findings,
+          warnings: [...new Set(warnings)],
+          capabilities: { aiEnabled: config.aiEnabled, deterministicReportAvailable: true },
+          notes: [
+            'Los importes se calculan con finance-core y las mismas preferencias de divisa y ámbito que los informes.',
+            'Los hallazgos son hechos observados, estimaciones o candidatos según la confianza indicada; la prioridad no expresa certeza.',
+            'La revisión no modifica movimientos, presupuestos, objetivos ni compromisos. No se ejecutan acciones financieras.',
+            'El historial de revisión conserva únicamente fechas, ámbito, divisa, IDs y tipos de hallazgo y estados; no duplica transacciones ni conversaciones.',
+          ],
+        },
+      });
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.patch('/api/v1/reviews/periodic/:reviewId/items', async (request, reply) => {
+    try {
+      const params = z.object({ reviewId: z.string().uuid() }).strict().parse(request.params);
+      const parsed = PeriodicReviewItemUpdateSchema.parse(request.body);
+      const today = new Date().toISOString().slice(0, 10);
+      if (parsed.status === 'postponed') {
+        if (!parsed.postponedUntil || parsed.postponedUntil < today ||
+            parsed.postponedUntil > addIntelligenceDays(today, 90)) {
+          return reply.code(400).send({ error: { code: 'INVALID_POSTPONE_WINDOW', message: 'El aplazamiento debe vencer entre hoy y los próximos 90 días.' } });
+        }
+      }
+      const updated = await updatePeriodicReviewItem(
+        config.actualDataDir, params.reviewId, parsed.findingId, parsed.status,
+        parsed.status === 'postponed' ? parsed.postponedUntil : undefined,
+      );
+      if (!updated) return reply.code(404).send({ error: { code: 'REVIEW_ITEM_NOT_FOUND', message: 'La revisión o el hallazgo ya no existe.' } });
+      return { data: updated };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
     }
   });
 
