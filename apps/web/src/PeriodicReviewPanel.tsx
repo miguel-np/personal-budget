@@ -142,7 +142,7 @@ export function PeriodicReviewPanel({ onNavigate }: { onNavigate: (target: Navig
   async function loadHistory(signal?: AbortSignal): Promise<void> {
     setHistoryLoading(true);
     try {
-      const response = await fetch('/api/v1/reviews/periodic', { signal, headers: { Accept: 'application/json' } });
+      const response = await fetch('/api/v1/reviews/periodic', { ...(signal ? { signal } : {}), headers: { Accept: 'application/json' } });
       const result = await response.json() as ApiPayload<ReviewHistory>;
       if (!response.ok || !result.data) throw new Error(result.error?.message ?? 'No se pudo recuperar el historial de revisiones.');
       if (!signal?.aborted) setHistory(result.data);
