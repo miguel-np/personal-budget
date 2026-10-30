@@ -379,7 +379,13 @@ describe('local API', () => {
     expect(generated.statusCode).toBe(201);
     const data = generated.json().data;
     expect(data.schemaVersion).toBe(1);
-    expect(data.asOfDate).toBe(new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid' }).format(new Date()));
+    const madridDateParts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(new Date());
+    const madridDate = ['year', 'month', 'day'].map((type) =>
+      madridDateParts.find((part) => part.type === type)?.value ?? '',
+    ).join('-');
+    expect(data.asOfDate).toBe(madridDate);
     expect(data.timeZone).toBe('Europe/Madrid');
     expect(data.summary).toMatchObject({ currency: 'EUR', incomeMinor: 0, expenseMinor: 5_000, savingsMinor: -5_000, savingsRatePercent: null });
     expect(data.budgetAssessment).toMatchObject({ available: false, overBudgetCategoryCount: 0 });
