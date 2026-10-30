@@ -377,6 +377,11 @@ describe('local API', () => {
     expect(data.summary).toMatchObject({ currency: 'EUR', incomeMinor: 0, expenseMinor: 5_000, savingsMinor: -5_000, savingsRatePercent: null });
     expect(data.period.startDate).toBe(today.slice(0, 7) + '-01');
     expect(data.period.endDate).toBe(today);
+    const previousMonthLastDay = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1, 0));
+    const previousMonthStart = previousMonthLastDay.toISOString().slice(0, 7) + '-01';
+    const previousMonthEndDay = Math.min(Number(today.slice(8, 10)), previousMonthLastDay.getUTCDate());
+    const previousMonthEnd = previousMonthStart.slice(0, 8) + String(previousMonthEndDay).padStart(2, '0');
+    expect(data.comparison.period).toEqual({ startDate: previousMonthStart, endDate: previousMonthEnd });
     expect(data.warnings.some((warning: string) => warning.includes('incompleto'))).toBe(
       today !== new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)), 0)).toISOString().slice(0, 10),
     );
@@ -432,6 +437,14 @@ describe('local API', () => {
     const monday = new Date(today + 'T00:00:00.000Z');
     monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
     expect(response.json().data.period.startDate).toBe(monday.toISOString().slice(0, 10));
+    const previousMonday = new Date(monday);
+    previousMonday.setUTCDate(previousMonday.getUTCDate() - 7);
+    const previousWeekEnd = new Date(previousMonday);
+    previousWeekEnd.setUTCDate(previousWeekEnd.getUTCDate() + ((new Date(today + 'T00:00:00.000Z').getUTCDay() + 6) % 7));
+    expect(response.json().data.comparison.period).toEqual({
+      startDate: previousMonday.toISOString().slice(0, 10),
+      endDate: previousWeekEnd.toISOString().slice(0, 10),
+    });
     expect(response.json().data.capabilities).toMatchObject({ aiEnabled: false, deterministicReportAvailable: true });
   });
 
