@@ -554,7 +554,7 @@ describe('local API', () => {
     const measurements: Array<{
       records: number;
       medianLatencyMs: number;
-      maxObservedHeapDeltaBytes: number;
+      maxSampledHeapDeltaBytes: number;
       repositoryReadsPerRequest: number;
     }> = [];
 
@@ -570,21 +570,35 @@ describe('local API', () => {
         category: 'food',
       }));
       const latencies: number[] = [];
-      let maxObservedHeapDeltaBytes = 0;
+      let maxSampledHeapDeltaBytes = 0;
       for (let repeat = 0; repeat < 3; repeat += 1) {
         listTransactions.mockClear();
         const heapBefore = process.memoryUsage().heapUsed;
+        let sampledPeakHeapDeltaBytes = 0;
+        const sampleHeap = () => {
+          sampledPeakHeapDeltaBytes = Math.max(
+            sampledPeakHeapDeltaBytes,
+            process.memoryUsage().heapUsed - heapBefore,
+          );
+        };
+        // Heap deltas measured only before/after a request can miss transient
+        // allocations that are reclaimed before the response resolves. Sample
+        // while the request is in flight and once more after it completes.
+        const heapSampler = setInterval(sampleHeap, 1);
         const started = performance.now();
-        const response = await app.inject({
-          method: 'GET',
-          url: '/api/v1/transactions?startDate=2026-01-01&endDate=2026-12-31&limit=20&offset=0&sortBy=amount&order=asc',
-        });
+        let response: Awaited<ReturnType<typeof app.inject>>;
+        try {
+          response = await app.inject({
+            method: 'GET',
+            url: '/api/v1/transactions?startDate=2026-01-01&endDate=2026-12-31&limit=20&offset=0&sortBy=amount&order=asc',
+          });
+        } finally {
+          clearInterval(heapSampler);
+          sampleHeap();
+        }
         latencies.push(performance.now() - started);
-        maxObservedHeapDeltaBytes = Math.max(
-          maxObservedHeapDeltaBytes,
-          process.memoryUsage().heapUsed - heapBefore,
-        );
-        expect(response.statusCode).toBe(200);
+        maxSampledHeapDeltaBytes = Math.max(maxSampledHeapDeltaBytes, sampledPeakHeapDeltaBytes);
+        expect(response!.statusCode).toBe(200);
         expect(response.json().pagination.total).toBe(size);
         expect(response.json().data).toHaveLength(20);
         const expectedFirstPage = [...syntheticTransactions]
@@ -598,7 +612,7 @@ describe('local API', () => {
       measurements.push({
         records: size,
         medianLatencyMs: Number(latencies[1]!.toFixed(2)),
-        maxObservedHeapDeltaBytes,
+        maxSampledHeapDeltaBytes,
         repositoryReadsPerRequest: 12,
       });
     }
@@ -606,13 +620,13 @@ describe('local API', () => {
     // Regression ceilings are deliberately generous multiples of the recorded baseline
     // so ordinary CI scheduling variance does not cause false failures.
     expect(measurements.every((measurement) => measurement.medianLatencyMs < 3_000)).toBe(true);
-    expect(measurements.every((measurement) => measurement.maxObservedHeapDeltaBytes < 128 * 1024 * 1024)).toBe(true);
+    expect(measurements.every((measurement) => measurement.maxSampledHeapDeltaBytes < 128 * 1024 * 1024)).toBe(true);
 
     console.info('TRANSACTION_PAGINATION_BENCHMARK ' + JSON.stringify({
       node: process.version,
       syntheticOnly: true,
       measurements,
-      regressionCeilings: { medianLatencyMs: 3_000, maxObservedHeapDeltaBytes: 128 * 1024 * 1024 },
+      regressionCeilings: { medianLatencyMs: 3_000, maxSampledHeapDeltaBytes: 128 * 1024 * 1024 },
     }));
 
     const overBudgetRows: readonly BudgetTransaction[] = Array.from({ length: 100_001 }, (_, index) => ({
