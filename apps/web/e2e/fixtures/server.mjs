@@ -548,6 +548,7 @@ const server = createServer(async (req, res) => {
           scope: 'Datos sintéticos; no se evalúa un presupuesto real.',
         },
         goalAssessment: { evaluatedGoalCount: 0, onTrackCount: 0, atRiskCount: 0, projections: [] },
+        comparisonToPreviousReview: null,
         comparison: { period: comparisonPeriod, summary: previousSummary },
         findings: [finding],
         warnings: endDate === scheduledEndDate ? [] : ['El periodo está incompleto; datos sintéticos de corte.'],
