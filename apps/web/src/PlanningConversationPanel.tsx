@@ -126,7 +126,7 @@ export function PlanningConversationPanel({ currency }: { currency: string }) {
           <span className="muted-label">{message.length}/1.600 caracteres</span>
         </div>
       </form>
-      {error ? <p className="form-alert error" role="alert">{error}</p> : null}
+      {error ? <><p className="form-alert error" role="alert">{error}</p><p className="section-footnote">Puedes continuar con el simulador y los formularios manuales de planificación que aparecen en esta sección.</p></> : null}
       {result?.status === 'clarification_required' ? (
         <div className="form-alert warning" role="status">
           <strong>Necesito una aclaración</strong>
