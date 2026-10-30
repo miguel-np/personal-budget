@@ -410,6 +410,72 @@ describe('local API', () => {
     expect(listTransactions.mock.calls.every(([, start, end]) => start <= end)).toBe(true);
   });
 
+  it('keeps an empty zero-income review explicit and deterministic with no findings', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'periodic-review-empty-api-'));
+    temporaryDirectories.push(directory);
+    const today = new Date().toISOString().slice(0, 10);
+    const listTransactions = vi.fn(async () => [] as readonly BudgetTransaction[]);
+    const repository = createRepository({ listTransactions });
+    const app = await createTestApp(repository, { ...config, actualDataDir: directory, aiEnabled: false });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/reviews/periodic',
+      payload: { periodType: 'weekly', anchorDate: today },
+    });
+    expect(response.statusCode).toBe(201);
+    expect(response.json().data.summary).toMatchObject({
+      incomeMinor: 0, expenseMinor: 0, savingsMinor: 0, savingsRatePercent: null,
+      transactionCount: 0, unconvertedTransactionCount: 0,
+    });
+    expect(response.json().data.findings).toEqual([]);
+    expect(response.json().data.run).toMatchObject({ periodType: 'weekly', status: 'completed', items: [] });
+    const monday = new Date(today + 'T00:00:00.000Z');
+    monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
+    expect(response.json().data.period.startDate).toBe(monday.toISOString().slice(0, 10));
+    expect(response.json().data.capabilities).toMatchObject({ aiEnabled: false, deterministicReportAvailable: true });
+  });
+
+  it('keeps missing exchange rates explicit across multiple accounts and does not require Ollama', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'periodic-review-multicurrency-api-'));
+    temporaryDirectories.push(directory);
+    const today = new Date().toISOString().slice(0, 10);
+    const gbpAccount: BudgetAccount = {
+      id: 'account-gbp', name: 'Cuenta GBP', currencyCode: 'GBP',
+      closed: false, offBudget: false, currentBalanceMinor: 0,
+    };
+    const historicalTransactions: readonly BudgetTransaction[] = [
+      { id: 'review-eur-expense', account: 'account-1', currencyCode: 'EUR', date: today, amount: -1_000, category: 'food' },
+      { id: 'review-gbp-expense', account: 'account-gbp', currencyCode: 'GBP', date: today, amount: -2_000, category: 'food' },
+    ];
+    const listTransactions = vi.fn(async (accountId: string, startDate: string, endDate: string) =>
+      historicalTransactions.filter((transaction) => transaction.account === accountId && transaction.date >= startDate && transaction.date <= endDate));
+    const repository = createRepository({
+      listAccounts: vi.fn(async () => [...accounts, gbpAccount]),
+      listTransactions,
+    });
+    const app = await createTestApp(repository, {
+      ...config, actualDataDir: directory, aiEnabled: true,
+      ollamaBaseURL: 'http://127.0.0.1:1', ollamaModel: 'unavailable-synthetic-model',
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/reviews/periodic',
+      payload: { periodType: 'monthly', anchorDate: today },
+    });
+    expect(response.statusCode).toBe(201);
+    expect(response.json().data).toMatchObject({
+      currency: 'EUR',
+      accountScope: { mode: 'all' },
+      summary: { expenseMinor: 1_000, unconvertedTransactionCount: 1 },
+      capabilities: { aiEnabled: true, deterministicReportAvailable: true },
+    });
+    expect(response.json().data.warnings.some((warning: string) => /conversión|GBP/i.test(warning))).toBe(true);
+    const ids = response.json().data.run.items.map((item: { findingId: string }) => item.findingId);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(listTransactions).toHaveBeenCalledWith('account-1', expect.any(String), expect.any(String));
+    expect(listTransactions).toHaveBeenCalledWith('account-gbp', expect.any(String), expect.any(String));
+  });
+
   it('explains a verified deterministic finding through local Ollama and rejects an unknown finding', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'financial-intelligence-ai-api-'));
     temporaryDirectories.push(directory);
