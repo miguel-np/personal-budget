@@ -535,7 +535,7 @@ const server = createServer(async (req, res) => {
       return send(res, 201, { data: {
         schemaVersion: 1, run,
         period: { periodType: body.periodType, startDate, endDate, scheduledEndDate, complete: endDate === scheduledEndDate },
-        asOfDate: iso(now), calculatedAt: now.toISOString(), currency: currencyPreferences.displayCurrency,
+        asOfDate: iso(now), timeZone: body.timeZone || 'UTC', calculatedAt: now.toISOString(), currency: currencyPreferences.displayCurrency,
         accountScope: finding.accountScope, summary: currentSummary,
         comparison: { period: comparisonPeriod, summary: previousSummary },
         findings: [finding],
