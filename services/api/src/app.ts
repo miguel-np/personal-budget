@@ -138,6 +138,15 @@ const IntelligenceFindingsQuerySchema = IntelligenceDatesSchema.extend(Intellige
 const PeriodicReviewStartSchema = z.object({
   periodType: z.enum(['weekly', 'monthly']),
   anchorDate: z.string().refine(isIsoDate, 'anchorDate must be a valid YYYY-MM-DD date.'),
+  timeZone: z.string().trim().min(1).max(100).optional().refine((value) => {
+    if (!value) return true;
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: value });
+      return true;
+    } catch {
+      return false;
+    }
+  }, 'timeZone must be a valid IANA time zone.'),
 }).strict();
 const PeriodicReviewItemUpdateSchema = z.object({
   findingId: z.string().trim().min(1).max(200),
@@ -1980,7 +1989,16 @@ function monthsBefore(date: string, months: number): string {
   app.post('/api/v1/reviews/periodic', async (request, reply) => {
     try {
       const parsed = PeriodicReviewStartSchema.parse(request.body);
-      const asOfDate = new Date().toISOString().slice(0, 10);
+      const timeZone = parsed.timeZone ?? 'UTC';
+      const dateParts = new Intl.DateTimeFormat('en-US', {
+        timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+      }).formatToParts(new Date());
+      const datePart = (type: 'year' | 'month' | 'day') => dateParts.find((part) => part.type === type)?.value;
+      const year = datePart('year');
+      const month = datePart('month');
+      const day = datePart('day');
+      if (!year || !month || !day) throw new Error('Could not determine the review date in the selected time zone.');
+      const asOfDate = year + '-' + month + '-' + day;
       const period = periodicReviewPeriod(parsed.periodType, parsed.anchorDate, asOfDate);
       const result = await generateIntelligenceData(period.startDate, period.endDate);
       const durationDays = Math.floor((Date.parse(period.endDate + 'T00:00:00.000Z') -
@@ -2114,6 +2132,7 @@ function monthsBefore(date: string, months: number): string {
           schemaVersion: 1,
           run,
           period: { periodType: parsed.periodType, ...period },
+          timeZone,
           asOfDate: result.asOfDate,
           calculatedAt: result.calculatedAt,
           currency: result.currency,
