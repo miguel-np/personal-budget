@@ -40,7 +40,17 @@ interface ReadyResult {
     readonly accountScope: { readonly label: string };
     readonly currency: string;
     readonly commitmentsConsidered: number;
+    readonly unconfirmedRecurringCandidatesExcluded: number;
   };
+  readonly hypotheticalExpense: { readonly amountMinor: number; readonly date: string; readonly currency: string } | null;
+  readonly manualCommitments: readonly {
+    readonly title: string;
+    readonly amountMinor: number;
+    readonly date: string;
+    readonly direction: 'expense' | 'income';
+    readonly frequency: string;
+    readonly currency: string;
+  }[];
   readonly assumptions: readonly string[];
   readonly warnings: readonly string[];
 }
@@ -146,10 +156,26 @@ export function PlanningConversationPanel({ currency }: { currency: string }) {
             ))}
           </div>
           {result.warnings.map((warning) => <p key={warning} className="form-alert warning" role="note">{warning}</p>)}
+          {result.hypotheticalExpense ? (
+            <p className="form-alert warning" role="note">
+              Gasto hipotético incluido solo en este escenario: {money(result.hypotheticalExpense.amountMinor, result.hypotheticalExpense.currency)} el {result.hypotheticalExpense.date}. No se ha guardado como compromiso.
+            </p>
+          ) : null}
           <p className="section-footnote">
-            Fuente: historial local {result.sources.historyStartDate} — {result.sources.historyEndDate}, {result.sources.monthsWithData} meses con datos y {result.sources.transactionCount} movimientos; ámbito: {result.sources.accountScope.label}; compromisos manuales considerados: {result.sources.commitmentsConsidered}.
+            Fuente observada: historial local {result.sources.historyStartDate} — {result.sources.historyEndDate}, {result.sources.monthsWithData} meses con datos y {result.sources.transactionCount} movimientos; ámbito: {result.sources.accountScope.label}.
+            Compromisos manuales considerados: {result.sources.commitmentsConsidered}. Candidatos recurrentes no confirmados excluidos: {result.sources.unconfirmedRecurringCandidatesExcluded}.
             Ingresos y gastos: {result.sources.monthlyIncomeSource === 'observed_median' ? 'mediana observada' : 'supuesto explícito'} / {result.sources.monthlyExpenseSource === 'observed_median' ? 'mediana observada' : 'supuesto explícito'}.
           </p>
+          {result.manualCommitments.length > 0 ? (
+            <details>
+              <summary>Ver compromisos manuales incorporados</summary>
+              <ul>{result.manualCommitments.map((item) => (
+                <li key={item.title + ':' + item.date}>
+                  {item.title}: {money(item.amountMinor, item.currency)} · {item.direction === 'expense' ? 'gasto' : 'ingreso'} · {item.date} · {item.frequency}
+                </li>
+              ))}</ul>
+            </details>
+          ) : null}
           <details>
             <summary>Ver supuestos del cálculo</summary>
             <ul>{result.assumptions.map((assumption) => <li key={assumption}>{assumption}</li>)}</ul>
