@@ -375,6 +375,9 @@ describe('local API', () => {
     expect(data.schemaVersion).toBe(1);
     expect(data.asOfDate).toBe(today);
     expect(data.summary).toMatchObject({ currency: 'EUR', incomeMinor: 0, expenseMinor: 5_000, savingsMinor: -5_000, savingsRatePercent: null });
+    expect(data.budgetAssessment).toMatchObject({ available: false, overBudgetCategoryCount: 0 });
+    expect(data.budgetAssessment.reason).toBeTruthy();
+    expect(data.goalAssessment).toMatchObject({ evaluatedGoalCount: 0, onTrackCount: 0, atRiskCount: 0, projections: [] });
     expect(data.period.startDate).toBe(today.slice(0, 7) + '-01');
     expect(data.period.endDate).toBe(today);
     const previousMonthLastDay = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1, 0));
@@ -445,6 +448,9 @@ describe('local API', () => {
       startDate: previousMonday.toISOString().slice(0, 10),
       endDate: previousWeekEnd.toISOString().slice(0, 10),
     });
+    expect(response.json().data.budgetAssessment).toMatchObject({ available: false });
+    expect(response.json().data.goalAssessment).toMatchObject({ evaluatedGoalCount: 0, projections: [] });
+    expect(response.json().data.warnings.some((warning: string) => warning.includes('Cumplimiento presupuestario no evaluable'))).toBe(true);
     expect(response.json().data.capabilities).toMatchObject({ aiEnabled: false, deterministicReportAvailable: true });
   });
 
