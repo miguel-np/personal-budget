@@ -22,7 +22,7 @@ describe('periodic review store', () => {
       startDate: '2026-10-01',
       endDate: '2026-10-30',
       currency: 'EUR',
-      accountScope: { mode: 'all', label: 'Todas las cuentas abiertas' },
+      accountScope: { mode: 'all', label: 'Todas las cuentas abiertas', fingerprint: '0123456789abcdef' },
       items: [{ findingId: 'pending-categorization:2026-10', findingType: 'pending-categorization', fingerprint: '0123456789abcdef', status: 'pending' }],
     });
 
@@ -43,7 +43,7 @@ describe('periodic review store', () => {
       startDate: '2026-10-26',
       endDate: '2026-10-30',
       currency: 'EUR',
-      accountScope: { mode: 'selected', label: 'Dos cuentas seleccionadas' },
+      accountScope: { mode: 'selected', label: 'Dos cuentas seleccionadas', fingerprint: 'fedcba9876543210' },
       items: [
         { findingId: 'finding-a', findingType: 'expense-change', fingerprint: '0123456789abcdef', status: 'pending' },
         { findingId: 'finding-b', findingType: 'financial-anomaly', fingerprint: 'fedcba9876543210', status: 'pending' },
@@ -69,7 +69,7 @@ describe('periodic review store', () => {
       startDate: '2026-09-01',
       endDate: '2026-09-30',
       currency: 'EUR',
-      accountScope: { mode: 'all', label: 'Todas las cuentas abiertas' },
+      accountScope: { mode: 'all', label: 'Todas las cuentas abiertas', fingerprint: '0123456789abcdef' },
       items: [
         { findingId: 'finding-a', findingType: 'expense-change', fingerprint: '0123456789abcdef', status: 'pending' },
         { findingId: 'finding-b', findingType: 'income-change', fingerprint: 'abcdef0123456789', status: 'pending' },
@@ -89,7 +89,7 @@ describe('periodic review store', () => {
       startDate: '2026-10-01',
       endDate: '2026-10-30',
       currency: 'EUR',
-      accountScope: { mode: 'all', label: 'Todas las cuentas abiertas' },
+      accountScope: { mode: 'all', label: 'Todas las cuentas abiertas', fingerprint: '0123456789abcdef' },
       items: [
         { findingId: 'same-finding', findingType: 'expense-change', fingerprint: '0123456789abcdef', status: 'pending' },
         { findingId: 'same-finding', findingType: 'expense-change', fingerprint: '0123456789abcdef', status: 'pending' },
