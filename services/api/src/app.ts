@@ -2040,6 +2040,9 @@ function monthsBefore(date: string, months: number): string {
         .update([...result.accountScope.accountIds].sort().join('\0'))
         .digest('hex')
         .slice(0, 16);
+      const persistedAccountScopeLabel = result.accountScope.mode === 'all'
+        ? 'Todas las cuentas abiertas (' + result.accountScope.accountIds.length + ')'
+        : 'Ámbito seleccionado (' + result.accountScope.accountIds.length + ' cuentas)';
       const previousRun = previousState.reviews.find((review) =>
         review.periodType === parsed.periodType &&
         review.startDate === period.startDate &&
@@ -2079,7 +2082,7 @@ function monthsBefore(date: string, months: number): string {
         currency: result.currency,
         accountScope: {
           mode: result.accountScope.mode,
-          label: result.accountScope.label,
+          label: persistedAccountScopeLabel,
           fingerprint: accountScopeFingerprint,
         },
         items,
