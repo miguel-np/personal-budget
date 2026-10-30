@@ -307,7 +307,7 @@ function sanitizedErrorResponse(error: unknown): { statusCode: number; body: { e
 
 
 function currencyFractionDigits(currency: string): number {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency }).resolvedOptions().maximumFractionDigits;
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency }).resolvedOptions().maximumFractionDigits ?? 2;
 }
 function majorToMinor(amount: number, currency: string, label: string): number {
   if (!Number.isFinite(amount) || Math.abs(amount) > 1_000_000_000) {
