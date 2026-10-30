@@ -72,6 +72,7 @@ interface ReviewPayload {
     complete: boolean;
   };
   asOfDate: string;
+  timeZone: string;
   calculatedAt: string;
   currency: string;
   accountScope: { label: string };
@@ -192,7 +193,11 @@ export function PeriodicReviewPanel({ onNavigate }: { onNavigate: (target: Navig
       const response = await fetch('/api/v1/reviews/periodic', {
         method: 'POST',
         headers: { 'content-type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ periodType, anchorDate }),
+        body: JSON.stringify({
+          periodType,
+          anchorDate,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+        }),
       });
       const result = await response.json() as ApiPayload<ReviewPayload>;
       if (!response.ok || !result.data) throw new Error(result.error?.message ?? 'No se pudo generar la revisión financiera.');
@@ -293,6 +298,7 @@ export function PeriodicReviewPanel({ onNavigate }: { onNavigate: (target: Navig
             </div>
             <div className="detail-grid">
               <div className="detail-line"><span>Fecha de corte</span><strong>{formatCivilDate(payload.asOfDate)}</strong></div>
+              <div className="detail-line"><span>Zona horaria</span><strong>{payload.timeZone}</strong></div>
               <div className="detail-line"><span>Divisa de análisis</span><strong>{payload.currency}</strong></div>
               <div className="detail-line"><span>Ámbito de cuentas</span><strong>{payload.accountScope.label}</strong></div>
               <div className="detail-line"><span>Generada</span><strong>{new Intl.DateTimeFormat('es-ES', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(payload.calculatedAt))}</strong></div>
