@@ -70,6 +70,10 @@ export function suggestCategories(
     const ranked = [...byCategory.entries()].sort((left, right) =>
       right[1].count - left[1].count || right[1].lastDate.localeCompare(left[1].lastDate));
     const [categoryId, evidence] = ranked[0]!;
+    const runnerUp = ranked[1]?.[1];
+    // When the strongest candidates have exactly the same evidence and recency,
+    // abstain rather than turning an arbitrary sort order into a recommendation.
+    if (runnerUp && runnerUp.count === evidence.count && runnerUp.lastDate === evidence.lastDate) continue;
     const category = expenseCategories.get(categoryId);
     if (!category) continue;
     suggestions.push({

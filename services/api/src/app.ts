@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import Fastify, { LogController, type FastifyInstance, type FastifyReply, type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import helmet from '@fastify/helmet';
 import { buildFinancialAnomalyFindings, buildPeriodChangeFindings, buildUncategorizedFinding, calculateSummary, convertAmountMinor, createFinancialFinding, detectRecurringCandidates, estimatePlanningCashFlow, expandCommitmentOccurrences, isIsoDate, normalizeCurrencyCode, normalizeTransactions, projectSavings, projectSavingsGoal, sortFinancialFindings, suggestCategories, validatePeriod } from '@personal-budget/finance-core';
-import type { BudgetRepository, BudgetTransaction, FinancialFinding, FindingPriority, ForecastScenario, PlanningCommitment, TransactionCategoryBatchChange, TransactionStructureUpdate } from '@personal-budget/finance-core';
+import type { BudgetRepository, BudgetTransaction, CategorySuggestion as CoreCategorySuggestion, FinancialFinding, FindingPriority, ForecastScenario, PlanningCommitment, TransactionCategoryBatchChange, TransactionStructureUpdate } from '@personal-budget/finance-core';
 import { ActualAdapterError } from '@personal-budget/actual-adapter';
 import type { ActualBudgetMonthRecord, ActualImportRecord, ActualImportResult } from '@personal-budget/actual-adapter';
 import { z, ZodError } from 'zod';
@@ -149,6 +149,24 @@ const IntelligenceReviewRequestSchema = IntelligenceDatesSchema.extend(Intellige
 const IntelligenceExplainRequestSchema = IntelligenceDatesSchema.extend(IntelligenceAnomalyOptionsSchema.shape).extend({
   findingId: z.string().trim().min(1).max(200),
 }).strict();
+const CategoryClassificationPayloadSchema = z.object({
+  suggestions: z.array(z.object({
+    reference: z.string().trim().regex(/^c(?:[1-9]|1[0-2])$/),
+    categoryId: z.string().trim().min(1).max(128).nullable(),
+    rationale: z.string().trim().min(1).max(240),
+    uncertainty: z.enum(['low', 'medium', 'high']),
+  }).strict()).min(1).max(12),
+}).strict();
+type HybridCategorySuggestion = Omit<CoreCategorySuggestion,
+  'suggestedCategoryId' | 'suggestedCategoryName' | 'lastEvidenceDate' | 'confidence'> & {
+  readonly suggestedCategoryId: string | null;
+  readonly suggestedCategoryName: string | null;
+  readonly lastEvidenceDate: string | null;
+  readonly confidence: 'rule_based' | 'local_ai' | 'none';
+  readonly source: 'rule_based' | 'local_ai' | 'none';
+  readonly uncertainty: 'low' | 'medium' | 'high' | 'not_assessed';
+  readonly rationale: string | null;
+};
 const CategorizeRequestSchema = z.object({
   startDate: z.string().refine(isIsoDate, 'startDate must be a valid YYYY-MM-DD date.'),
   endDate: z.string().refine(isIsoDate, 'endDate must be a valid YYYY-MM-DD date.'),
@@ -1465,15 +1483,206 @@ function monthsBefore(date: string, months: number): string {
       const scope = resolveAccountScope(accounts, preference, query.accountId);
       const groups = await transactionsForAccounts(scope.accounts, evidenceStart, query.endDate, preferences);
       const converted = convertTransactionsForAnalysis(groups, preferences);
-      const suggestions = suggestCategories(converted.transactions, categories, {
+      const ruleSuggestions = suggestCategories(converted.transactions, categories, {
         startDate: query.startDate, endDate: query.endDate,
       });
+      const suggestions: HybridCategorySuggestion[] = ruleSuggestions.map((suggestion) => ({
+        ...suggestion,
+        source: 'rule_based' as const,
+        uncertainty: 'not_assessed' as const,
+        rationale: null,
+      }));
+      const rulesById = new Map(ruleSuggestions.map((suggestion) => [suggestion.transactionId, suggestion] as const));
+      const expenseCategories = categories.filter((category) => !category.isIncome);
+      const expenseCategoryById = new Map(expenseCategories.map((category) => [category.id, category] as const));
+      const entries = normalizeTransactions(converted.transactions);
+      const fallbackEntries = entries
+        .filter((entry) => !entry.isTransfer && entry.amountMinor < 0 && entry.categoryId === null &&
+          Boolean(entry.payeeLabel) && entry.date >= query.startDate && entry.date <= query.endDate &&
+          !/(refund|reembolso|devoluci[oó]n|chargeback|reintegro)/i.test(entry.payeeLabel ?? ''))
+        .filter((entry) => {
+          const deterministic = rulesById.get(entry.id);
+          // Two or more historical matches are retained as the primary deterministic
+          // source. A single vote, a new payee or a tied top vote is fallback territory.
+          return !deterministic || deterministic.evidenceCount < 2;
+        })
+        .sort((left, right) => left.date.localeCompare(right.date) ||
+          (left.payeeLabel ?? '').localeCompare(right.payeeLabel ?? '', 'es') || left.id.localeCompare(right.id));
+      const MAX_CLASSIFICATION_CANDIDATES = 12;
+      const selectedFallbackEntries = fallbackEntries.slice(0, MAX_CLASSIFICATION_CANDIDATES);
+      const selectedIds = new Set(selectedFallbackEntries.map((entry) => entry.id));
+      const classificationEnabled = config.aiEnabled && config.aiCategoryClassificationEnabled;
+      let classificationOutcome: 'disabled' | 'no_candidates' | 'not_configured' | 'payee_sharing_disabled' |
+        'completed' | 'abstained' | 'invalid_response' | 'unavailable' | 'context_limited' =
+        classificationEnabled ? 'no_candidates' : 'disabled';
+      let inferenceDurationMs = 0;
+      let batchAttempted = false;
+
+      const noneSuggestion = (entry: (typeof selectedFallbackEntries)[number], rationale: string,
+        uncertainty: HybridCategorySuggestion['uncertainty'] = 'high'): HybridCategorySuggestion => ({
+        transactionId: entry.id,
+        date: entry.date,
+        payeeLabel: entry.payeeLabel ?? '',
+        amountMinor: entry.amountMinor,
+        suggestedCategoryId: null,
+        suggestedCategoryName: null,
+        evidenceCount: 0,
+        lastEvidenceDate: null,
+        confidence: 'none',
+        source: 'none',
+        uncertainty,
+        rationale,
+      });
+
+      if (classificationEnabled && selectedFallbackEntries.length > 0) {
+        if (!config.ollamaModel) {
+          classificationOutcome = 'not_configured';
+        } else if (!config.aiCategoryClassificationIncludePayee) {
+          classificationOutcome = 'payee_sharing_disabled';
+        } else if (expenseCategories.length === 0 || expenseCategories.length > 100) {
+          classificationOutcome = 'context_limited';
+        } else {
+          const referenceToEntry = new Map(selectedFallbackEntries.map((entry, index) =>
+            ['c' + (index + 1), entry] as const));
+          const startedAt = Date.now();
+          batchAttempted = true;
+          try {
+            const raw = await localAi.classifyCategories({
+              categories: expenseCategories.map((category) => ({ id: category.id, name: category.name })),
+              transactions: selectedFallbackEntries.map((entry, index) => ({
+                reference: 'c' + (index + 1),
+                payee: entry.payeeLabel ?? '',
+              })),
+            });
+            inferenceDurationMs = Math.max(0, Date.now() - startedAt);
+            const payload = CategoryClassificationPayloadSchema.parse(JSON.parse(raw));
+            const expectedReferences = new Set(referenceToEntry.keys());
+            const receivedReferences = new Set<string>();
+            for (const candidate of payload.suggestions) {
+              if (!expectedReferences.has(candidate.reference) || receivedReferences.has(candidate.reference)) {
+                throw new Error('Invalid category classification references.');
+              }
+              receivedReferences.add(candidate.reference);
+              if (candidate.categoryId !== null && !expenseCategoryById.has(candidate.categoryId)) {
+                throw new Error('Invalid category classification category.');
+              }
+            }
+            if (receivedReferences.size !== expectedReferences.size) {
+              throw new Error('Incomplete category classification response.');
+            }
+
+            const byReference = new Map(payload.suggestions.map((candidate) => [candidate.reference, candidate] as const));
+            for (const entry of selectedFallbackEntries) {
+              const deterministic = rulesById.get(entry.id);
+              if (deterministic && deterministic.evidenceCount < 2) {
+                const suggestionIndex = suggestions.findIndex((candidate) => candidate.transactionId === entry.id);
+                if (suggestionIndex >= 0) suggestions.splice(suggestionIndex, 1);
+              }
+              const reference = [...referenceToEntry.entries()].find(([, candidate]) => candidate.id === entry.id)?.[0];
+              const candidate = reference ? byReference.get(reference) : undefined;
+              if (candidate?.categoryId && candidate.uncertainty === 'low') {
+                const category = expenseCategoryById.get(candidate.categoryId)!;
+                suggestions.push({
+                  transactionId: entry.id,
+                  date: entry.date,
+                  payeeLabel: entry.payeeLabel ?? '',
+                  amountMinor: entry.amountMinor,
+                  suggestedCategoryId: category.id,
+                  suggestedCategoryName: category.name,
+                  evidenceCount: 0,
+                  lastEvidenceDate: null,
+                  confidence: 'local_ai',
+                  source: 'local_ai',
+                  uncertainty: 'low',
+                  rationale: candidate.rationale,
+                });
+              } else {
+                suggestions.push(noneSuggestion(entry,
+                  candidate?.rationale
+                    ? 'La IA local no ofrece una clasificación suficientemente clara: ' + candidate.rationale
+                    : 'La IA local se abstuvo; elige una categoría manualmente.',
+                  candidate?.uncertainty ?? 'high'));
+              }
+            }
+            classificationOutcome = suggestions.some((candidate) => selectedIds.has(candidate.transactionId) && candidate.source === 'local_ai')
+              ? 'completed' : 'abstained';
+          } catch (error) {
+            inferenceDurationMs = Math.max(0, Date.now() - startedAt);
+            // Readiness/queue/timeout failures degrade safely; malformed JSON or an
+            // unknown category is rejected as a structured-response failure.
+            classificationOutcome = error instanceof LocalAiUnavailableError || error instanceof LocalAiBusyError ||
+              error instanceof LocalAiCancelledError ? 'unavailable'
+              : error instanceof LocalAiContextBudgetError ? 'context_limited' : 'invalid_response';
+            const fallbackRationale = classificationOutcome === 'unavailable'
+              ? 'La IA local no está disponible; elige una categoría manualmente.'
+              : classificationOutcome === 'context_limited'
+                ? 'El contexto supera el límite local; elige una categoría manualmente.'
+                : 'La respuesta local no fue válida; elige una categoría manualmente.';
+            for (const entry of selectedFallbackEntries) {
+              if (!rulesById.has(entry.id) && !suggestions.some((candidate) => candidate.transactionId === entry.id)) {
+                suggestions.push(noneSuggestion(entry, fallbackRationale, 'not_assessed'));
+              }
+            }
+          }
+        }
+
+        if (classificationOutcome === 'not_configured' || classificationOutcome === 'payee_sharing_disabled' ||
+          classificationOutcome === 'context_limited') {
+          const rationale = classificationOutcome === 'not_configured'
+            ? 'Ollama no tiene un modelo configurado; elige una categoría manualmente.'
+            : classificationOutcome === 'payee_sharing_disabled'
+              ? 'No se ha enviado el beneficiario al modelo por configuración; elige una categoría manualmente.'
+              : 'El catálogo de categorías está vacío o supera el límite de contexto; elige una categoría manualmente.';
+          for (const entry of selectedFallbackEntries) {
+            if (!rulesById.has(entry.id) && !suggestions.some((candidate) => candidate.transactionId === entry.id)) {
+              suggestions.push(noneSuggestion(entry, rationale, 'not_assessed'));
+            }
+          }
+        }
+      }
+
+      if (classificationEnabled && fallbackEntries.length > selectedFallbackEntries.length &&
+        classificationOutcome !== 'disabled') {
+        // The bounded batch limit is visible to the caller; deferred rows are not
+        // silently presented as AI-classified or changed.
+        app.log.info({
+          component: 'category-classification',
+          event: 'batch_limited',
+          deferredCandidates: fallbackEntries.length - selectedFallbackEntries.length,
+          maxCandidatesPerRequest: MAX_CLASSIFICATION_CANDIDATES,
+        }, 'Category classification batch limit reached.');
+      }
+      app.log.info({
+        component: 'category-classification',
+        outcome: classificationOutcome,
+        batchesAttempted: batchAttempted ? 1 : 0,
+        durationMs: inferenceDurationMs,
+        candidatesConsidered: selectedFallbackEntries.length,
+        maxCandidatesPerRequest: MAX_CLASSIFICATION_CANDIDATES,
+      }, 'Hybrid category classification diagnostics.');
+
+      const sortedSuggestions = suggestions.sort((left, right) =>
+        left.date.localeCompare(right.date) || left.payeeLabel.localeCompare(right.payeeLabel, 'es'));
       return {
-        data: suggestions,
+        data: sortedSuggestions,
         accountScope: scope.metadata,
+        classification: {
+          enabled: classificationEnabled,
+          outcome: classificationOutcome,
+          candidatesConsidered: selectedFallbackEntries.length,
+          candidatesDeferred: classificationEnabled ? Math.max(0, fallbackEntries.length - selectedFallbackEntries.length) : 0,
+          maxCandidatesPerRequest: MAX_CLASSIFICATION_CANDIDATES,
+          inferenceDurationMs,
+          batchesAttempted: batchAttempted ? 1 : 0,
+        },
         notes: [
-          'Las sugerencias usan reglas deterministas sobre el historial local de los últimos 12 meses y no aprenden ni almacenan reglas nuevas.',
-          'Nada se modifica en Actual Budget sin revisión y confirmación explícita.',
+          'Las reglas deterministas se ejecutan primero; las coincidencias con evidencia histórica suficiente no invocan IA. No se aprende ni almacena ninguna regla.',
+          'La IA local es opcional y solo se consulta como fallback en una única tanda limitada. Una propuesta de IA requiere baja incertidumbre cualitativa; no es una probabilidad calibrada.',
+          config.aiCategoryClassificationIncludePayee
+            ? 'Si la clasificación híbrida está activada, el contexto local incluye únicamente las etiquetas normalizadas de beneficiarios pendientes y el catálogo de categorías (IDs y nombres). No se envían notas, cuentas, importes, fechas, historial ni lotes completos.'
+            : 'El envío de nombres de beneficiarios está desactivado. Las reglas deterministas siguen disponibles y no se llama al modelo para clasificación.',
+          'Las transferencias, ingresos, reembolsos evidentes y categorías de ingreso quedan fuera de la clasificación de IA.',
+          'Nada se modifica en Actual Budget sin revisión, previsualización y confirmación explícita.',
           ...converted.warnings,
         ],
       };
