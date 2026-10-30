@@ -2059,6 +2059,56 @@ function monthsBefore(date: string, months: number): string {
       if (result.currentSummary.unconvertedTransactionCount > 0 || previousSummary.unconvertedTransactionCount > 0) {
         warnings.push('Hay movimientos sin conversión válida. Los importes no convertidos no se consolidan y la comparación puede estar incompleta.');
       }
+      const reviewMonth = period.startDate.slice(0, 7);
+      const reviewMonthLastDate = new Date(Date.UTC(
+        Number(reviewMonth.slice(0, 4)), Number(reviewMonth.slice(5, 7)), 0,
+      )).toISOString().slice(0, 10);
+      const isFullClosedMonth = parsed.periodType === 'monthly' &&
+        period.startDate === reviewMonth + '-01' &&
+        period.endDate === reviewMonthLastDate &&
+        period.endDate < asOfDate;
+      const budgetRepository = repository as BudgetRepository & {
+        getBudgetMonth?: (month: string) => Promise<ActualBudgetMonthRecord>;
+      };
+      const budgetLimitations = warnings.filter((warning) => /desviaciones de presupuesto/i.test(warning));
+      let budgetUnavailabilityReason: string | null = null;
+      if (!isFullClosedMonth) {
+        budgetUnavailabilityReason = 'La comparación presupuestaria requiere un mes natural completo y cerrado.';
+      } else if (result.accountScope.mode !== 'all') {
+        budgetUnavailabilityReason = 'El presupuesto de Actual es global; el ámbito seleccionado no coincide con el presupuesto completo.';
+      } else if (result.currency !== config.budgetCurrency) {
+        budgetUnavailabilityReason = 'La divisa de análisis no coincide con la divisa base del presupuesto.';
+      } else if (typeof budgetRepository.getBudgetMonth !== 'function') {
+        budgetUnavailabilityReason = 'El adaptador de Actual no expone una consulta de presupuesto mensual.';
+      } else if (budgetLimitations.length > 0) {
+        budgetUnavailabilityReason = budgetLimitations[0]!;
+      }
+      const budgetAssessment = {
+        available: budgetUnavailabilityReason === null,
+        reason: budgetUnavailabilityReason,
+        overBudgetCategoryCount: result.findings.filter((finding) => finding.type === 'budget-overspend').length,
+        scope: 'Categorías con asignación positiva y gasto verificable; no incluye categorías sin asignación comparable.',
+      };
+      if (budgetUnavailabilityReason) warnings.push('Cumplimiento presupuestario no evaluable: ' + budgetUnavailabilityReason);
+      const goalFindings = result.findings.filter((finding) => finding.type === 'goal-progress' || finding.type === 'goal-at-risk');
+      const goalAssessment = {
+        evaluatedGoalCount: goalFindings.length,
+        onTrackCount: goalFindings.filter((finding) => finding.type === 'goal-progress').length,
+        atRiskCount: goalFindings.filter((finding) => finding.type === 'goal-at-risk').length,
+        projections: goalFindings.map((finding) => ({
+          findingId: finding.id,
+          title: finding.title,
+          type: finding.type,
+          projectedProgressPercent: finding.metrics.projectedProgressPercent ?? null,
+          targetDate: finding.metrics.targetDate ?? null,
+          impactMinor: finding.impactMinor,
+          currency: finding.currency,
+          confidence: finding.confidence,
+        })),
+      };
+      if (goalFindings.length === 0) {
+        warnings.push('No hay objetivos activos y comparables en el ámbito y divisa actuales, o no hay datos suficientes para proyectarlos.');
+      }
       return reply.code(201).send({
         data: {
           schemaVersion: 1,
@@ -2069,6 +2119,8 @@ function monthsBefore(date: string, months: number): string {
           currency: result.currency,
           accountScope: result.accountScope,
           summary: result.currentSummary,
+          budgetAssessment,
+          goalAssessment,
           comparison: {
             period: { startDate: previousStartDate, endDate: previousEndDate },
             summary: previousSummary,
