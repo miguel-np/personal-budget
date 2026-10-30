@@ -99,7 +99,7 @@ describe('periodic review store', () => {
 
   it('rejects malformed persisted schemas rather than silently discarding review history', async () => {
     const directory = await makeDirectory();
-        await writeFile(join(directory, 'periodic-reviews.json'), JSON.stringify({ version: 2, reviews: [] }));
+    await writeFile(join(directory, 'periodic-reviews.json'), JSON.stringify({ version: 2, reviews: [] }));
     await expect(readPeriodicReviewState(directory)).rejects.toThrow();
   });
 });
