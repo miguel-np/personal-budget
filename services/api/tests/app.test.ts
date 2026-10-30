@@ -431,6 +431,42 @@ describe('local API', () => {
     expect(listTransactions.mock.calls.every(([, start, end]) => start <= end)).toBe(true);
   });
 
+  it('compares prior review metadata without retaining prior financial snapshots', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'periodic-review-comparison-api-'));
+    temporaryDirectories.push(directory);
+    const repository = createRepository({
+      listTransactions: vi.fn(async () => [] as readonly BudgetTransaction[]),
+    });
+    const app = await createTestApp(repository, { ...config, actualDataDir: directory, aiEnabled: false });
+
+    const previous = await app.inject({
+      method: 'POST',
+      url: '/api/v1/reviews/periodic',
+      payload: { periodType: 'monthly', anchorDate: '2026-09-15', timeZone: 'Europe/Madrid' },
+    });
+    expect(previous.statusCode).toBe(201);
+    expect(previous.json().data.comparisonToPreviousReview).toBeNull();
+
+    const current = await app.inject({
+      method: 'POST',
+      url: '/api/v1/reviews/periodic',
+      payload: { periodType: 'monthly', anchorDate: new Date().toISOString().slice(0, 10), timeZone: 'Europe/Madrid' },
+    });
+    expect(current.statusCode).toBe(201);
+    expect(current.json().data.comparisonToPreviousReview).toMatchObject({
+      previousReview: { startDate: '2026-09-01', endDate: '2026-09-30' },
+      newFindingCount: 0,
+      repeatedFindingCount: 0,
+      changedEvidenceCount: 0,
+      noLongerPresentCount: 0,
+    });
+
+    const state = await readFile(join(directory, 'periodic-reviews.json'), 'utf8');
+    expect(state).not.toContain('incomeMinor');
+    expect(state).not.toContain('expenseMinor');
+    expect(state).not.toContain('account-1');
+  });
+
   it('keeps an empty zero-income review explicit and deterministic with no findings', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'periodic-review-empty-api-'));
     temporaryDirectories.push(directory);
