@@ -1009,6 +1009,9 @@ test('budget alerts can create, edit, trigger, snooze and deduplicate an in-app 
   await alertsPanel.getByRole('button', { name: 'Guardar reglas' }).click();
   await expect(alertsPanel.getByRole('heading', { name: 'Avisos del periodo (1)' })).toBeVisible();
   await expect(alertsPanel.getByText('Exceso relativo sobre presupuesto · 10 %', { exact: true })).toBeVisible();
+  await expect(alertsPanel.getByText(/Asignado:.*Gastado:.*Disponible:/)).toBeVisible();
+  await alertsPanel.getByRole('link', { name: 'Ver detalle en Presupuestos' }).click();
+  await expect(page).toHaveURL(/#budget-category-synthetic-food$/);
 
   await alertsPanel.getByRole('button', { name: 'Editar' }).click();
   await alertsPanel.getByLabel('Umbral (%)').fill('15');

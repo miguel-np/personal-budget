@@ -4,13 +4,15 @@
 
 La vista de flujo de caja responde a «¿qué saldo podría quedar y cuándo podría caer?». No informa de un saldo bancario disponible garantizado. El adaptador de Actual expone actualmente `balance_current`, pero no un contrato separado para efectivo disponible, saldo contable, saldo liquidado o saldo pendiente de cuenta. La interfaz denomina el dato **saldo actual comunicado por Actual** y calcula una estimación a partir de él.
 
+**Definiciones operativas:** el *saldo de cuenta* es `balance_current` devuelto por Actual a la fecha de corte; no se asume que sea saldo conciliado ni efectivo bancario disponible. El *saldo inicial de proyección* es la suma de esos saldos de las cuentas incluidas, convertidos a la divisa elegida. El *saldo proyectado* suma al inicial los movimientos futuros registrados y compromisos confirmados; las hipótesis seleccionadas se distinguen. La *reserva* es el mínimo definido por el usuario para todo el ámbito. *Déficit potencial* significa que la estimación cae por debajo de cero, no que el banco vaya a autorizar un descubierto. La aplicación no denomina «dinero disponible para gastar» al saldo proyectado.
+
 El saldo inicial consolidado solo se calcula cuando todas las cuentas del ámbito tienen saldo conocido y una divisa/tasa válida a la fecha de corte. Si falta cualquier dato, el saldo y todos los saldos proyectados permanecen `null`; las variaciones netas y eventos siguen visibles. Nunca se sustituye un saldo desconocido por cero.
 
 ## Horizonte, ámbito y divisa
 
 - La consulta se ejecuta bajo demanda con horizontes de 7, 30 o 90 días, desde la fecha civil actual (incluida).
 - Usa la selección global de cuentas vigente. El saldo inicial es la suma de los saldos actuales de esas cuentas después de conversión local a la divisa de análisis.
-- La proyección es del ámbito elegido, no del patrimonio total. Las transferencias entre cuentas incluidas se compensan con sus dos patas; una transferencia hacia/desde una cuenta excluida representa una salida/entrada del ámbito.
+- La proyección es del ámbito elegido, no del patrimonio total. Las transferencias se muestran separadas de ingresos/gastos externos y siguen afectando al saldo. Las dos patas entre cuentas incluidas se compensan; una pata hacia/desde una cuenta excluida representa una salida/entrada del ámbito.
 - No se combinan importes de divisas distintas sin una tasa local, explícita y fechada. Las cuentas sin divisa, saldo o conversión válida se enumeran como no disponibles.
 - El colchón mínimo es una reserva para el ámbito global seleccionado. Se compara con el saldo consolidado diario; no distribuye una reserva por cuenta.
 
@@ -40,7 +42,8 @@ Si fecha, importe y dirección coinciden pero el título no permite confirmar co
 - **Mínimo proyectado**: menor saldo diario dentro del horizonte.
 - **Déficit potencial**: primera fecha en que el saldo estimado sería negativo.
 - **Incumplimiento de reserva**: primera fecha por debajo del colchón configurado.
-- **Variación neta**: entradas menos salidas conocidas, incluso cuando el saldo inicial sea desconocido.
+- **Variación neta**: suma de todos los movimientos del ámbito, incluidas transferencias; puede calcularse aunque el saldo inicial sea desconocido.
+- **Entradas/salidas externas**: excluyen las patas de transferencias internas, que se presentan en totales separados.
 
 Los resultados son escenarios estimados. No anticipan movimientos no registrados, descubiertos, intereses, liquidaciones ni cambios futuros de tipo de cambio.
 

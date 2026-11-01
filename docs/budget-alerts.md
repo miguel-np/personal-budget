@@ -15,7 +15,7 @@ Cada regla se asocia a una categoría de gasto, periodo mensual y métrica:
 | Importe restante | Importe en unidades menores, >= 0 | Asignación menos gasto es igual o inferior al umbral. |
 | Exceso sobre presupuesto | Importe en unidades menores, > 0 | Gasto supera la asignación al menos en el umbral. |
 
-Las reglas usan la respuesta presupuestaria de Actual del mes seleccionado y la divisa nativa del presupuesto. Los importes monetarios se introducen en esa divisa. La API devuelve `evaluatedAt` para mostrar cuándo se calculó la respuesta; no es un proceso en segundo plano.
+Las reglas usan la respuesta presupuestaria de Actual del mes seleccionado y la divisa nativa del presupuesto. Los importes monetarios se introducen en esa divisa. Actual expone las asignaciones por categoría, no por cuenta; por ello se mantiene el mismo ámbito global que la pantalla Presupuestos y no se finge un desglose por cuentas. La API devuelve `evaluatedAt` para mostrar cuándo se calculó la respuesta; no es un proceso en segundo plano.
 
 ## Datos ausentes y casos límite
 
@@ -29,7 +29,7 @@ Las reglas se pueden crear, editar, activar/desactivar y eliminar. Al editar una
 
 ## API y almacenamiento
 
-- `GET /api/v1/budget-alerts?month=YYYY-MM`: evalúa y devuelve reglas, categorías, advertencias y avisos activos.
+- `GET /api/v1/budget-alerts?month=YYYY-MM`: evalúa y devuelve reglas, categorías, valores presupuestados/gastados/disponibles, fecha de evaluación, advertencias y avisos activos.
 - `PUT /api/v1/budget-alerts/rules`: reemplaza el conjunto de reglas.
 - `PATCH /api/v1/budget-alerts/events/:eventId`: silencia o pospone un evento con comprobación de identidad.
 
