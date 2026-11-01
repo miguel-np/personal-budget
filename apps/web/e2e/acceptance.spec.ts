@@ -325,7 +325,11 @@ test('controlled web research requires per-query consent and shows official sour
       body: JSON.stringify({ data: {
         answer: 'El BOE publica la disposición indicada [S1]. La fecha de búsqueda no acredita por sí sola su vigencia.',
         provider: 'SearXNG', searchedAt: '2026-11-01T12:00:00.000Z', mode: 'tax',
-        taxContext: { jurisdiction: 'España', matter: 'IRPF', taxYear: '2025', filingYear: '2026', referenceDate: '2026-11-01' },
+        taxContext: {
+          jurisdiction: 'España', autonomousCommunity: 'Galicia', municipality: 'Santiago de Compostela',
+          taxpayerType: 'individual', eventDate: '2025-06-15',
+          matter: 'IRPF', taxYear: '2025', filingYear: '2026', referenceDate: '2026-11-01',
+        },
         sourceCount: 1,
         sources: [{
           id: 'S1', title: 'Disposición publicada en el BOE', url: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2025-1',
@@ -357,22 +361,29 @@ test('controlled web research requires per-query consent and shows official sour
   await expect(form.getByRole('button', { name: 'Buscar y sintetizar fuentes' })).toBeDisabled();
   await form.getByLabel('Consulta exacta que se enviará').fill('BOE IRPF ejercicio 2025');
   await form.getByLabel('Tipo de investigación').selectOption('tax');
-  await form.getByLabel('Jurisdicción (no se infiere)').fill('España');
+  await form.getByLabel('Jurisdicción principal (no se infiere)').fill('España');
+  await form.getByLabel('Comunidad autónoma (opcional)').fill('Galicia');
+  await form.getByLabel('Municipio (opcional)').fill('Santiago de Compostela');
+  await form.getByLabel('Tipo de contribuyente (opcional)').selectOption('individual');
   await form.getByLabel('Impuesto o trámite').fill('IRPF');
   await form.getByLabel('Ejercicio fiscal').fill('2025');
   await form.getByLabel('Año de presentación').fill('2026');
-  await form.getByLabel('Fecha de referencia / vigencia').fill('2026-11-01');
+  await form.getByLabel('Fecha de referencia para vigencia').fill('2026-11-01');
+  await form.getByLabel('Fecha del hecho u operación (opcional)').fill('2025-06-15');
   await form.getByRole('checkbox', { name: /Autorizo enviar esta consulta a SearXNG y permitir la recuperación de documentos oficiales enlazados por el servidor/ }).check();
   await form.getByRole('button', { name: 'Buscar y sintetizar fuentes' }).click();
 
   await expect(form.getByText('El BOE publica la disposición indicada [S1]. La fecha de búsqueda no acredita por sí sola su vigencia.')).toBeVisible();
   await expect(form.getByText('Texto oficial recuperado', { exact: true })).toBeVisible();
   await expect(form.getByText('Artículo 1. Texto oficial recuperado del BOE.')).toBeVisible();
+  await expect(form.getByText(/Comunidad: Galicia · Municipio: Santiago de Compostela · Tipo: Persona física/)).toBeVisible();
   await expect(form.getByText('Sin marca BOE de derogación/anulación/agotamiento en la ficha consultada')).toBeVisible();
   await expect(form.getByRole('link', { name: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2025-1' })).toHaveAttribute('rel', 'noopener noreferrer');
   expect(approvedPayload).toMatchObject({
     consent: true, query: 'BOE IRPF ejercicio 2025', mode: 'tax',
-    jurisdiction: 'España', matter: 'IRPF', taxYear: '2025', filingYear: '2026', referenceDate: '2026-11-01',
+    jurisdiction: 'España', autonomousCommunity: 'Galicia', municipality: 'Santiago de Compostela',
+    taxpayerType: 'individual', eventDate: '2025-06-15',
+    matter: 'IRPF', taxYear: '2025', filingYear: '2026', referenceDate: '2026-11-01',
   });
   expect(JSON.stringify(approvedPayload)).not.toContain('synthetic-account');
   expect(JSON.stringify(approvedPayload)).not.toContain('Supermercado sintético');
