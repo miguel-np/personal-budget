@@ -1,10 +1,13 @@
 import { randomBytes } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { chmod, copyFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const envFile = resolve(root, '.env');
+if (existsSync(envFile)) process.loadEnvFile(envFile);
 const appDataDir = resolve(root, process.env.ACTUAL_DATA_DIR ?? './.local/actual-api');
 const actualDataDir = resolve(root, process.env.ACTUAL_SERVER_DATA_DIR ?? './.local/actual-server-data');
 const backupDir = resolve(root, process.env.BACKUP_DIR ?? './.local/backups');
