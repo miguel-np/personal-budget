@@ -456,7 +456,7 @@ export async function registerPortfolioRoutes(app: FastifyInstance, dependencies
           const months = query.budgetMonths?.split(',').map((item) => item.trim()).filter(Boolean) ?? [today().slice(0, 7)];
           const requestedMonths = [...new Set(z.array(z.string().regex(/^\\d{4}-(0[1-9]|1[0-2])$/)).min(1).max(12).parse(months))];
           const budgetRepository = repository as BudgetRepository & {
-            getBudgetMonth?: (month: string) => Promise<{ readonly month: string; readonly totalBudgeted?: number | null; readonly totalSpent?: number | null; readonly totalBalance?: number | null; readonly totalIncome?: number | null; readonly incomeAvailable?: number | null; readonly toBudget?: number | null; readonly categoryGroups: readonly { readonly id: string; readonly name: string; readonly is_income?: boolean; readonly categories?: readonly { readonly id: string; readonly name: string; readonly budgeted?: number | null; readonly spent?: number | null; readonly balance?: number | null; readonly hidden?: boolean; readonly carryover?: boolean | null }[] }[] }>;
+            getBudgetMonth?: (month: string) => Promise<{ readonly month: string; readonly totalBudgeted?: number | null; readonly totalSpent?: number | null; readonly totalBalance?: number | null; readonly totalIncome?: number | null; readonly incomeAvailable?: number | null; readonly toBudget?: number | null; readonly categoryGroups: readonly { readonly id: string; readonly name: string; readonly is_income?: boolean; readonly hidden?: boolean; readonly categories?: readonly { readonly id: string; readonly name: string; readonly budgeted?: number | null; readonly spent?: number | null; readonly balance?: number | null; readonly hidden?: boolean; readonly carryover?: boolean | null }[] }[] }>;
             getBudgetAllocations?: (month: string) => Promise<readonly { readonly categoryId: string; readonly amountMinor: number }[]>;
           };
           if (typeof budgetRepository.getBudgetMonth !== 'function') {
@@ -517,12 +517,22 @@ export async function registerPortfolioRoutes(app: FastifyInstance, dependencies
           }, index.documents.length, query.includeDocumentFiles === 'true' ? [] : ['Se exportan los metadatos y vínculos; el contenido binario de los justificantes queda fuera.']);
         }
       }
+      const [exportCurrency, exportScope, exportAccounts] = await Promise.all([
+        readCurrencyPreferences(directory, config.budgetCurrency), readAccountScope(directory), repository.listAccounts(),
+      ]);
+      const resolvedExportScope = resolveAccountScope(exportAccounts, exportScope);
       const result = {
         format: 'personal-budget-portable-export',
         schemaVersion: 1,
         generatedAt: new Date().toISOString(),
+        context: {
+          asOfDate: today(), currency: exportCurrency.displayCurrency,
+          accountScope: { mode: resolvedExportScope.metadata.mode, accountCount: resolvedExportScope.accounts.length },
+          budgetMonths: datasets.includes('budgets') ? (query.budgetMonths?.split(',').map((item) => item.trim()).filter(Boolean) ?? [today().slice(0, 7)]) : [],
+        },
         manifest,
         data,
+        warnings: manifest.flatMap((entry) => entry.limitations),
         exclusions: [
           'Actual transactions and financial reports: export them using the existing Movements and Reports export flows.',
           'Secrets, credentials, encryption keys, environment variables, logs and private filesystem paths are never included.',
