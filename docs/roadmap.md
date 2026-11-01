@@ -1,6 +1,6 @@
 # Roadmap de implementación
 
-Las capacidades base P0–P3 tienen una implementación amplia, pero el roadmap **no está completamente cerrado**: la fase 1 de consolidación mantiene abiertas la recuperación integral (#64), la revisión periódica (#72) y la aceptación operativa completa Windows + WSL2 (#31). La CI Linux/Windows aporta evidencia automatizada, pero no sustituye las pruebas manuales del entorno WSL2 objetivo. El seguimiento accionable vive en [GitHub Issues](https://github.com/miguel-np/personal-budget/issues).
+Las capacidades base P0–P3 tienen una implementación amplia. En la consolidación de fase 1, la recuperación integral (#64) ya está integrada; la revisión financiera periódica (#72) sigue en validación final; y la aceptación operativa completa Windows + WSL2 (#31) requiere todavía una ejecución manual en la distribución objetivo. La CI Linux/Windows aporta evidencia automatizada, pero no sustituye esa prueba manual. El seguimiento accionable vive en [GitHub Issues](https://github.com/miguel-np/personal-budget/issues).
 
 ## Prioridades
 
@@ -48,4 +48,10 @@ Las capacidades base P0–P3 tienen una implementación amplia, pero el roadmap 
 - Calidad: cobertura 93.45% statements / 81.87% branches, CI verde en Linux y Windows, auditorías de dependencias sin vulnerabilidades conocidas.
 
 La seguridad y privacidad se comprueban en cada fase. Las pruebas usan datos sintéticos; el modelo no obtiene acceso a shell, SQL libre ni archivos arbitrarios.
-\n## Consolidación — fase 1 (1-nov-2026)\n\n- [ ] [#64 — Backup y restauración unificados de Actual + estado propio de Personal Budget](https://github.com/miguel-np/personal-budget/issues/64): PR #89 abierta; cifrado, manifiesto, whitelist y ensayo integral en CI en validación.\n- [ ] [#72 — Revisión financiera periódica y guiada](https://github.com/miguel-np/personal-budget/issues/72): PR #82 en draft; pendiente limpiar cambios ajenos de #70/#71 y depender del backup unificado.\n- [ ] [#31 — Aceptación operativa Windows + WSL2](https://github.com/miguel-np/personal-budget/issues/31): checklist y documentación alineados; pendiente ejecutar y registrar la matriz manual en la distribución WSL2 objetivo.\n
+
+
+## Consolidación — fase 1 (1-nov-2026)
+
+- [x] [#64 — Backup y restauración unificados de Actual + estado propio de Personal Budget](https://github.com/miguel-np/personal-budget/issues/64): integrada mediante PR #89 (commit `d2c9911`). Backup cifrado/versionado de Actual y seis almacenes propios; CI validó el roundtrip sintético completo, incluida la recuperación de `periodic-reviews.json`.
+- [ ] [#72 — Revisión financiera periódica y guiada](https://github.com/miguel-np/personal-budget/issues/72): PR #82 sincronizada con `main`, limitada a once archivos propios. Se han corregido la comparación histórica por identidad estable, la huella de evidencia, los límites de fecha IANA y la compatibilidad de historiales v1. Pendiente CI/Security final y revisión antes del merge.
+- [ ] [#31 — Aceptación operativa Windows + WSL2](https://github.com/miguel-np/personal-budget/issues/31): runtime, diagnóstico y CI automática cubiertos; la dependencia de recuperación #64 está resuelta. Sigue pendiente ejecutar y registrar el ensayo manual en la distribución WSL2 objetivo con un presupuesto exclusivamente sintético.

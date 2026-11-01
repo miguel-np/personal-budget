@@ -6,9 +6,9 @@
 
 | Issue | Estado verificable | Bloqueo / siguiente criterio |
 |---|---|---|
-| #64 · Backup unificado | En implementación en la rama de consolidación: paquete cifrado versionado, manifiesto, volumen de Actual + whitelist de seis almacenes JSON propios, detección de API activa, staging y rollback | Revisión y CI de la PR; ejecución de ensayo integrado contra Actual fijado. No se declara resuelta hasta que ambos pasen |
-| #72 · Revisión financiera periódica | Implementación propuesta en PR #82 (actualmente draft) | La PR debe quedar limitada a #72, depender de #64 y pasar CI; revisar cálculos, privacidad y E2E antes de marcarla ready |
-| #31 · Aceptación operativa | Runtime diario, diagnóstico y pruebas automatizadas del ciclo de vida implementados | La aceptación manual de Windows + WSL2 con presupuesto sintético y persistencia de Actual sigue pendiente; CI Linux/Windows nativa no demuestra esa instalación |
+| #64 · Backup unificado | **Cerrada e integrada** mediante PR #89 (d2c9911): backup cifrado/versionado, manifiesto, Actual + seis almacenes JSON propios y roundtrip sintético completo | Mantener la whitelist y el ensayo actualizados cuando se añadan almacenes persistentes. La aceptación manual de la instalación WSL2 sigue separada en #31 |
+| #72 · Revisión financiera periódica | Implementación en PR #82, Draft y sincronizada con main; el diff efectivo contiene once archivos propios de la revisión | Validación final de CI/Security y revisión del comportamiento histórico: identidad estable, evidencia modificada, hallazgos ausentes, zona horaria y compatibilidad con historiales v1 |
+| #31 · Aceptación operativa | Runtime diario, diagnóstico y pruebas automatizadas del ciclo de vida implementados; la dependencia de recuperación #64 está satisfecha | Sigue pendiente ejecutar y registrar la aceptación manual en Windows + WSL2 con presupuesto sintético. CI Linux/Windows nativa no demuestra esa instalación |
 
 ## Centro de inteligencia financiera (issue #68)
 
@@ -29,7 +29,7 @@ La implementación añade hallazgos versionados y verificables, comparaciones de
 | Actual Compose | Imagen fijada, volumen persistente y puerto loopback; CI arranca el contenedor | Aceptación manual con presupuesto sintético en el entorno Windows + WSL2 objetivo |
 | Adaptador oficial | Implementado sobre @actual-app/api, serialización de operaciones y pruebas automatizadas; CI de aceptación sintética existente | Conservar el registro de aceptación del entorno instalado si se usa como gate manual |
 | Shell financiera | Dashboard, movimientos, importación CSV/OFX, presupuestos e informes | Repetir arranque y acceso desde navegador Windows dentro de la aceptación #31 |
-| Backup/restore | Scripts CLI con cifrado AES-GCM; la consolidación #64 añade Actual + estado propio inventariado y un ensayo integrado de restauración | CI de la rama de consolidación y, antes de depender de un backup personal, ensayo aislado con clave conservada por separado |
+| Backup/restore | Backup unificado cifrado AES-GCM con manifiesto v1, Actual + seis almacenes inventariados; roundtrip sintético integrado en CI mediante PR #89 | Mantener los nuevos almacenes en whitelist/tests. Antes de depender de un backup personal, realizar un ensayo aislado con clave conservada por separado |
 | Ollama/chat | Opt-in, loopback, timeouts y contexto agregado; pruebas sintéticas/live opcionales | Validar en la máquina de uso cualquier modelo o endpoint configurado |
 | MCP | JSON-RPC sobre stdio, allowlist solo lectura, argumentos estrictos y tests sintéticos | Prueba opcional con un cliente de escritorio concreto |
 | Seguridad y CI | Lint, typecheck, build, tests, auditoría de dependencias, escaneo de secretos y CI Windows nativa | Los escaneos y runners no prueban ausencia total de vulnerabilidades ni sustituyen la aceptación manual WSL2 |
