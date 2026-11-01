@@ -31,9 +31,10 @@ describe('budget improvement proposals', () => {
     expect(() => simulateBudgetImprovement(baseline, preferences, [{ categoryId: 'flex', reductionPercent: 5 }, { categoryId: 'flex', reductionPercent: 10 }])).toThrow(/double count/);
     expect(() => simulateBudgetImprovement(baseline, preferences, [{ categoryId: 'essential', reductionPercent: 5 }])).toThrow(/explicitly marked/);
   });
-  it('rejects short history and out-of-range percentages', () => {
+  it('rejects short history, out-of-range percentages and integer overflow', () => {
     expect(() => buildBudgetImprovementProposals({ ...baseline, periodMonths: 1 }, preferences)).toThrow(/between 3 and 24/);
     expect(() => simulateBudgetImprovement(baseline, preferences, [{ categoryId: 'flex', reductionPercent: 101 }])).toThrow(/between 1 and 100/);
+    const huge: BudgetImprovementBaseline = { ...baseline, periodMonths: 3, observations: [{ categoryId: 'flex', categoryName: 'Flexible', expenseMinor: Number.MAX_SAFE_INTEGER, transactionCount: 3, monthsWithActivity: 3 }] };
     expect(() => simulateBudgetImprovement(huge, preferences, [{ categoryId: 'flex', reductionPercent: 100 }])).toThrow(/safe integer range/);
   });
 });
