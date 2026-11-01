@@ -10,6 +10,8 @@ import { ActualAdapterError } from '@personal-budget/actual-adapter';
 import type { BudgetMonthRecord, ImportRecord, ImportResult } from '@personal-budget/finance-core';
 import { buildApp } from '../src/app.js';
 import type { AppConfig } from '../src/config.js';
+import { SearXNGSearchProvider } from '../src/web-search.js';
+import type { WebSearchProvider } from '../src/web-search.js';
 
 const accounts: readonly BudgetAccount[] = [
   { id: 'account-1', name: 'Cuenta corriente', currencyCode: 'EUR', closed: false, offBudget: false, currentBalanceMinor: 200_000 },
@@ -82,8 +84,15 @@ afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
 });
 
-async function createTestApp(repository: BudgetRepository = createRepository(), appConfig: AppConfig = config) {
-  const app = await buildApp({ repository, config: appConfig, logger: false });
+async function createTestApp(
+  repository: BudgetRepository = createRepository(),
+  appConfig: AppConfig = config,
+  webSearchProvider?: WebSearchProvider,
+) {
+  const app = await buildApp({
+    repository, config: appConfig, logger: false,
+    ...(webSearchProvider ? { webSearchProvider } : {}),
+  });
   openApps.push(app);
   return app;
 }
@@ -214,14 +223,25 @@ describe('local API', () => {
     };
     await Promise.all([listen(ollama), listen(search)]);
     const repository = createRepository();
-    const app = await createTestApp(repository, {
+    const appConfig: AppConfig = {
       ...config,
       aiEnabled: true,
       ollamaBaseURL: address(ollama),
       ollamaModel: 'synthetic-model',
       webSearchEnabled: true,
       webSearchBaseURL: address(search),
+    };
+    const searchProvider = new SearXNGSearchProvider({
+      baseURL: appConfig.webSearchBaseURL,
+      timeoutMs: appConfig.webSearchTimeoutMs,
+      maxResults: appConfig.webSearchMaxResults,
+      maxQueryChars: appConfig.webSearchMaxQueryChars,
+      maxResponseBytes: appConfig.webSearchMaxResponseBytes,
     });
+    // The search provider remains real; official-source retrieval is separately
+    // unit-tested and must not make this synthetic API test depend on the Internet.
+    searchProvider.retrieveOfficialDocuments = async (searchResponse) => searchResponse;
+    const app = await createTestApp(repository, appConfig, searchProvider);
     try {
       const response = await app.inject({
         method: 'POST', url: '/api/v1/assistant/web-search',
