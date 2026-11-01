@@ -916,6 +916,7 @@ test('budget improvement preferences, proposals, combined simulation and saved s
       suggestedReductionPercent: 5, observedMonthlyExpenseMinor: 10_000,
       estimatedMonthlySavingsMinor: 500, estimatedAnnualSavingsMinor: 6_000, confidence: 'high',
       explanation: 'Has marcado esta categoría como flexible. Una reducción hipotética del 5 % permite evaluar el gasto observado.',
+      priorityRank: 1, priorityReason: 'Prioridad por margen basada en el ahorro mensual observado.', goalImpact: null,
       evidence: { signal: 'recent_increase', periodMonths: 6, transactionCount: 12, observedExpenseMinor: 60_000, budgetedMinor: null, budgetSpentMinor: null, latestMonthExpenseMinor: 10_000, priorMonthsAverageExpenseMinor: 9_000, rule: 'Fixture sintético.' },
       assumptions: ['Ahorro hipotético.'], warnings: [],
     }] : [],
@@ -946,6 +947,12 @@ test('budget improvement preferences, proposals, combined simulation and saved s
             selectedCategories: [{ categoryId: 'flex', categoryName: 'Gasto flexible sintético', reductionPercent: 5, monthlySavingsMinor: 500 }],
             assumptions: ['Escenario hipotético.'], warnings: [],
           },
+          goalImpacts: [],
+          goal: 'increase_monthly_margin',
+          comparison: {
+            baselineMonthlySavingsMinor: 60_000, scenarioMonthlySavingsMinor: 60_500,
+            improvementMonthlyMinor: 500, referenceStartDate: '2026-05-01', referenceEndDate: '2026-10-31',
+          },
         } }),
       });
     }
@@ -961,6 +968,13 @@ test('budget improvement preferences, proposals, combined simulation and saved s
         currency: 'EUR', startDate: '2026-05-01', endDate: '2026-10-31',
         reductions: [{ categoryId: 'flex', reductionPercent: 5 }],
         estimatedMonthlySavingsMinor: 500, estimatedAnnualSavingsMinor: 6_000, createdAt: '2026-11-01T10:00:00.000Z',
+        comparisonStatus: 'comparable',
+        comparison: {
+          baselineMonthlySavingsMinor: 60_000, estimatedMonthlySavingsMinor: 500,
+          projectedMonthlySavingsMinor: 60_500, estimatedAnnualSavingsMinor: 6_000,
+          projectedAnnualSavingsMinor: 726_000,
+          assumptions: ['Cada reducción se aplica al promedio observado.'], warnings: [],
+        },
       };
       savedScenarios = [scenario];
       return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: scenario }) });
@@ -980,6 +994,8 @@ test('budget improvement preferences, proposals, combined simulation and saved s
   await improvementPanel.getByRole('button', { name: 'Guardar prioridades' }).click();
   await expect(improvementPanel.getByRole('heading', { name: 'Propuestas basadas en evidencia (1)' })).toBeVisible();
   await expect(improvementPanel.getByText(/Ahorro hipotético sugerido al 5 %/)).toBeVisible();
+  await expect(improvementPanel.getByText(/Prioridad #1: Prioridad por margen/)).toBeVisible();
+  await expect(improvementPanel.getByText(/Ahorro neto mensual hipotético tras adoptar solo esta propuesta/)).toBeVisible();
   await expect(improvementPanel.getByText(/Señal: aumento frente a la media histórica/)).toBeVisible();
   await improvementPanel.getByRole('button', { name: 'Aceptar propuesta' }).click();
   await expect(improvementPanel.getByText('Decisión: accepted')).toBeVisible();
@@ -989,10 +1005,12 @@ test('budget improvement preferences, proposals, combined simulation and saved s
   await expect(improvementPanel.getByText('Decisión: rejected')).toBeVisible();
   await improvementPanel.getByRole('button', { name: 'Simular selección' }).click();
   await expect(improvementPanel.getByText('Ahorro adicional estimado / mes')).toBeVisible();
+  await expect(improvementPanel.getByText(/Comparación del escenario · periodo/)).toBeVisible();
   await improvementPanel.getByLabel('Nombre del escenario').fill('Ajuste flexible');
   await improvementPanel.getByRole('button', { name: 'Guardar escenario local' }).click();
   await expect(improvementPanel.getByText('Escenario guardado como metadatos locales')).toBeVisible();
   await expect(improvementPanel.getByRole('heading', { name: 'Escenarios guardados (1)' })).toBeVisible();
+  await expect(improvementPanel.getByText(/Comparación sobre la misma base/)).toBeVisible();
   await improvementPanel.getByRole('button', { name: 'Eliminar escenario' }).click();
   await expect(improvementPanel.getByRole('heading', { name: 'Escenarios guardados (1)' })).toHaveCount(0);
   await expect(improvementPanel.getByText('Ajuste flexible')).toHaveCount(0);
