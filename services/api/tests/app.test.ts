@@ -2610,7 +2610,7 @@ describe('phase 2 financial utility APIs', () => {
     const baseData = base.json().data;
     expect(baseData.confirmedRecurringEvents.length).toBeGreaterThan(0);
     expect(baseData.confirmedRecurringEvents.every((event: { source: string }) => event.source === 'confirmed_recurring')).toBe(true);
-    const candidate = baseData.recurringCandidates.find((item: { payee: string }) => item.payee === 'Streaming service');
+    const candidate = baseData.recurringCandidates.find((item: { payee: string }) => item.payee === 'streaming service');
     expect(candidate).toBeDefined();
     expect(candidate.upcomingEventsCount).toBeGreaterThan(0);
     expect(baseData.recurringCandidateEvents.some((event: { candidateId: string }) => event.candidateId === candidate.id)).toBe(true);
