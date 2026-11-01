@@ -122,10 +122,23 @@ describe('financial intelligence findings', () => {
     };
     const first = createFinancialFinding(draft);
     const repeated = createFinancialFinding({ ...draft, calculatedAt: '2026-10-30T12:00:00.000Z' });
+    const nextPeriod = createFinancialFinding({
+      ...draft,
+      period: { startDate: '2026-11-01', endDate: '2026-11-30' },
+      calculatedAt: '2026-11-30T12:00:00.000Z',
+    });
     const changed = createFinancialFinding({ ...draft, impactMinor: 2, metrics: { count: 2 } });
     const changedCurrency = createFinancialFinding({ ...draft, currency: 'USD' });
     expect(first.id).toBe(repeated.id);
+    expect(first.identityKey).toBe(repeated.identityKey);
     expect(first.fingerprint).toBe(repeated.fingerprint);
+    expect(first.evidenceFingerprint).toBe(repeated.evidenceFingerprint);
+    expect(nextPeriod.id).not.toBe(first.id);
+    expect(nextPeriod.identityKey).toBe(first.identityKey);
+    expect(nextPeriod.fingerprint).not.toBe(first.fingerprint);
+    expect(nextPeriod.evidenceFingerprint).toBe(first.evidenceFingerprint);
+    expect(first.identityKey).toBe(nextPeriod.identityKey);
+    expect(first.evidenceFingerprint).not.toBe(changed.evidenceFingerprint);
     expect(first.fingerprint).not.toBe(changed.fingerprint);
     expect(first.fingerprint).not.toBe(changedCurrency.fingerprint);
     expect(() => createFinancialFinding({ ...draft, currency: 'eur' })).toThrow(RangeError);
