@@ -60,7 +60,7 @@ En modo fiscal, si no se selecciona un subconjunto, el backend limita la búsque
 ### Jerarquía y tipos de fuente
 
 La UI distingue:
-- **Normativa publicada:** resultado alojado en BOE.
+- **Normativa publicada:** resultado alojado en BOE o DOG.
 - **Criterio administrativo:** resultado alojado en Hacienda.
 - **Organismo oficial:** otros organismos/administraciones de la whitelist.
 - **Fuente externa:** resultado no oficial, solo cuando el modo general lo permite.

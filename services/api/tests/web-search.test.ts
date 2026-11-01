@@ -53,6 +53,25 @@ describe('SearXNG web search provider', () => {
     });
   });
 
+  it('classifies Diario Oficial de Galicia results as published normative sources', async () => {
+    const fixture = await serve((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ results: [{
+        title: 'Disposición publicada en DOG',
+        url: 'https://dog.gal/gl/publicados',
+        content: 'Texto normativo autonómico.',
+        publishedDate: '2026-01-15',
+      }] }));
+    });
+    const provider = new SearXNGSearchProvider(config(fixture.url));
+    const result = await provider.search('normativa autonómica', ['dog.gal']);
+    expect(result.sources[0]).toMatchObject({
+      domain: 'dog.gal',
+      institution: 'Xunta de Galicia / Diario Oficial de Galicia',
+      sourceKind: 'normativa',
+    });
+  });
+
   it('does not follow provider redirects', async () => {
     const fixture = await serve((_request, response) => {
       response.writeHead(302, { location: 'http://127.0.0.1:1/internal' });

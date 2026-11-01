@@ -139,7 +139,7 @@ function institutionLabel(hostname: string): string {
   return hostname;
 }
 function sourceKind(hostname: string): WebSearchSource['sourceKind'] {
-  if (hostname === 'boe.es' || hostname.endsWith('.boe.es')) return 'normativa';
+  if (matchesDomain(hostname, 'boe.es') || matchesDomain(hostname, 'dog.gal')) return 'normativa';
   if (hostname.endsWith('.hacienda.gob.es') || hostname === 'hacienda.gob.es') return 'criterio_administrativo';
   if (OFFICIAL_SOURCE_DOMAINS.some((domain) => matchesDomain(hostname, domain))) return 'organismo_oficial';
   return 'externa';
