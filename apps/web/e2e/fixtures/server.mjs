@@ -34,7 +34,7 @@ const categories = [
   { id: 'synthetic-income', name: 'Ingresos sintéticos', groupId: 'synthetic-income-group', isIncome: true },
 ];
 const transactions = Array.from({ length: 22 }, (_, index) => {
-  const date = new Date(now.getFullYear(), now.getMonth(), Math.max(1, now.getDate() - index));
+  const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - index);
   return {
     id: 'synthetic-tx-' + (index + 1),
     account: index % 2 === 1 ? secondaryAccount.id : account.id,

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { createReadStream } from 'node:fs';
+import { createReadStream, existsSync } from 'node:fs';
 import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, statfs, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +13,12 @@ import type { TestedTransition } from './update-policy.js';
 const execFileAsync = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const envPath = join(root, '.env');
+const inheritedActualImage = process.env.ACTUAL_IMAGE !== undefined;
+if (existsSync(envPath)) {
+  process.loadEnvFile(envPath);
+  // Compose must read the file again after this script changes ACTUAL_IMAGE.
+  if (!inheritedActualImage) delete process.env.ACTUAL_IMAGE;
+}
 const statePath = resolve(root, '.local/update-state.json');
 const dataDir = resolve(root, process.env.ACTUAL_SERVER_DATA_DIR ?? '.local/actual-server-data');
 const keyFile = resolve(root, process.env.BACKUP_ENCRYPTION_KEY_FILE ?? '.local/backup-key.bin');
@@ -152,7 +158,7 @@ async function restoreEnvContents(contents: string | null): Promise<void> {
 async function archiveMembers(archive: string): Promise<void> {
   const listing = await command('tar', ['-tzf', archive]);
   const detailedListing = await command('tar', ['-tvzf', archive]);
-  validateArchiveMembers(listing.stdout.split(/\r?\n/).map((item) => item.trim()).filter(Boolean), basename(dataDir));
+  validateArchiveMembers(listing.stdout.split(/\r?\n/).map((item) => item.trim()).filter(Boolean), 'personal-budget-backup');
   validateArchiveEntryTypes(detailedListing.stdout.split(/\r?\n/).filter(Boolean));
 }
 
@@ -182,15 +188,16 @@ async function verifyEncryptedArchive(archiveInput: string): Promise<void> {
 
 async function createVerifiedBackup(): Promise<string> {
   const result = await npmCommand(['run', 'backup:actual']);
-  const line = result.stdout.split(/\r?\n/).find((item) => item.startsWith('Verified encrypted backup created: '));
+  const prefix = 'Verified encrypted Personal Budget backup created: ';
+  const line = result.stdout.split(/\r?\n/).find((item) => item.startsWith(prefix));
   if (!line) throw new Error('The backup command did not report a verified archive path.');
-  const archive = line.slice('Verified encrypted backup created: '.length).trim();
+  const archive = line.slice(prefix.length).trim();
   await verifyEncryptedArchive(archive);
   return resolve(root, archive);
 }
 
 export async function preflight(targetImage: string): Promise<{ readonly currentImage: string; readonly targetImage: string }> {
-  if (process.env.ACTUAL_IMAGE) {
+  if (inheritedActualImage) {
     throw new Error('ACTUAL_IMAGE is exported in the current shell. Unset it and configure the pinned image in the local .env file instead.');
   }
   const [currentImage, running, transitions] = await Promise.all([composeImage(), runningImage(), imageTransitions()]);

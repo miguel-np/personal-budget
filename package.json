@@ -37,6 +37,7 @@
     "update:actual": "tsx scripts/safe-update.ts",
     "test:update:acceptance": "tsx scripts/actual-update-acceptance.ts",
     "test:runtime:lifecycle": "node scripts/runtime-lifecycle-smoke.mjs",
+    "test:backup:acceptance": "tsx scripts/backup-restore-acceptance.ts",
     "test:planning-ai:acceptance": "vitest run services/api/tests/planning-intent-live-acceptance.test.ts"
   },
   "dependencies": {
