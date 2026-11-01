@@ -3217,7 +3217,9 @@ function monthsBefore(date: string, months: number): string {
       readFinancialActionState(config.actualDataDir), readPlanningData(config.actualDataDir),
     ]);
     const scope = resolveAccountScope(accounts, accountPreference);
-    const accountScopeSignature = createHash('sha256').update(JSON.stringify(scope.metadata)).digest('hex');
+    const accountScopeSignature = createHash('sha256').update(JSON.stringify({
+      mode: scope.metadata.mode, accountIds: [...scope.metadata.accountIds].sort(),
+    })).digest('hex');
     const rawTransactions = await transactionsForAccounts(scope.accounts, startDate, endDate, preferences);
     const converted = convertTransactionsForAnalysis(rawTransactions, preferences);
     const entries = normalizeTransactions(converted.transactions);
