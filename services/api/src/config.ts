@@ -29,7 +29,7 @@ function isAllowedWebSearchURL(value: string): boolean {
       !parsed.username && !parsed.password && !parsed.search && !parsed.hash &&
       (parsed.pathname === '/' || parsed.pathname === '') &&
       !hostname.endsWith('.local') && !hostname.endsWith('.internal') &&
-      (loopback || !/^\d{1,3}(?:\\.\d{1,3}){3}$/.test(hostname) && !hostname.includes(':'));
+      (loopback || !/^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname) && !hostname.includes(':'));
   } catch {
     return false;
   }
