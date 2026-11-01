@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { createReadStream } from 'node:fs';
+import { createReadStream, existsSync } from 'node:fs';
 import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, statfs, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +13,8 @@ import type { TestedTransition } from './update-policy.js';
 const execFileAsync = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const envPath = join(root, '.env');
+const inheritedActualImage = process.env.ACTUAL_IMAGE !== undefined;
+if (existsSync(envPath)) process.loadEnvFile(envPath);
 const statePath = resolve(root, '.local/update-state.json');
 const dataDir = resolve(root, process.env.ACTUAL_SERVER_DATA_DIR ?? '.local/actual-server-data');
 const keyFile = resolve(root, process.env.BACKUP_ENCRYPTION_KEY_FILE ?? '.local/backup-key.bin');
@@ -191,7 +193,7 @@ async function createVerifiedBackup(): Promise<string> {
 }
 
 export async function preflight(targetImage: string): Promise<{ readonly currentImage: string; readonly targetImage: string }> {
-  if (process.env.ACTUAL_IMAGE) {
+  if (inheritedActualImage) {
     throw new Error('ACTUAL_IMAGE is exported in the current shell. Unset it and configure the pinned image in the local .env file instead.');
   }
   const [currentImage, running, transitions] = await Promise.all([composeImage(), runningImage(), imageTransitions()]);
