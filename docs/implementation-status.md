@@ -7,7 +7,7 @@
 | Issue | Estado verificable | Bloqueo / siguiente criterio |
 |---|---|---|
 | #64 · Backup unificado | **Cerrada e integrada** mediante PR #89 (d2c9911): backup cifrado/versionado, manifiesto, Actual + seis almacenes JSON propios y roundtrip sintético completo | Mantener la whitelist y el ensayo actualizados cuando se añadan almacenes persistentes. La aceptación manual de la instalación WSL2 sigue separada en #31 |
-| #72 · Revisión financiera periódica | Implementación en PR #82, Draft y sincronizada con main; el diff efectivo contiene once archivos propios de la revisión | Validación final de CI/Security y revisión del comportamiento histórico: identidad estable, evidencia modificada, hallazgos ausentes, zona horaria y compatibilidad con historiales v1 |
+| #72 · Revisión financiera periódica | **Cerrada e integrada** mediante PR #82 (commit `32caf07`): revisión semanal/mensual, decisiones metadata-only, identidad estable entre periodos, huellas de evidencia y compatibilidad v1 | Seis checks verdes en el SHA final: quality/cobertura, Windows, E2E, Actual smoke, Actual update/restore y Security; `periodic-reviews.json` está incluido en el backup unificado de #64 |
 | #31 · Aceptación operativa | Runtime diario, diagnóstico y pruebas automatizadas del ciclo de vida implementados; la dependencia de recuperación #64 está satisfecha | Sigue pendiente ejecutar y registrar la aceptación manual en Windows + WSL2 con presupuesto sintético. CI Linux/Windows nativa no demuestra esa instalación |
 
 ## Centro de inteligencia financiera (issue #68)
