@@ -3068,6 +3068,7 @@ function monthsBefore(date: string, months: number): string {
           source: 'actual_transaction',
           label: entry.payeeLabel ?? 'Movimiento registrado en Actual',
           clearedStatus: entry.cleared === true ? 'cleared' : entry.cleared === false ? 'pending' : 'unknown',
+          isTransfer: entry.isTransfer,
         }));
       const actualMatchKeys = new Set(ledgerEntries.filter((entry) => entry.date > asOfDate && entry.amountMinor !== 0).map((entry) =>
         [entry.date, Math.abs(entry.amountMinor), entry.amountMinor < 0 ? 'expense' : 'income'].join('|') + '|' + normalizedActionLabel(entry.payeeLabel ?? ''),
@@ -3082,7 +3083,7 @@ function monthsBefore(date: string, months: number): string {
       const eligibleCommitments = scopedActiveCommitments.flatMap((item) => {
         if (item.currency === preferences.displayCurrency) return [toPlanningCommitment(item)];
         const conversion = convertAmountMinor(item.amountMinor, item.currency, preferences.displayCurrency, asOfDate, preferences.exchangeRates);
-        if (conversion.amountMinor === null) { unconvertedCommitmentTitles.push(item.title); return []; }
+        if (conversion.amountMinor === null || conversion.amountMinor <= 0) { unconvertedCommitmentTitles.push(item.title); return []; }
         return [{ ...toPlanningCommitment(item), amountMinor: conversion.amountMinor, currency: preferences.displayCurrency }];
       });
       const manualOccurrences = expandCommitmentOccurrences(eligibleCommitments, asOfDate, endDate);
@@ -3439,6 +3440,7 @@ function monthsBefore(date: string, months: number): string {
           month, evaluatedAt: new Date().toISOString(), currency: config.budgetCurrency, rules, alerts,
           categories: budgetCategories.filter((item) => !item.hidden),
           warnings: [
+            'El presupuesto mensual de Actual se expone por categoría y no por cuenta; las alertas usan el mismo ámbito presupuestario global que la pantalla Presupuestos, sin inferir un reparto por cuentas.',
             ...(allocationSourceAvailable ? [] : ['El adaptador no distingue de forma fiable una asignación explícita de cero de una asignación ausente; las reglas omiten esos estados desconocidos.']),
             ...(budgetCategories.some((item) => item.state === 'unbudgeted' || item.state === 'unknown') ? ['Las categorías sin presupuesto explícito o con importe desconocido no generan alertas de consumo.'] : []),
           ],
@@ -3467,7 +3469,11 @@ function monthsBefore(date: string, months: number): string {
           ...current,
           budgetAlerts: {
             rules,
-            events: current.budgetAlerts.events.filter((event) => rules.some((rule) => rule.id === event.ruleId)),
+            events: current.budgetAlerts.events.filter((event) => {
+              const previous = current.budgetAlerts.rules.find((rule) => rule.id === event.ruleId);
+              const replacement = rules.find((rule) => rule.id === event.ruleId);
+              return Boolean(previous && replacement && previous.categoryId === replacement.categoryId && previous.metric === replacement.metric && previous.threshold === replacement.threshold && previous.enabled === replacement.enabled);
+            }),
           },
         },
         result: rules,

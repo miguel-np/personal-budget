@@ -10,6 +10,7 @@ export interface CashFlowEvent {
   readonly label: string;
   /** Only meaningful for Actual transactions; unknown when the source omits cleared. */
   readonly clearedStatus?: 'cleared' | 'pending' | 'unknown';
+  readonly isTransfer?: boolean;
 }
 export interface CashFlowProjectionInput {
   readonly asOfDate: string;
@@ -32,6 +33,8 @@ export interface CashFlowTimelineDay {
   readonly scenarioNetChangeMinor: number;
   readonly totalInflowMinor: number;
   readonly totalOutflowMinor: number;
+  readonly totalTransferInflowMinor: number;
+  readonly totalTransferOutflowMinor: number;
   readonly netChangeMinor: number;
   readonly projectedBalanceMinor: number | null;
   readonly belowReserve: boolean | null;
@@ -57,6 +60,8 @@ export interface CashFlowProjection {
   readonly firstReserveBreachDate: string | null;
   readonly totalInflowMinor: number;
   readonly totalOutflowMinor: number;
+  readonly totalTransferInflowMinor: number;
+  readonly totalTransferOutflowMinor: number;
   readonly netChangeMinor: number;
   readonly timeline: readonly CashFlowTimelineDay[];
   readonly sourceTotals: Readonly<Record<CashFlowSource, CashFlowSourceTotal>>;
@@ -114,6 +119,8 @@ export function projectCashFlow(input: CashFlowProjectionInput): CashFlowProject
   let cumulativeNet = 0;
   let totalInflowMinor = 0;
   let totalOutflowMinor = 0;
+  let totalTransferInflowMinor = 0;
+  let totalTransferOutflowMinor = 0;
   let minimumProjectedBalanceMinor: number | null = null;
   let minimumBalanceDate: string | null = null;
   let firstDeficitDate: string | null = null;
@@ -132,8 +139,13 @@ export function projectCashFlow(input: CashFlowProjectionInput): CashFlowProject
     let scenarioNetChangeMinor = 0;
     let dayInflow = 0;
     let dayOutflow = 0;
+    let dayTransferInflow = 0;
+    let dayTransferOutflow = 0;
     for (const event of events) {
-      if (event.amountMinor > 0) dayInflow = addSafe(dayInflow, event.amountMinor, 'daily inflows');
+      if (event.isTransfer) {
+        if (event.amountMinor > 0) dayTransferInflow = addSafe(dayTransferInflow, event.amountMinor, 'daily transfer inflows');
+        else dayTransferOutflow = addSafe(dayTransferOutflow, -event.amountMinor, 'daily transfer outflows');
+      } else if (event.amountMinor > 0) dayInflow = addSafe(dayInflow, event.amountMinor, 'daily inflows');
       else dayOutflow = addSafe(dayOutflow, -event.amountMinor, 'daily outflows');
       if (event.source === 'actual_transaction') {
         actualNetChangeMinor = addSafe(actualNetChangeMinor, event.amountMinor, 'actual daily net');
@@ -154,6 +166,8 @@ export function projectCashFlow(input: CashFlowProjectionInput): CashFlowProject
     cumulativeNet = addSafe(cumulativeNet, netChangeMinor, 'cumulative cash flow');
     totalInflowMinor = addSafe(totalInflowMinor, dayInflow, 'total inflows');
     totalOutflowMinor = addSafe(totalOutflowMinor, dayOutflow, 'total outflows');
+    totalTransferInflowMinor = addSafe(totalTransferInflowMinor, dayTransferInflow, 'total transfer inflows');
+    totalTransferOutflowMinor = addSafe(totalTransferOutflowMinor, dayTransferOutflow, 'total transfer outflows');
     if (runningBalance !== null) {
       runningBalance = addSafe(runningBalance, netChangeMinor, 'projected balance');
       if (minimumProjectedBalanceMinor === null || runningBalance < minimumProjectedBalanceMinor) { minimumProjectedBalanceMinor = runningBalance; minimumBalanceDate = date; }
@@ -163,7 +177,8 @@ export function projectCashFlow(input: CashFlowProjectionInput): CashFlowProject
     timeline.push({
       date, actualNetChangeMinor, actualClearedCount, actualPendingCount, actualUnknownCount, commitmentNetChangeMinor,
       confirmedRecurringNetChangeMinor, recurringCandidateNetChangeMinor, scenarioNetChangeMinor,
-      totalInflowMinor: dayInflow, totalOutflowMinor: dayOutflow, netChangeMinor,
+      totalInflowMinor: dayInflow, totalOutflowMinor: dayOutflow,
+      totalTransferInflowMinor: dayTransferInflow, totalTransferOutflowMinor: dayTransferOutflow, netChangeMinor,
       projectedBalanceMinor: runningBalance,
       belowReserve: runningBalance === null || reserveMinor === null ? null : runningBalance < reserveMinor,
       eventIds: events.map((event) => event.id),
@@ -177,11 +192,11 @@ export function projectCashFlow(input: CashFlowProjectionInput): CashFlowProject
     isEstimate: true, asOfDate: input.asOfDate, startDate: input.startDate, endDate: input.endDate,
     openingBalanceMinor: input.openingBalanceMinor, endingBalanceMinor: runningBalance,
     minimumProjectedBalanceMinor, minimumBalanceDate, firstDeficitDate, reserveMinor, firstReserveBreachDate,
-    totalInflowMinor, totalOutflowMinor, netChangeMinor: cumulativeNet, timeline,
+    totalInflowMinor, totalOutflowMinor, totalTransferInflowMinor, totalTransferOutflowMinor, netChangeMinor: cumulativeNet, timeline,
     sourceTotals: sourceTotals as Readonly<Record<CashFlowSource, CashFlowSourceTotal>>,
     assumptions: [
       'El saldo inicial utiliza el saldo actual comunicado por Actual para todas las cuentas del ámbito y su conversión local fechada.',
-      'Los movimientos futuros registrados en Actual se proyectan con su signo original; las transferencias entre cuentas del ámbito se compensan entre sí.',
+      'Los movimientos futuros registrados en Actual se proyectan con su signo original; las patas de transferencias se separan de ingresos/gastos externos, pero afectan al saldo del ámbito. Dentro del ámbito se compensan entre sí.',
       'Los compromisos puntuales activos y las recurrencias confirmadas se proyectan en fuentes separadas de los movimientos reales.',
       'Los candidatos recurrentes no confirmados se muestran por separado y solo se incorporan cuando el usuario los selecciona expresamente como hipótesis.',
       'No se presuponen movimientos, intereses, ingresos ni tipos de cambio futuros.',
