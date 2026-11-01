@@ -1,9 +1,11 @@
 import { useState, type FormEvent } from 'react';
 import { formatMoney } from './finance-format.js';
 
-interface CashFlowEvent { id: string; date: string; amountMinor: number; source: 'actual_transaction' | 'manual_commitment' | 'scenario'; label: string; clearedStatus?: 'cleared' | 'pending' | 'unknown'; }
+interface CashFlowEvent { id: string; date: string; amountMinor: number; source: 'actual_transaction' | 'manual_commitment' | 'confirmed_recurring' | 'recurring_candidate' | 'scenario'; label: string; clearedStatus?: 'cleared' | 'pending' | 'unknown'; }
+interface RecurringCandidateEvent extends CashFlowEvent { candidateId: string; }
+interface RecurringCandidate { id: string; payee: string; occurrenceCount: number; estimatedIntervalDays: number | null; estimatedFrequency: string | null; meanAbsoluteAmountMinor: number; amountDeviationPercent: number; nextDate: string | null; upcomingEventsCount: number; signals: readonly string[]; warnings: readonly string[]; }
 interface CashFlowDay {
-  date: string; actualNetChangeMinor: number; actualClearedCount: number; actualPendingCount: number; actualUnknownCount: number; commitmentNetChangeMinor: number; scenarioNetChangeMinor: number;
+  date: string; actualNetChangeMinor: number; actualClearedCount: number; actualPendingCount: number; actualUnknownCount: number; commitmentNetChangeMinor: number; confirmedRecurringNetChangeMinor?: number; recurringCandidateNetChangeMinor?: number; scenarioNetChangeMinor: number;
   totalInflowMinor: number; totalOutflowMinor: number; netChangeMinor: number; projectedBalanceMinor: number | null;
   belowReserve: boolean | null; eventIds: readonly string[];
 }
@@ -19,8 +21,9 @@ interface CashFlowResult {
 interface CashFlowResponse {
   asOfDate: string; endDate: string; currency: string; openingBalanceMinor: number | null;
   unknownOpeningAccounts: readonly { id: string; name: string }[];
-  actualEvents: readonly CashFlowEvent[]; manualEvents: readonly CashFlowEvent[];
-  scenarioEvents: readonly CashFlowEvent[];
+  actualEvents: readonly CashFlowEvent[]; manualEvents: readonly CashFlowEvent[]; confirmedRecurringEvents?: readonly CashFlowEvent[];
+  recurringCandidates?: readonly RecurringCandidate[]; recurringCandidateEvents?: readonly RecurringCandidateEvent[];
+  scenarioEvents: readonly CashFlowEvent[]; accountScope?: { label: string };
   duplicateCommitmentIds: readonly string[]; possibleDuplicateCommitments: readonly string[];
   projection: CashFlowResult; notes: readonly string[];
 }
@@ -46,6 +49,7 @@ export function CashFlowPanel({ currency }: { currency: string }) {
   const [scenarioAmount, setScenarioAmount] = useState('');
   const [scenarioDirection, setScenarioDirection] = useState<'expense' | 'income'>('expense');
   const [scenarioLabel, setScenarioLabel] = useState('Pago hipotético');
+  const [selectedRecurringCandidateIds, setSelectedRecurringCandidateIds] = useState<readonly string[]>([]);
   const [result, setResult] = useState<CashFlowResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -66,6 +70,7 @@ export function CashFlowPanel({ currency }: { currency: string }) {
         horizonDays,
         ...(reserveMinor === undefined ? {} : { reserveMinor }),
         ...(includeScenario ? { scenario: { date: scenarioDate, amountMinor: scenarioMinor, direction: scenarioDirection, label: scenarioLabel.trim() } } : {}),
+        recurringCandidateIds: selectedRecurringCandidateIds,
       };
       const response = await fetch('/api/v1/cash-flow/project', {
         method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body),
@@ -73,7 +78,9 @@ export function CashFlowPanel({ currency }: { currency: string }) {
       const payload = await response.json() as ApiPayload<CashFlowResponse>;
       if (!response.ok || !payload.data) throw new Error(payload.error?.message ?? 'No se pudo calcular el flujo de caja.');
       setResult(payload.data);
-      setNotice(includeScenario ? 'Escenario calculado en memoria. No se ha guardado ni modificado Actual Budget.' : 'Proyección actualizada con los datos locales disponibles.');
+      setNotice(includeScenario || selectedRecurringCandidateIds.length > 0
+        ? 'Escenario calculado en memoria con hipótesis seleccionadas. No se ha guardado ni modificado Actual Budget.'
+        : 'Proyección actualizada con los datos locales disponibles.');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'No se pudo calcular el flujo de caja.');
     } finally { setBusy(false); }
@@ -104,7 +111,7 @@ export function CashFlowPanel({ currency }: { currency: string }) {
       {notice ? <p className="form-alert" role="status">{notice}</p> : null}
       {projection ? (
         <div className="forecast-result">
-          <p className="eyebrow">CORTE {result?.asOfDate} · {result?.currency} · {result?.endDate}</p>
+          <p className="eyebrow">CORTE {result?.asOfDate} · {result?.currency} · {result?.endDate} · {result?.accountScope?.label ?? 'Ámbito configurado'}</p>
           <div className="stats-grid">
             <article className="stat-card"><p>Saldo inicial estimado</p><strong>{amount(projection.openingBalanceMinor, currency)}</strong><span>Saldo actual de Actual convertido al corte</span></article>
             <article className="stat-card"><p>Saldo final proyectado</p><strong>{amount(projection.endingBalanceMinor, currency)}</strong><span>Entradas menos salidas conocidas</span></article>
@@ -120,18 +127,45 @@ export function CashFlowPanel({ currency }: { currency: string }) {
           {projection.warnings.map((warning) => <p key={warning} className="form-alert warning" role="note">{warning}</p>)}
           {result?.possibleDuplicateCommitments.length ? <p className="form-alert warning" role="note">Posibles duplicados conservados en el cálculo: {result.possibleDuplicateCommitments.join(', ')}. Revisa estos elementos antes de interpretar el saldo.</p> : null}
           {result?.duplicateCommitmentIds.length ? <p className="section-footnote">{result.duplicateCommitmentIds.length} compromiso(s) con coincidencia exacta se han contado una sola vez, usando el movimiento real de Actual.</p> : null}
+          <div className="suggestion-block">
+            <h4>Candidatos recurrentes estimados ({result?.recurringCandidates?.length ?? 0})</h4>
+            <p className="section-footnote">Se infieren del historial local de hasta 800 días. No son obligaciones confirmadas y permanecen fuera del saldo base hasta que los selecciones como hipótesis.</p>
+            {(result?.recurringCandidates ?? []).length === 0 ? <p className="muted-copy">No hay candidatos con una cadencia suficiente para estimar próximas fechas.</p> : null}
+            {(result?.recurringCandidates ?? []).map((candidate) => (
+              <label className="field-label" key={candidate.id}>
+                <span><strong>{candidate.payee}</strong> · {candidate.occurrenceCount} cargos · {candidate.estimatedFrequency ?? 'cadencia incierta'} · media {formatMoney(candidate.meanAbsoluteAmountMinor, currency)} · próximo {candidate.nextDate ?? 'sin fecha estimable'} · {candidate.upcomingEventsCount} evento(s) en el horizonte</span>
+                <input type="checkbox" disabled={candidate.upcomingEventsCount === 0 || busy} checked={selectedRecurringCandidateIds.includes(candidate.id)} onChange={(event) => setSelectedRecurringCandidateIds((current) => event.currentTarget.checked ? [...current, candidate.id] : current.filter((id) => id !== candidate.id))} />
+                {candidate.warnings.map((warning) => <span className="warning-text" key={warning}>{warning}</span>)}
+              </label>
+            ))}
+            {(result?.recurringCandidates ?? []).some((candidate) => candidate.upcomingEventsCount > 0) ? <button className="button secondary" type="button" disabled={busy} onClick={() => { void calculate(undefined, false); }}>Recalcular con las recurrencias seleccionadas</button> : null}
+          </div>
           <div className="trend-table-wrap">
             <table className="trend-table">
-              <thead><tr><th>Fecha</th><th>Actual</th><th>Estado (confirmado / pendiente / desconocido)</th><th>Compromisos</th><th>Escenario</th><th>Saldo estimado</th></tr></thead>
+              <thead><tr><th>Fecha</th><th>Actual</th><th>Estado (confirmado / pendiente / desconocido)</th><th>Compromisos puntuales</th><th>Recurrente confirmado</th><th>Candidato hipotético</th><th>Escenario</th><th>Saldo estimado</th></tr></thead>
               <tbody>{projection.timeline.map((day) => (
                 <tr key={day.date}>
                   <td>{day.date}</td><td>{amount(day.actualNetChangeMinor, currency)}</td>
                   <td>{day.actualClearedCount} / {day.actualPendingCount} / {day.actualUnknownCount}</td>
-                  <td>{amount(day.commitmentNetChangeMinor, currency)}</td><td>{amount(day.scenarioNetChangeMinor, currency)}</td>
+                  <td>{amount(day.commitmentNetChangeMinor, currency)}</td><td>{amount(day.confirmedRecurringNetChangeMinor ?? 0, currency)}</td>
+                  <td>{amount(day.recurringCandidateNetChangeMinor ?? 0, currency)}</td><td>{amount(day.scenarioNetChangeMinor, currency)}</td>
                   <td>{amount(day.projectedBalanceMinor, currency)}</td>
                 </tr>
               ))}</tbody>
             </table>
+          </div>
+          <div className="suggestion-block">
+            <h4>Detalle de eventos que alimentan la proyección</h4>
+            <p className="section-footnote">Cada evento conserva su procedencia. Las recurrencias candidatas solo aparecen aquí cuando se han seleccionado como hipótesis.</p>
+            <div className="trend-table-wrap"><table className="trend-table">
+              <thead><tr><th>Fecha</th><th>Origen</th><th>Descripción</th><th>Importe</th><th>Conciliación</th></tr></thead>
+              <tbody>{[
+                ...(result?.actualEvents ?? []), ...(result?.manualEvents ?? []), ...(result?.confirmedRecurringEvents ?? []),
+                ...(result?.recurringCandidateEvents ?? []).filter((event) => selectedRecurringCandidateIds.includes(event.candidateId)), ...(result?.scenarioEvents ?? []),
+              ].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)).map((event) => (
+                <tr key={event.id}><td>{event.date}</td><td>{event.source === 'actual_transaction' ? 'Actual' : event.source === 'manual_commitment' ? 'Compromiso puntual' : event.source === 'confirmed_recurring' ? 'Recurrente confirmado' : event.source === 'recurring_candidate' ? 'Candidato hipotético' : 'Escenario'}</td><td>{event.label}</td><td>{formatMoney(event.amountMinor, currency)}</td><td>{event.clearedStatus === 'cleared' ? 'Confirmado' : event.clearedStatus === 'pending' ? 'Pendiente' : event.source === 'actual_transaction' ? 'Desconocido' : '—'}</td></tr>
+              ))}</tbody>
+            </table></div>
           </div>
           <div className="panel">
             <h4>Probar un pago o ingreso hipotético</h4>

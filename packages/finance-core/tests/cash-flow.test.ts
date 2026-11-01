@@ -16,6 +16,16 @@ describe('projectCashFlow', () => {
     expect(result.sourceTotals.manual_commitment.outflowMinor).toBe(120_000);
     expect(result.timeline[2]).toMatchObject({ actualClearedCount: 1, actualPendingCount: 1, actualUnknownCount: 0 });
   });
+  it('keeps confirmed recurrences and explicitly selected candidates as separate sources', () => {
+    const result = projectCashFlow({ asOfDate: '2026-11-01', startDate: '2026-11-01', endDate: '2026-11-03', openingBalanceMinor: 50_000, events: [
+      { id: 'confirmed-rent', date: '2026-11-02', amountMinor: -10_000, source: 'confirmed_recurring', label: 'Rent' },
+      { id: 'candidate-streaming', date: '2026-11-03', amountMinor: -1_000, source: 'recurring_candidate', label: 'Possible streaming payment' },
+    ] });
+    expect(result.timeline[1]).toMatchObject({ confirmedRecurringNetChangeMinor: -10_000, recurringCandidateNetChangeMinor: 0, projectedBalanceMinor: 40_000 });
+    expect(result.timeline[2]).toMatchObject({ confirmedRecurringNetChangeMinor: 0, recurringCandidateNetChangeMinor: -1_000, projectedBalanceMinor: 39_000 });
+    expect(result.sourceTotals.confirmed_recurring.outflowMinor).toBe(10_000);
+    expect(result.sourceTotals.recurring_candidate.outflowMinor).toBe(1_000);
+  });
   it('flags the first reserve breach and deficit', () => {
     const result = projectCashFlow({ asOfDate: '2026-11-01', startDate: '2026-11-01', endDate: '2026-11-02', openingBalanceMinor: 10_000, reserveMinor: 5_000, events: [
       { id: 'bill', date: '2026-11-02', amountMinor: -15_000, source: 'actual_transaction', label: 'Bill' },

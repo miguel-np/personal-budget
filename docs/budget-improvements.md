@@ -18,7 +18,7 @@ Cada categoría puede marcarse como:
 
 No se deduce flexibilidad por el nombre de una categoría. Solo las categorías que la persona marque expresamente como flexibles o revisables pueden originar propuestas de reducción. Las categorías esenciales/protegidas y las no clasificadas quedan fuera de esas propuestas y simulaciones.
 
-La prioridad elegida puede ser aumentar el margen mensual, reducir gasto variable, alcanzar una meta de ahorro o liberar flujo de caja. Influye en el enfoque textual de las propuestas, pero no altera los importes calculados.
+La prioridad elegida puede ser aumentar el margen mensual, reducir gasto variable, alcanzar una meta de ahorro o liberar flujo de caja. Se aplica al regenerar explicaciones de propuestas, pero no altera los importes calculados.
 
 ## Propuestas de la primera versión
 

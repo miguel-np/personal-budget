@@ -21,8 +21,9 @@ Cada evento conserva una procedencia diferenciada:
 | Fuente | Uso en la proyección |
 |---|---|
 | Movimiento futuro registrado en Actual | Se incluye por su fecha e importe firmado. Si Actual proporciona `cleared`, la UI distingue confirmado, pendiente o desconocido. |
-| Compromiso manual activo | Se expande según fecha y frecuencia; requiere coincidencia de divisa y ámbito guardados con los actuales. |
-| Candidato recurrente | Se muestra en Planificación, pero no se incorpora al saldo base ni se convierte en obligación. |
+| Compromiso manual puntual activo | Se expande según fecha; requiere coincidencia de ámbito y conversión a la divisa de análisis. |
+| Recurrencia confirmada | Compromiso activo mensual, trimestral o anual guardado por el usuario; se proyecta en una fuente propia. |
+| Candidato recurrente estimado | Se detecta sobre hasta 800 días de historial local. Se ofrece como hipótesis separada y solo se proyecta si el usuario la selecciona expresamente. |
 | Escenario hipotético | Se suma únicamente a esa petición; no crea movimientos ni compromisos persistentes. |
 
 Los movimientos divididos se normalizan por sus líneas para no sumar el padre dos veces. Los importes se mantienen en unidades menores enteras.
@@ -47,8 +48,8 @@ Los resultados son escenarios estimados. No anticipan movimientos no registrados
 
 `POST /api/v1/cash-flow/project`
 
-Cuerpo estricto: `horizonDays` (7/30/90), `reserveMinor` opcional y `scenario` opcional con fecha, importe, dirección y descripción. La respuesta incluye corte, horizonte, divisa, ámbito, saldos desconocidos, eventos por fuente, línea temporal diaria, primera fecha de déficit/reserva y advertencias.
+Cuerpo estricto: `horizonDays` (7/30/90), `reserveMinor` opcional, `scenario` opcional con fecha/importe/dirección/descripción y `recurringCandidateIds` opcional. Los candidatos se detectan con historial local de hasta 800 días y cadencia estimada de 20–400 días; solo los seleccionados se incluyen en la proyección y se etiquetan como hipótesis. La respuesta incluye corte, horizonte, divisa, ámbito, saldos desconocidos, eventos reales, compromisos puntuales, recurrencias confirmadas, candidatos y eventos recurrentes estimados.
 
 ## Privacidad y validación
 
-El cálculo es local y determinista. No usa Ollama y no escribe en Actual. Las pruebas sintéticas cubren balances desconocidos, entradas/salidas, reserva, déficit, límites de horizonte y recuento de eventos confirmados/pendientes/desconocidos. Las pruebas API cubren duplicados exactos, compromisos distintos y escenarios no persistentes.
+El cálculo es local y determinista. No usa Ollama y no escribe en Actual. Las pruebas sintéticas cubren balances desconocidos, entradas/salidas, reserva, déficit, límites de horizonte y la separación entre recurrencias confirmadas/candidatas. Las pruebas API cubren duplicados exactos, conversiones/omisiones por divisa incompatible, selección explícita de candidatos y escenarios no persistentes.

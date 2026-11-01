@@ -15,7 +15,7 @@ Cada regla se asocia a una categoría de gasto, periodo mensual y métrica:
 | Importe restante | Importe en unidades menores, >= 0 | Asignación menos gasto es igual o inferior al umbral. |
 | Exceso sobre presupuesto | Importe en unidades menores, > 0 | Gasto supera la asignación al menos en el umbral. |
 
-Las reglas usan la misma respuesta presupuestaria de Actual que la pantalla de Presupuestos y la divisa nativa del presupuesto. Los importes monetarios se introducen en esa divisa.
+Las reglas usan la respuesta presupuestaria de Actual del mes seleccionado y la divisa nativa del presupuesto. Los importes monetarios se introducen en esa divisa. La API devuelve `evaluatedAt` para mostrar cuándo se calculó la respuesta; no es un proceso en segundo plano.
 
 ## Datos ausentes y casos límite
 
