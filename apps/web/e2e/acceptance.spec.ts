@@ -915,7 +915,7 @@ test('budget improvement preferences, proposals, combined simulation and saved s
       suggestedReductionPercent: 5, observedMonthlyExpenseMinor: 10_000,
       estimatedMonthlySavingsMinor: 500, estimatedAnnualSavingsMinor: 6_000, confidence: 'high',
       explanation: 'Has marcado esta categoría como flexible. Una reducción hipotética del 5 % permite evaluar el gasto observado.',
-      evidence: { periodMonths: 6, transactionCount: 12, observedExpenseMinor: 60_000, rule: 'Fixture sintético.' },
+      evidence: { signal: 'recent_increase', periodMonths: 6, transactionCount: 12, observedExpenseMinor: 60_000, budgetedMinor: null, budgetSpentMinor: null, latestMonthExpenseMinor: 10_000, priorMonthsAverageExpenseMinor: 9_000, rule: 'Fixture sintético.' },
       assumptions: ['Ahorro hipotético.'], warnings: [],
     }] : [],
     categoryChoices: [{ categoryId: 'flex', categoryName: 'Gasto flexible sintético', classification }],
@@ -968,7 +968,8 @@ test('budget improvement preferences, proposals, combined simulation and saved s
   await improvementPanel.getByLabel('Gasto flexible sintético').selectOption('flexible');
   await improvementPanel.getByRole('button', { name: 'Guardar prioridades' }).click();
   await expect(improvementPanel.getByRole('heading', { name: 'Propuestas basadas en evidencia (1)' })).toBeVisible();
-  await expect(improvementPanel.getByText(/Ahorro hipotético al 5 %/)).toBeVisible();
+  await expect(improvementPanel.getByText(/Ahorro hipotético sugerido al 5 %/)).toBeVisible();
+  await expect(improvementPanel.getByText(/Señal: aumento frente a la media histórica/)).toBeVisible();
   await improvementPanel.getByRole('button', { name: 'Simular selección' }).click();
   await expect(improvementPanel.getByText('Ahorro adicional estimado / mes')).toBeVisible();
   await improvementPanel.getByLabel('Nombre del escenario').fill('Ajuste flexible');
