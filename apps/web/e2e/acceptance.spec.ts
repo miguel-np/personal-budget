@@ -883,7 +883,7 @@ test('cash-flow projection separates actual movements, commitments and unsaved s
   await cashPanel.getByRole('checkbox', { name: 'Incluir Suscripción sintética como hipótesis' }).check();
   await cashPanel.getByRole('button', { name: 'Recalcular con las recurrencias seleccionadas' }).click();
   await expect(cashPanel.getByRole('status')).toContainText('hipótesis seleccionadas');
-  await expect(cashPanel.getByText('Candidato hipotético')).toBeVisible();
+  await expect(cashPanel.getByRole('cell', { name: 'Candidato hipotético' })).toBeVisible();
   await cashPanel.getByLabel('Fecha', { exact: true }).fill('2026-11-05');
   await cashPanel.getByLabel('Importe (EUR)', { exact: true }).fill('12.50');
   await cashPanel.getByLabel('Descripción', { exact: true }).fill('Compra hipotética');
