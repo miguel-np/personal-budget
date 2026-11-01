@@ -1,18 +1,21 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
-import { MovementTools } from './MovementTools.js';
-import { BudgetPanel } from './BudgetPanel.js';
-import { AssistantPanel } from './AssistantPanel.js';
-import { PlanningPanel } from './PlanningPanel.js';
-import { GoalsPanel, GoalsDashboardSummary } from './GoalsPanel.js';
-import { MovementManager } from './MovementManager.js';
-import { ReportExportPanel } from './ReportExportPanel.js';
-import { SettingsCenter, type AppPreferences } from './SettingsCenter.js';
-import { AccountsPanel } from './AccountsPanel.js';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { DashboardSignals } from './DashboardSignals.js';
-import { FinancialIntelligencePanel } from './FinancialIntelligencePanel.js';
-import { PeriodicReviewPanel } from './PeriodicReviewPanel.js';
-import { WealthDocumentsPanel } from './WealthDocumentsPanel.js';
+import { GoalsDashboardSummary } from './GoalsDashboardSummary.js';
 import { formatAccountBalance, formatCivilDate, formatMoney as sharedFormatMoney, setFinanceLocale } from './finance-format.js';
+import type { AppPreferences } from './SettingsCenter.js';
+
+const AccountsPanel = lazy(() => import('./AccountsPanel.js').then((module) => ({ default: module.AccountsPanel })));
+const AssistantPanel = lazy(() => import('./AssistantPanel.js').then((module) => ({ default: module.AssistantPanel })));
+const BudgetPanel = lazy(() => import('./BudgetPanel.js').then((module) => ({ default: module.BudgetPanel })));
+const FinancialIntelligencePanel = lazy(() => import('./FinancialIntelligencePanel.js').then((module) => ({ default: module.FinancialIntelligencePanel })));
+const GoalsPanel = lazy(() => import('./GoalsPanel.js').then((module) => ({ default: module.GoalsPanel })));
+const MovementManager = lazy(() => import('./MovementManager.js').then((module) => ({ default: module.MovementManager })));
+const MovementTools = lazy(() => import('./MovementTools.js').then((module) => ({ default: module.MovementTools })));
+const PeriodicReviewPanel = lazy(() => import('./PeriodicReviewPanel.js').then((module) => ({ default: module.PeriodicReviewPanel })));
+const PlanningPanel = lazy(() => import('./PlanningPanel.js').then((module) => ({ default: module.PlanningPanel })));
+const ReportExportPanel = lazy(() => import('./ReportExportPanel.js').then((module) => ({ default: module.ReportExportPanel })));
+const SettingsCenter = lazy(() => import('./SettingsCenter.js').then((module) => ({ default: module.SettingsCenter })));
+const WealthDocumentsPanel = lazy(() => import('./WealthDocumentsPanel.js').then((module) => ({ default: module.WealthDocumentsPanel })));
 
 type ConnectionState = 'checking' | 'connected' | 'unconfigured' | 'error';
 type PeriodMode = 'day' | 'month' | 'year' | 'custom';
@@ -764,25 +767,29 @@ export function App() {
             )}
 
             {!dataLoading && !dataError && !invalidPeriod && route === '/accounts' && (
-              <AccountsPanel
-                accounts={accounts}
-                currency={currency}
-                activeAccountIds={accountScope?.activeAccountIds ?? accounts.filter((account) => !account.closed).map((account) => account.id)}
-                onOpenMovements={openAccountMovements}
-              />
+              <Suspense fallback={<LoadingState />}>
+                <AccountsPanel
+                  accounts={accounts}
+                  currency={currency}
+                  activeAccountIds={accountScope?.activeAccountIds ?? accounts.filter((account) => !account.closed).map((account) => account.id)}
+                  onOpenMovements={openAccountMovements}
+                />
+              </Suspense>
             )}
 
             {!dataLoading && !dataError && !invalidPeriod && route === '/movements' && (
               <section className="content-section" aria-labelledby="movements-heading">
                 <div className="section-heading"><div><p className="eyebrow">LIBRO DE MOVIMIENTOS</p><h2 id="movements-heading">Transacciones</h2></div><span className="date-badge">{transactionTotal} resultados</span></div>
-                <MovementTools
-                  accounts={movementAccounts}
-                  categories={categories}
-                  currency={currency}
-                  quickRequest={manualQuickRequest}
+                <Suspense fallback={<LoadingState />}>
+                  <MovementTools
+                    accounts={movementAccounts}
+                    categories={categories}
+                    currency={currency}
+                    quickRequest={manualQuickRequest}
 
-                  onImported={(notice) => { if (notice) { setMovementOperationNotice(notice); setMovementNotice(notice); } setPage(1); setRefreshKey((value) => value + 1); }}
-                />
+                    onImported={(notice) => { if (notice) { setMovementOperationNotice(notice); setMovementNotice(notice); } setPage(1); setRefreshKey((value) => value + 1); }}
+                  />
+                </Suspense>
                 {accounts.filter((item) => !item.closed).length === 0 ? <EmptyState title="No hay cuentas disponibles" body="Crea o abre una cuenta en Actual Budget y vuelve a cargar los datos." /> : (
                   <>
                     <div className="filters-panel">
@@ -791,26 +798,28 @@ export function App() {
                       <label className="field-label">Categoría<select value={categoryFilter} onChange={(event) => { setCategoryFilter(event.currentTarget.value); setUncategorizedOnly(false); setPage(1); }}><option value="all">Todas las categorías</option>{categories.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
                       <label className="check-field"><input type="checkbox" checked={uncategorizedOnly} onChange={(event) => { setUncategorizedOnly(event.currentTarget.checked); setCategoryFilter('all'); setPage(1); }} /> Sin categoría</label>
                     </div>
-                    <MovementManager
-                      transactions={visibleTransactions}
-                      total={transactionTotal}
-                      accounts={accounts}
-                      categories={categories}
-                      currency={currency}
-                      locale={appPreferences.locale}
-                      startDate={period.startDate}
-                      endDate={period.endDate}
-                      accountFilter={accountFilter}
-                      categoryFilter={categoryFilter}
-                      searchText={searchText}
-                      uncategorizedOnly={uncategorizedOnly}
-                      sortKey={sortKey}
-                      sortAscending={sortAscending}
-                      filterKey={[period.startDate, period.endDate, accountFilter, categoryFilter, searchText, uncategorizedOnly, page, sortKey, sortAscending].join('|')}
-                      accountScopeLabel={accountScope?.label ?? (accountScope?.mode === 'selected' ? 'Cuentas seleccionadas' : 'Todas las cuentas abiertas')}
-                      onSort={changeSort}
-                      onUpdated={(notice, refresh = true) => { setMovementNotice(notice); if (refresh) setRefreshKey((value) => value + 1); }}
-                    />
+                    <Suspense fallback={<LoadingState />}>
+                      <MovementManager
+                        transactions={visibleTransactions}
+                        total={transactionTotal}
+                        accounts={accounts}
+                        categories={categories}
+                        currency={currency}
+                        locale={appPreferences.locale}
+                        startDate={period.startDate}
+                        endDate={period.endDate}
+                        accountFilter={accountFilter}
+                        categoryFilter={categoryFilter}
+                        searchText={searchText}
+                        uncategorizedOnly={uncategorizedOnly}
+                        sortKey={sortKey}
+                        sortAscending={sortAscending}
+                        filterKey={[period.startDate, period.endDate, accountFilter, categoryFilter, searchText, uncategorizedOnly, page, sortKey, sortAscending].join('|')}
+                        accountScopeLabel={accountScope?.label ?? (accountScope?.mode === 'selected' ? 'Cuentas seleccionadas' : 'Todas las cuentas abiertas')}
+                        onSort={changeSort}
+                        onUpdated={(notice, refresh = true) => { setMovementNotice(notice); if (refresh) setRefreshKey((value) => value + 1); }}
+                      />
+                    </Suspense>
                                         <div className="table-footer"><span>Página {currentPage} de {pageCount} · {transactionTotal} movimientos</span><div className="pagination"><button className="button secondary" type="button" disabled={currentPage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>Anterior</button><button className="button secondary" type="button" disabled={currentPage >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>Siguiente</button></div></div>
                     <p className="section-footnote">La API limita los periodos de consulta a cinco años. Los importes conservan el signo de Actual; los traspasos se muestran en el registro, pero se excluyen de los totales consolidados.</p>
                   </>
@@ -839,7 +848,9 @@ export function App() {
                       </article>
                     </div>
                     <div className="section-footnote">La comparación utiliza el mismo tipo de periodo y cálculos de finance-core. No se consideran transferencias internas como ingresos o gastos consolidados.</div>
-                    <ReportExportPanel current={summary} previous={comparison} period={period} comparisonPeriod={previous} />
+                    <Suspense fallback={<LoadingState />}>
+                      <ReportExportPanel current={summary} previous={comparison} period={period} comparisonPeriod={previous} />
+                    </Suspense>
                   </>
                 ) : <EmptyState title="No hay datos suficientes" body="El informe necesita un presupuesto configurado y datos devueltos por Actual Budget." />}
               </section>
@@ -848,35 +859,39 @@ export function App() {
             {route === '/budgets' && (
               <>
                 <p className="setting-hint">Los presupuestos y asignaciones de Actual pertenecen al presupuesto completo; el ámbito de cuentas limita el análisis de movimientos, no convierte un presupuesto global en presupuestos por cuenta.</p>
-                <BudgetPanel currency={currencyPreferences.budgetCurrency ?? 'EUR'} onBudgetUpdated={() => { setRefreshKey((value) => value + 1); }} />
+                <Suspense fallback={<LoadingState />}>
+                  <BudgetPanel currency={currencyPreferences.budgetCurrency ?? 'EUR'} onBudgetUpdated={() => { setRefreshKey((value) => value + 1); }} />
+                </Suspense>
               </>
             )}
 
-            {route === '/assistant' && <AssistantPanel currency={currency} />}
-            {route === '/planning' && <PlanningPanel currency={currency} />}
-            {route === '/intelligence' && <FinancialIntelligencePanel key={period.startDate + ':' + period.endDate} startDate={period.startDate} endDate={period.endDate} refreshKey={refreshKey} onNavigate={(target) => navigateTo(target)} />}
-            {route === '/review' && <PeriodicReviewPanel onNavigate={(target) => navigateTo(target)} />}
-            {route === '/goals' && <GoalsPanel currency={currency} />}
-            {route === '/patrimony' && <WealthDocumentsPanel accounts={accounts} currency={currency} />}
+            {route === '/assistant' && <Suspense fallback={<LoadingState />}><AssistantPanel currency={currency} /></Suspense>}
+            {route === '/planning' && <Suspense fallback={<LoadingState />}><PlanningPanel currency={currency} /></Suspense>}
+            {route === '/intelligence' && <Suspense fallback={<LoadingState />}><FinancialIntelligencePanel key={period.startDate + ':' + period.endDate} startDate={period.startDate} endDate={period.endDate} refreshKey={refreshKey} onNavigate={(target) => navigateTo(target)} /></Suspense>}
+            {route === '/review' && <Suspense fallback={<LoadingState />}><PeriodicReviewPanel onNavigate={(target) => navigateTo(target)} /></Suspense>}
+            {route === '/goals' && <Suspense fallback={<LoadingState />}><GoalsPanel currency={currency} /></Suspense>}
+            {route === '/patrimony' && <Suspense fallback={<LoadingState />}><WealthDocumentsPanel accounts={accounts} currency={currency} /></Suspense>}
 
             {route === '/settings' && (
               <section className="content-section">
-                <SettingsCenter
-                  preferences={appPreferences}
-                  onChange={setAppPreferences}
-                  onSave={() => { void saveAppPreferences(); }}
-                  onReset={() => { void resetApplicationPreferences(); }}
-                  saving={appPreferencesSaving}
-                  saveError={appPreferencesError}
-                  saveNotice={appPreferencesNotice}
-                  resetting={preferencesResetting}
-                  resetError={preferencesResetError}
-                  resetNotice={preferencesResetNotice}
-                  currency={currencyPreferences.displayCurrency}
-                  budgetCurrency={currencyPreferences.budgetCurrency ?? 'EUR'}
-                  accountCount={accounts.length}
-                  categoryCount={categories.length}
-                />
+                <Suspense fallback={<LoadingState />}>
+                  <SettingsCenter
+                    preferences={appPreferences}
+                    onChange={setAppPreferences}
+                    onSave={() => { void saveAppPreferences(); }}
+                    onReset={() => { void resetApplicationPreferences(); }}
+                    saving={appPreferencesSaving}
+                    saveError={appPreferencesError}
+                    saveNotice={appPreferencesNotice}
+                    resetting={preferencesResetting}
+                    resetError={preferencesResetError}
+                    resetNotice={preferencesResetNotice}
+                    currency={currencyPreferences.displayCurrency}
+                    budgetCurrency={currencyPreferences.budgetCurrency ?? 'EUR'}
+                    accountCount={accounts.length}
+                    categoryCount={categories.length}
+                  />
+                </Suspense>
                 <article className="panel settings-panel currency-settings">
                   <p className="eyebrow">PRESENTACIÓN FINANCIERA</p>
                   <h3>Divisa de análisis y conversiones</h3>
