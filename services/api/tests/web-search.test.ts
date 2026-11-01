@@ -60,23 +60,26 @@ describe('SearXNG web search provider', () => {
       response.writeHead(200, { 'content-type': 'application/json' });
       response.end(JSON.stringify({ results: [{
         title: 'Disposición publicada en DOG',
-        url: 'https://dog.gal/gl/publicados',
+        url: 'https://www.xunta.gal/diario-oficial-galicia/publicados',
         content: 'Texto normativo autonómico.',
         publishedDate: '2026-01-15',
       }] }));
     });
     const provider = new SearXNGSearchProvider(config(fixture.url));
-    const result = await provider.search('normativa autonómica', ['dog.gal']);
+    const result = await provider.search('normativa autonómica', ['xunta.gal']);
     expect(result.sources[0]).toMatchObject({
-      domain: 'dog.gal',
-      institution: 'Xunta de Galicia / Diario Oficial de Galicia',
+      domain: 'www.xunta.gal',
+      institution: 'Diario Oficial de Galicia (DOG)',
       sourceKind: 'normativa',
+      sourceAuthority: 'legislation',
     });
   });
 
   it('only trusts exact official hosts and keeps domain filters as namespace selectors', async () => {
     expect(OFFICIAL_SOURCE_HOSTS).toContain('sede.agenciatributaria.gob.es');
     expect(OFFICIAL_SOURCE_HOSTS).toContain('www.boe.es');
+    expect(OFFICIAL_SOURCE_HOSTS).toContain('sede.seg-social.gob.es');
+    expect(OFFICIAL_SOURCE_HOSTS).not.toContain('dog.gal');
     expect(OFFICIAL_SOURCE_HOSTS).not.toContain('arbitrary.boe.es');
 
     const fixture = await serve((_request, response) => {
