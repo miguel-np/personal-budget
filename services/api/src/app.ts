@@ -3153,9 +3153,9 @@ function monthsBefore(date: string, months: number): string {
       if ([...requestedCandidateIds].some((id) => !knownCandidateIds.has(id))) {
         return reply.code(400).send({ error: { code: 'UNKNOWN_RECURRING_CANDIDATE', message: 'One or more selected recurring candidates are stale. Refresh the cash-flow projection before selecting them.' } });
       }
-      const selectedRecurringCandidateEvents = recurringCandidateEvents
+      const selectedRecurringCandidateEvents: CashFlowEvent[] = recurringCandidateEvents
         .filter((event) => requestedCandidateIds.has(event.candidateId))
-        .map(({ candidateId: _candidateId, ...event }) => event);
+        .map((event) => ({ id: event.id, date: event.date, amountMinor: event.amountMinor, source: event.source, label: event.label }));
       const scenarioEvents: CashFlowEvent[] = parsed.scenario ? [{
         id: 'scenario:unsaved',
         date: parsed.scenario.date,
