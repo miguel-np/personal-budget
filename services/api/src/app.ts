@@ -294,10 +294,7 @@ const BudgetImprovementPreferencesRequestSchema = z.object({
   categories: z.array(z.object({
     categoryId: z.string().trim().min(1).max(128),
     classification: z.enum(['unclassified', 'essential', 'protected', 'flexible', 'reviewable']),
-  }).strict().superRefine((rule, context) => {
-    if ((rule.metric === 'percent_used' || rule.metric === 'overspend_percent') && (rule.threshold < 1 || rule.threshold > 500)) context.addIssue({ code: 'custom', path: ['threshold'], message: 'Percentage threshold must be between 1 and 500.' });
-    if (rule.metric === 'overspend_minor' && rule.threshold < 1) context.addIssue({ code: 'custom', path: ['threshold'], message: 'Overspend threshold must be greater than zero.' });
-  })).max(500),
+  }).strict()).max(500),
 }).strict().superRefine((value, context) => {
   const ids = new Set<string>();
   value.categories.forEach((item, index) => {
