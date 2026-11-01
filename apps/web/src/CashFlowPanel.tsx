@@ -141,7 +141,18 @@ export function CashFlowPanel({ currency }: { currency: string }) {
             {(result?.recurringCandidates ?? []).map((candidate) => (
               <label className="field-label" key={candidate.id}>
                 <span><strong>{candidate.payee}</strong> · {candidate.occurrenceCount} cargos · {candidate.estimatedFrequency ?? 'cadencia incierta'} · media {formatMoney(candidate.meanAbsoluteAmountMinor, currency)} · próximo {candidate.nextDate ?? 'sin fecha estimable'} · {candidate.upcomingEventsCount} evento(s) en el horizonte</span>
-                <input type="checkbox" disabled={candidate.upcomingEventsCount === 0 || busy} checked={selectedRecurringCandidateIds.includes(candidate.id)} onChange={(event) => setSelectedRecurringCandidateIds((current) => event.currentTarget.checked ? [...current, candidate.id] : current.filter((id) => id !== candidate.id))} />
+                <input
+                  type="checkbox"
+                  aria-label={'Incluir ' + candidate.payee + ' como hipótesis'}
+                  disabled={candidate.upcomingEventsCount === 0 || busy}
+                  checked={selectedRecurringCandidateIds.includes(candidate.id)}
+                  onChange={(event) => {
+                    const checked = event.currentTarget.checked;
+                    setSelectedRecurringCandidateIds((current) => checked
+                      ? [...current, candidate.id]
+                      : current.filter((id) => id !== candidate.id));
+                  }}
+                />
                 {candidate.warnings.map((warning) => <span className="warning-text" key={warning}>{warning}</span>)}
               </label>
             ))}

@@ -880,7 +880,7 @@ test('cash-flow projection separates actual movements, commitments and unsaved s
 
   const cashPanel = page.locator('article.planning-panel').filter({ has: page.getByRole('heading', { name: 'Saldo estimado y flujo de caja' }) });
   await expect(cashPanel.getByText('Suscripción sintética')).toBeVisible();
-  await cashPanel.getByRole('checkbox').check();
+  await cashPanel.getByRole('checkbox', { name: 'Incluir Suscripción sintética como hipótesis' }).check();
   await cashPanel.getByRole('button', { name: 'Recalcular con las recurrencias seleccionadas' }).click();
   await expect(cashPanel.getByRole('status')).toContainText('hipótesis seleccionadas');
   await expect(cashPanel.getByText('Candidato hipotético')).toBeVisible();
