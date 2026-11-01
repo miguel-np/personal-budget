@@ -979,7 +979,7 @@ test('budget alerts can create, edit, trigger, snooze and deduplicate an in-app 
       return route.fulfill({
         status: 200, contentType: 'application/json',
         body: JSON.stringify({ data: {
-          month, currency: 'EUR', rules, alerts,
+          month, evaluatedAt: '2026-11-01T12:00:00.000Z', currency: 'EUR', rules, alerts,
           categories: [{ categoryId: 'synthetic-food', categoryName: 'Alimentación sintética', budgetedMinor: 100_000, spentMinor: 120_000, state: 'budgeted', hidden: false }],
           warnings: [],
         } }),
@@ -1008,7 +1008,7 @@ test('budget alerts can create, edit, trigger, snooze and deduplicate an in-app 
   await alertsPanel.getByRole('button', { name: 'Añadir regla' }).click();
   await alertsPanel.getByRole('button', { name: 'Guardar reglas' }).click();
   await expect(alertsPanel.getByRole('heading', { name: 'Avisos del periodo (1)' })).toBeVisible();
-  await expect(alertsPanel.getByText('Exceso relativo sobre presupuesto')).toBeVisible();
+  await expect(alertsPanel.getByText('Exceso relativo sobre presupuesto · 10 %', { exact: true })).toBeVisible();
 
   await alertsPanel.getByRole('button', { name: 'Editar' }).click();
   await alertsPanel.getByLabel('Umbral (%)').fill('15');

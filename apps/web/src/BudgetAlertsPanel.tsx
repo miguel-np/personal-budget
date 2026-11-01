@@ -5,11 +5,11 @@ type Metric = 'percent_used' | 'remaining_minor' | 'overspend_minor' | 'overspen
 interface Rule { id: string; categoryId: string; metric: Metric; threshold: number; enabled: boolean; }
 interface Category { categoryId: string; categoryName: string; budgetedMinor: number | null; spentMinor: number | null; state: 'budgeted' | 'zero' | 'unbudgeted' | 'unknown'; hidden?: boolean; }
 interface Alert { eventId: string; ruleId: string; categoryId: string; categoryName: string; metric: Metric; threshold: number; observedValue: number; month: string; message: string; status: 'active'; currency: string; }
-interface AlertsData { month: string; currency: string; rules: readonly Rule[]; alerts: readonly Alert[]; categories: readonly Category[]; warnings: readonly string[]; }
+interface AlertsData { month: string; evaluatedAt: string; currency: string; rules: readonly Rule[]; alerts: readonly Alert[]; categories: readonly Category[]; warnings: readonly string[]; }
 interface ApiPayload<T> { data?: T; error?: { message?: string } }
 const metricLabels: Record<Metric, string> = {
   percent_used: 'Porcentaje consumido',
-  remaining_minor: 'Importe restante o inferior',
+  remaining_minor: 'Importe restante (por debajo del umbral)',
   overspend_minor: 'Exceso absoluto sobre presupuesto',
   overspend_percent: 'Exceso relativo sobre presupuesto',
 };
@@ -114,6 +114,7 @@ export function BudgetAlertsPanel({ month, currency }: { month: string; currency
     <article className="panel planning-panel">
       <div className="panel-heading"><div><p className="eyebrow">SEGUIMIENTO · #74</p><h3>Alertas presupuestarias locales</h3></div><span className="date-badge">{month}</span></div>
       <p className="section-footnote">Avisos informativos dentro de la aplicación. No modifican asignaciones ni generan notificaciones externas o procesos residentes.</p>
+      {data ? <p className="section-footnote">Última evaluación: {new Date(data.evaluatedAt).toLocaleString('es-ES')} · periodo {data.month} · divisa {data.currency}.</p> : null}
       {data ? (
         <>
           <div className="suggestion-block">

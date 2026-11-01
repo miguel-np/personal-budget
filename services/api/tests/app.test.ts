@@ -2643,6 +2643,7 @@ describe('phase 2 financial utility APIs', () => {
     const initial = await app.inject({ method: 'GET', url: '/api/v1/budget-alerts?month=' + alertMonth });
     expect(initial.statusCode).toBe(200);
     expect(initial.json().data.alerts).toEqual([]);
+    expect(initial.json().data.evaluatedAt).toMatch(/^\\d{4}-\\d{2}-\\d{2}T/);
 
     const saved = await app.inject({
       method: 'PUT', url: '/api/v1/budget-alerts/rules',

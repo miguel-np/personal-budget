@@ -3192,7 +3192,7 @@ function monthsBefore(date: string, months: number): string {
     const corePreferences: BudgetImprovementCategoryPreference[] = storedPreferences
       .filter((item) => item.classification !== 'unclassified')
       .map((item) => ({ categoryId: item.categoryId, classification: item.classification as BudgetCategoryClassification }));
-    const proposals = buildBudgetImprovementProposals(baseline, corePreferences);
+    const proposals = buildBudgetImprovementProposals(baseline, corePreferences, actionState.budgetImprovements.goal);
     const categoryChoices = categories.filter((category) => !category.isIncome).map((category) => ({
       categoryId: category.id,
       categoryName: category.name,
@@ -3375,7 +3375,7 @@ function monthsBefore(date: string, months: number): string {
       });
       return {
         data: {
-          month, currency: config.budgetCurrency, rules, alerts,
+          month, evaluatedAt: new Date().toISOString(), currency: config.budgetCurrency, rules, alerts,
           categories: budgetCategories.filter((item) => !item.hidden),
           warnings: [
             ...(allocationSourceAvailable ? [] : ['El adaptador no distingue de forma fiable una asignación explícita de cero de una asignación ausente; las reglas omiten esos estados desconocidos.']),
