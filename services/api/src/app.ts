@@ -3411,7 +3411,10 @@ function monthsBefore(date: string, months: number): string {
             : 'No hay un aumento reciente cuantificado; se mantiene como alternativa secundaria basada en el presupuesto y el historial.';
         } else if (actionState.budgetImprovements.goal === 'reach_savings_goal') {
           if (targetSavingsGoal && targetSavingsGapMinor !== null) {
-            const covered = Math.min(targetSavingsGapMinor, proposal.estimatedMonthlySavingsMinor);
+            const covered = Math.min(
+              targetSavingsGapMinor, proposal.estimatedMonthlySavingsMinor,
+              Math.max(0, targetSavingsGoal.monthlyExpenseMinor),
+            );
             goalImpact = {
               goalId: targetSavingsGoal.id, goalName: targetSavingsGoal.name,
               monthlyContributionGapMinor: targetSavingsGapMinor,
@@ -3526,9 +3529,17 @@ function monthsBefore(date: string, months: number): string {
       const goalImpacts = context.savingsGoals
         .filter((goal) => goal.status === 'active' && goal.projection !== null && goal.scopeMatches && goal.currencyMatches)
         .map((goal) => {
-          const scenarioMonthlyContributionMinor = goal.monthlyContributionMinor + simulation.estimatedMonthlySavingsMinor;
-          if (!Number.isSafeInteger(scenarioMonthlyContributionMinor)) {
-            throw new RangeError('Scenario monthly contribution exceeds the supported integer range.');
+          // Treat simulated savings as both a reduction in the goal's monthly
+          // expense assumption and an equal additional recurring contribution.
+          // This lets projectSavingsGoal recalculate available cash after
+          // commitments instead of pretending the new contribution was free.
+          const estimatedMonthlySavingsAllocatedMinor = Math.min(
+            simulation.estimatedMonthlySavingsMinor, Math.max(0, goal.monthlyExpenseMinor),
+          );
+          const scenarioMonthlyContributionMinor = goal.monthlyContributionMinor + estimatedMonthlySavingsAllocatedMinor;
+          const scenarioMonthlyExpenseMinor = Math.max(0, goal.monthlyExpenseMinor - estimatedMonthlySavingsAllocatedMinor);
+          if (!Number.isSafeInteger(scenarioMonthlyContributionMinor) || !Number.isSafeInteger(scenarioMonthlyExpenseMinor)) {
+            throw new RangeError('Scenario monthly contribution or expense exceeds the supported integer range.');
           }
           const scenarioProjection = projectSavingsGoal({
             asOfDate: context.asOfDate,
@@ -3538,7 +3549,7 @@ function monthsBefore(date: string, months: number): string {
             monthlyContributionMinor: scenarioMonthlyContributionMinor,
             currency: goal.currency,
             monthlyIncomeMinor: goal.monthlyIncomeMinor,
-            monthlyExpenseMinor: goal.monthlyExpenseMinor,
+            monthlyExpenseMinor: scenarioMonthlyExpenseMinor,
             commitments: context.commitments,
           });
           const currentRequired = goal.projection!.requiredMonthlyContributionMinor;
@@ -3548,7 +3559,7 @@ function monthsBefore(date: string, months: number): string {
             goalId: goal.id, goalName: goal.name, targetDate: goal.targetDate, currency: goal.currency,
             baselineMonthlyContributionMinor: goal.monthlyContributionMinor,
             scenarioMonthlyContributionMinor,
-            estimatedMonthlySavingsAllocatedMinor: simulation.estimatedMonthlySavingsMinor,
+            estimatedMonthlySavingsAllocatedMinor,
             requiredMonthlyContributionMinor: currentRequired,
             monthlyContributionGapBeforeMinor: gapBefore,
             monthlyContributionGapAfterMinor: gapAfter,
@@ -3561,8 +3572,16 @@ function monthsBefore(date: string, months: number): string {
             scenarioEstimatedCompletionDate: scenarioProjection.estimatedCompletionDate,
             baselineAchievableUnderCashFlow: goal.projection!.achievableUnderCashFlow,
             scenarioAchievableUnderCashFlow: scenarioProjection.achievableUnderCashFlow,
-            assumptions: scenarioProjection.assumptions,
-            warnings: scenarioProjection.warnings,
+            assumptions: [
+              ...scenarioProjection.assumptions,
+              'El ahorro simulado reduce el gasto mensual supuesto y se destina íntegramente a incrementar la aportación mensual de este objetivo; el usuario no ha reservado ni transferido dinero.',
+            ],
+            warnings: [
+              ...scenarioProjection.warnings,
+              ...(estimatedMonthlySavingsAllocatedMinor < simulation.estimatedMonthlySavingsMinor
+                ? ['El ahorro simulado supera el gasto mensual configurado para este objetivo; el impacto se limita al gasto disponible y no asigna el excedente.']
+                : []),
+            ],
           };
         });
       return {
