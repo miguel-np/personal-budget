@@ -5,7 +5,7 @@ import {
 } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { createConnection } from 'node:net';
-import { dirname, basename, resolve, join } from 'node:path';
+import { dirname, basename, isAbsolute, relative, resolve, sep, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import {
@@ -26,6 +26,13 @@ const keyFile = resolve(root, process.env.BACKUP_ENCRYPTION_KEY_FILE ?? '.local/
 const apiHost = process.env.APP_HOST ?? '127.0.0.1';
 const apiPort = Number(process.env.APP_PORT ?? 3000);
 const archiveRoot = 'personal-budget-backup';
+function pathsOverlap(left: string, right: string): boolean {
+  const rel = relative(left, right);
+  return rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith('..' + sep));
+}
+if (pathsOverlap(dataDir, appDataDir) || pathsOverlap(appDataDir, dataDir)) {
+  throw new Error('Actual server data and Personal Budget application data directories must be separate.');
+}
 const actualRoot = 'actual-server-data';
 const appStateRoot = 'personal-budget-state';
 
@@ -134,7 +141,8 @@ async function buildBundle(stage: string): Promise<string> {
   await mkdir(bundle, { recursive: true, mode: 0o700 });
   await mkdir(appSnapshot, { recursive: true, mode: 0o700 });
   await assertDirectory(dataDir, 'Actual server data directory is missing or unsafe.');
-  await assertDirectory(appDataDir, 'Personal Budget application data directory is missing or unsafe.');
+  await mkdir(appDataDir, { recursive: true, mode: 0o700 });
+  await assertDirectory(appDataDir, 'Personal Budget application data directory is unsafe.');
   await cp(dataDir, actualSnapshot, { recursive: true, errorOnExist: true, force: false, verbatimSymlinks: true });
 
   const files: ManifestFile[] = [];
@@ -245,7 +253,8 @@ async function pruneOldBackups(): Promise<void> {
 async function backup(): Promise<string> {
   await assertApiStopped();
   await assertDirectory(dataDir, 'Actual server data directory is missing or unsafe.');
-  await assertDirectory(appDataDir, 'Personal Budget application data directory is missing or unsafe.');
+  await mkdir(appDataDir, { recursive: true, mode: 0o700 });
+  await assertDirectory(appDataDir, 'Personal Budget application data directory is unsafe.');
   await mkdir(backupDir, { recursive: true, mode: 0o700 });
   const key = await loadOrCreateBackupKey(keyFile);
   const archive = join(backupDir, makeBackupFilename().replace(/\.tar\.gz$/, '.tar.gz.enc'));
