@@ -115,7 +115,7 @@ describe('local API', () => {
   });
 
   it('keeps web search disabled by default and requires explicit consent', async () => {
-    const app = await createTestApp();
+    const app = await createTestApp(createRepository(), { ...config, aiEnabled: true });
     const status = await app.inject({ method: 'GET', url: '/api/v1/assistant/web-search/status' });
     const disabled = await app.inject({
       method: 'POST', url: '/api/v1/assistant/web-search',
