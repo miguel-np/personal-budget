@@ -2,7 +2,7 @@
 
 Aplicación local-first de finanzas personales basada en Actual Budget, con una interfaz web única para cuentas, movimientos, presupuestos, planificación, inteligencia financiera, patrimonio y documentación.
 
-> **Estado a 1 de noviembre de 2026:** las fases de consolidación, inteligencia financiera útil y gestión patrimonial/portabilidad están integradas en `main`. Incluyen backup cifrado unificado (Actual + estado propio), aceptación manual Windows + WSL2, flujo de caja, propuestas y alertas, exportación PDF/XLSX, activos y pasivos externos, justificantes vinculados, exportación portable y contratos financieros neutrales respecto del proveedor. El desacoplamiento preventivo de #65 también está integrado. La primera entrega de búsqueda web controlada de #84 está integrada mediante PR [#97](https://github.com/miguel-np/personal-budget/pull/97): funciona como flujo separado y opcional, no habilita acceso general del modelo a Internet ni comparte contexto financiero. La issue permanece abierta para completar recuperación y verificación documental.
+> **Estado a 1 de noviembre de 2026:** las fases de consolidación, inteligencia financiera útil y gestión patrimonial/portabilidad están integradas en `main`. Incluyen backup cifrado unificado (Actual + estado propio), aceptación manual Windows + WSL2, flujo de caja, propuestas y alertas, exportación PDF/XLSX, activos y pasivos externos, justificantes vinculados, exportación portable y contratos financieros neutrales respecto del proveedor. El desacoplamiento preventivo de #65 también está integrado. Las dos iteraciones de búsqueda web controlada de #84 están integradas mediante PR [#97](https://github.com/miguel-np/personal-budget/pull/97) y [#98](https://github.com/miguel-np/personal-budget/pull/98): flujo separado, consentimiento por consulta, búsqueda acotada y recuperación de documentos oficiales con evidencia temporal BOE. No habilita acceso general del modelo a Internet ni comparte contexto financiero. La issue sigue abierta para aceptación real con organismos, PDF y verificación jurídica avanzada.
 
 ## Capacidades
 
@@ -12,7 +12,7 @@ Aplicación local-first de finanzas personales basada en Actual Budget, con una 
 - **Inteligencia financiera:** hallazgos verificables, anomalías, revisión semanal/mensual, flujo de caja estimado, propuestas presupuestarias simulables y alertas locales.
 - **Patrimonio y justificantes:** activos y pasivos externos, valoraciones manuales fechadas, clasificación explícita de cuentas de Actual, documentos privados y vínculos comprobados a movimientos.
 - **Portabilidad y recuperación:** exportación legible de conjuntos locales y backup/restauración cifrados de Actual más el estado propio inventariado.
-- **IA y herramientas locales:** Ollama opcional, MCP de solo lectura por stdio y búsqueda web explícita mediante un proveedor SearXNG configurable. Cada flujo tiene permisos y contexto separados.
+- **IA y herramientas locales:** Ollama opcional, MCP de solo lectura por stdio y búsqueda web explícita mediante SearXNG configurable. La investigación puede recuperar hasta tres documentos oficiales HTML/texto; para BOE-A consulta metadatos temporales/relaciones y muestra límites de vigencia. No interpreta PDF ni emite dictámenes legales.
 
 ## Arquitectura
 
@@ -23,7 +23,7 @@ Aplicación local-first de finanzas personales basada en Actual Budget, con una 
 - **`apps/web`:** shell React/Vite con paneles cargados bajo demanda.
 - **Estado propio:** almacenes versionados para preferencias, planificación, decisiones, revisiones, patrimonio y metadata documental; los binarios de justificantes se custodian fuera del directorio público.
 - **Ollama:** inferencia local opcional. El asistente financiero recibe agregados calculados en backend y no tiene herramientas.
-- **Búsqueda web:** la API puede ejecutar una única herramienta `web_search` sobre el texto exacto que el usuario autoriza. El proveedor SearXNG puede ser local o remoto por HTTPS. La búsqueda no consulta movimientos, cuentas ni agregados; los resultados se tratan como contenido externo no confiable.
+- **Búsqueda web:** la API ejecuta una única herramienta `web_search` sobre el texto exacto que el usuario autoriza. SearXNG puede ser local o remoto por HTTPS. Tras buscar, recupera como máximo tres documentos oficiales desde una allowlist HTTPS; para normas BOE-A obtiene metadatos y relaciones temporales. No consulta movimientos, cuentas ni agregados; resultados y textos externos se tratan como contenido no confiable.
 - **MCP:** servidor independiente, solo lectura y por stdio.
 
 ## Requisitos
@@ -96,7 +96,7 @@ La CI ejecuta además aceptación sintética contra Actual aislado, pruebas de n
 
 ## Privacidad
 
-No se configura sincronización bancaria automática ni se requieren credenciales bancarias. Actual Budget y la API se vinculan a localhost; Ollama es local cuando se habilita. La búsqueda web es la única función que envía una consulta de usuario a un servicio de búsqueda externo, y permanece desactivada por defecto. El proveedor recibe únicamente el texto confirmado, no conversaciones ni datos financieros. Un SearXNG autohospedado puede remitir la consulta a sus motores upstream según su configuración. Lee [privacidad](docs/privacy.md), [seguridad](SECURITY.md) y [búsqueda web](docs/web-search.md).
+No se configura sincronización bancaria automática ni se requieren credenciales bancarias. Actual Budget y la API se vinculan a localhost; Ollama es local cuando se habilita. La búsqueda web permanece desactivada por defecto y exige consentimiento por petición. SearXNG recibe únicamente el texto confirmado, no conversaciones ni datos financieros. Para resultados oficiales admitidos, el backend puede realizar hasta tres peticiones de lectura a los organismos enlazados; esos organismos ven la IP pública de salida del servidor y la URL consultada. Un SearXNG autohospedado puede remitir la consulta a sus motores upstream según su configuración. Lee [privacidad](docs/privacy.md), [seguridad](SECURITY.md) y [búsqueda web](docs/web-search.md).
 
 No subas `.env`, extractos, bases de datos financieras, logs sensibles, modelos ni copias de seguridad a Git.
 
