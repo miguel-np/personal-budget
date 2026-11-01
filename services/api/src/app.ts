@@ -3433,14 +3433,14 @@ function monthsBefore(date: string, months: number): string {
         } else {
           priorityReason = 'Prioridad por margen: se ordena por el ahorro mensual hipotético derivado del gasto observado, sin asumir cambios automáticos.';
         }
-        return { ...proposal, priorityTier, priorityValue, priorityReason, goalImpact };
+        return { proposal, priorityTier, priorityValue, priorityReason, goalImpact };
       })
       .sort((left, right) => right.priorityTier - left.priorityTier ||
         right.priorityValue - left.priorityValue ||
-        right.estimatedMonthlySavingsMinor - left.estimatedMonthlySavingsMinor ||
-        left.categoryName.localeCompare(right.categoryName))
-      .map(({ priorityTier: _priorityTier, priorityValue: _priorityValue, ...proposal }, index) => ({
-        ...proposal, priorityRank: index + 1,
+        right.proposal.estimatedMonthlySavingsMinor - left.proposal.estimatedMonthlySavingsMinor ||
+        left.proposal.categoryName.localeCompare(right.proposal.categoryName))
+      .map(({ proposal, priorityReason, goalImpact }, index) => ({
+        ...proposal, priorityRank: index + 1, priorityReason, goalImpact,
       }));
     const scenarios = actionState.budgetImprovements.scenarios.map((scenario) => {
       if (scenario.currency !== baseline.currency) {
