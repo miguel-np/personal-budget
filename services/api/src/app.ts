@@ -2315,6 +2315,8 @@ function monthsBefore(date: string, months: number): string {
           if (reusableDecision && previousItem) return {
             findingId: finding.id,
             findingType: finding.type,
+            identityKey: finding.identityKey,
+            evidenceFingerprint: finding.evidenceFingerprint,
             fingerprint: finding.fingerprint,
             status: previousItem.status,
             ...(previousItem.status === 'postponed' && previousItem.postponedUntil ? { postponedUntil: previousItem.postponedUntil } : {}),
@@ -2322,6 +2324,8 @@ function monthsBefore(date: string, months: number): string {
           return {
             findingId: finding.id,
             findingType: finding.type,
+            identityKey: finding.identityKey,
+            evidenceFingerprint: finding.evidenceFingerprint,
             fingerprint: finding.fingerprint,
             status: finding.reviewStatus === 'reviewed'
               ? 'reviewed' as const
@@ -2350,8 +2354,13 @@ function monthsBefore(date: string, months: number): string {
           review.endDate < period.startDate)
         .sort((left, right) =>
           right.endDate.localeCompare(left.endDate) || right.generatedAt.localeCompare(left.generatedAt))[0];
-      const previousComparableItems = new Map((previousComparableRun?.items ?? []).map((item) => [item.findingId, item]));
-      const currentItemsById = new Map(items.map((item) => [item.findingId, item]));
+      // Match equivalent findings across periods by stable rule/entity/scope identity.
+      // Legacy records lack identityKey and safely fall back to their old period-specific ID.
+      const comparableIdentity = (item: { identityKey?: string; findingId: string }) => item.identityKey ?? item.findingId;
+      const previousComparableItems = new Map(
+        (previousComparableRun?.items ?? []).map((item) => [comparableIdentity(item), item]),
+      );
+      const currentItemsByIdentity = new Map(items.map((item) => [comparableIdentity(item), item]));
       const reviewComparison = previousComparableRun ? {
         previousReview: {
           startDate: previousComparableRun.startDate,
@@ -2359,13 +2368,15 @@ function monthsBefore(date: string, months: number): string {
           generatedAt: previousComparableRun.generatedAt,
           status: previousComparableRun.status,
         },
-        newFindingCount: items.filter((item) => !previousComparableItems.has(item.findingId)).length,
-        repeatedFindingCount: items.filter((item) => previousComparableItems.has(item.findingId)).length,
+        newFindingCount: items.filter((item) => !previousComparableItems.has(comparableIdentity(item))).length,
+        repeatedFindingCount: items.filter((item) => previousComparableItems.has(comparableIdentity(item))).length,
         changedEvidenceCount: items.filter((item) => {
-          const previousItem = previousComparableItems.get(item.findingId);
-          return previousItem !== undefined && previousItem.fingerprint !== item.fingerprint;
+          const previousItem = previousComparableItems.get(comparableIdentity(item));
+          return previousItem !== undefined && previousItem.evidenceFingerprint !== undefined &&
+            previousItem.evidenceFingerprint !== item.evidenceFingerprint;
         }).length,
-        noLongerPresentCount: (previousComparableRun.items ?? []).filter((item) => !currentItemsById.has(item.findingId)).length,
+        noLongerPresentCount: (previousComparableRun.items ?? [])
+          .filter((item) => !currentItemsByIdentity.has(comparableIdentity(item))).length,
       } : null;
       const warnings = [...result.warnings, ...result.currentSummary.warnings, ...previousSummary.warnings];
       if (!period.complete) {
