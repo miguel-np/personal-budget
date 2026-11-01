@@ -11,6 +11,8 @@ type NavigationTarget = '/reports' | '/movements' | '/budgets' | '/planning' | '
 interface ReviewItem {
   findingId: string;
   findingType: FindingType;
+  identityKey?: string;
+  evidenceFingerprint?: string;
   fingerprint: string;
   status: ReviewItemStatus;
   postponedUntil?: string;
@@ -44,6 +46,8 @@ interface FinancialSummary {
 }
 interface Finding {
   id: string;
+  identityKey: string;
+  evidenceFingerprint: string;
   fingerprint: string;
   type: FindingType;
   title: string;
