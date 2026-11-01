@@ -236,6 +236,7 @@ export function PeriodicReviewPanel({ onNavigate }: { onNavigate: (target: Navig
         body: JSON.stringify({
           findingId: item.findingId,
           status,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
           ...(status === 'postponed' ? { postponedUntil: addDays(todayLocal(), 7) } : {}),
         }),
       });
