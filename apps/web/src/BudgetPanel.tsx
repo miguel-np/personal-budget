@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { formatNullableMoney } from './finance-format.js';
+import { BudgetAlertsPanel } from './BudgetAlertsPanel.js';
 
 interface BudgetCategory {
   categoryId: string;
@@ -176,6 +177,7 @@ export function BudgetPanel({ currency, onBudgetUpdated }: { currency: string; o
           </div>
         </>
       ) : null}
+      <BudgetAlertsPanel month={month} currency={currency} />
     </section>
   );
 }
