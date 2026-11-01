@@ -8,8 +8,8 @@
 |---|---|---|
 | #64 · Backup unificado | **Cerrada e integrada** mediante PR #89 (d2c9911): backup cifrado/versionado, manifiesto, Actual + seis almacenes JSON propios y roundtrip sintético completo | Mantener la whitelist y el ensayo actualizados cuando se añadan almacenes persistentes. La aceptación manual de la instalación WSL2 sigue separada en #31 |
 | #72 · Revisión financiera periódica | **Cerrada e integrada** mediante PR #82 (commit `32caf07`): revisión semanal/mensual, decisiones metadata-only, identidad estable entre periodos, huellas de evidencia y compatibilidad v1 | Seis checks verdes en el SHA final: quality/cobertura, Windows, E2E, Actual smoke, Actual update/restore y Security; `periodic-reviews.json` está incluido en el backup unificado de #64 |
-| #31 · Aceptación operativa | Runtime diario, diagnóstico y pruebas automatizadas del ciclo de vida implementados; la dependencia de recuperación #64 está satisfecha | Sigue pendiente ejecutar y registrar la aceptación manual en Windows + WSL2 con presupuesto sintético. CI Linux/Windows nativa no demuestra esa instalación |
-| #28 · Paginación eficiente de movimientos | Segmentación por mes natural, límite de 100.000 movimientos presentados, selección acotada offset+limit con desempate por ID, benchmark con pico de heap muestreado durante la petición (PR #63 integrada) y recorrido completo de páginas sin omisiones ni duplicados | Evaluación de ActualQL, consistencia entre páginas y benchmark de mes denso/multi-cuenta documentados en docs/transactions-and-imports.md; la evidencia se registra en la issue para el cierre |
+| #31 · Aceptación operativa | **Cerrada el 1-nov-2026**: ensayo completo ejecutado y registrado en la distribución objetivo (ver «Evidencia y límites de #31») | Cualquier instalación nueva debe repetir la matriz manual; la CI Linux/Windows sigue sin sustituirla |
+| #28 · Paginación eficiente de movimientos | **Cerrada el 1-nov-2026** con evidencia registrada en la issue: segmentación por mes natural, límite de 100.000 movimientos presentados, selección acotada offset+limit con desempate por ID, benchmark con pico de heap muestreado durante la petición (PR #63 integrada) y recorrido completo de páginas sin omisiones ni duplicados | Evaluación de ActualQL, consistencia entre páginas y benchmark de mes denso/multi-cuenta documentados en docs/transactions-and-imports.md |
 
 ## Centro de inteligencia financiera (issue #68)
 
@@ -35,7 +35,7 @@ La implementación añade hallazgos versionados y verificables, comparaciones de
 | Ollama/chat | Opt-in, loopback, timeouts y contexto agregado; pruebas sintéticas/live opcionales | Validar en la máquina de uso cualquier modelo o endpoint configurado |
 | MCP | JSON-RPC sobre stdio, allowlist solo lectura, argumentos estrictos y tests sintéticos | Prueba opcional con un cliente de escritorio concreto |
 | Seguridad y CI | Lint, typecheck, build, tests, auditoría de dependencias, escaneo de secretos y CI Windows nativa | Los escaneos y runners no prueban ausencia total de vulnerabilidades ni sustituyen la aceptación manual WSL2 |
-| Windows + WSL2 (#31) | CI Windows nativa y smoke Linux automatizado | Pendiente ejecutar y registrar la matriz manual completa de la instalación objetivo |
+| Windows + WSL2 (#31) | CI Windows nativa y smoke Linux automatizado | ✅ Matriz manual completa ejecutada y registrada el 1-nov-2026 en la distribución objetivo, incluido el reinicio completo de WSL2 con inventario sintético idéntico |
 
 ## Evidencia y límites de #31
 
@@ -48,6 +48,27 @@ Para cerrar #31 falta registrar, en un checkout limpio de la distribución WSL2 
 3. Una prueba con un presupuesto exclusivamente sintético: inventario antes, reinicio de Actual/WSL2, inventario después y comparación de cuentas, categorías, movimientos, IDs, fechas e importes.
 4. Un error intencional no destructivo y su diagnóstico, parada con Ctrl+C, nuevo arranque y comprobación de que no quedan procesos/puertos huérfanos.
 5. Comandos ejecutados, resultado y logs saneados sin credenciales ni información financiera personal.
+
+### Ensayo ejecutado el 1-nov-2026 en la distribución objetivo (WSL2)
+
+Ejecutado directamente en la distribución Ubuntu 24.04.5 del entorno Windows + WSL2 del usuario, en un checkout limpio de `main` (`660a878`) y con un contenedor Actual **aislado** (volumen `pb31-acceptance-actual-data`, loopback `127.0.0.1:5008`, bootstrap con password de aceptación) para no tocar la instancia real del usuario.
+
+| Punto | Resultado |
+|---|---|
+| Versiones | Windows 11 Home 10.0.26300 build 26300 · WSL 2.7.14.0 · kernel 6.18.33.2-microsoft-standard-WSL2 · Ubuntu 24.04.5 · Node v24.22.1 (nvm, `.nvmrc`) · npm 11.19.1 · Docker 29.9.2 · Compose v5.6.1 · `actualbudget/actual-server:26.10.0` |
+| Instalación limpia | `npm ci` correcto; `npm run doctor` → **0 errores**, 3 avisos explicados (Actual arrancado fuera de compose por aislamiento; API/frontend apagados antes del arranque) |
+| Presupuesto sintético | Sembrado con `scripts/actual-update-acceptance.ts seed`: 1 cuenta, 2 categorías, 3 movimientos; fixture de inventario (Sync ID, IDs, fechas, importes) |
+| Persistencia tras reinicio | `docker restart` del contenedor Actual → `verify` → `SYNTHETIC_INVENTORY_OK`: cuenta, categorías, IDs/fechas/importes y saldo derivado idénticos |
+| Arranque diario | `npm run start:local` → API 127.0.0.1:3000 y frontend 127.0.0.1:4173; `/health` 200, `/ready` configured, UI 200; `/api/v1/accounts` y `/api/v1/transactions` devuelven exactamente el inventario sintético |
+| Error intencional no destructivo | Contenedor aislado detenido → API 502 `UPSTREAM_FAILURE` saneado sin detalles internos; `doctor` avisa «Servidor Actual: no responde»; tras `docker start` la API vuelve a 200 con los mismos 3 movimientos |
+| Parada limpia | SIGINT → puertos 3000/4173 liberados, sin procesos huérfanos, SDK cerrado con gracia; segundo arranque limpio verificado (health/UI 200) |
+
+Quedan dos pasos estrictamente manuales, no ejecutables desde dentro del propio WSL2:
+
+1. **Confirmación visual** del navegador de Windows en http://127.0.0.1:4173 — ✅ completada el 1-nov-2026: la shell cargó en el navegador de Windows con las secciones completas y la cuenta sintética en «Todas las cuentas abiertas (1)».
+2. **Reinicio completo de WSL2** — ✅ completado el 1-nov-2026: `wsl --shutdown` desde Windows, reapertura de la distribución, `docker start` del contenedor aislado y `verify` → `SYNTHETIC_INVENTORY_OK` (cuenta, categorías, IDs/fechas/importes y saldo derivado idénticos tras el reinicio de la máquina WSL2).
+
+Con ambos pasos registrados, el ensayo de #31 queda completo en la distribución objetivo; la CI sigue sin sustituirlo y cualquier nueva aceptación sobre otra instalación debe repetir la matriz.
 
 No cerrar #31 por un workflow verde. No registrar ni subir extractos, bases de datos, copias de seguridad o logs con datos personales a Git/CI.
 

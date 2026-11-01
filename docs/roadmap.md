@@ -1,6 +1,6 @@
 # Roadmap de implementación
 
-Las capacidades base P0–P3 tienen una implementación amplia. En la consolidación de fase 1, la recuperación integral (#64) y la revisión financiera periódica (#72) ya están integradas; la aceptación operativa completa Windows + WSL2 (#31) requiere todavía una ejecución manual en la distribución objetivo. La CI Linux/Windows aporta evidencia automatizada, pero no sustituye esa prueba manual. El seguimiento accionable vive en [GitHub Issues](https://github.com/miguel-np/personal-budget/issues).
+Las capacidades base P0–P3 tienen una implementación amplia. En la consolidación de fase 1, la recuperación integral (#64), la revisión financiera periódica (#72) y la aceptación operativa completa Windows + WSL2 (#31) están integradas y registradas; #31 quedó cerrada tras el ensayo manual completo en la distribución objetivo. La CI Linux/Windows aporta evidencia automatizada, pero no sustituye esa prueba manual en instalaciones nuevas. El seguimiento accionable vive en [GitHub Issues](https://github.com/miguel-np/personal-budget/issues).
 
 ## Prioridades
 
@@ -54,7 +54,7 @@ La seguridad y privacidad se comprueban en cada fase. Las pruebas usan datos sin
 
 - [x] [#64 — Backup y restauración unificados de Actual + estado propio de Personal Budget](https://github.com/miguel-np/personal-budget/issues/64): integrada mediante PR #89 (commit `d2c9911`). Backup cifrado/versionado de Actual y seis almacenes propios; CI validó el roundtrip sintético completo, incluida la recuperación de `periodic-reviews.json`.
 - [x] [#72 — Revisión financiera periódica y guiada](https://github.com/miguel-np/personal-budget/issues/72): integrada mediante PR #82 (commit `32caf07`). Se validaron comparación histórica por identidad estable, huellas de evidencia, límites IANA, expiración de aplazamientos y compatibilidad de historiales v1; los seis checks de CI/Security pasaron.
-- [ ] [#31 — Aceptación operativa Windows + WSL2](https://github.com/miguel-np/personal-budget/issues/31): runtime, diagnóstico y CI automática cubiertos; la dependencia de recuperación #64 está resuelta. Sigue pendiente ejecutar y registrar el ensayo manual en la distribución WSL2 objetivo con un presupuesto exclusivamente sintético.
+- [x] [#31 — Aceptación operativa Windows + WSL2](https://github.com/miguel-np/personal-budget/issues/31): cerrada el 1-nov-2026. Ensayo manual completo ejecutado y registrado en la distribución Ubuntu 24.04.5 del WSL2 objetivo con presupuesto exclusivamente sintético: instalación limpia, doctor, arranque diario, persistencia tras reinicio del contenedor Actual y tras `wsl --shutdown`, error intencional saneado y parada limpia sin procesos huérfanos. Evidencia en docs/implementation-status.md y en la issue.
 
 
 ## Fase 2 — Inteligencia financiera útil (integrada el 1-nov-2026)
@@ -69,5 +69,5 @@ El almacén adicional `financial-actions.json` forma parte de la whitelist del b
 
 ## Consolidación — paginación y endurecimiento (1-nov-2026)
 
-- [ ] [#28 — Paginación y filtrado eficiente de movimientos](https://github.com/miguel-np/personal-budget/issues/28): ventanas mensuales, límite de 100.000 presentados, selección acotada offset+limit con desempate por ID y pico de heap muestreado durante la petición (PR #63 integrada). Benchmark con mes denso y multi-cuenta, recorrido completo de páginas sin omisiones/duplicados, evaluación de ActualQL y efectos de cambios concurrentes documentados en docs/transactions-and-imports.md; pendiente registrar la evidencia en la issue.
+- [x] [#28 — Paginación y filtrado eficiente de movimientos](https://github.com/miguel-np/personal-budget/issues/28): cerrada el 1-nov-2026. Ventanas mensuales, límite de 100.000 presentados, selección acotada offset+limit con desempate por ID y pico de heap muestreado durante la petición (PR #63 integrada). Benchmark con mes denso y multi-cuenta, recorrido completo de páginas sin omisiones/duplicados, evaluación de ActualQL y efectos de cambios concurrentes documentados en docs/transactions-and-imports.md; la evidencia quedó registrada en la issue.
 - [ ] [#65 — Endurecer los contratos financieros independientes del proveedor](https://github.com/miguel-np/personal-budget/issues/65): preventiva P3. Auditoría de referencias al SDK fuera del adaptador, contratos de dominio obligatorios/opcionales y suite de conformidad reutilizable pendientes.

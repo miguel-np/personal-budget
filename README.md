@@ -2,7 +2,7 @@
 
 Aplicación local de finanzas personales con una única interfaz web para gastos, presupuestos, ahorro e informes. Un asistente con IA local será una ampliación opcional.
 
-> **Estado (1-nov-2026):** las capacidades principales de finanzas, planificación, inteligencia, informes y operación local están integradas en `main`: backup cifrado unificado de Actual + estado propio (#64), revisión financiera periódica (#72), inteligencia financiera de fase 2 —flujo de caja, propuestas y alertas (#73, #83, #74)— y paginación eficiente de movimientos con benchmark sintético y pico de heap muestreado (#28; la evidencia queda registrada en la issue para su cierre). La CI automatizada de Linux y Windows no sustituye la aceptación manual de Windows + WSL2 con un presupuesto sintético; el criterio operativo #31 continúa abierto hasta registrar esa prueba. El endurecimiento preventivo de contratos financieros independientes del proveedor (#65, P3) sigue pendiente.
+> **Estado (1-nov-2026):** las capacidades principales de finanzas, planificación, inteligencia, informes y operación local están integradas en `main`: backup cifrado unificado de Actual + estado propio (#64), revisión financiera periódica (#72), inteligencia financiera de fase 2 —flujo de caja, propuestas y alertas (#73, #83, #74)— y paginación eficiente de movimientos con benchmark sintético y pico de heap muestreado (#28). La aceptación operativa Windows + WSL2 (#31) quedó cerrada con el ensayo manual completo ejecutado y registrado en la distribución objetivo. El endurecimiento preventivo de contratos financieros independientes del proveedor (#65, P3) sigue pendiente.
 
 ## Arquitectura
 
