@@ -1,134 +1,102 @@
-# Búsqueda web controlada y fuentes oficiales (#84)
+# Búsqueda web controlada y evidencia oficial (#84)
 
-## Alcance
+## Alcance y separación de datos
 
-La búsqueda web está diseñada para investigación actual y contrastable, especialmente normativa/fiscalidad. No habilita navegación autónoma, scraping, JavaScript, acceso a la red local ni herramientas generales del modelo.
+La búsqueda externa es investigación pública opt-in, desactivada por defecto. No habilita navegación autónoma, scraping general, JavaScript, acceso a red local ni herramientas arbitrarias.
 
-Es un flujo diferente del chat financiero:
-- el chat financiero sigue sin herramientas y recibe agregados calculados por backend;
-- la investigación web no consulta el repositorio ni recibe cuentas, movimientos, importes, categorías, objetivos, compromisos ni agregados financieros;
-- el proveedor externo recibe únicamente la consulta exacta que la persona escribe y confirma.
+Son dos flujos aislados:
+- El chat financiero sigue sin herramientas y recibe únicamente los agregados previstos por backend.
+- La investigación web no consulta `BudgetRepository` ni carga cuentas, movimientos, saldos, categorías, objetivos, compromisos o agregados financieros.
+- El modelo Ollama recibe exclusivamente la consulta aprobada, el contexto fiscal que el usuario introduce expresamente y los resultados/documentos externos acotados.
+- La herramienta de búsqueda ejecuta una consulta exacta; la recuperación documental posterior se realiza en backend contra una allowlist de organismos oficiales.
 
-## Activación y consentimiento
+## Activación, consentimiento y privacidad de salida
 
-La búsqueda permanece deshabilitada por defecto. Deben cumplirse todas estas condiciones:
+Se requiere `AI_ENABLED=true`, `WEB_SEARCH_ENABLED=true`, un modelo Ollama con tool calling y un SearXNG configurado. El consentimiento se solicita en cada envío y se invalida al cambiar consulta o modo.
 
-1. Configurar AI_ENABLED=true y WEB_SEARCH_ENABLED=true.
-2. Instalar/configurar un modelo Ollama compatible con tool calling estructurado.
-3. Configurar una instancia SearXNG accesible.
-4. En cada petición, escribir la consulta y marcar la casilla de consentimiento explícito.
+SearXNG y sus motores upstream reciben solo la consulta exacta aprobada. Tras obtener resultados, el backend puede solicitar hasta tres documentos oficiales relacionados. El texto de esos documentos se procesa en memoria, no se persiste como historial ni se incluye en logs. No se envían cookies, credenciales ni el contexto financiero. La recuperación documental se activa como parte de la misma petición consentida.
 
-La UI explica que la consulta saldrá del equipo. El consentimiento no se guarda como permiso permanente: se vuelve a pedir en cada búsqueda.
+SearXNG local no implica que los términos permanezcan en el equipo: la instancia puede consultar motores upstream. Esos servicios ven la consulta y la IP pública de salida de SearXNG/proxy. Los fetches documentales posteriores conectan desde el servidor de la aplicación con los dominios oficiales allowlisted; esos organismos pueden observar la IP pública de salida del servidor y la URL solicitada. Revisa las políticas de los motores upstream y la conectividad del servidor antes de habilitar la función.
 
-## Proveedor SearXNG
+## Proveedor y controles de red
 
-El adaptador implementado utiliza la API JSON de SearXNG (/search?q=…&format=json). El origin se configura mediante WEB_SEARCH_BASE_URL.
+### Búsqueda
 
-- **Local/autohospedado:** default http://127.0.0.1:8080; el servicio debe escuchar solo en loopback o estar expuesto localmente mediante un proxy/forward controlado.
-- **Remoto:** solo HTTPS, sin credenciales incrustadas, query, fragment ni path en la variable de configuración. Revisa las condiciones del proveedor.
-- La instancia SearXNG debe permitir el formato JSON. Su configuración determina qué motores upstream reciben la consulta.
+`SearXNGSearchProvider` implementa `WebSearchProvider` y usa su API JSON. Se permiten HTTP solo para loopback configurado; los endpoints remotos requieren HTTPS. No se permiten credenciales, query, fragment ni path en el origin.
 
-Una instancia local no garantiza por sí sola que la consulta no salga al exterior: SearXNG suele consultar motores configurados. El operador debe revisar y limitar esos motores, su ubicación y sus políticas. La IP pública visible para los motores es la de salida de SearXNG/proxy, no la IP del navegador enviada desde el chat.
+El proveedor limita consulta, respuesta, timeout, resultados y tasa; valida el DNS, fija una IP pública para la petición y rechaza redirects. Las URLs de resultados deben ser HTTPS, sin credenciales, puertos no estándar ni direcciones IP directas. Los dominios se filtran antes de mostrar los resultados.
 
-La abstracción WebSearchProvider desacopla al cliente de IA del proveedor de búsqueda; SearXNG es el adaptador configurado en esta versión. Un proveedor diferente puede incorporarse implementando el mismo contrato y aplicando las mismas reglas de salida, límites y filtrado.
+### Recuperación de documentos oficiales
 
-## Flujo de ejecución
+El backend solo recupera documentos bajo dominios verificados por `OFFICIAL_SOURCE_DOMAINS`:
+- AEAT: `agenciatributaria.gob.es`.
+- BOE: `boe.es`.
+- Ministerio de Hacienda, DGT y TEAC: `hacienda.gob.es`, `petete.tributos.hacienda.gob.es`, `serviciostelematicosext.hacienda.gob.es` y `sede.tea.hacienda.gob.es`.
+- Seguridad Social: `seg-social.es`.
+- Xunta/DOG y Lex.gal: `xunta.gal`, `dog.gal` y `lex.gal`.
+- CNMV y Banco de España: `cnmv.es` y `bde.es`.
 
-1. El usuario confirma una consulta exacta y, si procede, dominios oficiales permitidos.
-2. La API valida consent=true, longitud, modo, campos fiscales y whitelist de dominios.
-3. Ollama recibe un prompt específico de investigación y una única herramienta web_search, cuyo argumento solo puede ser query.
-4. El backend exige exactamente una llamada y que el valor de query coincida con el texto autorizado. Si el modelo lo amplía, elimina, altera o emite más herramientas, no se ejecuta la búsqueda.
-5. El backend busca usando SearXNG, limita resultados/tamaño/tiempo y filtra URLs y dominios.
-6. Los fragmentos devueltos se presentan al modelo como datos no confiables, en un mensaje de herramienta. La segunda inferencia no recibe herramientas.
-7. La UI presenta síntesis, proveedor, fecha de búsqueda y enlaces originales.
+Los dominios oficiales se clasifican por separado: publicación normativa, doctrina DGT, criterios/resoluciones TEAC, Ministerio de Hacienda, información AEAT y otros organismos. La clasificación indica procedencia, no convierte una consulta o resolución concreta en vinculante.
 
-La API no descarga las páginas enlazadas. No debe describirse un fragmento de búsqueda como lectura íntegra de la ley, sentencia, consulta vinculante o resolución. El usuario debe abrir la fuente original antes de basar en ella una decisión.
+Para cada búsqueda se recuperan como máximo tres resultados oficiales. Se aceptan solo HTTPS y hosts allowlisted, se validan todas las direcciones DNS como públicas y se fija la IP resuelta. No se siguen redirecciones. La descarga individual tiene un timeout limitado y límites de tamaño: HTML/texto hasta 1 MiB, metadatos BOE hasta 96 KiB y análisis BOE hasta 192 KiB. La recuperación se cancela junto con la petición original. No se ejecuta JavaScript y no se envían credenciales/cookies.
 
-## Fuentes oficiales y filtros
+Los formatos HTML/XHTML/texto plano se convierten a texto legible, eliminando scripts, estilos y controles comunes. El modelo recibe extractos relevantes acotados, no un espejo completo del documento. PDF y formatos desconocidos no se interpretan en esta iteración: se muestran como no compatibles/no recuperados y se conserva el enlace original.
 
-Dominios oficiales admitidos como filtros:
-- Agencia Estatal de Administración Tributaria: agenciatributaria.gob.es.
-- Boletín Oficial del Estado: boe.es.
-- Ministerio de Hacienda y páginas de criterios/consultas: hacienda.gob.es.
-- Seguridad Social: seg-social.es.
-- Xunta de Galicia y Diario Oficial de Galicia: xunta.gal, dog.gal.
-- Comisión Nacional del Mercado de Valores: cnmv.es.
-- Banco de España: bde.es.
+## Tratamiento específico del BOE
 
-En modo fiscal, si no se selecciona un subconjunto, el backend limita la búsqueda a esos dominios. En modo general, el campo vacío no restringe por dominio. Un filtro por dominio reduce resultados, pero no garantiza que una página sea primaria, vinculante ni vigente.
+Cuando un resultado contiene un identificador validado `BOE-A-AAAA-NNNN`, el adaptador utiliza únicamente endpoints fijos de la API oficial de legislación consolidada:
+- `/datosabiertos/api/legislacion-consolidada/id/{id}/metadatos`.
+- `/datosabiertos/api/legislacion-consolidada/id/{id}/analisis`.
+- `/buscar/act.php?id={id}` para la representación HTML consolidada.
 
-### Jerarquía y tipos de fuente
+Se extraen, cuando existen, fecha de publicación, fecha de entrada en vigor, fecha de actualización registral, indicadores explícitos de derogación/anulación/agotamiento, estado de consolidación y relaciones anteriores/posteriores (por ejemplo, modificaciones y derogaciones). La evaluación se calcula contra la fecha de referencia que el usuario indicó en modo fiscal. Una fecha futura de derogación/anulación no se presenta como efectiva en la fecha de referencia; una marca sin fecha deja el resultado como insuficiente.
 
-La UI distingue:
-- **Normativa publicada:** resultado alojado en BOE o DOG.
-- **Criterio administrativo:** resultado alojado en Hacienda.
-- **Organismo oficial:** otros organismos/administraciones de la whitelist.
-- **Fuente externa:** resultado no oficial, solo cuando el modo general lo permite.
+El frontend muestra las fechas y el estado como metadatos registrados por BOE, no como una decisión jurídica propia. Los estados «sin marca de derogación/anulación/agotamiento» y «consolidación finalizada» no equivalen a una garantía de vigencia legal.
 
-Esta clasificación es una heurística de dominio. No determina la fuerza jurídica del documento ni sustituye la revisión de su naturaleza. Una ley, un reglamento, una consulta vinculante, una resolución, una FAQ y una nota informativa no tienen la misma jerarquía.
+**Límites jurídicos esenciales:**
+- El propio BOE indica que el texto consolidado es informativo y carece de valor jurídico; para fines jurídicos debe consultarse la publicación oficial.
+- La consolidación incorpora modificaciones expresas y correcciones; no acredita derogaciones tácitas.
+- Una ficha de norma no resuelve la vigencia parcial por artículo, normas transitorias, aplicación a hechos concretos ni la normativa autonómica/local concurrente.
+- Una consolidación desactualizada o pendiente puede no incorporar una modificación publicada recientemente.
+- La fecha de publicación no es la fecha de entrada en vigor, y ninguna fecha del buscador sustituye a los metadatos oficiales.
 
-## Consultas fiscales y normativas
+Por tanto, el adaptador aporta evidencia documental/temporal verificable y transparencia sobre sus límites; no es un motor jurídico ni certifica la vigencia aplicable.
 
-El modo fiscal exige introducir expresamente:
-- jurisdicción (por ejemplo, Estado y comunidad autónoma cuando proceda);
-- impuesto, materia o trámite;
-- ejercicio fiscal;
-- año de presentación;
-- fecha de referencia para estudiar vigencia.
+## Jerarquía y discrepancias
 
-No se infiere residencia fiscal, municipio, actividad, régimen, deducciones ni obligaciones a partir de transacciones o ubicación del dispositivo.
+La síntesis debe separar:
+1. **Norma publicada:** texto de ley, real decreto, orden o disposición en BOE/DOG y su publicación original.
+2. **Criterios administrativos:** consultas/doctrina DGT y resoluciones/criterios TEAC. Su naturaleza y eventual efecto vinculante dependen del documento y de las normas aplicables; no se presume por dominio.
+3. **Guías e información administrativa:** AEAT, Ministerio y otros organismos; útiles para trámites/interpretación, pero no deben describirse como norma.
+4. **Fuentes externas:** contexto secundario, nunca sustituto automático de fuente primaria en una afirmación normativa.
 
-La síntesis debe:
-- distinguir ejercicio fiscal de año de presentación;
-- identificar el tipo de fuente y organismo;
-- mantener referencias [S1], [S2] y enlaces visibles;
-- diferenciar hechos reflejados en los fragmentos de interpretación del modelo;
-- señalar cuando el resultado no incluye publicación, entrada en vigor, modificación, derogación o disposición transitoria suficiente;
-- hacer explícitas fuentes contradictorias o evidencia incompleta;
-- recomendar comprobar el texto oficial y acudir a asesor/organismo cuando dependa de circunstancias personales.
+Las discrepancias se deben hacer visibles con organismo, tipo de documento y fechas. No se escoge automáticamente el documento más reciente. Si no hay fuente primaria, si el documento no se recupera o si la evidencia temporal no es suficiente, la respuesta debe abstenerse de una conclusión normativa y señalar qué documento debe revisarse.
 
-**Limitación importante:** el proveedor devuelve snippets y fechas declaradas por el buscador; el backend no lee el documento completo ni verifica automáticamente vigencia normativa. Una fecha de publicación del resultado no equivale a fecha de entrada en vigor ni prueba aplicabilidad al contribuyente. Cuando la vigencia no esté acreditada por la evidencia retornada, la respuesta debe expresarlo.
+## Modo fiscal
 
-No es asesoramiento fiscal profesional ni genera/declarara obligaciones tributarias.
+Exige jurisdicción, materia/impuesto/trámite, ejercicio fiscal, año de presentación y fecha de referencia. No se infiere residencia fiscal, municipio, actividad, régimen ni circunstancias personales desde el presupuesto, movimientos o ubicación.
 
-## Seguridad y límites técnicos
+La síntesis diferencia ejercicio fiscal de año de presentación y publicación de entrada en vigor. Debe separar hechos respaldados por texto/metadatos, interpretación y circunstancias no conocidas. No presenta el resultado como asesoramiento fiscal profesional ni garantiza una declaración o trámite.
 
-- WEB_SEARCH_ENABLED=false por defecto; consentimiento por petición.
-- Máximo una herramienta fija web_search, una búsqueda y ningún fetch de páginas.
-- Consulta de 2–500 caracteres; el límite configurable de búsqueda es 20–500.
-- Hasta ocho resultados; timeout configurable de 1–30 segundos y respuesta JSON limitada a 8–256 KiB.
-- Rate limit local del endpoint: seis peticiones/minuto por proceso.
-- Solo HTTP en loopback para SearXNG local; destinos remotos por HTTPS.
-- Resolución DNS comprobada; se rechazan destinos privados, reservados, link-local, metadata, .local y .internal; la IP resuelta se fija para esa petición para reducir DNS rebinding.
-- Redirecciones HTTP rechazadas.
-- Resultados limitados a HTTPS, sin credenciales/puerto no estándar ni destinos IP directos; dominios se validan antes de mostrar.
-- Snippets/títulos se limpian, limitan y tratan como contenido no confiable; nunca pueden redefinir prompts ni activar otra herramienta.
-- El modelo no obtiene conectividad de red directa, navegador, shell, filesystem, APIs internas ni herramientas MCP.
-- No se almacenan consultas, resultados ni historial de navegación; los logs operativos no contienen el texto de consulta.
+## Tool calling e instrucciones no confiables
 
-El control de DNS/IP reduce SSRF, pero la seguridad también depende del host SearXNG, de su proxy y sus motores. Mantén el proveedor aislado y actualizado.
+Ollama recibe una sola herramienta fija `web_search` con un argumento `query`. El backend exige una llamada única y coincidencia exacta con el texto aprobado; una consulta modificada o más herramientas falla cerrada. La segunda inferencia recibe resultados/extractos como contenido externo no confiable y no tiene herramientas. IDs de cita se validan contra las fuentes devueltas; sin fuentes o citas válidas no se presenta una conclusión.
+
+Títulos, fragmentos, HTML y documentos se tratan como datos, nunca como instrucciones. El modelo no accede a navegador, shell, filesystem, APIs internas, Actual ni herramientas MCP.
 
 ## Configuración
 
-Variables de entorno documentadas en configuration.md:
-- WEB_SEARCH_ENABLED
-- WEB_SEARCH_BASE_URL
-- WEB_SEARCH_TIMEOUT_SECONDS
-- WEB_SEARCH_MAX_RESULTS
-- WEB_SEARCH_MAX_QUERY_CHARS
-- WEB_SEARCH_MAX_RESPONSE_KB
+- `WEB_SEARCH_ENABLED`: `false` por defecto.
+- `WEB_SEARCH_BASE_URL`: origin de SearXNG; HTTP loopback o HTTPS remoto.
+- `WEB_SEARCH_TIMEOUT_SECONDS`: timeout de búsqueda y de cada solicitud documental.
+- `WEB_SEARCH_MAX_RESULTS`: 1–8 resultados de búsqueda.
+- `WEB_SEARCH_MAX_QUERY_CHARS`: 20–500 caracteres.
+- `WEB_SEARCH_MAX_RESPONSE_KB`: 8–256 KiB para JSON del buscador.
 
-Se requiere también AI_ENABLED=true, OLLAMA_MODEL y un runtime/modelo con tool calling compatible. Un modelo sin tool calling devuelve una limitación explícita y no provoca una búsqueda.
+La recuperación oficial no añade nuevos secretos ni variables. Mantiene límites fijos conservadores y usa la fecha de referencia fiscal ya capturada en el formulario.
 
-## Validación
+## Validación y límites restantes
 
-Los tests sintéticos cubren:
-- límites, filtros de dominio, redirecciones y tamaño de respuesta;
-- consentimiento desactivado por defecto y rate limit;
-- igualdad exacta entre consulta aprobada y argumentos de herramienta;
-- ausencia de llamadas al repositorio financiero desde la ruta de búsqueda;
-- una herramienta en la primera inferencia y ninguna en la segunda;
-- rechazo de query modificada por modelo;
-- fixtures oficiales sintéticas y metadata fiscal.
+Los tests sintéticos cubren validación de proveedor, bloqueo de destinos/redirects, tamaño, filtros de dominio, consulta exacta, aislamiento financiero, prompt injection, referencias y metadatos temporales BOE (fecha ausente, derogación anterior/posterior, consolidación desactualizada). No realizan peticiones reales a organismos.
 
-La CI no realiza búsquedas reales ni requiere una clave/servicio de búsqueda externo. El ensayo manual debe usar datos no sensibles y una instancia SearXNG controlada.
+La cobertura de documentos reales requiere aceptación manual con SearXNG y fuentes oficiales: BOE con identificador consolidado, DGT, TEAC, AEAT y DOG/Lex.gal. Se debe confirmar que el servicio accesible devuelve HTML/JSON esperado. No hay parser PDF ni motor de análisis artículo a artículo, derogación tácita, transitorias, jurisprudencia o conflictos jurídicos complejos. Esos casos siguen requiriendo revisión del documento original y no pueden marcarse como resueltos solo con pruebas sintéticas.
