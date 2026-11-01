@@ -1,6 +1,6 @@
 # Roadmap de implementación
 
-Las capacidades base P0–P3 tienen una implementación amplia. En la consolidación de fase 1, la recuperación integral (#64) ya está integrada; la revisión financiera periódica (#72) sigue en validación final; y la aceptación operativa completa Windows + WSL2 (#31) requiere todavía una ejecución manual en la distribución objetivo. La CI Linux/Windows aporta evidencia automatizada, pero no sustituye esa prueba manual. El seguimiento accionable vive en [GitHub Issues](https://github.com/miguel-np/personal-budget/issues).
+Las capacidades base P0–P3 tienen una implementación amplia. En la consolidación de fase 1, la recuperación integral (#64) y la revisión financiera periódica (#72) ya están integradas; la aceptación operativa completa Windows + WSL2 (#31) requiere todavía una ejecución manual en la distribución objetivo. La CI Linux/Windows aporta evidencia automatizada, pero no sustituye esa prueba manual. El seguimiento accionable vive en [GitHub Issues](https://github.com/miguel-np/personal-budget/issues).
 
 ## Prioridades
 
@@ -53,5 +53,5 @@ La seguridad y privacidad se comprueban en cada fase. Las pruebas usan datos sin
 ## Consolidación — fase 1 (1-nov-2026)
 
 - [x] [#64 — Backup y restauración unificados de Actual + estado propio de Personal Budget](https://github.com/miguel-np/personal-budget/issues/64): integrada mediante PR #89 (commit `d2c9911`). Backup cifrado/versionado de Actual y seis almacenes propios; CI validó el roundtrip sintético completo, incluida la recuperación de `periodic-reviews.json`.
-- [ ] [#72 — Revisión financiera periódica y guiada](https://github.com/miguel-np/personal-budget/issues/72): PR #82 sincronizada con `main`, limitada a once archivos propios. Se han corregido la comparación histórica por identidad estable, la huella de evidencia, los límites de fecha IANA y la compatibilidad de historiales v1. Pendiente CI/Security final y revisión antes del merge.
+- [x] [#72 — Revisión financiera periódica y guiada](https://github.com/miguel-np/personal-budget/issues/72): integrada mediante PR #82 (commit `32caf07`). Se validaron comparación histórica por identidad estable, huellas de evidencia, límites IANA, expiración de aplazamientos y compatibilidad de historiales v1; los seis checks de CI/Security pasaron.
 - [ ] [#31 — Aceptación operativa Windows + WSL2](https://github.com/miguel-np/personal-budget/issues/31): runtime, diagnóstico y CI automática cubiertos; la dependencia de recuperación #64 está resuelta. Sigue pendiente ejecutar y registrar el ensayo manual en la distribución WSL2 objetivo con un presupuesto exclusivamente sintético.
