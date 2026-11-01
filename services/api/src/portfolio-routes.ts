@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import type { FastifyInstance } from 'fastify';
+import { randomUUID } from 'node:crypto';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { convertAmountMinor } from '@personal-budget/finance-core';
 import type { BudgetAccount, BudgetRepository } from '@personal-budget/finance-core';
 import { z, ZodError } from 'zod';
@@ -7,20 +7,18 @@ import type { AppConfig } from './config.js';
 import { readAccountScope, resolveAccountScope } from './account-scope.js';
 import { readAppPreferences } from './app-preferences.js';
 import { readCurrencyPreferences } from './currency-preferences.js';
-import { readFindingReviewState } from './intelligence-store.js';
 import { readFinancialActionState } from './financial-actions-store.js';
 import { readPeriodicReviewState } from './periodic-review-store.js';
 import { readPlanningData } from './planning-store.js';
 import {
-  ExternalAssetSchema, WealthDataSchema, WealthKindSchema, WealthClassificationSchema,
-  calculateQuantityAmountMinor, emptyWealthData, readWealthData, updateWealthData,
+  ExternalAssetSchema, WealthKindSchema, WealthClassificationSchema,
+  calculateQuantityAmountMinor, readWealthData, updateWealthData,
 } from './wealth-store.js';
 import type { ExternalAsset, WealthKind } from './wealth-store.js';
 import {
   DocumentInputSchema, addDocument, archiveDocument, deleteDocument, readDocumentFile,
   readDocumentIndex, setDocumentLinks, updateDocumentMetadata,
 } from './documents-store.js';
-import type { DocumentMetadata } from './documents-store.js';
 
 const UUID = z.string().uuid();
 const today = () => new Date().toISOString().slice(0, 10);
@@ -64,7 +62,7 @@ const ExportDatasetSchema = z.enum(['planning', 'preferences', 'financial-action
 
 type Classification = 'asset' | 'liability';
 interface Dependencies { readonly config: AppConfig; readonly repository: BudgetRepository; }
-function error(reply: Parameters<Parameters<FastifyInstance['get']>[1]>[1], status: number, code: string, message: string) {
+function error(reply: FastifyReply, status: number, code: string, message: string) {
   return reply.code(status).send({ error: { code, message } });
 }
 function isLiability(kind: WealthKind): boolean {
@@ -79,13 +77,6 @@ function dayAge(from: string, to: string): number {
 function accountCurrency(account: BudgetAccount): string | null {
   const value = account.currencyCode;
   return typeof value === 'string' && /^[A-Z]{3}$/.test(value) ? value : null;
-}
-function asRecordCount(value: unknown, key: string): number {
-  if (Array.isArray(value)) return value.length;
-  if (typeof value === 'object' && value !== null && Array.isArray((value as Record<string, unknown>)[key])) {
-    return ((value as Record<string, unknown>)[key] as unknown[]).length;
-  }
-  return 0;
 }
 function safeDisplayName(value: string): string { return value.replace(/[\r\n"\\]/g, '_').slice(0, 160); }
 
@@ -109,7 +100,7 @@ export async function registerPortfolioRoutes(app: FastifyInstance, dependencies
       }
       const now = new Date().toISOString();
       const created = ExternalAssetSchema.parse({
-        ...input, id: crypto.randomUUID(), status: 'active', includeInNetWorth: input.actualAccountId ? false : input.includeInNetWorth,
+        ...input, id: randomUUID(), status: 'active', includeInNetWorth: input.actualAccountId ? false : input.includeInNetWorth,
         valuations: [], createdAt: now, updatedAt: now,
       });
       const result = await updateWealthData(directory, (current) => {
@@ -167,7 +158,7 @@ export async function registerPortfolioRoutes(app: FastifyInstance, dependencies
         if (input.currency !== existing.currency) throw new RangeError('La valoración debe usar la divisa del elemento; cambia la divisa al editar el elemento, no al sobrescribir su historial.');
         if (existing.valuations.length >= 500) throw new RangeError('El elemento ha alcanzado el límite de snapshots de valoración.');
         const valuation = {
-          id: crypto.randomUUID(), valuedAt: input.valuedAt, amountMinor, currency: input.currency,
+          id: randomUUID(), valuedAt: input.valuedAt, amountMinor, currency: input.currency,
           source: input.source, ...(input.notes ? { notes: input.notes } : {}),
           ...(input.quantity !== undefined ? { quantity: input.quantity, unitPriceMinor: input.unitPriceMinor! } : {}),
           createdAt: new Date().toISOString(),
