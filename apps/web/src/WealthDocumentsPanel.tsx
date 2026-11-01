@@ -93,6 +93,7 @@ const PORTABLE_DATASETS = [
   { id: 'periodic-reviews', label: 'Revisiones financieras' },
   { id: 'wealth', label: 'Patrimonio y valoraciones externas' },
   { id: 'documents', label: 'Metadatos y vínculos de justificantes' },
+  { id: 'budgets', label: 'Presupuestos mensuales de Actual' },
 ] as const;
 type PortableDataset = typeof PORTABLE_DATASETS[number]['id'];
 
@@ -137,6 +138,7 @@ export function WealthDocumentsPanel({ accounts, currency }: { accounts: readonl
   const [documentClass, setDocumentClass] = useState<LocalDocument['classification']>('receipt');
   const [linkDrafts, setLinkDrafts] = useState<Record<string, { transactionId: string; accountId: string; transactionDate: string }>>({});
   const [datasets, setDatasets] = useState<PortableDataset[]>(['planning', 'preferences', 'wealth']);
+  const [budgetMonth, setBudgetMonth] = useState(new Date().toISOString().slice(0, 7));
   const [includeDocumentFiles, setIncludeDocumentFiles] = useState(false);
 
   const load = useCallback(async () => {
@@ -315,7 +317,7 @@ export function WealthDocumentsPanel({ accounts, currency }: { accounts: readonl
     event.preventDefault(); setBusy(true); setError(''); setNotice('');
     try {
       if (datasets.length === 0) throw new Error('Selecciona al menos un conjunto de datos.');
-      const query = new URLSearchParams({ datasets: datasets.join(','), includeDocumentFiles: includeDocumentFiles ? 'true' : 'false' });
+      const query = new URLSearchParams({ datasets: datasets.join(','), includeDocumentFiles: includeDocumentFiles ? 'true' : 'false', ...(datasets.includes('budgets') ? { budgetMonths: budgetMonth } : {}) });
       const response = await fetch('/api/v1/portable-export?' + query.toString(), { headers: { Accept: 'application/json' } });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({})) as ApiPayload<unknown>;
@@ -463,6 +465,7 @@ export function WealthDocumentsPanel({ accounts, currency }: { accounts: readonl
             <label className="check-field" key={dataset.id}><input type="checkbox" checked={datasets.includes(dataset.id)} onChange={(event)=>setDatasets((current)=>event.currentTarget.checked?[...current,dataset.id]:current.filter((item)=>item!==dataset.id))} /> {dataset.label}</label>
           ))}</div>
           {datasets.includes('documents')?<label className="check-field"><input type="checkbox" checked={includeDocumentFiles} onChange={(event)=>setIncludeDocumentFiles(event.currentTarget.checked)} /> Incluir también el contenido binario de los justificantes seleccionados (máximo 20 MiB)</label>:null}
+          {datasets.includes('budgets')?<label className="field-label">Mes presupuestario a incluir<input type="month" required value={budgetMonth} onChange={(event)=>setBudgetMonth(event.currentTarget.value)} /></label>:null}
           <button className="button primary" type="submit" disabled={busy || datasets.length===0}>Generar exportación portable JSON</button>
         </form>
         <p className="section-footnote">No contiene claves, contraseñas, variables de entorno ni rutas privadas. Este archivo no es restaurable: usa el backup cifrado para recuperación integral.</p>
