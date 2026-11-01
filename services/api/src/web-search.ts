@@ -123,32 +123,43 @@ function publishedDate(value: unknown): string | null {
   const date = typeof value === 'number' ? new Date(value < 10_000_000_000 ? value * 1_000 : value) : new Date(value);
   return Number.isFinite(date.getTime()) ? date.toISOString() : null;
 }
-function institutionLabel(hostname: string): string {
+function isDogPublication(url: URL): boolean {
+  const hostname = url.hostname.toLowerCase();
+  return ['xunta.gal', 'www.xunta.gal'].includes(hostname) &&
+    /^\/(?:es\/)?diario-oficial-galicia(?:\/|$)/i.test(url.pathname);
+}
+function institutionLabel(url: URL): string {
+  const hostname = url.hostname.toLowerCase();
+  if (isDogPublication(url)) return 'Diario Oficial de Galicia (DOG)';
   if (hostname === 'sede.tributos.hacienda.gob.es' || matchesDomain(hostname, 'petete.tributos.hacienda.gob.es')) return 'Dirección General de Tributos (DGT)';
   if (matchesDomain(hostname, 'serviciostelematicosext.hacienda.gob.es') || matchesDomain(hostname, 'sede.tea.hacienda.gob.es')) return 'Tribunal Económico-Administrativo Central (TEAC)';
   if (matchesDomain(hostname, 'lex.gal')) return 'Lex.gal · legislación consolidada de Galicia';
   if (matchesDomain(hostname, 'agenciatributaria.gob.es')) return 'Agencia Estatal de Administración Tributaria (AEAT)';
   if (matchesDomain(hostname, 'boe.es')) return 'Boletín Oficial del Estado (BOE)';
   if (matchesDomain(hostname, 'hacienda.gob.es')) return 'Ministerio de Hacienda';
-  if (matchesDomain(hostname, 'seg-social.es')) return 'Seguridad Social';
-  if (matchesDomain(hostname, 'xunta.gal') || matchesDomain(hostname, 'dog.gal')) return 'Xunta de Galicia / Diario Oficial de Galicia';
+  if (matchesDomain(hostname, 'seg-social.es') || matchesDomain(hostname, 'seg-social.gob.es')) return 'Seguridad Social';
+  if (matchesDomain(hostname, 'xunta.gal')) return 'Xunta de Galicia';
   if (matchesDomain(hostname, 'cnmv.es')) return 'Comisión Nacional del Mercado de Valores (CNMV)';
   if (matchesDomain(hostname, 'bde.es')) return 'Banco de España';
   return hostname;
 }
-function sourceAuthority(hostname: string): WebSearchSource['sourceAuthority'] {
-  if (matchesDomain(hostname, 'boe.es') || matchesDomain(hostname, 'dog.gal')) return 'legislation';
+function sourceAuthority(url: URL): WebSearchSource['sourceAuthority'] {
+  const hostname = url.hostname.toLowerCase();
+  if (matchesDomain(hostname, 'boe.es') || isDogPublication(url)) return 'legislation';
   if (hostname === 'sede.tributos.hacienda.gob.es' || matchesDomain(hostname, 'petete.tributos.hacienda.gob.es')) return 'dgt_criteria';
   if (matchesDomain(hostname, 'serviciostelematicosext.hacienda.gob.es') || matchesDomain(hostname, 'sede.tea.hacienda.gob.es')) return 'teac_criteria';
   if (matchesDomain(hostname, 'hacienda.gob.es')) return 'tax_administration';
   if (matchesDomain(hostname, 'agenciatributaria.gob.es')) return 'tax_agency_guidance';
-  if (OFFICIAL_SOURCE_DOMAINS.some((domain) => matchesDomain(hostname, domain))) return 'official_information';
+  if (OFFICIAL_SOURCE_DOMAINS.some((domain) => matchesDomain(hostname, domain)) ||
+    matchesDomain(hostname, 'seg-social.gob.es')) return 'official_information';
   return 'external';
 }
-function sourceKind(hostname: string): WebSearchSource['sourceKind'] {
-  if (matchesDomain(hostname, 'boe.es') || matchesDomain(hostname, 'dog.gal')) return 'normativa';
+function sourceKind(url: URL): WebSearchSource['sourceKind'] {
+  const hostname = url.hostname.toLowerCase();
+  if (matchesDomain(hostname, 'boe.es') || isDogPublication(url)) return 'normativa';
   if (hostname.endsWith('.hacienda.gob.es') || hostname === 'hacienda.gob.es') return 'criterio_administrativo';
-  if (OFFICIAL_SOURCE_DOMAINS.some((domain) => matchesDomain(hostname, domain))) return 'organismo_oficial';
+  if (OFFICIAL_SOURCE_DOMAINS.some((domain) => matchesDomain(hostname, domain)) ||
+    matchesDomain(hostname, 'seg-social.gob.es')) return 'organismo_oficial';
   return 'externa';
 }
 function parseSource(value: unknown, index: number, allowedDomains: readonly string[]): WebSearchSource | null {
@@ -174,12 +185,12 @@ function parseSource(value: unknown, index: number, allowedDomains: readonly str
     title,
     url: url.toString().slice(0, 2_048),
     domain: hostname,
-    institution: institutionLabel(hostname),
+    institution: institutionLabel(url),
     publishedAt: publishedDate(item.publishedDate),
     modifiedAt: publishedDate(item.modifiedDate ?? item.updatedDate ?? item.lastUpdated),
     snippet,
-    sourceKind: sourceKind(hostname),
-    sourceAuthority: sourceAuthority(hostname),
+    sourceKind: sourceKind(url),
+    sourceAuthority: sourceAuthority(url),
   };
 }
 
