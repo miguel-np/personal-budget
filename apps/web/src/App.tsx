@@ -11,6 +11,7 @@ import { AccountsPanel } from './AccountsPanel.js';
 import { DashboardSignals } from './DashboardSignals.js';
 import { FinancialIntelligencePanel } from './FinancialIntelligencePanel.js';
 import { PeriodicReviewPanel } from './PeriodicReviewPanel.js';
+import { WealthDocumentsPanel } from './WealthDocumentsPanel.js';
 import { formatAccountBalance, formatCivilDate, formatMoney as sharedFormatMoney, setFinanceLocale } from './finance-format.js';
 
 type ConnectionState = 'checking' | 'connected' | 'unconfigured' | 'error';
@@ -28,6 +29,7 @@ interface Account {
   displayBalanceMinor?: number | null;
   displayCurrency?: string;
   balanceConversion?: { warning?: string };
+  classification?: 'asset' | 'liability' | null;
 }
 interface Category {
   id: string;
@@ -131,7 +133,8 @@ class ApiError extends Error {
 const NAV_ITEMS = [
   { href: '/', label: 'Resumen', icon: '◫' },
   { href: '/movements', label: 'Movimientos', icon: '↕' },
-  { href: '/accounts', label: 'Cuentas', icon: '€' }, 
+  { href: '/accounts', label: 'Cuentas', icon: '€' },
+  { href: '/patrimony', label: 'Patrimonio y documentos', icon: '◇' }, 
   { href: '/reports', label: 'Informes', icon: '▥' },
   { href: '/budgets', label: 'Presupuestos', icon: '◷' },
   { href: '/planning', label: 'Planificación', icon: '◎' },
@@ -854,6 +857,7 @@ export function App() {
             {route === '/intelligence' && <FinancialIntelligencePanel key={period.startDate + ':' + period.endDate} startDate={period.startDate} endDate={period.endDate} refreshKey={refreshKey} onNavigate={(target) => navigateTo(target)} />}
             {route === '/review' && <PeriodicReviewPanel onNavigate={(target) => navigateTo(target)} />}
             {route === '/goals' && <GoalsPanel currency={currency} />}
+            {route === '/patrimony' && <WealthDocumentsPanel accounts={accounts} currency={currency} />}
 
             {route === '/settings' && (
               <section className="content-section">
@@ -947,7 +951,7 @@ export function App() {
               </section>
             )}
 
-            {!['/', '/movements', '/accounts', '/reports', '/budgets', '/planning', '/intelligence', '/goals', '/assistant', '/settings'].includes(route) && (
+            {!['/', '/movements', '/accounts', '/patrimony', '/reports', '/budgets', '/planning', '/intelligence', '/goals', '/assistant', '/settings'].includes(route) && (
               <section className="content-section"><EmptyState title="Sección no encontrada" body="Utiliza la navegación principal para abrir una sección disponible." /><a className="button primary" href="/">Volver al resumen</a></section>
             )}
           </>
