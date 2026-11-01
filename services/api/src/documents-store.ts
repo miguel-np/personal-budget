@@ -199,6 +199,7 @@ export async function archiveDocument(directory: string, id: string, archived: b
 
 export async function deleteDocument(directory: string, id: string): Promise<boolean> {
   return withLock(directory, async () => {
+    await ensureDocumentDirectory(directory);
     const current = await readDocumentIndex(directory);
     const existing = current.documents.find((item) => item.id === id);
     if (!existing) return false;
@@ -218,6 +219,7 @@ export async function deleteDocument(directory: string, id: string): Promise<boo
 }
 
 export async function readDocumentFile(directory: string, record: DocumentMetadata): Promise<Buffer> {
+  await ensureDocumentDirectory(directory);
   const path = filePath(directory, record.fileName);
   const info = await lstat(path);
   if (!info.isFile() || info.isSymbolicLink() || info.size !== record.sizeBytes) throw new Error('Stored document is missing or has an invalid file type.');
