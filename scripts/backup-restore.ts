@@ -9,6 +9,8 @@ export const APP_STATE_FILE_NAMES = [
   'financial-actions.json',
   'periodic-reviews.json',
   'planning-data.json',
+  'wealth-data.json',
+  'documents-index.json',
 ] as const;
 
 export interface BackupManifestFile {
@@ -17,14 +19,22 @@ export interface BackupManifestFile {
   readonly sha256: string;
 }
 
+export interface BackupManifestDocumentFile {
+  readonly fileName: string;
+  readonly sizeBytes: number;
+  readonly sha256: string;
+}
+
 export interface BackupManifest {
   readonly format: 'personal-budget-backup';
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 1 | 2;
   readonly createdAt: string;
   readonly actualServerData: { readonly root: 'actual-server-data' };
   readonly personalBudgetState: {
     readonly root: 'personal-budget-state';
     readonly files: readonly BackupManifestFile[];
+    /** Present from schema v2. Binary evidence lives under personal-budget-state/documents/. */
+    readonly documents?: { readonly directory: 'documents'; readonly files: readonly BackupManifestDocumentFile[] };
   };
   readonly exclusions: readonly string[];
 }
@@ -38,7 +48,7 @@ export function validateBackupManifest(value: unknown): asserts value is BackupM
   if (Object.keys(manifest).sort().join('|') !== expectedKeys.join('|')) {
     throw new Error('Backup manifest contains missing or unsupported fields.');
   }
-  if (manifest.format !== 'personal-budget-backup' || manifest.schemaVersion !== 1 ||
+  if (manifest.format !== 'personal-budget-backup' || ![1, 2].includes(manifest.schemaVersion as number) ||
       typeof manifest.createdAt !== 'string' || !Number.isFinite(Date.parse(manifest.createdAt))) {
     throw new Error('Backup manifest format or version is not supported.');
   }
@@ -52,7 +62,7 @@ export function validateBackupManifest(value: unknown): asserts value is BackupM
   if (typeof state !== 'object' || state === null || Array.isArray(state) ||
       (state as Record<string, unknown>).root !== 'personal-budget-state' ||
       !Array.isArray((state as Record<string, unknown>).files) ||
-      Object.keys(state).sort().join('|') !== 'files|root') {
+      Object.keys(state).sort().join('|') !== (manifest.schemaVersion === 2 ? 'documents|files|root' : 'files|root')) {
     throw new Error('Backup manifest does not identify Personal Budget state.');
   }
   const files = (state as Record<string, unknown>).files as unknown[];
@@ -71,6 +81,32 @@ export function validateBackupManifest(value: unknown): asserts value is BackupM
       throw new Error('Backup manifest contains an invalid or duplicate state file entry.');
     }
     seen.add(file.name);
+  }
+  if (manifest.schemaVersion === 2) {
+    const documents = (state as Record<string, unknown>).documents;
+    if (typeof documents !== 'object' || documents === null || Array.isArray(documents) ||
+        (documents as Record<string, unknown>).directory !== 'documents' ||
+        Object.keys(documents).sort().join('|') !== 'directory|files' ||
+        !Array.isArray((documents as Record<string, unknown>).files)) {
+      throw new Error('Backup manifest document inventory is invalid.');
+    }
+    const documentFiles = (documents as Record<string, unknown>).files as unknown[];
+    if (documentFiles.length > 2_000) throw new Error('Backup manifest contains too many local documents.');
+    const seenDocuments = new Set<string>();
+    for (const entry of documentFiles) {
+      if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+        throw new Error('Backup manifest contains an invalid document file entry.');
+      }
+      const file = entry as Record<string, unknown>;
+      if (Object.keys(file).sort().join('|') !== 'fileName|sha256|sizeBytes' ||
+          typeof file.fileName !== 'string' || !/^[0-9a-f-]{36}\\.(?:pdf|jpg|png)$/.test(file.fileName) ||
+          seenDocuments.has(file.fileName) ||
+          typeof file.sizeBytes !== 'number' || !Number.isSafeInteger(file.sizeBytes) || file.sizeBytes < 8 || file.sizeBytes > 10 * 1024 * 1024 ||
+          typeof file.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(file.sha256)) {
+        throw new Error('Backup manifest contains an invalid or duplicate document file entry.');
+      }
+      seenDocuments.add(file.fileName);
+    }
   }
   const exclusions = manifest.exclusions;
   if (!Array.isArray(exclusions) || exclusions.length > 20 ||
