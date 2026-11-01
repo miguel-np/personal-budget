@@ -1075,3 +1075,37 @@ textarea::placeholder {
 .intelligence-quality strong { font-size: 17px; font-variant-numeric: tabular-nums; }
 .intelligence-quality p { grid-column: 1 / -1; margin: 4px 0 0; color: var(--text-secondary); font-size: 10px; line-height: 1.65; }
 @media (max-width: 760px) { .intelligence-quality { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+
+
+/* Local wealth, private evidence and portable export */
+.wealth-documents { display: grid; gap: 18px; }
+.wealth-summary .panel-heading, .wealth-asset-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.wealth-net-worth { display: block; margin: 10px 0 18px; font-size: clamp(28px, 4vw, 42px); font-variant-numeric: tabular-nums; letter-spacing: -0.04em; }
+.wealth-breakdown { margin-bottom: 14px; }
+.wealth-breakdown .stat-card { min-width: 0; }
+.wealth-management-grid { display: grid; grid-template-columns: minmax(240px, .8fr) minmax(0, 1.2fr); gap: 16px; align-items: start; }
+.wealth-management-grid > .panel, .wealth-documents > .panel { min-width: 0; }
+.wealth-account-classifications, .wealth-asset-list, .local-document-list, .portable-dataset-list { display: grid; gap: 10px; }
+.wealth-account-classifications { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 12px 0 16px; }
+.wealth-asset-card, .local-document-card { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--border-subtle); border-radius: 10px; min-width: 0; }
+.wealth-asset-card h4, .local-document-card h4 { margin: 4px 0; overflow-wrap: anywhere; }
+.wealth-asset-card p, .local-document-card p { margin: 0; color: var(--text-secondary); font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; }
+.wealth-valuation-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) auto; gap: 10px; align-items: end; }
+.document-upload-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: end; margin-bottom: 16px; }
+.document-link-form { margin-top: 10px; }
+.portable-dataset-list { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 12px 0 16px; }
+.document-list-controls, .button-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.document-list-controls { justify-content: space-between; margin: 12px 0; color: var(--text-secondary); font-size: 12px; }
+.wealth-documents .field-label { min-width: 0; }
+.wealth-documents .field-label input, .wealth-documents .field-label select { width: 100%; max-width: 100%; box-sizing: border-box; }
+.wealth-documents .warning-list { margin: 12px 0 0; }
+.wealth-documents details { color: var(--text-secondary); font-size: 12px; }
+.wealth-documents .button.danger { color: var(--danger, #b54747); }
+@media (max-width: 900px) {
+  .wealth-management-grid { grid-template-columns: minmax(0, 1fr); }
+  .wealth-valuation-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 620px) {
+  .wealth-account-classifications, .document-upload-form, .portable-dataset-list, .wealth-valuation-form { grid-template-columns: minmax(0, 1fr); }
+  .wealth-asset-title, .wealth-summary .panel-heading { align-items: stretch; flex-direction: column; }
+}
