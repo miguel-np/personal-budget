@@ -39,9 +39,9 @@ Para probarlo con un cliente de escritorio, configura el comando `node` apuntand
 
 ## 4. Aceptación de backup y restore
 
-Los tests automatizados cubren checksum, retención, rutas y rechazo de enlaces y tipos especiales en los miembros del archivo. El script genera archivos con permisos `0600`, pero solo una restauración real puede verificar el contenido de Actual.
+Los tests unitarios cubren checksum, retención, rutas, tipos de archivo, formato versionado y whitelist del estado de aplicación. El backup genera un paquete cifrado autenticado AES-256-GCM con SHA-256 y manifiesto. El ensayo integral de CI restaura el volumen de Actual y los almacenes de Personal Budget usando datos sintéticos.
 
-Antes de la prueba, prepara una instancia de Actual aislada, con volumen y puerto loopback propios, y crea en ella un presupuesto sintético cuyo inventario puedas anotar (cuentas, categorías, movimientos y saldos). Configura `COMPOSE_FILE` para que los comandos Docker del script usen ese Compose aislado, `ACTUAL_SERVER_DATA_DIR` para el directorio montado por ese Compose y `BACKUP_DIR` para una carpeta de pruebas. No ejecutes la prueba sobre tu único presupuesto personal.
+Para una aceptación manual adicional, prepara un checkout desechable y una instancia de Actual aislada, con volumen y puerto loopback propios y presupuesto sintético. Configura `COMPOSE_FILE`, `ACTUAL_SERVER_DATA_DIR`, `ACTUAL_DATA_DIR`, `BACKUP_DIR` y `BACKUP_ENCRYPTION_KEY_FILE` para rutas exclusivas de prueba. Detén la API local antes de crear/restaurar la copia. No ejecutes la prueba de roundtrip ni la restauración manual sobre tu único presupuesto personal.
 
 1. Arranca la instancia aislada y anota el inventario de prueba.
 2. Ejecuta `npm run backup:actual` y confirma que se crea el archivo y su `.sha256` con permisos restringidos.
@@ -59,4 +59,4 @@ El checksum demuestra integridad respecto al sidecar, no autenticidad ni cifrado
 - **#16:** CI/escaneo verdes y flujo integrado contrastado contra un presupuesto sintético; documentar límites de los escaneos. ✅ Flujo completo (import con previsualización y commit, dashboard, comparativas de periodos) contra el presupuesto sintético; CORS, loopback y logs saneados verificados; límites de escaneos documentados en SECURITY.md.
 - **#17:** backup y restore ejecutados en una instancia aislada; inventario antes/después idéntico. ✅ Ensayo registrado en docs/backup-restore.md: RESTORE_OK con inventario idéntico tras destruir datos y contenedor.
 
-No cerrar una issue solo por tener pruebas unitarias o un workflow verde si su criterio exige una prueba live o manual.
+No cerrar una issue solo por tener pruebas unitarias o un workflow verde si su criterio exige una prueba live o manual. La aceptación sintética de #64 en CI no completa #31: Windows nativo y una distribución WSL2 son entornos diferentes; el último necesita una ejecución manual documentada.
