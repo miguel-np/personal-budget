@@ -50,8 +50,8 @@ const transactions = Array.from({ length: 22 }, (_, index) => {
 
 const transferSource = {
   id: 'synthetic-transfer-source', account: account.id, date: iso(now), amount: -5_000,
-  transfer_id: 'synthetic-transfer-counterpart', payee_name: 'Transferencia sintética',
-  imported_payee: 'Transferencia sintética', notes: 'Transferencia sintética', cleared: false,
+  transfer_id: 'synthetic-transfer-counterpart', payee_name: transferAccount.name,
+  imported_payee: transferAccount.name, notes: 'Transferencia sintética', cleared: false,
 };
 const transferCounterpart = {
   id: 'synthetic-transfer-counterpart', account: transferAccount.id, date: iso(now), amount: 5_000,
@@ -69,7 +69,10 @@ const splitParent = {
 };
 const linkedTransactions = [transferSource, transferCounterpart, splitParent];
 function allTransactions() {
-  return [...transactions, ...linkedTransactions];
+  // Keep the linked-transfer and split fixtures inside the first paginated page
+  // even when the suite runs on the first day of a month and every generated
+  // transaction receives the same clamped date.
+  return [...linkedTransactions, ...transactions];
 }
 function resetLinkedTransactions() {
   Object.assign(transferSource, { date: iso(now), amount: -5_000, notes: 'Transferencia sintética', cleared: false });
