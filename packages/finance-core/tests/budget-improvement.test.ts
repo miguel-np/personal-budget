@@ -19,6 +19,7 @@ describe('budget improvement proposals', () => {
     const proposals = buildBudgetImprovementProposals(baseline, preferences);
     expect(proposals).toHaveLength(1);
     expect(proposals[0]).toMatchObject({ categoryId: 'flex', confidence: 'high', suggestedReductionPercent: 5, estimatedMonthlySavingsMinor: 1_000, estimatedAnnualSavingsMinor: 12_000 });
+    expect(buildBudgetImprovementProposals(baseline, preferences, 'reach_savings_goal')[0]?.explanation).toContain('objetivo de ahorro');
   });
   it('does not infer flexibility from names or cut protected/essential categories', () => {
     expect(buildBudgetImprovementProposals(baseline, [{ categoryId: 'essential', classification: 'protected' }])).toEqual([]);
@@ -33,5 +34,6 @@ describe('budget improvement proposals', () => {
   it('rejects short history and out-of-range percentages', () => {
     expect(() => buildBudgetImprovementProposals({ ...baseline, periodMonths: 1 }, preferences)).toThrow(/between 3 and 24/);
     expect(() => simulateBudgetImprovement(baseline, preferences, [{ categoryId: 'flex', reductionPercent: 101 }])).toThrow(/between 1 and 100/);
+    expect(() => simulateBudgetImprovement(huge, preferences, [{ categoryId: 'flex', reductionPercent: 100 }])).toThrow(/safe integer range/);
   });
 });

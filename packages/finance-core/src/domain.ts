@@ -50,6 +50,8 @@ export interface LedgerEntry {
   readonly categoryId: string | null;
   readonly transferId: string | null;
   readonly isTransfer: boolean;
+  /** Cleared/reconciled state when the Actual source provides it. */
+  readonly cleared?: boolean;
   /** Normalized beneficiary label, when the source transaction carries one. */
   readonly payeeLabel?: string | null;
   /** Shared parent identity for transaction splits; falls back to the transaction ID. */

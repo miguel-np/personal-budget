@@ -48,3 +48,16 @@ Para cerrar #31 falta registrar, en un checkout limpio de la distribución WSL2 
 5. Comandos ejecutados, resultado y logs saneados sin credenciales ni información financiera personal.
 
 No cerrar #31 por un workflow verde. No registrar ni subir extractos, bases de datos, copias de seguridad o logs con datos personales a Git/CI.
+
+
+## Inteligencia financiera útil — fase 2 (rama de implementación)
+
+**Estado de integración:** las funcionalidades están implementadas en la rama `feat/phase-2-financial-intelligence`; no deben considerarse cerradas ni disponibles en `main` hasta que las PRs pasen CI, revisión y se integren.
+
+| Issue | Implementación en la rama | Criterio pendiente antes de cierre |
+|---|---|---|
+| #73 · Saldo estimado y flujo de caja | Motor diario determinista, horizontes 7/30/90, movimientos futuros de Actual, compromisos activos, reserva de ámbito, detección conservadora de duplicados y escenario efímero. Los estados de conciliación de movimientos se muestran solo cuando Actual los proporciona. | CI/API/E2E, verificación de transferencias/splits y aceptación visual; la semántica de `balance_current` sigue siendo saldo actual de Actual, no saldo bancario disponible. |
+| #83 · Propuestas de mejora | Línea base de periodos completos, clasificación de categorías elegida por el usuario, propuestas solo para flexibles/revisables, simulación combinada y decisiones/escenarios locales. | CI, pruebas con historial suficiente, falsos positivos/limitaciones y aceptación UX. La primera versión no usa IA para crear propuestas ni aplica cambios a presupuestos. |
+| #74 · Alertas presupuestarias | Reglas por categoría para consumo/restante/exceso, deduplicación por regla-categoría-mes, silencio/aplazamiento y funcionamiento sin IA. | CI/API/E2E para umbrales, cambios de mes, reinicio y estados cero/sin asignación/desconocido. Solo avisos in-app. |
+
+El nuevo almacén `financial-actions.json` se añade a la whitelist del backup unificado. Su presencia debe mantenerse sincronizada entre el esquema versionado, pruebas de roundtrip, `docs/backup-restore.md` y `scripts/backup-restore.ts`. No se marca ninguna de estas issues como cerrada mientras las PRs no estén integradas.

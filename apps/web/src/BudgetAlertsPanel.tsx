@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { formatMoney } from './finance-format.js';
 
 type Metric = 'percent_used' | 'remaining_minor' | 'overspend_minor';
-interface Rule { id?: string; categoryId: string; metric: Metric; threshold: number; enabled: boolean; }
+interface Rule { id: string; categoryId: string; metric: Metric; threshold: number; enabled: boolean; }
 interface Category { categoryId: string; categoryName: string; budgetedMinor: number | null; spentMinor: number | null; state: 'budgeted' | 'zero' | 'unbudgeted' | 'unknown'; hidden?: boolean; }
 interface Alert { eventId: string; ruleId: string; categoryId: string; categoryName: string; metric: Metric; threshold: number; observedValue: number; month: string; message: string; status: 'active'; currency: string; }
 interface AlertsData { month: string; currency: string; rules: readonly Rule[]; alerts: readonly Alert[]; categories: readonly Category[]; warnings: readonly string[]; }
@@ -52,12 +52,15 @@ export function BudgetAlertsPanel({ month, currency }: { month: string; currency
     if (!categoryId) { setError('Selecciona una categoría de gasto.'); return; }
     const raw = Number(threshold);
     if (!Number.isFinite(raw) || raw < 0) { setError('Introduce un umbral válido.'); return; }
-    const thresholdValue = metric === 'percent_used' ? Math.round(raw) : Math.round(raw * factor(currency));
+    const activeCurrency = data?.currency ?? currency;
+    const thresholdValue = metric === 'percent_used' ? Math.round(raw) : Math.round(raw * factor(activeCurrency));
+    if (metric === 'percent_used' && (thresholdValue < 1 || thresholdValue > 500)) { setError('El porcentaje debe estar entre 1 % y 500 %.'); return; }
+    if (metric === 'overspend_minor' && thresholdValue < 1) { setError('El umbral de exceso debe ser mayor que cero.'); return; }
     if (!Number.isSafeInteger(thresholdValue)) { setError('El umbral supera el rango permitido.'); return; }
     if (rules.some((rule) => rule.categoryId === categoryId && rule.metric === metric)) {
       setError('Ya existe una regla para esa categoría y métrica.'); return;
     }
-    setRules((current) => [...current, { categoryId, metric, threshold: thresholdValue, enabled: true }]);
+    setRules((current) => [...current, { id: crypto.randomUUID(), categoryId, metric, threshold: thresholdValue, enabled: true }]);
     setError('');
   }
 
@@ -107,8 +110,8 @@ export function BudgetAlertsPanel({ month, currency }: { month: string; currency
             {rules.map((rule) => {
               const category = data.categories.find((item) => item.categoryId === rule.categoryId);
               return (
-                <div className="comparison-row" key={rule.id ?? rule.categoryId + rule.metric}>
-                  <div><strong>{category?.categoryName ?? rule.categoryId}</strong><span>{metricLabels[rule.metric]} · {thresholdLabel(rule, currency)}</span></div>
+                <div className="comparison-row" key={rule.id}>
+                  <div><strong>{category?.categoryName ?? rule.categoryId}</strong><span>{metricLabels[rule.metric]} · {thresholdLabel(rule, data.currency)}</span></div>
                   <div className="comparison-meta">
                     <label className="field-label compact-label"><input type="checkbox" checked={rule.enabled} onChange={(event) => setRules((current) => current.map((item) => item.id === rule.id ? { ...item, enabled: event.currentTarget.checked } : item))} /> Regla activa</label>
                     <button className="button small" type="button" disabled={busy} onClick={() => setRules((current) => current.filter((item) => item.id !== rule.id))}>Eliminar</button>

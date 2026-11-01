@@ -26,7 +26,7 @@ flowchart TD
 | Capa de IA local | Prepara contexto agregado y solicita una explicación cualitativa | Una inferencia por petición; sin herramientas ni operaciones de escritura |
 | Ollama | Generación local de respuestas y llamadas a herramientas compatibles | La compatibilidad depende del modelo/runtime elegido |
 | MCP opcional | Expone herramientas revisadas a clientes MCP locales | Transporte stdio por defecto; no servidor público sin autenticación |
-| Preferencias de la app | Ajustes de interfaz y, si se habilita, metadatos no sensibles | No duplicar movimientos ni almacenar historial financiero sin necesidad |
+| Preferencias de la app | Ajustes de interfaz y metadatos de revisión, planificación y acciones financieras | No duplicar movimientos ni almacenar historial financiero sin necesidad |
 
 ## Flujo de datos
 
@@ -39,7 +39,7 @@ flowchart TD
 
 ## Fuente de verdad y duplicación
 
-Actual Budget es la fuente de verdad financiera prevista. No crear una segunda base de movimientos paralela salvo que exista una justificación clara. La app puede almacenar preferencias técnicas, filtros guardados o metadatos de UI por separado. Cualquier caché debe poder regenerarse y tener una política de retención explícita.
+Actual Budget es la fuente de verdad financiera prevista. No crear una segunda base de movimientos paralela salvo que exista una justificación clara. La app puede almacenar preferencias técnicas, filtros y metadatos de revisión/planificación por separado. El almacén `financial-actions.json` guarda reglas, categorías protegidas, decisiones y escenarios, no movimientos. Los almacenes persistentes propios deben inventariarse en `APP_STATE_FILE_NAMES` y en las pruebas de backup/restore.
 
 ## Reglas de cálculo
 
@@ -61,6 +61,10 @@ Actual Budget es la fuente de verdad financiera prevista. No crear una segunda b
 - Sin ejecución de código generado por el modelo.
 - Sin analítica ni telemetría de terceros por defecto.
 
+
+## Nuevas capacidades de inteligencia financiera
+
+`finance-core` conserva los cálculos de flujo de caja, propuestas presupuestarias y reglas de alertas como funciones deterministas. La API resuelve el ámbito global, obtiene datos a través del adaptador oficial, aplica tasas locales y valida los metadatos persistentes. La interfaz no calcula importes autoritativos ni delega decisiones financieras al modelo. El saldo inicial de flujo de caja usa el saldo actual que expone Actual; no se denomina saldo bancario disponible cuando la fuente no proporciona esa semántica.
 
 ## IA local: límites de contexto y recursos
 

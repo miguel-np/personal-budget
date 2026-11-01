@@ -8,6 +8,8 @@ export interface CashFlowEvent {
   readonly amountMinor: number;
   readonly source: CashFlowSource;
   readonly label: string;
+  /** Only meaningful for Actual transactions; unknown when the source omits cleared. */
+  readonly clearedStatus?: 'cleared' | 'pending' | 'unknown';
 }
 export interface CashFlowProjectionInput {
   readonly asOfDate: string;
@@ -21,6 +23,9 @@ export interface CashFlowProjectionInput {
 export interface CashFlowTimelineDay {
   readonly date: string;
   readonly actualNetChangeMinor: number;
+  readonly actualClearedCount: number;
+  readonly actualPendingCount: number;
+  readonly actualUnknownCount: number;
   readonly commitmentNetChangeMinor: number;
   readonly scenarioNetChangeMinor: number;
   readonly totalInflowMinor: number;
@@ -114,6 +119,9 @@ export function projectCashFlow(input: CashFlowProjectionInput): CashFlowProject
     const date = shiftDate(input.startDate, index);
     const events = (byDate.get(date) ?? []).sort((a, b) => a.source.localeCompare(b.source) || a.id.localeCompare(b.id));
     let actualNetChangeMinor = 0;
+    let actualClearedCount = 0;
+    let actualPendingCount = 0;
+    let actualUnknownCount = 0;
     let commitmentNetChangeMinor = 0;
     let scenarioNetChangeMinor = 0;
     let dayInflow = 0;
@@ -121,7 +129,12 @@ export function projectCashFlow(input: CashFlowProjectionInput): CashFlowProject
     for (const event of events) {
       if (event.amountMinor > 0) dayInflow = addSafe(dayInflow, event.amountMinor, 'daily inflows');
       else dayOutflow = addSafe(dayOutflow, -event.amountMinor, 'daily outflows');
-      if (event.source === 'actual_transaction') actualNetChangeMinor = addSafe(actualNetChangeMinor, event.amountMinor, 'actual daily net');
+      if (event.source === 'actual_transaction') {
+        actualNetChangeMinor = addSafe(actualNetChangeMinor, event.amountMinor, 'actual daily net');
+        if (event.clearedStatus === 'cleared') actualClearedCount += 1;
+        else if (event.clearedStatus === 'pending') actualPendingCount += 1;
+        else actualUnknownCount += 1;
+      }
       else if (event.source === 'manual_commitment') commitmentNetChangeMinor = addSafe(commitmentNetChangeMinor, event.amountMinor, 'commitment daily net');
       else scenarioNetChangeMinor = addSafe(scenarioNetChangeMinor, event.amountMinor, 'scenario daily net');
     }
@@ -136,7 +149,7 @@ export function projectCashFlow(input: CashFlowProjectionInput): CashFlowProject
       if (reserveMinor !== null && firstReserveBreachDate === null && runningBalance < reserveMinor) firstReserveBreachDate = date;
     }
     timeline.push({
-      date, actualNetChangeMinor, commitmentNetChangeMinor, scenarioNetChangeMinor,
+      date, actualNetChangeMinor, actualClearedCount, actualPendingCount, actualUnknownCount, commitmentNetChangeMinor, scenarioNetChangeMinor,
       totalInflowMinor: dayInflow, totalOutflowMinor: dayOutflow, netChangeMinor,
       projectedBalanceMinor: runningBalance,
       belowReserve: runningBalance === null || reserveMinor === null ? null : runningBalance < reserveMinor,

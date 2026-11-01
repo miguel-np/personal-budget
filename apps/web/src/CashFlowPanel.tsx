@@ -1,9 +1,9 @@
 import { useState, type FormEvent } from 'react';
 import { formatMoney } from './finance-format.js';
 
-interface CashFlowEvent { id: string; date: string; amountMinor: number; source: 'actual_transaction' | 'manual_commitment' | 'scenario'; label: string; }
+interface CashFlowEvent { id: string; date: string; amountMinor: number; source: 'actual_transaction' | 'manual_commitment' | 'scenario'; label: string; clearedStatus?: 'cleared' | 'pending' | 'unknown'; }
 interface CashFlowDay {
-  date: string; actualNetChangeMinor: number; commitmentNetChangeMinor: number; scenarioNetChangeMinor: number;
+  date: string; actualNetChangeMinor: number; actualClearedCount: number; actualPendingCount: number; actualUnknownCount: number; commitmentNetChangeMinor: number; scenarioNetChangeMinor: number;
   totalInflowMinor: number; totalOutflowMinor: number; netChangeMinor: number; projectedBalanceMinor: number | null;
   belowReserve: boolean | null; eventIds: readonly string[];
 }
@@ -122,10 +122,11 @@ export function CashFlowPanel({ currency }: { currency: string }) {
           {result?.duplicateCommitmentIds.length ? <p className="section-footnote">{result.duplicateCommitmentIds.length} compromiso(s) con coincidencia exacta se han contado una sola vez, usando el movimiento real de Actual.</p> : null}
           <div className="trend-table-wrap">
             <table className="trend-table">
-              <thead><tr><th>Fecha</th><th>Actual</th><th>Compromisos</th><th>Escenario</th><th>Saldo estimado</th></tr></thead>
+              <thead><tr><th>Fecha</th><th>Actual</th><th>Estado (confirmado / pendiente / desconocido)</th><th>Compromisos</th><th>Escenario</th><th>Saldo estimado</th></tr></thead>
               <tbody>{projection.timeline.map((day) => (
                 <tr key={day.date}>
                   <td>{day.date}</td><td>{amount(day.actualNetChangeMinor, currency)}</td>
+                  <td>{day.actualClearedCount} / {day.actualPendingCount} / {day.actualUnknownCount}</td>
                   <td>{amount(day.commitmentNetChangeMinor, currency)}</td><td>{amount(day.scenarioNetChangeMinor, currency)}</td>
                   <td>{amount(day.projectedBalanceMinor, currency)}</td>
                 </tr>

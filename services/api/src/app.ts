@@ -3058,6 +3058,7 @@ function monthsBefore(date: string, months: number): string {
           amountMinor: entry.amountMinor,
           source: 'actual_transaction',
           label: entry.payeeLabel ?? 'Movimiento registrado en Actual',
+          clearedStatus: entry.cleared === true ? 'cleared' : entry.cleared === false ? 'pending' : 'unknown',
         }));
       const actualMatchKeys = new Set(ledgerEntries.filter((entry) => entry.date > asOfDate && entry.amountMinor !== 0).map((entry) =>
         [entry.date, Math.abs(entry.amountMinor), entry.amountMinor < 0 ? 'expense' : 'income'].join('|') + '|' + normalizedActionLabel(entry.payeeLabel ?? ''),

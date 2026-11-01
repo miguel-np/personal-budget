@@ -29,6 +29,8 @@ describe('budget alert evaluation', () => {
   it('does not evaluate disabled rules and rejects invalid thresholds or months', () => {
     expect(evaluateBudgetAlertRules([{ id: 'x', categoryId: 'food', metric: 'percent_used', threshold: 100, enabled: false }], categories, '2026-11')).toEqual([]);
     expect(() => evaluateBudgetAlertRules([{ id: 'x', categoryId: 'food', metric: 'percent_used', threshold: -1, enabled: true }], categories, '2026-11')).toThrow(/threshold/);
+    expect(() => evaluateBudgetAlertRules([{ id: 'high', categoryId: 'food', metric: 'percent_used', threshold: 501, enabled: true }], categories, '2026-11')).toThrow(/between 1 and 500/);
+    expect(() => evaluateBudgetAlertRules([{ id: 'zero', categoryId: 'food', metric: 'overspend_minor', threshold: 0, enabled: true }], categories, '2026-11')).toThrow(/greater than zero/);
     expect(() => evaluateBudgetAlertRules([], categories, '2026-13')).toThrow(/YYYY-MM/);
   });
 });

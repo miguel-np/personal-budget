@@ -41,6 +41,8 @@ export function evaluateBudgetAlertRules(
     if (!rule.enabled) continue;
     if (!Number.isSafeInteger(rule.threshold) || rule.threshold < 0) throw new RangeError('Alert threshold must be a non-negative safe integer.');
     if (!['percent_used', 'remaining_minor', 'overspend_minor'].includes(rule.metric)) throw new RangeError('Alert metric is invalid.');
+    if (rule.metric === 'percent_used' && (rule.threshold < 1 || rule.threshold > 500)) throw new RangeError('Consumption percentage threshold must be between 1 and 500.');
+    if (rule.metric === 'overspend_minor' && rule.threshold < 1) throw new RangeError('Overspend threshold must be greater than zero.');
     const category = categoryById.get(rule.categoryId);
     if (!category || category.hidden || category.state === 'unbudgeted' || category.state === 'unknown' ||
         !validMinor(category.budgetedMinor) || !validMinor(category.spentMinor)) continue;

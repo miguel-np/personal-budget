@@ -24,7 +24,7 @@ El ID permanece estable para la misma regla, sujeto, periodo y ámbito. La huell
 
 Los estados son pendiente, útil confirmado (estado interno reviewed), descartado y aplazado. La opción «Marcar útil» registra una señal positiva explícita del usuario. Los aplazamientos expiran y la API los limita a 90 días; la interfaz permite aplazar durante siete días. Las revisiones se validan y escriben atómicamente en financial-intelligence-state.json, bajo el directorio local de datos de la API, con permisos restrictivos y límites de tamaño. El archivo conserva solo ID, huella y metadatos de revisión, no importes ni detalles de movimientos.
 
-El backup cifrado de Actual Budget cubre el volumen de Actual, no el archivo de revisiones de la aplicación. Si se desea conservar las revisiones al reinstalar, se debe incluir ese archivo local en una copia segura independiente. No debe subirse a Git.
+El backup cifrado unificado incluye `financial-intelligence-state.json` en la whitelist de estado propio de Personal Budget. Se conserva solo la identidad/huella y los metadatos de revisión; no se duplican importes ni filas de movimientos. La copia permanece local y debe protegerse junto con la clave separada de cifrado.
 
 ## Métricas de utilidad sin telemetría
 

@@ -31,7 +31,9 @@ function safeMinor(value: number, label: string): void {
   if (!Number.isSafeInteger(value) || value < 0) throw new RangeError(label + ' must be a non-negative safe integer in minor units.');
 }
 export function buildBudgetImprovementProposals(
-  baseline: BudgetImprovementBaseline, preferences: readonly BudgetImprovementCategoryPreference[],
+  baseline: BudgetImprovementBaseline,
+  preferences: readonly BudgetImprovementCategoryPreference[],
+  goal: BudgetImprovementGoal = 'increase_monthly_margin',
 ): readonly BudgetImprovementProposal[] {
   if (!/^[A-Z]{3}$/.test(baseline.currency)) throw new RangeError('currency must be a three-letter uppercase code.');
   if (!Number.isInteger(baseline.periodMonths) || baseline.periodMonths < 3 || baseline.periodMonths > 24) throw new RangeError('periodMonths must be between 3 and 24.');
@@ -52,16 +54,26 @@ export function buildBudgetImprovementProposals(
     const monthlyExpense = Math.round(observation.expenseMinor / baseline.periodMonths);
     const suggestedReductionPercent = 5;
     const monthlySavings = Math.round(monthlyExpense * suggestedReductionPercent / 100);
+    const annualSavings = monthlySavings * 12;
     if (monthlySavings <= 0) continue;
+    if (!Number.isSafeInteger(annualSavings)) throw new RangeError('Annual proposal savings exceed the safe integer range.');
     const confidence = baseline.periodMonths >= 6 && observation.transactionCount >= 8 && observation.monthsWithActivity >= 4 ? 'high' : 'medium';
     proposals.push({
       id: 'flexible-spend:' + observation.categoryId + ':' + baseline.startDate + ':' + baseline.endDate,
       categoryId: observation.categoryId, categoryName: observation.categoryName, kind: 'review_flexible_spend',
       suggestedReductionPercent, observedMonthlyExpenseMinor: monthlyExpense,
-      estimatedMonthlySavingsMinor: monthlySavings, estimatedAnnualSavingsMinor: monthlySavings * 12, confidence,
+      estimatedMonthlySavingsMinor: monthlySavings, estimatedAnnualSavingsMinor: annualSavings, confidence,
       explanation: classification === 'flexible'
-        ? 'Has marcado esta categoría como flexible. Una reducción hipotética del 5 % permitiría liberar parte del gasto observado sin modificar el presupuesto ni los movimientos.'
-        : 'Has marcado esta categoría como revisable. Compara una reducción hipotética del 5 % antes de decidir si es compatible con tus prioridades.',
+        ? (goal === 'reach_savings_goal'
+          ? 'Has marcado esta categoría como flexible. Una reducción hipotética del 5 % podría contribuir a tu objetivo de ahorro, sin modificar el presupuesto ni los movimientos.'
+          : goal === 'free_cash_flow'
+            ? 'Has marcado esta categoría como flexible. Una reducción hipotética del 5 % podría liberar margen de caja en los próximos periodos.'
+            : goal === 'reduce_variable_spending'
+              ? 'Has marcado esta categoría como flexible. Una reducción hipotética del 5 % permite evaluar una disminución del gasto observado.'
+              : 'Has marcado esta categoría como flexible. Una reducción hipotética del 5 % permitiría liberar parte del gasto observado sin modificar el presupuesto ni los movimientos.')
+        : (goal === 'reach_savings_goal'
+          ? 'Has marcado esta categoría como revisable. Compara si una reducción hipotética del 5 % contribuiría a tu objetivo de ahorro sin comprometer tus prioridades.'
+          : 'Has marcado esta categoría como revisable. Compara una reducción hipotética del 5 % antes de decidir si es compatible con tus prioridades.'),
       evidence: {
         periodMonths: baseline.periodMonths, transactionCount: observation.transactionCount,
         observedExpenseMinor: observation.expenseMinor,
@@ -94,12 +106,16 @@ export function simulateBudgetImprovement(
   const estimatedMonthlySavingsMinor = selectedCategories.reduce((sum, item) => {
     const value = sum + item.monthlySavingsMinor; safeMinor(value, 'combined monthly savings'); return value;
   }, 0);
+  const estimatedAnnualSavingsMinor = estimatedMonthlySavingsMinor * 12;
   const projectedMonthlySavingsMinor = baseline.monthlySavingsMinor + estimatedMonthlySavingsMinor;
-  if (!Number.isSafeInteger(projectedMonthlySavingsMinor)) throw new RangeError('Projected savings exceed the safe integer range.');
+  const projectedAnnualSavingsMinor = projectedMonthlySavingsMinor * 12;
+  if (!Number.isSafeInteger(estimatedAnnualSavingsMinor) || !Number.isSafeInteger(projectedMonthlySavingsMinor) || !Number.isSafeInteger(projectedAnnualSavingsMinor)) {
+    throw new RangeError('Projected savings exceed the safe integer range.');
+  }
   return {
     isEstimate: true, currency: baseline.currency, baselineMonthlySavingsMinor: baseline.monthlySavingsMinor,
-    estimatedMonthlySavingsMinor, estimatedAnnualSavingsMinor: estimatedMonthlySavingsMinor * 12,
-    projectedMonthlySavingsMinor, projectedAnnualSavingsMinor: projectedMonthlySavingsMinor * 12, selectedCategories,
+    estimatedMonthlySavingsMinor, estimatedAnnualSavingsMinor,
+    projectedMonthlySavingsMinor, projectedAnnualSavingsMinor, selectedCategories,
     assumptions: [
       'Cada reducción se aplica al promedio mensual observado de la categoría durante el periodo completo.',
       'Las combinaciones incluyen como máximo una propuesta por categoría para evitar doble contabilización.',
