@@ -10,6 +10,8 @@ const config: AppConfig = {
   environment: 'test', host: '127.0.0.1', port: 3000, logLevel: 'silent',
   actualServerURL: 'http://127.0.0.1:5006', actualDataDir: './.local/actual-api',
   ollamaBaseURL: 'http://127.0.0.1:11434', aiEnabled: false, aiCategoryClassificationEnabled: false, aiCategoryClassificationIncludePayee: true, ollamaTimeoutMs: 120_000, aiMaxContextChars: 4_000,
+    webSearchEnabled: false, webSearchBaseURL: 'http://127.0.0.1:8080', webSearchTimeoutMs: 8_000,
+    webSearchMaxResults: 5, webSearchMaxQueryChars: 300, webSearchMaxResponseBytes: 131_072,
   budgetCurrency: 'EUR', allowedOrigins: ['http://127.0.0.1:5173', 'http://localhost:5173'],
 };
 

@@ -1,4 +1,5 @@
-import { createServer, type AddressInfo, type IncomingMessage, type ServerResponse } from 'node:http';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { SearXNGSearchProvider, WebSearchResponseTooLargeError } from '../src/web-search.js';
 
