@@ -3369,14 +3369,104 @@ function monthsBefore(date: string, months: number): string {
       return {
         id: goal.id, name: goal.name, targetDate: goal.targetDate,
         targetAmountMinor: goal.targetAmountMinor, initialAmountMinor: goal.initialAmountMinor,
-        monthlyContributionMinor: goal.monthlyContributionMinor, currency: goal.currency,
-        status: goal.status, scopeMatches, currencyMatches, projection, warnings: goalWarnings,
+        monthlyContributionMinor: goal.monthlyContributionMinor,
+        monthlyIncomeMinor: goal.monthlyIncomeMinor ?? baseline.monthlyIncomeMinor,
+        monthlyExpenseMinor: goal.monthlyExpenseMinor ?? baseline.monthlyExpenseMinor,
+        currency: goal.currency, status: goal.status, scopeMatches, currencyMatches, projection, warnings: goalWarnings,
       };
     });
     const savingsGoalContextStatus = savingsGoals.some((goal) => goal.projection !== null)
       ? 'ready'
       : savingsGoals.length > 0 ? 'review_required' : 'not_configured';
     const savingsGoalContextWarnings = savingsGoals.flatMap((goal) => goal.warnings.map((warning) => goal.name + ': ' + warning));
+    const targetSavingsGoal = savingsGoals
+      .filter((goal) => goal.status === 'active' && goal.projection !== null && goal.projection.requiredMonthlyContributionMinor !== null)
+      .sort((left, right) => {
+        const leftGap = Math.max(0, left.projection!.requiredMonthlyContributionMinor! - left.monthlyContributionMinor);
+        const rightGap = Math.max(0, right.projection!.requiredMonthlyContributionMinor! - right.monthlyContributionMinor);
+        return rightGap - leftGap || left.targetDate.localeCompare(right.targetDate);
+      })[0] ?? null;
+    const targetSavingsGapMinor = targetSavingsGoal?.projection?.requiredMonthlyContributionMinor === null ||
+      targetSavingsGoal?.projection?.requiredMonthlyContributionMinor === undefined
+      ? null
+      : Math.max(0, targetSavingsGoal.projection.requiredMonthlyContributionMinor - targetSavingsGoal.monthlyContributionMinor);
+    const prioritizedProposals = proposals
+      .map((proposal) => {
+        let priorityTier = 0;
+        let priorityValue = proposal.estimatedMonthlySavingsMinor;
+        let priorityReason = 'Ordenada por el margen mensual hipotético que podría liberar, calculado sobre el gasto observado.';
+        let goalImpact: {
+          goalId: string; goalName: string; monthlyContributionGapMinor: number;
+          estimatedGapCoveredMinor: number; estimatedGapRemainingMinor: number;
+        } | null = null;
+        if (actionState.budgetImprovements.goal === 'reduce_variable_spending') {
+          const latest = proposal.evidence.latestMonthExpenseMinor ?? 0;
+          const previous = proposal.evidence.priorMonthsAverageExpenseMinor ?? 0;
+          const increase = Math.max(0, latest - previous);
+          priorityTier = proposal.evidence.signal === 'recent_increase' && increase > 0 ? 1 : 0;
+          priorityValue = increase;
+          priorityReason = priorityTier
+            ? 'Prioridad por tendencia: el último mes completo superó en ' + increase + ' unidades menores la media de referencia. Revisa primero la variación antes de fijar un recorte.'
+            : 'No hay un aumento reciente cuantificado; se mantiene como alternativa secundaria basada en el presupuesto y el historial.';
+        } else if (actionState.budgetImprovements.goal === 'reach_savings_goal') {
+          if (targetSavingsGoal && targetSavingsGapMinor !== null) {
+            const covered = Math.min(targetSavingsGapMinor, proposal.estimatedMonthlySavingsMinor);
+            goalImpact = {
+              goalId: targetSavingsGoal.id, goalName: targetSavingsGoal.name,
+              monthlyContributionGapMinor: targetSavingsGapMinor,
+              estimatedGapCoveredMinor: covered,
+              estimatedGapRemainingMinor: Math.max(0, targetSavingsGapMinor - covered),
+            };
+            priorityTier = targetSavingsGapMinor > 0 ? 1 : 0;
+            priorityValue = covered;
+            priorityReason = targetSavingsGapMinor > 0
+              ? 'Para «' + targetSavingsGoal.name + '», el ahorro hipotético podría cubrir ' + covered +
+                ' de ' + targetSavingsGapMinor + ' unidades menores de la aportación mensual que falta, solo si lo asignas íntegramente al objetivo.'
+              : 'El plan actual ya cubre la aportación mensual requerida para «' + targetSavingsGoal.name + '»; se ordena por ahorro potencial adicional.';
+          } else {
+            priorityReason = 'No hay un objetivo activo compatible con la divisa, el ámbito y una fecha proyectable; se ordena por ahorro mensual potencial sin atribuir impacto a una meta.';
+          }
+        } else if (actionState.budgetImprovements.goal === 'free_cash_flow') {
+          priorityValue = proposal.estimatedMonthlySavingsMinor;
+          priorityReason = 'Prioridad por liquidez: esta alternativa podría liberar ' + proposal.estimatedMonthlySavingsMinor +
+            ' unidades menores al mes según el gasto histórico; los compromisos activos siguen siendo independientes.';
+        } else {
+          priorityReason = 'Prioridad por margen: esta alternativa ofrece un ahorro mensual hipotético de ' +
+            proposal.estimatedMonthlySavingsMinor + ' unidades menores, sin asumir cambios automáticos.';
+        }
+        return { ...proposal, priorityTier, priorityValue, priorityReason, goalImpact };
+      })
+      .sort((left, right) => right.priorityTier - left.priorityTier ||
+        right.priorityValue - left.priorityValue ||
+        right.estimatedMonthlySavingsMinor - left.estimatedMonthlySavingsMinor ||
+        left.categoryName.localeCompare(right.categoryName))
+      .map(({ priorityTier: _priorityTier, priorityValue: _priorityValue, ...proposal }, index) => ({
+        ...proposal, priorityRank: index + 1,
+      }));
+    const scenarios = actionState.budgetImprovements.scenarios.map((scenario) => {
+      if (scenario.currency !== baseline.currency) {
+        return { ...scenario, comparisonStatus: 'different_currency' as const, comparison: null };
+      }
+      if (scenario.startDate !== baseline.startDate || scenario.endDate !== baseline.endDate) {
+        return { ...scenario, comparisonStatus: 'different_period' as const, comparison: null };
+      }
+      try {
+        const comparison = simulateBudgetImprovement(baseline, corePreferences, scenario.reductions);
+        return {
+          ...scenario, comparisonStatus: 'comparable' as const,
+          comparison: {
+            baselineMonthlySavingsMinor: baseline.monthlySavingsMinor,
+            estimatedMonthlySavingsMinor: comparison.estimatedMonthlySavingsMinor,
+            projectedMonthlySavingsMinor: comparison.projectedMonthlySavingsMinor,
+            estimatedAnnualSavingsMinor: comparison.estimatedAnnualSavingsMinor,
+            projectedAnnualSavingsMinor: comparison.projectedAnnualSavingsMinor,
+            assumptions: comparison.assumptions, warnings: comparison.warnings,
+          },
+        };
+      } catch {
+        return { ...scenario, comparisonStatus: 'preferences_changed' as const, comparison: null };
+      }
+    });
     const categoryChoices = categories.filter((category) => !category.isIncome).map((category) => ({
       categoryId: category.id,
       categoryName: category.name,
@@ -3385,10 +3475,10 @@ function monthsBefore(date: string, months: number): string {
     return {
       asOfDate, currency: preferences.displayCurrency, accountScope: scope.metadata, baseline,
       categoryBreakdown, recurringCandidates, commitments: activeCommitments,
-      proposals, corePreferences, categoryChoices, savingsGoals, savingsGoalContextStatus, savingsGoalContextWarnings,
+      proposals: prioritizedProposals, corePreferences, categoryChoices, savingsGoals, savingsGoalContextStatus, savingsGoalContextWarnings,
       goal: actionState.budgetImprovements.goal,
       decisions: actionState.budgetImprovements.decisions,
-      scenarios: actionState.budgetImprovements.scenarios,
+      scenarios,
       warnings: [...summary.warnings, ...converted.warnings, ...budgetWarnings, 'Se usan ' + periodMonths + ' meses naturales completos, hasta ' + endDate + '; el mes en curso se excluye para evitar extrapolar un periodo parcial.', 'La comparación de tendencia usa el último mes completo frente a la media de los meses anteriores; un patrón recurrente detectado es un candidato, no una obligación.'],
     };
   }
@@ -3431,7 +3521,61 @@ function monthsBefore(date: string, months: number): string {
       const parsed = BudgetImprovementSimulationRequestSchema.parse(request.body);
       const context = await loadBudgetImprovementContext(parsed.periodMonths);
       const simulation = simulateBudgetImprovement(context.baseline, context.corePreferences, parsed.reductions);
-      return { data: { baseline: context.baseline, simulation, accountScope: context.accountScope, warnings: context.warnings } };
+      const goalImpacts = context.savingsGoals
+        .filter((goal) => goal.status === 'active' && goal.projection !== null && goal.scopeMatches && goal.currencyMatches)
+        .map((goal) => {
+          const scenarioMonthlyContributionMinor = goal.monthlyContributionMinor + simulation.estimatedMonthlySavingsMinor;
+          if (!Number.isSafeInteger(scenarioMonthlyContributionMinor)) {
+            throw new RangeError('Scenario monthly contribution exceeds the supported integer range.');
+          }
+          const scenarioProjection = projectSavingsGoal({
+            asOfDate: context.asOfDate,
+            targetDate: goal.targetDate,
+            targetAmountMinor: goal.targetAmountMinor,
+            initialAmountMinor: goal.initialAmountMinor,
+            monthlyContributionMinor: scenarioMonthlyContributionMinor,
+            currency: goal.currency,
+            monthlyIncomeMinor: goal.monthlyIncomeMinor,
+            monthlyExpenseMinor: goal.monthlyExpenseMinor,
+            commitments: context.commitments,
+          });
+          const currentRequired = goal.projection!.requiredMonthlyContributionMinor;
+          const gapBefore = currentRequired === null ? null : Math.max(0, currentRequired - goal.monthlyContributionMinor);
+          const gapAfter = currentRequired === null ? null : Math.max(0, currentRequired - scenarioMonthlyContributionMinor);
+          return {
+            goalId: goal.id, goalName: goal.name, targetDate: goal.targetDate, currency: goal.currency,
+            baselineMonthlyContributionMinor: goal.monthlyContributionMinor,
+            scenarioMonthlyContributionMinor,
+            estimatedMonthlySavingsAllocatedMinor: simulation.estimatedMonthlySavingsMinor,
+            requiredMonthlyContributionMinor: currentRequired,
+            monthlyContributionGapBeforeMinor: gapBefore,
+            monthlyContributionGapAfterMinor: gapAfter,
+            baselineProjectedBalanceMinor: goal.projection!.projectedBalanceMinor,
+            scenarioProjectedBalanceMinor: scenarioProjection.projectedBalanceMinor,
+            projectedBalanceIncreaseMinor: scenarioProjection.projectedBalanceMinor - goal.projection!.projectedBalanceMinor,
+            baselineProjectedProgressPercent: goal.projection!.projectedProgressPercent,
+            scenarioProjectedProgressPercent: scenarioProjection.projectedProgressPercent,
+            baselineEstimatedCompletionDate: goal.projection!.estimatedCompletionDate,
+            scenarioEstimatedCompletionDate: scenarioProjection.estimatedCompletionDate,
+            baselineAchievableUnderCashFlow: goal.projection!.achievableUnderCashFlow,
+            scenarioAchievableUnderCashFlow: scenarioProjection.achievableUnderCashFlow,
+            assumptions: scenarioProjection.assumptions,
+            warnings: scenarioProjection.warnings,
+          };
+        });
+      return {
+        data: {
+          baseline: context.baseline, simulation, goalImpacts, goal: context.goal,
+          accountScope: context.accountScope, warnings: context.warnings,
+          comparison: {
+            baselineMonthlySavingsMinor: context.baseline.monthlySavingsMinor,
+            scenarioMonthlySavingsMinor: simulation.projectedMonthlySavingsMinor,
+            improvementMonthlyMinor: simulation.estimatedMonthlySavingsMinor,
+            referenceStartDate: context.baseline.startDate,
+            referenceEndDate: context.baseline.endDate,
+          },
+        },
+      };
     } catch (error) {
       const normalized = sanitizedErrorResponse(error);
       return reply.code(normalized.statusCode).send(normalized.body);
