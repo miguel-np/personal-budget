@@ -152,7 +152,7 @@ async function restoreEnvContents(contents: string | null): Promise<void> {
 async function archiveMembers(archive: string): Promise<void> {
   const listing = await command('tar', ['-tzf', archive]);
   const detailedListing = await command('tar', ['-tvzf', archive]);
-  validateArchiveMembers(listing.stdout.split(/\r?\n/).map((item) => item.trim()).filter(Boolean), basename(dataDir));
+  validateArchiveMembers(listing.stdout.split(/\r?\n/).map((item) => item.trim()).filter(Boolean), 'personal-budget-backup');
   validateArchiveEntryTypes(detailedListing.stdout.split(/\r?\n/).filter(Boolean));
 }
 
@@ -182,9 +182,9 @@ async function verifyEncryptedArchive(archiveInput: string): Promise<void> {
 
 async function createVerifiedBackup(): Promise<string> {
   const result = await npmCommand(['run', 'backup:actual']);
-  const line = result.stdout.split(/\r?\n/).find((item) => item.startsWith('Verified encrypted backup created: '));
+  const prefix = 'Verified encrypted Personal Budget backup created: ';\n  const line = result.stdout.split(/\r?\n/).find((item) => item.startsWith(prefix));
   if (!line) throw new Error('The backup command did not report a verified archive path.');
-  const archive = line.slice('Verified encrypted backup created: '.length).trim();
+  const archive = line.slice(prefix.length).trim();
   await verifyEncryptedArchive(archive);
   return resolve(root, archive);
 }
