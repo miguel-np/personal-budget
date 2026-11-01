@@ -97,6 +97,36 @@ describe('periodic review store', () => {
     })).rejects.toThrow();
   });
 
+  it('continues reading legacy v1 items that predate stable cross-period identity', async () => {
+    const directory = await makeDirectory();
+    await writeFile(join(directory, 'periodic-reviews.json'), JSON.stringify({
+      version: 1,
+      reviews: [{
+        id: '00000000-0000-4000-8000-000000000001',
+        periodType: 'monthly',
+        startDate: '2026-10-01',
+        endDate: '2026-10-31',
+        generatedAt: '2026-11-01T00:00:00.000Z',
+        currency: 'EUR',
+        accountScope: { mode: 'all', label: 'Todas las cuentas abiertas', fingerprint: '0123456789abcdef' },
+        status: 'in_progress',
+        items: [{
+          findingId: 'legacy-period-specific-id',
+          findingType: 'pending-categorization',
+          fingerprint: '0123456789abcdef',
+          status: 'pending',
+        }],
+      }],
+    }));
+    const state = await readPeriodicReviewState(directory);
+    expect(state.reviews[0]?.items[0]).toMatchObject({
+      findingId: 'legacy-period-specific-id',
+      status: 'pending',
+    });
+    expect(state.reviews[0]?.items[0]?.identityKey).toBeUndefined();
+    expect(state.reviews[0]?.items[0]?.evidenceFingerprint).toBeUndefined();
+  });
+
   it('rejects malformed persisted schemas rather than silently discarding review history', async () => {
     const directory = await makeDirectory();
     await writeFile(join(directory, 'periodic-reviews.json'), JSON.stringify({ version: 2, reviews: [] }));
