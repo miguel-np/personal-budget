@@ -175,6 +175,8 @@ export async function updatePeriodicReviewItem(
     const items = existing.items.map((item) => item.findingId !== findingId ? item : ReviewItemSchema.parse({
       findingId: item.findingId,
       findingType: item.findingType,
+      ...(item.identityKey ? { identityKey: item.identityKey } : {}),
+      ...(item.evidenceFingerprint ? { evidenceFingerprint: item.evidenceFingerprint } : {}),
       fingerprint: item.fingerprint,
       status,
       ...(status === 'postponed' && postponedUntil ? { postponedUntil } : {}),
