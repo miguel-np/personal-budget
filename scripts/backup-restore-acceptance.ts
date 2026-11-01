@@ -117,7 +117,17 @@ async function verifyAppState(): Promise<void> {
     const expected = JSON.stringify(fixture[name], null, 2) + '\n';
     if (content !== expected) throw new Error('Restored Personal Budget state differs from the synthetic fixture: ' + name);
   }
-  process.stdout.write('Verified six restored Personal Budget state files.\n');
+  // Exercise the real production readers so byte equality is not the only check.
+  await readAccountScope(appDataDir);
+  await readAppPreferences(appDataDir);
+  await readCurrencyPreferences(appDataDir, 'EUR');
+  await readFindingReviewState(appDataDir);
+  await readPlanningData(appDataDir);
+  const periodic = JSON.parse(await readFile(join(appDataDir, 'periodic-reviews.json'), 'utf8')) as { version?: number; reviews?: unknown[] };
+  if (periodic.version !== 1 || !Array.isArray(periodic.reviews)) {
+    throw new Error('Restored periodic review metadata does not match the versioned state contract.');
+  }
+  process.stdout.write('Verified six restored Personal Budget state files using production readers.\n');
 }
 
 async function roundtrip(): Promise<void> {
