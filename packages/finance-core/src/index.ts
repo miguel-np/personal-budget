@@ -9,3 +9,5 @@ export * from './forecast.js';
 export * from './planning.js';
 export * from './intelligence.js';
 export * from './anomalies.js';
+export * from './cash-flow.js';
+export * from './budget-improvement.js';
