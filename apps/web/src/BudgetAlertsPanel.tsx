@@ -167,10 +167,11 @@ export function BudgetAlertsPanel({ month, currency }: { month: string; currency
             {data.alerts.length === 0 ? <p className="muted-copy">No hay umbrales cruzados en este periodo o todos los avisos ya están revisados/pospuestos.</p> : null}
             {data.alerts.map((alert) => {
               const category = data.categories.find((item) => item.categoryId === alert.categoryId);
+              const displayBudgetValue = (value: number | null | undefined) => value === null || value === undefined ? 'Desconocido' : formatMoney(value, data.currency);
               return (
               <div className="comparison-row" key={alert.eventId}>
                 <div><strong>{alert.categoryName}</strong><span>{alert.message}</span>
-                  <span>Asignado: {formatMoney(category?.budgetedMinor ?? null, data.currency)} · Gastado: {formatMoney(category?.spentMinor ?? null, data.currency)} · Disponible: {formatMoney(category?.availableMinor ?? null, data.currency)}</span>
+                  <span>Asignado: {displayBudgetValue(category?.budgetedMinor)} · Gastado: {displayBudgetValue(category?.spentMinor)} · Disponible: {displayBudgetValue(category?.availableMinor)}</span>
                   <a href={'#budget-category-' + encodeURIComponent(alert.categoryId)}>Ver detalle en Presupuestos</a>
                 </div>
                 <div className="comparison-meta">

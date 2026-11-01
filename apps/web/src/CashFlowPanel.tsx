@@ -27,7 +27,7 @@ interface CashFlowResponse {
   duplicateCommitmentIds: readonly string[]; possibleDuplicateCommitments: readonly string[];
   projection: CashFlowResult; notes: readonly string[];
 }
-interface ApiPayload<T> { data?: T; error?: { message?: string } }
+interface ApiPayload<T> { data?: T; error?: { code?: string; message?: string } }
 function minorFactor(currency: string): number {
   const digits = new Intl.NumberFormat('es-ES', { style: 'currency', currency }).resolvedOptions().maximumFractionDigits ?? 2;
   return 10 ** digits;
