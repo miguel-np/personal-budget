@@ -50,8 +50,8 @@ const transactions = Array.from({ length: 22 }, (_, index) => {
 
 const transferSource = {
   id: 'synthetic-transfer-source', account: account.id, date: iso(now), amount: -5_000,
-  transfer_id: 'synthetic-transfer-counterpart', payee_name: transferAccount.name,
-  imported_payee: transferAccount.name, notes: 'Transferencia sintética', cleared: false,
+  transfer_id: 'synthetic-transfer-counterpart', payee_name: 'Transferencia sintética',
+  imported_payee: 'Transferencia sintética', notes: 'Transferencia sintética', cleared: false,
 };
 const transferCounterpart = {
   id: 'synthetic-transfer-counterpart', account: transferAccount.id, date: iso(now), amount: 5_000,
