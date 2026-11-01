@@ -224,7 +224,7 @@ describe('official document evidence and temporal metadata', () => {
 
   it('handles malformed and alternate date encodings conservatively', () => {
     const malformed = assessBoeTemporalMetadata({
-      fecha_vigencia: '2026-13-50',
+      fecha_vigencia: '2026-02-31',
       fecha_publicacion: 'not-a-date',
       fecha_actualizacion: '2026-11-01T00:00:00Z',
       estatus_derogacion: 'maybe',
