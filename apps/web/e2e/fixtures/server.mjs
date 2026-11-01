@@ -498,8 +498,11 @@ const server = createServer(async (req, res) => {
       const previousItem = previous?.items.find((item) => item.findingId === findingId && item.fingerprint === '0123456789abcdef');
       const previousStatus = previousItem?.status === 'reviewed' || (previousItem?.status === 'postponed' && previousItem.postponedUntil >= iso(now))
         ? previousItem.status : 'pending';
+      const identityKey = '13579bdf2468ace0';
+      const evidenceFingerprint = 'fedcba9876543210';
       const item = {
-        findingId, findingType: 'pending-categorization', fingerprint: '0123456789abcdef',
+        findingId, findingType: 'pending-categorization', identityKey, evidenceFingerprint,
+        fingerprint: '0123456789abcdef',
         status: previousStatus, ...(previousStatus === 'postponed' ? { postponedUntil: previousItem.postponedUntil } : {}),
       };
       const run = {
@@ -523,7 +526,7 @@ const server = createServer(async (req, res) => {
       const comparisonPeriod = { startDate: iso(priorStart), endDate: iso(priorEnd) };
       const previousSummary = summary(comparisonPeriod.startDate, comparisonPeriod.endDate);
       const finding = {
-        schemaVersion: 1, id: findingId, fingerprint: '0123456789abcdef',
+        schemaVersion: 1, id: findingId, identityKey, evidenceFingerprint, fingerprint: '0123456789abcdef',
         type: 'pending-categorization', title: 'Hay movimientos pendientes de clasificar',
         explanation: 'Hay movimientos sintéticos sin categoría en el periodo. No se aplican categorías automáticamente.',
         period: { startDate, endDate },
