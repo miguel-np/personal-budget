@@ -9,8 +9,8 @@ const OFFICIAL_DOMAINS = [
   'sede.tea.hacienda.gob.es',
   'lex.gal',
   'seg-social.es',
+  'seg-social.gob.es',
   'xunta.gal',
-  'dog.gal',
   'cnmv.es',
   'bde.es',
 ] as const;
