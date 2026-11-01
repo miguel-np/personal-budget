@@ -13,6 +13,7 @@ import {
   validateArchiveEntryTypes, validateArchiveMembers, validateBackupManifest,
 } from './backup-restore.js';
 import { decryptBackupFile, encryptBackupFile, loadOrCreateBackupKey, readBackupKey } from './backup-encryption.js';
+import { listDocumentFilesForBackup, readDocumentFile, readDocumentIndex } from '../services/api/src/documents-store.js';
 
 const execFileAsync = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -41,12 +42,21 @@ interface ManifestFile {
   readonly sizeBytes: number;
   readonly sha256: string;
 }
+interface ManifestDocumentFile {
+  readonly fileName: string;
+  readonly sizeBytes: number;
+  readonly sha256: string;
+}
 interface BundleManifest {
   readonly format: 'personal-budget-backup';
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 1 | 2;
   readonly createdAt: string;
   readonly actualServerData: { readonly root: 'actual-server-data' };
-  readonly personalBudgetState: { readonly root: 'personal-budget-state'; readonly files: readonly ManifestFile[] };
+  readonly personalBudgetState: {
+    readonly root: 'personal-budget-state';
+    readonly files: readonly ManifestFile[];
+    readonly documents?: { readonly directory: 'documents'; readonly files: readonly ManifestDocumentFile[] };
+  };
   readonly exclusions: readonly string[];
 }
 interface ExtractedBundle {
@@ -158,15 +168,23 @@ async function buildBundle(stage: string): Promise<string> {
     files.push(entry);
   }
 
+  const documents = await listDocumentFilesForBackup(appDataDir);
+  const documentsSnapshot = join(appSnapshot, 'documents');
+  await mkdir(documentsSnapshot, { recursive: true, mode: 0o700 });
+  for (const file of documents) {
+    await copyFile(join(appDataDir, 'documents', file.fileName), join(documentsSnapshot, file.fileName));
+    await chmod(join(documentsSnapshot, file.fileName), 0o600).catch(() => undefined);
+  }
+
   const manifest: BundleManifest = {
     format: 'personal-budget-backup',
-    schemaVersion: 1,
+    schemaVersion: 2,
     createdAt: new Date().toISOString(),
     actualServerData: { root: actualRoot },
-    personalBudgetState: { root: appStateRoot, files },
+    personalBudgetState: { root: appStateRoot, files, documents: { directory: 'documents', files: documents } },
     exclusions: [
       'Secret configuration (.env), backup keys, encrypted backup archives and logs.',
-      'Unmanaged ACTUAL_DATA_DIR contents belonging to @actual-app/api; only the explicitly listed Personal Budget JSON stores are included.',
+      'Unmanaged ACTUAL_DATA_DIR contents belonging to @actual-app/api; only the explicitly listed Personal Budget JSON stores and validated local documents are included.',
       'Temporary imports, downloaded AI models, node_modules, caches and other regenerable runtime files.',
       'External Ollama models, Docker images, environment variables and credentials.',
     ],
@@ -191,9 +209,11 @@ async function validateExtractedBundle(bundle: string): Promise<BundleManifest> 
   validateBackupManifest(manifest);
   const typed = manifest as BundleManifest;
   const expectedFiles = new Set(typed.personalBudgetState.files.map((file) => file.name));
+  const expectsDocuments = typed.schemaVersion === 2;
   const actualFiles = await readdir(join(bundle, appStateRoot));
-  if (actualFiles.some((name) => !expectedFiles.has(name)) ||
-      actualFiles.length !== expectedFiles.size ||
+  const expectedEntries = new Set([...expectedFiles, ...(expectsDocuments ? ['documents'] : [])]);
+  if (actualFiles.some((name) => !expectedEntries.has(name)) ||
+      actualFiles.length !== expectedEntries.size ||
       typed.personalBudgetState.files.length !== expectedFiles.size) {
     throw new Error('Backup Personal Budget state inventory does not match its manifest.');
   }
@@ -206,6 +226,29 @@ async function validateExtractedBundle(bundle: string): Promise<BundleManifest> 
     }
     const parsed = JSON.parse(await readFile(path, 'utf8')) as unknown;
     if (parsed === null || typeof parsed !== 'object') throw new Error('Backup state JSON is invalid: ' + file.name);
+  }
+  if (expectsDocuments) {
+    const stateDirectory = join(bundle, appStateRoot);
+    await assertDirectory(join(stateDirectory, 'documents'), 'Backup local document directory is missing or unsafe.');
+    const index = await readDocumentIndex(stateDirectory);
+    const manifestDocuments = typed.personalBudgetState.documents?.files ?? [];
+    if (index.documents.length !== manifestDocuments.length) throw new Error('Backup document index count does not match its manifest.');
+    const expectedDocumentNames = new Set(manifestDocuments.map((file) => file.fileName));
+    const actualDocumentNames = await readdir(join(stateDirectory, 'documents'));
+    if (actualDocumentNames.length !== expectedDocumentNames.size || actualDocumentNames.some((name) => !expectedDocumentNames.has(name))) {
+      throw new Error('Backup binary document inventory does not match its manifest.');
+    }
+    const manifestByName = new Map(manifestDocuments.map((file) => [file.fileName, file]));
+    for (const record of index.documents) {
+      const file = manifestByName.get(record.fileName);
+      if (!file || file.sizeBytes !== record.sizeBytes || file.sha256 !== record.sha256) {
+        throw new Error('Backup document metadata does not match the binary manifest.');
+      }
+      const content = await readDocumentFile(stateDirectory, record);
+      if (content.length !== file.sizeBytes || await checksumFile(join(stateDirectory, 'documents', file.fileName)) !== file.sha256) {
+        throw new Error('Backup document failed semantic integrity validation.');
+      }
+    }
   }
   return typed;
 }
@@ -298,7 +341,11 @@ async function backup(): Promise<string> {
   }
 }
 
-async function snapshotAppState(safetyDirectory: string): Promise<Set<string>> {
+interface AppStateSnapshot {
+  readonly files: ReadonlySet<string>;
+  readonly documentsPresent: boolean;
+}
+async function snapshotAppState(safetyDirectory: string): Promise<AppStateSnapshot> {
   await mkdir(safetyDirectory, { recursive: true, mode: 0o700 });
   const present = new Set<string>();
   for (const name of APP_STATE_FILE_NAMES) {
@@ -309,7 +356,13 @@ async function snapshotAppState(safetyDirectory: string): Promise<Set<string>> {
     await copyFile(source, join(safetyDirectory, name));
     present.add(name);
   }
-  return present;
+  const documentsSource = join(appDataDir, 'documents');
+  const documentsInfo = await lstat(documentsSource).catch((error: unknown) => isMissing(error) ? null : Promise.reject(error));
+  if (documentsInfo) {
+    if (!documentsInfo.isDirectory() || documentsInfo.isSymbolicLink()) throw new Error('Current local document storage is not a safe directory.');
+    await cp(documentsSource, join(safetyDirectory, 'documents'), { recursive: true, errorOnExist: true, force: false, verbatimSymlinks: true });
+  }
+  return { files: present, documentsPresent: Boolean(documentsInfo) };
 }
 
 async function installAppState(bundle: string, manifest: BundleManifest): Promise<void> {
@@ -320,6 +373,7 @@ async function installAppState(bundle: string, manifest: BundleManifest): Promis
   for (const name of APP_STATE_FILE_NAMES) {
     const target = join(targetDirectory, name);
     if (!included.has(name)) {
+      if (manifest.schemaVersion === 1 && (name === 'wealth-data.json' || name === 'documents-index.json')) continue;
       await rm(target, { force: true });
       continue;
     }
@@ -333,13 +387,25 @@ async function installAppState(bundle: string, manifest: BundleManifest): Promis
       await rm(temporary, { force: true }).catch(() => undefined);
     }
   }
+  if (manifest.schemaVersion === 2) {
+    const source = join(sourceDirectory, 'documents');
+    await assertDirectory(source, 'Backup local document directory is missing or unsafe.');
+    const target = join(targetDirectory, 'documents');
+    const temporary = target + '.' + randomUUID() + '.restore.tmp';
+    try {
+      await cp(source, temporary, { recursive: true, errorOnExist: true, force: false, verbatimSymlinks: true });
+      await rm(target, { recursive: true, force: true });
+      await rename(temporary, target);
+      await chmod(target, 0o700).catch(() => undefined);
+    } finally { await rm(temporary, { recursive: true, force: true }).catch(() => undefined); }
+  }
 }
 
-async function restoreAppStateFromSafety(safetyDirectory: string, previouslyPresent: ReadonlySet<string>): Promise<void> {
+async function restoreAppStateFromSafety(safetyDirectory: string, previouslyPresent: AppStateSnapshot): Promise<void> {
   await mkdir(appDataDir, { recursive: true, mode: 0o700 });
   for (const name of APP_STATE_FILE_NAMES) {
     const target = join(appDataDir, name);
-    if (!previouslyPresent.has(name)) {
+    if (!previouslyPresent.files.has(name)) {
       await rm(target, { force: true });
       continue;
     }
@@ -352,6 +418,18 @@ async function restoreAppStateFromSafety(safetyDirectory: string, previouslyPres
     } finally {
       await rm(temporary, { force: true }).catch(() => undefined);
     }
+  }
+  const targetDocuments = join(appDataDir, 'documents');
+  if (!previouslyPresent.documentsPresent) {
+    await rm(targetDocuments, { recursive: true, force: true });
+  } else {
+    const temporary = targetDocuments + '.' + randomUUID() + '.rollback.tmp';
+    try {
+      await cp(join(safetyDirectory, 'documents'), temporary, { recursive: true, errorOnExist: true, force: false, verbatimSymlinks: true });
+      await rm(targetDocuments, { recursive: true, force: true });
+      await rename(temporary, targetDocuments);
+      await chmod(targetDocuments, 0o700).catch(() => undefined);
+    } finally { await rm(temporary, { recursive: true, force: true }).catch(() => undefined); }
   }
 }
 
@@ -367,7 +445,7 @@ async function restore(archiveInput: string, confirmed: boolean): Promise<{ actu
   const timestamp = new Date().toISOString().replace(/[-:.]/g, '');
   const actualSafetyCopy = dataDir + '.pre-restore-' + timestamp;
   const appStateSafetyCopy = appDataDir + '.pre-restore-' + timestamp;
-  let previouslyPresent = new Set<string>();
+  let previouslyPresent: AppStateSnapshot = { files: new Set<string>(), documentsPresent: false };
   let currentActualExists = false;
   let actualStopped = false;
   let oldActualMoved = false;
