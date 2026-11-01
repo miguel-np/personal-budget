@@ -23,7 +23,7 @@ describe('periodic review store', () => {
       endDate: '2026-10-30',
       currency: 'EUR',
       accountScope: { mode: 'all', label: 'Todas las cuentas abiertas', fingerprint: '0123456789abcdef' },
-      items: [{ findingId: 'pending-categorization:2026-10', findingType: 'pending-categorization', identityKey: '1111111111111111', evidenceFingerprint: '2222222222222222', fingerprint: '0123456789abcdef', status: 'pending' }],
+      items: [{ findingId: 'pending-categorization:2026-10', findingType: 'pending-categorization', identityKey: '0123456789abcdef', evidenceFingerprint: 'fedcba9876543210', fingerprint: '0123456789abcdef', status: 'pending' }],
     });
 
     expect(review).toMatchObject({ periodType: 'monthly', status: 'in_progress', currency: 'EUR' });
@@ -45,8 +45,8 @@ describe('periodic review store', () => {
       currency: 'EUR',
       accountScope: { mode: 'selected', label: 'Dos cuentas seleccionadas', fingerprint: 'fedcba9876543210' },
       items: [
-        { findingId: 'finding-a', findingType: 'expense-change', identityKey: '1111111111111111', evidenceFingerprint: '2222222222222222', fingerprint: '0123456789abcdef', status: 'pending' },
-        { findingId: 'finding-b', findingType: 'financial-anomaly', identityKey: '3333333333333333', evidenceFingerprint: '4444444444444444', fingerprint: 'fedcba9876543210', status: 'pending' },
+        { findingId: 'finding-a', findingType: 'expense-change', identityKey: '0123456789abcdef', evidenceFingerprint: 'fedcba9876543210', fingerprint: '0123456789abcdef', status: 'pending' },
+        { findingId: 'finding-b', findingType: 'financial-anomaly', identityKey: 'abcdef0123456789', evidenceFingerprint: '0123456789abcdef', fingerprint: 'fedcba9876543210', status: 'pending' },
       ],
     });
 
@@ -54,8 +54,8 @@ describe('periodic review store', () => {
     expect(partlyHandled?.status).toBe('in_progress');
     expect(partlyHandled?.items[0]).toMatchObject({
       status: 'reviewed',
-      identityKey: '1111111111111111',
-      evidenceFingerprint: '2222222222222222',
+      identityKey: '0123456789abcdef',
+      evidenceFingerprint: 'fedcba9876543210',
     });
 
     const completed = await updatePeriodicReviewItem(directory, review.id, 'finding-b', 'postponed', '2026-11-06');
@@ -64,8 +64,8 @@ describe('periodic review store', () => {
     expect(completed?.items[1]).toMatchObject({
       status: 'postponed',
       postponedUntil: '2026-11-06',
-      identityKey: '3333333333333333',
-      evidenceFingerprint: '4444444444444444',
+      identityKey: 'abcdef0123456789',
+      evidenceFingerprint: '0123456789abcdef',
     });
     expect(await updatePeriodicReviewItem(directory, review.id, 'missing', 'reviewed')).toBeNull();
     expect((await readPeriodicReviewState(directory)).reviews[0]?.status).toBe('completed');
@@ -80,8 +80,8 @@ describe('periodic review store', () => {
       currency: 'EUR',
       accountScope: { mode: 'all', label: 'Todas las cuentas abiertas', fingerprint: '0123456789abcdef' },
       items: [
-        { findingId: 'finding-a', findingType: 'expense-change', identityKey: '1111111111111111', evidenceFingerprint: '2222222222222222', fingerprint: '0123456789abcdef', status: 'pending' },
-        { findingId: 'finding-b', findingType: 'income-change', identityKey: '3333333333333333', evidenceFingerprint: '4444444444444444', fingerprint: 'abcdef0123456789', status: 'pending' },
+        { findingId: 'finding-a', findingType: 'expense-change', identityKey: '0123456789abcdef', evidenceFingerprint: 'fedcba9876543210', fingerprint: '0123456789abcdef', status: 'pending' },
+        { findingId: 'finding-b', findingType: 'income-change', identityKey: 'abcdef0123456789', evidenceFingerprint: '0123456789abcdef', fingerprint: 'abcdef0123456789', status: 'pending' },
       ],
     });
     await Promise.all([
@@ -100,8 +100,8 @@ describe('periodic review store', () => {
       currency: 'EUR',
       accountScope: { mode: 'all', label: 'Todas las cuentas abiertas', fingerprint: '0123456789abcdef' },
       items: [
-        { findingId: 'same-finding', findingType: 'expense-change', identityKey: '1111111111111111', evidenceFingerprint: '2222222222222222', fingerprint: '0123456789abcdef', status: 'pending' },
-        { findingId: 'same-finding', findingType: 'expense-change', identityKey: '1111111111111111', evidenceFingerprint: '2222222222222222', fingerprint: '0123456789abcdef', status: 'pending' },
+        { findingId: 'same-finding', findingType: 'expense-change', identityKey: '0123456789abcdef', evidenceFingerprint: 'fedcba9876543210', fingerprint: '0123456789abcdef', status: 'pending' },
+        { findingId: 'same-finding', findingType: 'expense-change', identityKey: '0123456789abcdef', evidenceFingerprint: 'fedcba9876543210', fingerprint: '0123456789abcdef', status: 'pending' },
       ],
     })).rejects.toThrow();
   });
