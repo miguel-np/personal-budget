@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 import {
   chmod, cp, copyFile, lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile,
 } from 'node:fs/promises';
-import { createReadStream } from 'node:fs';
+import { createReadStream, existsSync } from 'node:fs';
 import { createConnection } from 'node:net';
 import { dirname, basename, isAbsolute, relative, resolve, sep, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,7 +17,7 @@ import { decryptBackupFile, encryptBackupFile, loadOrCreateBackupKey, readBackup
 const execFileAsync = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const envFile = resolve(root, '.env');
-if (await stat(envFile).catch(() => null)) process.loadEnvFile(envFile);
+if (existsSync(envFile)) process.loadEnvFile(envFile);
 
 const dataDir = resolve(root, process.env.ACTUAL_SERVER_DATA_DIR ?? '.local/actual-server-data');
 const appDataDir = resolve(root, process.env.ACTUAL_DATA_DIR ?? '.local/actual-api');
@@ -68,7 +68,8 @@ async function assertDirectory(path: string, message: string): Promise<void> {
   if (!info?.isDirectory() || info.isSymbolicLink()) throw new Error(message);
 }
 async function pathExists(path: string): Promise<boolean> {
-  return Boolean(await lstat(path).catch(() => null));
+  try { await lstat(path); return true; }
+  catch (error) { if (isMissing(error)) return false; throw error; }
 }
 function isMissing(error: unknown): boolean {
   return Boolean(error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT');
@@ -180,6 +181,10 @@ async function validateExtractedBundle(bundle: string): Promise<BundleManifest> 
   await assertDirectory(join(bundle, actualRoot), 'Backup is missing Actual server data.');
   await assertDirectory(join(bundle, appStateRoot), 'Backup is missing Personal Budget state directory.');
   const manifestPath = join(bundle, 'backup-manifest.json');
+  const rootEntries = (await readdir(bundle)).sort();
+  if (rootEntries.join('|') !== ['actual-server-data', 'backup-manifest.json', 'personal-budget-state'].sort().join('|')) {
+    throw new Error('Backup bundle contains unexpected top-level entries.');
+  }
   const manifestInfo = await lstat(manifestPath).catch(() => null);
   if (!manifestInfo?.isFile() || manifestInfo.isSymbolicLink()) throw new Error('Backup manifest is missing or unsafe.');
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as unknown;
@@ -282,9 +287,15 @@ async function backup(): Promise<string> {
       await waitForActual();
     }
   }
-  await verifyArchive(archive, key);
-  await pruneOldBackups();
-  return archive;
+  try {
+    await verifyArchive(archive, key);
+    await pruneOldBackups();
+    return archive;
+  } catch (error) {
+    await rm(archive, { force: true }).catch(() => undefined);
+    await rm(archive + '.sha256', { force: true }).catch(() => undefined);
+    throw error;
+  }
 }
 
 async function snapshotAppState(safetyDirectory: string): Promise<Set<string>> {
@@ -355,12 +366,15 @@ async function restore(archiveInput: string, confirmed: boolean): Promise<{ actu
   const timestamp = new Date().toISOString().replace(/[-:.]/g, '');
   const actualSafetyCopy = dataDir + '.pre-restore-' + timestamp;
   const appStateSafetyCopy = appDataDir + '.pre-restore-' + timestamp;
-  const previouslyPresent = await snapshotAppState(appStateSafetyCopy);
-  const currentActualExists = await pathExists(dataDir);
+  let previouslyPresent = new Set<string>();
+  let currentActualExists = false;
   let actualStopped = false;
   let oldActualMoved = false;
   let newActualMoved = false;
   try {
+    previouslyPresent = await snapshotAppState(appStateSafetyCopy);
+    currentActualExists = await pathExists(dataDir);
+    if (currentActualExists) await assertDirectory(dataDir, 'Current Actual data directory is unsafe.');
     await command('docker', ['compose', 'stop', 'actual']);
     actualStopped = true;
     if (currentActualExists) {
