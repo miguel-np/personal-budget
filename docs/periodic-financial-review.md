@@ -48,7 +48,7 @@ Las rutas validan el esquema de entrada, no devuelven contenido sensible de erro
 
 ## Backup y restauración
 
-periodic-reviews.json se escribe junto al resto del estado propio en ACTUAL_DATA_DIR. La issue #64 sigue siendo la encargada de unificar la recuperación cifrada de Actual y Personal Budget. **El backup backup:actual existente respalda actualmente el volumen de Actual, no todo ACTUAL_DATA_DIR; por tanto, hasta integrar y validar #64, el historial de revisiones no debe considerarse cubierto por el backup actual.** No se anuncia una recuperación completa ni se sube este archivo a Git.
+periodic-reviews.json se escribe junto al resto del estado propio en ACTUAL_DATA_DIR y está incluido explícitamente en la whitelist del manifiesto versionado v1 del backup unificado. La PR #89, integrada para resolver #64, prueba en CI la copia cifrada de Actual + los seis almacenes propios y su restauración completa con datos sintéticos, incluida la recuperación de este historial. Para crear/restaurar una copia, detén Personal Budget y sigue el procedimiento de [backup y restauración](backup-restore.md). No se incluyen secretos, claves, conversaciones ni transacciones duplicadas; no subas el archivo a Git.
 
 ## Validación
 
