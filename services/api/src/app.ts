@@ -378,6 +378,10 @@ const WebResearchRequestSchema = z.object({
   mode: z.enum(['general', 'tax']).default('general'),
   domains: z.array(z.enum(OFFICIAL_SOURCE_DOMAINS)).max(OFFICIAL_SOURCE_DOMAINS.length).default([]),
   jurisdiction: z.string().trim().min(1).max(120).optional(),
+  autonomousCommunity: z.string().trim().min(1).max(120).optional(),
+  municipality: z.string().trim().min(1).max(120).optional(),
+  taxpayerType: z.enum(['individual', 'self_employed', 'company', 'other']).optional(),
+  eventDate: z.string().refine(isIsoDate, 'eventDate must be a valid YYYY-MM-DD date.').optional(),
   matter: z.string().trim().min(1).max(120).optional(),
   taxYear: z.string().regex(/^\d{4}$/).optional(),
   filingYear: z.string().regex(/^\d{4}$/).optional(),
@@ -770,6 +774,10 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         mode: query.mode,
         ...(query.mode === 'tax' ? {
           jurisdiction: query.jurisdiction!,
+          ...(query.autonomousCommunity ? { autonomousCommunity: query.autonomousCommunity } : {}),
+          ...(query.municipality ? { municipality: query.municipality } : {}),
+          ...(query.taxpayerType ? { taxpayerType: query.taxpayerType } : {}),
+          ...(query.eventDate ? { eventDate: query.eventDate } : {}),
           matter: query.matter!,
           taxYear: query.taxYear!,
           filingYear: query.filingYear!,
@@ -787,6 +795,10 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         ...(query.mode === 'tax' ? {
           taxContext: {
             jurisdiction: query.jurisdiction,
+            autonomousCommunity: query.autonomousCommunity ?? null,
+            municipality: query.municipality ?? null,
+            taxpayerType: query.taxpayerType ?? null,
+            eventDate: query.eventDate ?? null,
             matter: query.matter,
             taxYear: query.taxYear,
             filingYear: query.filingYear,

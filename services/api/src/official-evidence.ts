@@ -6,7 +6,7 @@ import type { WebSearchSource } from './web-search.js';
 /**
  * Official sources are a deliberately small allowlist. A result URL is never
  * treated as a general-purpose fetch target: it must be HTTPS and belong to one
- * of these registrable domains. BOE legislation is resolved through its fixed
+ * of these explicitly approved hostnames. BOE legislation is resolved through its fixed
  * official Open Data API using a validated BOE document identifier.
  */
 export const OFFICIAL_SOURCE_DOMAINS = [
@@ -17,12 +17,49 @@ export const OFFICIAL_SOURCE_DOMAINS = [
   'serviciostelematicosext.hacienda.gob.es',
   'sede.tea.hacienda.gob.es',
   'seg-social.es',
+  'seg-social.gob.es',
   'xunta.gal',
-  'dog.gal',
   'lex.gal',
   'cnmv.es',
   'bde.es',
 ] as const;
+
+/**
+ * Exact hosts approved for result classification and server-side retrieval.
+ * Domain filters above are user-facing groups; they are not fetch permissions.
+ * Add a hostname only after validating institutional ownership and purpose.
+ */
+export const OFFICIAL_SOURCE_HOSTS = [
+  'sede.agenciatributaria.gob.es',
+  'boe.es',
+  'www.boe.es',
+  'hacienda.gob.es',
+  'www.hacienda.gob.es',
+  'petete.tributos.hacienda.gob.es',
+  'sede.tributos.hacienda.gob.es',
+  'serviciostelematicosext.hacienda.gob.es',
+  'sede.tea.hacienda.gob.es',
+  'seg-social.es',
+  'www.seg-social.es',
+  'sede.seg-social.gob.es',
+  'portal.seg-social.gob.es',
+  'xunta.gal',
+  'www.xunta.gal',
+  'sede.xunta.gal',
+  'facenda.xunta.gal',
+  'lex.gal',
+  'cnmv.es',
+  'www.cnmv.es',
+  'bde.es',
+  'www.bde.es',
+  'sedeelectronica.bde.es',
+] as const;
+
+export type OfficialSourceHost = (typeof OFFICIAL_SOURCE_HOSTS)[number];
+
+export function isOfficialSourceHost(hostname: string): boolean {
+  return OFFICIAL_SOURCE_HOSTS.includes(hostname.toLowerCase() as OfficialSourceHost);
+}
 
 export type OfficialDocumentStatus = 'retrieved' | 'partial' | 'unavailable' | 'unsupported';
 export type BoeTemporalAssessment =
@@ -104,8 +141,7 @@ function isPublicAddress(address: string, family: number): boolean {
     !normalized.startsWith('2001:20:');
 }
 function isOfficialHost(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
-  return OFFICIAL_SOURCE_DOMAINS.some((domain) => host === domain || host.endsWith('.' + domain));
+  return isOfficialSourceHost(hostname);
 }
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -335,7 +371,7 @@ function parseJsonPayload(payload: HttpsPayload): Record<string, unknown> | null
 function boeIdentifier(source: WebSearchSource): string | null {
   let url: URL;
   try { url = new URL(source.url); } catch { return null; }
-  if (!isOfficialHost(url.hostname) || !url.hostname.toLowerCase().endsWith('boe.es')) return null;
+  if (!isOfficialHost(url.hostname) || !['boe.es', 'www.boe.es'].includes(url.hostname.toLowerCase())) return null;
   const candidate = url.searchParams.get('id') ?? url.pathname.match(/\/(BOE-A-\d{4}-\d{1,8})(?:\/|$)/)?.[1] ?? '';
   return /^BOE-A-\d{4}-\d{1,8}$/.test(candidate) ? candidate : null;
 }

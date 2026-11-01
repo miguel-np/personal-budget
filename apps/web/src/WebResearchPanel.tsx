@@ -9,8 +9,8 @@ const OFFICIAL_DOMAINS = [
   'sede.tea.hacienda.gob.es',
   'lex.gal',
   'seg-social.es',
+  'seg-social.gob.es',
   'xunta.gal',
-  'dog.gal',
   'cnmv.es',
   'bde.es',
 ] as const;
@@ -49,7 +49,9 @@ interface SearchSource {
 }
 interface ResearchResponse {
   data?: { answer: string; provider: string; searchedAt: string; mode: 'general' | 'tax'; taxContext?: {
-    jurisdiction: string; matter: string; taxYear: string; filingYear: string; referenceDate: string;
+    jurisdiction: string; autonomousCommunity?: string | null; municipality?: string | null;
+    taxpayerType?: 'individual' | 'self_employed' | 'company' | 'other' | null;
+    eventDate?: string | null; matter: string; taxYear: string; filingYear: string; referenceDate: string;
   }; sources: readonly SearchSource[]; sourceCount: number; };
   error?: { code?: string; message?: string };
 }
@@ -112,6 +114,10 @@ export function WebResearchPanel() {
   const [consent, setConsent] = useState(false);
   const [domainsText, setDomainsText] = useState('');
   const [jurisdiction, setJurisdiction] = useState('');
+  const [autonomousCommunity, setAutonomousCommunity] = useState('');
+  const [municipality, setMunicipality] = useState('');
+  const [taxpayerType, setTaxpayerType] = useState<'' | 'individual' | 'self_employed' | 'company' | 'other'>('');
+  const [eventDate, setEventDate] = useState('');
   const [matter, setMatter] = useState('');
   const [taxYear, setTaxYear] = useState('');
   const [filingYear, setFilingYear] = useState('');
@@ -142,7 +148,14 @@ export function WebResearchPanel() {
           query: query.trim(),
           mode,
           domains,
-          ...(mode === 'tax' ? { jurisdiction, matter, taxYear, filingYear, referenceDate } : {}),
+          ...(mode === 'tax' ? {
+            jurisdiction: jurisdiction.trim(),
+            ...(autonomousCommunity.trim() ? { autonomousCommunity: autonomousCommunity.trim() } : {}),
+            ...(municipality.trim() ? { municipality: municipality.trim() } : {}),
+            ...(taxpayerType ? { taxpayerType } : {}),
+            ...(eventDate ? { eventDate } : {}),
+            matter: matter.trim(), taxYear, filingYear, referenceDate,
+          } : {}),
         }),
       });
       const payload = await readJson<ResearchResponse>(response);
@@ -165,7 +178,7 @@ export function WebResearchPanel() {
         <span className="date-badge">{ready ? 'SearXNG configurado' : status ? 'Desactivado' : 'Comprobando'}</span>
       </div>
       <article className="panel assistant-panel">
-        <p>La búsqueda es independiente del análisis financiero. SearXNG recibe exclusivamente el texto exacto de la consulta que escribas. Para resultados oficiales admitidos, el servidor puede consultar hasta tres enlaces del organismo y recuperar su contenido en modo lectura; esos organismos reciben la petición desde la IP del servidor. Nunca se adjuntan cuentas, movimientos, saldos, importes, categorías, objetivos, compromisos ni el contexto del asistente financiero.</p>
+        <p>La búsqueda es independiente del análisis financiero. SearXNG recibe exclusivamente el texto exacto de la consulta que escribas. El contexto fiscal opcional se procesa con Ollama local y no se añade a la consulta externa. Para resultados oficiales admitidos, el servidor puede consultar hasta tres enlaces del organismo y recuperar su contenido en modo lectura; esos organismos reciben la petición desde la IP del servidor. Nunca se adjuntan cuentas, movimientos, saldos, importes, categorías, objetivos, compromisos ni el contexto del asistente financiero.</p>
         {!ready ? <p className="section-footnote">Para habilitarla, configura <code>WEB_SEARCH_ENABLED=true</code>, un SearXNG accesible y Ollama local. La búsqueda permanece desactivada por defecto.</p> : null}
         <form onSubmit={submit}>
           <label className="field-label">Tipo de investigación
@@ -178,17 +191,29 @@ export function WebResearchPanel() {
             <textarea value={query} onChange={(event) => { setQuery(event.currentTarget.value); setConsent(false); }} maxLength={500} rows={3} required placeholder="Escribe solo los términos que quieres consultar en el buscador." />
           </label>
           {mode === 'tax' ? <div className="research-grid">
-            <label className="field-label">Jurisdicción (no se infiere)<input value={jurisdiction} onChange={(event) => setJurisdiction(event.currentTarget.value)} maxLength={120} required placeholder="Ej. España, Galicia" /></label>
+            <label className="field-label">Jurisdicción principal (no se infiere)<input value={jurisdiction} onChange={(event) => setJurisdiction(event.currentTarget.value)} maxLength={120} required placeholder="Ej. España" /></label>
+            <label className="field-label">Comunidad autónoma (opcional)<input value={autonomousCommunity} onChange={(event) => setAutonomousCommunity(event.currentTarget.value)} maxLength={120} placeholder="Ej. Galicia, Madrid, Navarra" /></label>
+            <label className="field-label">Municipio (opcional)<input value={municipality} onChange={(event) => setMunicipality(event.currentTarget.value)} maxLength={120} placeholder="Solo si afecta al tributo o trámite" /></label>
+            <label className="field-label">Tipo de contribuyente (opcional)
+              <select value={taxpayerType} onChange={(event) => setTaxpayerType(event.currentTarget.value as typeof taxpayerType)}>
+                <option value="">No especificado</option>
+                <option value="individual">Persona física</option>
+                <option value="self_employed">Autónomo / actividad económica</option>
+                <option value="company">Sociedad</option>
+                <option value="other">Otro / no clasificado</option>
+              </select>
+            </label>
             <label className="field-label">Impuesto o trámite<input value={matter} onChange={(event) => setMatter(event.currentTarget.value)} maxLength={120} required placeholder="Ej. IRPF, IVA, modelo 100" /></label>
             <label className="field-label">Ejercicio fiscal<input value={taxYear} onChange={(event) => setTaxYear(event.currentTarget.value)} inputMode="numeric" pattern="[0-9]{4}" maxLength={4} required placeholder="AAAA" /></label>
             <label className="field-label">Año de presentación<input value={filingYear} onChange={(event) => setFilingYear(event.currentTarget.value)} inputMode="numeric" pattern="[0-9]{4}" maxLength={4} required placeholder="AAAA" /></label>
-            <label className="field-label">Fecha de referencia / vigencia<input type="date" value={referenceDate} onChange={(event) => setReferenceDate(event.currentTarget.value)} required /></label>
+            <label className="field-label">Fecha de referencia para vigencia<input type="date" value={referenceDate} onChange={(event) => setReferenceDate(event.currentTarget.value)} required /></label>
+            <label className="field-label">Fecha del hecho u operación (opcional)<input type="date" value={eventDate} onChange={(event) => setEventDate(event.currentTarget.value)} /></label>
           </div> : null}
-          {mode === 'tax' ? <p className="section-footnote">Incluye en la consulta los términos de búsqueda que correspondan a la jurisdicción, materia y ejercicios indicados. Los campos fiscales aportan contexto a la síntesis, pero no se añaden automáticamente a la búsqueda externa.</p> : null}
+          {mode === 'tax' ? <p className="section-footnote">Incluye en la consulta los términos de búsqueda que correspondan a la jurisdicción, materia y ejercicios indicados. Los campos fiscales aportan contexto únicamente a Ollama local; no se añaden a la búsqueda externa. La fecha del hecho describe la operación investigada; la fecha de referencia se utiliza para evaluar los metadatos temporales del BOE. No introduzcas NIF, nombres, datos de contacto ni otros identificadores personales.</p> : null}
           <label className="field-label">Dominios oficiales permitidos (separados por coma)
             <input value={domainsText} onChange={(event) => setDomainsText(event.currentTarget.value)} maxLength={1_000} placeholder="Dejar vacío para no filtrar por dominio en modo general." />
           </label>
-          <p className="section-footnote">Dominios oficiales admitidos: {OFFICIAL_DOMAINS.join(', ')}. En modo general, deja el campo vacío para no filtrar por dominio. En modo fiscal, si lo dejas vacío, la búsqueda se limita a todos los dominios oficiales. El buscador SearXNG puede remitir la consulta a sus motores upstream según su configuración; la IP pública visible para esos motores será la del servidor SearXNG.</p>
+          <p className="section-footnote">Filtros de dominio disponibles: {OFFICIAL_DOMAINS.join(', ')}. El filtro se aplica en el backend sobre los resultados recibidos: no modifica el texto que recibe SearXNG. En modo general, deja el campo vacío para no filtrar; en modo fiscal, vacío equivale a todos los filtros oficiales. Aunque el filtro agrupe subdominios de una institución, la clasificación y recuperación de documentos solo aceptan hosts explícitamente aprobados. SearXNG puede remitir la consulta a motores upstream; estos ven la IP pública de salida de SearXNG.</p>
           <label className="field-label inline-field">
             <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.currentTarget.checked)} />
             Autorizo enviar esta consulta a SearXNG y permitir la recuperación de documentos oficiales enlazados por el servidor.
@@ -202,7 +227,7 @@ export function WebResearchPanel() {
       {result ? <>
         <article className="panel">
           <div className="section-heading"><div><h3>Resultado de investigación</h3><p className="section-footnote">Proveedor: {result.provider} · Búsqueda: {formatDate(result.searchedAt)}</p></div><span className="date-badge">{result.sourceCount} fuentes</span></div>
-          {result.taxContext ? <p className="section-footnote">Jurisdicción: {result.taxContext.jurisdiction} · Materia: {result.taxContext.matter} · Ejercicio: {result.taxContext.taxYear} · Presentación: {result.taxContext.filingYear} · Fecha de referencia: {result.taxContext.referenceDate}</p> : null}
+          {result.taxContext ? <p className="section-footnote">Jurisdicción: {result.taxContext.jurisdiction}{result.taxContext.autonomousCommunity ? ' · Comunidad: ' + result.taxContext.autonomousCommunity : ''}{result.taxContext.municipality ? ' · Municipio: ' + result.taxContext.municipality : ''}{result.taxContext.taxpayerType ? ' · Tipo: ' + ({ individual: 'Persona física', self_employed: 'Autónomo / actividad económica', company: 'Sociedad', other: 'Otro' } as const)[result.taxContext.taxpayerType] : ''} · Materia: {result.taxContext.matter} · Ejercicio: {result.taxContext.taxYear} · Presentación: {result.taxContext.filingYear} · Fecha de referencia: {result.taxContext.referenceDate}{result.taxContext.eventDate ? ' · Fecha del hecho: ' + result.taxContext.eventDate : ''}</p> : null}
           <p className="research-answer">{result.answer}</p>
           <p className="section-footnote">La síntesis es una ayuda de investigación generada por el modelo local. Los resultados externos no son instrucciones ni constituyen evidencia jurídica por sí solos. Comprueba el texto oficial y su vigencia antes de actuar.</p>
         </article>

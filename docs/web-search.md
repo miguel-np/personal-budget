@@ -28,15 +28,22 @@ El proveedor limita consulta, respuesta, timeout, resultados y tasa; valida el D
 
 ### Recuperación de documentos oficiales
 
-El backend solo recupera documentos bajo dominios verificados por `OFFICIAL_SOURCE_DOMAINS`:
-- AEAT: `agenciatributaria.gob.es`.
-- BOE: `boe.es`.
-- Ministerio de Hacienda, DGT y TEAC: `hacienda.gob.es`, `petete.tributos.hacienda.gob.es`, `serviciostelematicosext.hacienda.gob.es` y `sede.tea.hacienda.gob.es`.
-- Seguridad Social: `seg-social.es`.
-- Xunta/DOG y Lex.gal: `xunta.gal`, `dog.gal` y `lex.gal`.
-- CNMV y Banco de España: `cnmv.es` y `bde.es`.
+La búsqueda conserva `OFFICIAL_SOURCE_DOMAINS` como grupos de filtrado elegibles por el usuario. Esos grupos **no son permisos de descarga**. La clasificación institucional y la recuperación de documentos requieren coincidencia exacta con `OFFICIAL_SOURCE_HOSTS`; no se confía en todos los subdominios de un dominio permitido.
 
-Los dominios oficiales se clasifican por separado: publicación normativa, doctrina DGT, criterios/resoluciones TEAC, Ministerio de Hacienda, información AEAT y otros organismos. La clasificación indica procedencia, no convierte una consulta o resolución concreta en vinculante.
+Hosts exactos aprobados en esta iteración:
+- AEAT: `sede.agenciatributaria.gob.es`.
+- BOE: `boe.es`, `www.boe.es`.
+- Ministerio de Hacienda: `hacienda.gob.es`, `www.hacienda.gob.es`.
+- DGT: `petete.tributos.hacienda.gob.es`, `sede.tributos.hacienda.gob.es`.
+- TEAC: `serviciostelematicosext.hacienda.gob.es`, `sede.tea.hacienda.gob.es`.
+- Seguridad Social: `seg-social.es`, `www.seg-social.es`, `sede.seg-social.gob.es`, `portal.seg-social.gob.es`.
+- Xunta/DOG y Lex.gal: `xunta.gal`, `www.xunta.gal`, `sede.xunta.gal`, `facenda.xunta.gal`, `lex.gal`. Las páginas de la edición del DOG se reconocen solo en la ruta `/diario-oficial-galicia/` del host oficial de la Xunta.
+- CNMV: `cnmv.es`, `www.cnmv.es`.
+- Banco de España: `bde.es`, `www.bde.es`, `sedeelectronica.bde.es`.
+
+La lista se mantiene explícita y conservadora. Añadir un host requiere validar su titularidad institucional y finalidad; un subdominio nuevo no hereda confianza automáticamente. Los grupos de filtro siguen siendo cómodos: por ejemplo, seleccionar `boe.es` incluye `www.boe.es` porque ambos están en la lista exacta. En modo general pueden aparecer fuentes externas, pero solo los hosts de la lista exacta se clasifican como oficiales y se pueden recuperar en backend.
+
+Los dominios oficiales se clasifican por separado: publicación normativa, doctrina DGT, criterios/resoluciones TEAC, Ministerio de Hacienda, información AEAT y otros organismos. La clasificación indica procedencia, no convierte una consulta o resolución concreta en vinculante. Un host allowlisted limita el destino técnico; no demuestra por sí solo que una página concreta sea auténtica, vigente o jurídicamente aplicable.
 
 Para cada búsqueda se recuperan como máximo tres resultados oficiales. Se aceptan solo HTTPS y hosts allowlisted, se validan todas las direcciones DNS como públicas y se fija la IP resuelta. No se siguen redirecciones. La descarga individual tiene un timeout limitado y límites de tamaño: HTML/texto hasta 1 MiB, metadatos BOE hasta 96 KiB y análisis BOE hasta 192 KiB. La recuperación se cancela junto con la petición original. No se ejecuta JavaScript y no se envían credenciales/cookies.
 
@@ -74,7 +81,9 @@ Las discrepancias se deben hacer visibles con organismo, tipo de documento y fec
 
 ## Modo fiscal
 
-Exige jurisdicción, materia/impuesto/trámite, ejercicio fiscal, año de presentación y fecha de referencia. No se infiere residencia fiscal, municipio, actividad, régimen ni circunstancias personales desde el presupuesto, movimientos o ubicación.
+Exige jurisdicción principal, materia/impuesto/trámite, ejercicio fiscal, año de presentación y fecha de referencia. Admite, cuando sean pertinentes y el usuario los conozca, comunidad autónoma, municipio, tipo de contribuyente (persona física, autónomo/actividad económica, sociedad u otro) y fecha del hecho u operación.
+
+`referenceDate` es la fecha contra la que se evalúan los metadatos temporales BOE. `eventDate` describe la fecha del hecho u operación investigada y puede ser distinta; el modelo debe mantener ambas separadas. No se infiere residencia fiscal, municipio, actividad, régimen ni circunstancias personales desde el presupuesto, movimientos o ubicación. Los campos opcionales son contexto explícito para Ollama local y nunca se concatenan a la consulta enviada a SearXNG. No introduzcas NIF, nombres, datos de contacto ni otros identificadores personales.
 
 La síntesis diferencia ejercicio fiscal de año de presentación y publicación de entrada en vigor. Debe separar hechos respaldados por texto/metadatos, interpretación y circunstancias no conocidas. No presenta el resultado como asesoramiento fiscal profesional ni garantiza una declaración o trámite.
 

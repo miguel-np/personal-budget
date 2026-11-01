@@ -154,6 +154,22 @@ describe('local API', () => {
       method: 'POST', url: '/api/v1/assistant/web-search',
       payload: { consent: true, query: 'IRPF', mode: 'general', domains: ['boe.es', 'boe.es'] },
     });
+    const invalidEventDate = await app.inject({
+      method: 'POST', url: '/api/v1/assistant/web-search',
+      payload: {
+        consent: true, query: 'IRPF', mode: 'tax',
+        jurisdiction: 'España', matter: 'IRPF', taxYear: '2025', filingYear: '2026',
+        referenceDate: '2026-11-01', eventDate: '2026-02-30',
+      },
+    });
+    const invalidTaxpayerType = await app.inject({
+      method: 'POST', url: '/api/v1/assistant/web-search',
+      payload: {
+        consent: true, query: 'IRPF', mode: 'tax',
+        jurisdiction: 'España', matter: 'IRPF', taxYear: '2025', filingYear: '2026',
+        referenceDate: '2026-11-01', taxpayerType: 'unknown',
+      },
+    });
     const approvedDgtDomain = await app.inject({
       method: 'POST', url: '/api/v1/assistant/web-search',
       payload: { consent: true, query: 'consulta DGT', mode: 'general', domains: ['petete.tributos.hacienda.gob.es'] },
@@ -161,6 +177,8 @@ describe('local API', () => {
     expect(incompleteTax.statusCode).toBe(400);
     expect(unapprovedDomain.statusCode).toBe(400);
     expect(duplicateDomains.statusCode).toBe(400);
+    expect(invalidEventDate.statusCode).toBe(400);
+    expect(invalidTaxpayerType.statusCode).toBe(400);
     expect(approvedDgtDomain.statusCode).toBe(503);
     expect(approvedDgtDomain.json().error.code).toBe('AI_DISABLED');
   });
@@ -253,14 +271,20 @@ describe('local API', () => {
         method: 'POST', url: '/api/v1/assistant/web-search',
         payload: {
           consent: true, query: 'normativa IRPF ejercicio 2025', mode: 'tax', domains: ['boe.es'],
-          jurisdiction: 'España', matter: 'IRPF', taxYear: '2025', filingYear: '2026', referenceDate: '2026-11-01',
+          jurisdiction: 'España', autonomousCommunity: 'Galicia', municipality: 'Santiago de Compostela',
+          taxpayerType: 'individual', eventDate: '2025-06-15',
+          matter: 'IRPF', taxYear: '2025', filingYear: '2026', referenceDate: '2026-11-01',
         },
       });
       expect(response.statusCode).toBe(200);
       expect(response.json().data).toMatchObject({
         answer: 'La fuente oficial publica la norma aplicable [S1].',
         provider: 'SearXNG', mode: 'tax',
-        taxContext: { jurisdiction: 'España', matter: 'IRPF', taxYear: '2025', filingYear: '2026', referenceDate: '2026-11-01' },
+        taxContext: {
+          jurisdiction: 'España', autonomousCommunity: 'Galicia', municipality: 'Santiago de Compostela',
+          taxpayerType: 'individual', eventDate: '2025-06-15',
+          matter: 'IRPF', taxYear: '2025', filingYear: '2026', referenceDate: '2026-11-01',
+        },
         sourceCount: 1,
       });
       expect(repository.listAccounts).not.toHaveBeenCalled();
@@ -268,10 +292,15 @@ describe('local API', () => {
       expect(JSON.stringify(modelRequests[0])).not.toContain('account-1');
       expect(JSON.stringify(modelRequests[0])).not.toContain('Alimentación');
       expect(JSON.stringify(modelRequests[0])).not.toContain('200000');
+      expect(JSON.stringify(modelRequests[0])).toContain('Santiago de Compostela');
+      expect(JSON.stringify(modelRequests[0])).toContain('2025-06-15');
+      expect(JSON.stringify(modelRequests[0])).toContain('individual');
       expect(modelRequests[0]?.tools).toBeDefined();
       expect(modelRequests[1]?.tools).toBeUndefined();
       const secondMessages = modelRequests[1]?.messages as Array<{ role: string; content: string }>;
       expect(secondMessages.some((message) => message.role === 'tool' && message.content.includes('www.boe.es'))).toBe(true);
+      expect(secondMessages.some((message) => message.role === 'user' && message.content.includes('Santiago de Compostela'))).toBe(true);
+      expect(secondMessages.some((message) => message.role === 'user' && message.content.includes('2025-06-15'))).toBe(true);
     } finally {
       await Promise.all([
         new Promise<void>((resolve, reject) => ollama.close((error) => error ? reject(error) : resolve())),
