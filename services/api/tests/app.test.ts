@@ -2969,6 +2969,15 @@ describe('phase 2 financial utility APIs', () => {
     expect(differentPeriod.json().data.scenarios).toContainEqual(expect.objectContaining({
       id: scenarioId, comparisonStatus: 'different_period', comparison: null,
     }));
+    const selectedScope = await app.inject({
+      method: 'PUT', url: '/api/v1/preferences/accounts',
+      payload: { mode: 'selected', accountIds: ['account-1'] },
+    });
+    expect(selectedScope.statusCode).toBe(200);
+    const differentScope = await app.inject({ method: 'GET', url: '/api/v1/budget-improvements?periodMonths=3' });
+    expect(differentScope.json().data.scenarios).toContainEqual(expect.objectContaining({
+      id: scenarioId, comparisonStatus: 'different_scope', comparison: null,
+    }));
     const removed = await app.inject({ method: 'DELETE', url: '/api/v1/budget-improvements/scenarios/' + scenarioId });
     expect(removed.statusCode).toBe(200);
     expect(removed.json().data.deleted).toBe(true);
