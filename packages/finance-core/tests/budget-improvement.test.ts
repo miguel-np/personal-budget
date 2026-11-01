@@ -6,7 +6,7 @@ const baseline: BudgetImprovementBaseline = {
   monthlyIncomeMinor: 300_000, monthlyExpenseMinor: 250_000, monthlySavingsMinor: 50_000,
   savingsRatePercent: 16.7, transactionCount: 40, unconvertedTransactionCount: 0,
   observations: [
-    { categoryId: 'flex', categoryName: 'Flexible', expenseMinor: 120_000, transactionCount: 12, monthsWithActivity: 6 },
+    { categoryId: 'flex', categoryName: 'Flexible', expenseMinor: 120_000, transactionCount: 12, monthsWithActivity: 6, latestMonthExpenseMinor: 24_000, priorMonthsAverageExpenseMinor: 20_000 },
     { categoryId: 'essential', categoryName: 'Essential', expenseMinor: 90_000, transactionCount: 18, monthsWithActivity: 6 },
     { categoryId: 'unknown', categoryName: 'Unknown', expenseMinor: 60_000, transactionCount: 10, monthsWithActivity: 4 },
   ],
@@ -18,8 +18,15 @@ describe('budget improvement proposals', () => {
   it('proposes only user-marked flexible categories and attaches evidence', () => {
     const proposals = buildBudgetImprovementProposals(baseline, preferences);
     expect(proposals).toHaveLength(1);
-    expect(proposals[0]).toMatchObject({ categoryId: 'flex', confidence: 'high', suggestedReductionPercent: 5, estimatedMonthlySavingsMinor: 1_000, estimatedAnnualSavingsMinor: 12_000 });
+    expect(proposals[0]).toMatchObject({ categoryId: 'flex', confidence: 'high', suggestedReductionPercent: 17, estimatedMonthlySavingsMinor: 3_400, estimatedAnnualSavingsMinor: 40_800 });
     expect(buildBudgetImprovementProposals(baseline, preferences, 'reach_savings_goal')[0]?.explanation).toContain('objetivo de ahorro');
+  });
+  it('derives a reduction from a last-month budget overrun and does not use a universal percentage', () => {
+    const overrun = { ...baseline, observations: [{ ...baseline.observations[0], latestMonthExpenseMinor: 18_000, priorMonthsAverageExpenseMinor: 20_000, budgetedMinor: 15_000, budgetSpentMinor: 18_000 }] };
+    const proposals = buildBudgetImprovementProposals(overrun, preferences);
+    expect(proposals[0]).toMatchObject({ suggestedReductionPercent: 17, evidence: { rule: expect.stringContaining('presupuesto positivo') } });
+    const noSignal = { ...baseline, observations: [{ ...baseline.observations[0], latestMonthExpenseMinor: 19_000, priorMonthsAverageExpenseMinor: 20_000 }] };
+    expect(buildBudgetImprovementProposals(noSignal, preferences)).toEqual([]);
   });
   it('does not infer flexibility from names or cut protected/essential categories', () => {
     expect(buildBudgetImprovementProposals(baseline, [{ categoryId: 'essential', classification: 'protected' }])).toEqual([]);
