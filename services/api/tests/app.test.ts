@@ -2950,6 +2950,23 @@ describe('phase 2 financial utility APIs', () => {
       scopeMatches: false, projection: null,
     });
     expect(scoped.json().data.savingsGoalContextStatus).toBe('review_required');
+
+    const restoreAllScope = await app.inject({
+      method: 'PUT', url: '/api/v1/preferences/accounts', payload: { mode: 'all', accountIds: [] },
+    });
+    expect(restoreAllScope.statusCode).toBe(200);
+    const changeCurrency = await app.inject({
+      method: 'PUT', url: '/api/v1/preferences/currency',
+      payload: { displayCurrency: 'GBP', accountCurrencyOverrides: {}, exchangeRates: [] },
+    });
+    expect(changeCurrency.statusCode).toBe(200);
+    const changedCurrency = await app.inject({ method: 'GET', url: '/api/v1/budget-improvements?periodMonths=6' });
+    expect(changedCurrency.statusCode).toBe(200);
+    expect(changedCurrency.json().data.savingsGoalContextStatus).toBe('review_required');
+    expect(changedCurrency.json().data.savingsGoals.find((item: { id: string }) => item.id === savedGoal.id)).toMatchObject({
+      currencyMatches: false, projection: null,
+    });
+    expect(changedCurrency.json().data.savingsGoalContextWarnings.join(' ')).toContain('divisa guardada');
   });
 
   it('evaluates budget rules once per month and supports dismissing the event', async () => {

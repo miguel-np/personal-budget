@@ -3348,6 +3348,7 @@ function monthsBefore(date: string, months: number): string {
       const goalWarnings: string[] = [];
       if (!scopeMatches) goalWarnings.push('El ámbito guardado del objetivo ha cambiado; revísalo desde Objetivos antes de usarlo para esta simulación.');
       if (!currencyMatches) goalWarnings.push('La divisa guardada del objetivo no coincide con la divisa de análisis; no se convierten importes automáticamente.');
+      if (goal.status === 'paused') goalWarnings.push('El objetivo está pausado; reanúdalo desde Objetivos antes de incluirlo en una proyección.');
       if (goal.targetDate <= asOfDate) goalWarnings.push('La fecha objetivo ya ha pasado; actualiza el objetivo para proyectarlo.');
       const projection = goal.status === 'active' && scopeMatches && currencyMatches && goal.targetDate > asOfDate
         ? projectSavingsGoal({
