@@ -22,10 +22,10 @@ describe('budget improvement proposals', () => {
     expect(buildBudgetImprovementProposals(baseline, preferences, 'reach_savings_goal')[0]?.explanation).toContain('objetivo de ahorro');
   });
   it('derives a reduction from a last-month budget overrun and does not use a universal percentage', () => {
-    const overrun = { ...baseline, observations: [{ ...baseline.observations[0], latestMonthExpenseMinor: 18_000, priorMonthsAverageExpenseMinor: 20_000, budgetedMinor: 15_000, budgetSpentMinor: 18_000 }] };
+    const overrun = { ...baseline, observations: [{ ...baseline.observations[0]!, latestMonthExpenseMinor: 18_000, priorMonthsAverageExpenseMinor: 20_000, budgetedMinor: 15_000, budgetSpentMinor: 18_000 }] };
     const proposals = buildBudgetImprovementProposals(overrun, preferences);
     expect(proposals[0]).toMatchObject({ suggestedReductionPercent: 17, evidence: { rule: expect.stringContaining('presupuesto positivo') } });
-    const noSignal = { ...baseline, observations: [{ ...baseline.observations[0], latestMonthExpenseMinor: 19_000, priorMonthsAverageExpenseMinor: 20_000 }] };
+    const noSignal = { ...baseline, observations: [{ ...baseline.observations[0]!, latestMonthExpenseMinor: 19_000, priorMonthsAverageExpenseMinor: 20_000 }] };
     expect(buildBudgetImprovementProposals(noSignal, preferences)).toEqual([]);
   });
   it('does not infer flexibility from names or cut protected/essential categories', () => {
