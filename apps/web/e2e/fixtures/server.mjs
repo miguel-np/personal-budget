@@ -498,7 +498,7 @@ const server = createServer(async (req, res) => {
       const previousItem = previous?.items.find((item) => item.findingId === findingId && item.fingerprint === '0123456789abcdef');
       const previousStatus = previousItem?.status === 'reviewed' || (previousItem?.status === 'postponed' && previousItem.postponedUntil >= iso(now))
         ? previousItem.status : 'pending';
-      const identityKey = '13579bdf2468ace0';
+      const identityKey = '0123456789abcdef';
       const evidenceFingerprint = 'fedcba9876543210';
       const item = {
         findingId, findingType: 'pending-categorization', identityKey, evidenceFingerprint,
