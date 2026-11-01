@@ -172,6 +172,12 @@ jobs:
         env:
           ACTUAL_API_PACKAGE_DIR: ${{ runner.temp }}/actual-api-269
         run: npm run test:update:acceptance -- seed
+      - name: Seed synthetic Personal Budget application state
+        run: npm run test:backup:acceptance -- seed
+      - name: Verify encrypted unified backup and full restore
+        env:
+          ACTUAL_API_PACKAGE_DIR: ${{ runner.temp }}/actual-api-269
+        run: npm run test:backup:acceptance -- roundtrip
       - name: Stop and restart Actual without deleting its data volume
         run: |
           docker compose stop --timeout 30 actual
