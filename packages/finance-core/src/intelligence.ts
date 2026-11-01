@@ -101,7 +101,17 @@ export function createFinancialFinding(draft: FinancialFindingDraft): FinancialF
     entityKey,
   ].join('|');
   const identityKey = stableHash(scopedIdentity);
-  const id = 'fi-v1-' + finding.type + '-' + finding.period.startDate + '-' + finding.period.endDate + '-' + identityKey;
+  // Preserve the existing period-specific ID format so saved v1 review decisions
+  // continue to match when users regenerate a period after upgrading.
+  const periodIdentity = [
+    finding.type,
+    finding.period.startDate,
+    finding.period.endDate,
+    finding.accountScope.mode,
+    [...finding.accountScope.accountIds].sort().join(','),
+    entityKey,
+  ].join('|');
+  const id = 'fi-v1-' + finding.type + '-' + finding.period.startDate + '-' + finding.period.endDate + '-' + stableHash(periodIdentity);
   const fingerprintSource = JSON.stringify({
     type: finding.type,
     period: finding.period,
