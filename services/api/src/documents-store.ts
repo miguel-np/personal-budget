@@ -32,6 +32,19 @@ export const DocumentInputSchema = z.object({
   }
 });
 export type DocumentInput = z.infer<typeof DocumentInputSchema>;
+/** Patch shape for metadata updates; the pairing of amountMinor/currency is validated against the merged document. */
+export const DocumentPatchSchema = z.object({
+  displayName: z.string().trim().min(1).max(200).optional(),
+  documentDate: isoDate.optional(),
+  issuer: z.string().trim().max(200).optional(),
+  amountMinor: z.number().int().refine(Number.isSafeInteger).nonnegative().optional(),
+  currency: currency.optional(),
+  tags: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
+  notes: z.string().trim().max(2_000).optional(),
+  fiscalYear: z.number().int().min(1900).max(9999).optional(),
+  classification: z.enum(['invoice_received', 'invoice_issued', 'expense', 'income', 'asset', 'contract', 'receipt', 'other']).optional(),
+  reviewStatus: z.enum(['pending', 'reviewed', 'incomplete']).optional(),
+}).strict();
 export const DocumentMetadataSchema = DocumentInputSchema.extend({
   id: z.string().uuid(),
   fileName: z.string().regex(/^[0-9a-f-]{36}\.(?:pdf|jpg|png)$/),
@@ -152,7 +165,7 @@ export async function updateDocumentMetadata(directory: string, id: string, upda
     const current = await readDocumentIndex(directory);
     const existing = current.documents.find((item) => item.id === parsedId);
     if (!existing) return null;
-    const input = DocumentInputSchema.partial().strict().parse(update);
+    const input = DocumentPatchSchema.parse(update);
     const next = DocumentMetadataSchema.parse({ ...existing, ...input });
     await writeIndex(directory, DocumentIndexSchema.parse({
       version: 1, documents: current.documents.map((item) => item.id === parsedId ? next : item),
