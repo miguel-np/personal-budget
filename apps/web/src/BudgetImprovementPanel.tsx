@@ -145,7 +145,7 @@ export function BudgetImprovementPanel({ currency }: { currency: string }) {
     try {
       const response = await fetch('/api/v1/budget-improvements/decisions', {
         method: 'PATCH', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ proposalId, status }),
+        body: JSON.stringify({ proposalId, status, periodMonths }),
       });
       const payload = await response.json() as ApiPayload<unknown>;
       if (!response.ok) throw new Error(payload.error?.message ?? 'No se pudo guardar la decisión.');

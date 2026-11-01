@@ -2903,6 +2903,35 @@ describe('phase 2 financial utility APIs', () => {
     });
     expect(response.json().data.proposals[0].assumptions.join(' ')).toContain('No equivale necesariamente al exceso presupuestario');
     expect(response.json().data.proposals.some((proposal: { categoryId: string }) => proposal.categoryId === 'protected-spend')).toBe(false);
+
+    const proposalId = response.json().data.proposals[0].id as string;
+    const rejected = await app.inject({
+      method: 'PATCH', url: '/api/v1/budget-improvements/decisions',
+      payload: { proposalId, status: 'rejected', periodMonths: 3 },
+    });
+    expect(rejected.statusCode).toBe(200);
+    expect(rejected.json().data).toMatchObject({ proposalId, status: 'rejected' });
+    const withDecision = await app.inject({ method: 'GET', url: '/api/v1/budget-improvements?periodMonths=3' });
+    expect(withDecision.json().data.decisions).toContainEqual(expect.objectContaining({ proposalId, status: 'rejected' }));
+    const stalePeriodDecision = await app.inject({
+      method: 'PATCH', url: '/api/v1/budget-improvements/decisions',
+      payload: { proposalId, status: 'accepted', periodMonths: 12 },
+    });
+    expect(stalePeriodDecision.statusCode).toBe(409);
+
+    const scenario = await app.inject({
+      method: 'POST', url: '/api/v1/budget-improvements/scenarios',
+      payload: { name: 'Ahorro variable', periodMonths: 3, reductions: [{ categoryId: 'variable', reductionPercent: 10 }] },
+    });
+    expect(scenario.statusCode).toBe(201);
+    const scenarioId = scenario.json().data.id as string;
+    const withScenario = await app.inject({ method: 'GET', url: '/api/v1/budget-improvements?periodMonths=3' });
+    expect(withScenario.json().data.scenarios).toContainEqual(expect.objectContaining({ id: scenarioId, name: 'Ahorro variable' }));
+    const removed = await app.inject({ method: 'DELETE', url: '/api/v1/budget-improvements/scenarios/' + scenarioId });
+    expect(removed.statusCode).toBe(200);
+    expect(removed.json().data.deleted).toBe(true);
+    const afterDelete = await app.inject({ method: 'GET', url: '/api/v1/budget-improvements?periodMonths=3' });
+    expect(afterDelete.json().data.scenarios.some((item: { id: string }) => item.id === scenarioId)).toBe(false);
   });
 
   it('links budget improvement analysis to saved savings goals in the same currency and account scope', async () => {

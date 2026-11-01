@@ -322,6 +322,7 @@ const BudgetImprovementScenarioRequestSchema = BudgetImprovementSimulationReques
 const BudgetImprovementDecisionRequestSchema = z.object({
   proposalId: z.string().trim().min(1).max(256),
   status: z.enum(['accepted', 'rejected', 'postponed']),
+  periodMonths: z.union([z.literal(3), z.literal(6), z.literal(12)]).default(6),
 }).strict();
 const BudgetAlertRulesRequestSchema = z.object({
   rules: z.array(z.object({
@@ -3460,7 +3461,7 @@ function monthsBefore(date: string, months: number): string {
   app.patch('/api/v1/budget-improvements/decisions', async (request, reply) => {
     try {
       const parsed = BudgetImprovementDecisionRequestSchema.parse(request.body);
-      const context = await loadBudgetImprovementContext(6);
+      const context = await loadBudgetImprovementContext(parsed.periodMonths);
       if (!context.proposals.some((proposal) => proposal.id === parsed.proposalId)) {
         return reply.code(409).send({ error: { code: 'STALE_PROPOSAL', message: 'The proposal no longer matches the current evidence. Refresh the analysis before recording a decision.' } });
       }

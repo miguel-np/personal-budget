@@ -903,6 +903,7 @@ test('cash-flow projection separates actual movements, commitments and unsaved s
 test('budget improvement preferences, proposals, combined simulation and saved scenario remain local', async ({ page, request }) => {
   let classification = 'unclassified';
   let savedScenarios: Record<string, unknown>[] = [];
+  let decisions: { proposalId: string; status: 'accepted' | 'rejected' | 'postponed'; updatedAt: string }[] = [];
   const analysis = () => ({
     asOfDate: '2026-11-01', currency: 'EUR', accountScope: { label: 'Todas las cuentas abiertas' },
     baseline: {
@@ -919,7 +920,7 @@ test('budget improvement preferences, proposals, combined simulation and saved s
       assumptions: ['Ahorro hipotético.'], warnings: [],
     }] : [],
     categoryChoices: [{ categoryId: 'flex', categoryName: 'Gasto flexible sintético', classification }],
-    goal: 'increase_monthly_margin', decisions: [], scenarios: savedScenarios, warnings: [],
+    goal: 'increase_monthly_margin', decisions, scenarios: savedScenarios, warnings: [],
     savingsGoals: [], savingsGoalContextStatus: 'not_configured', savingsGoalContextWarnings: [],
   });
 
@@ -948,6 +949,11 @@ test('budget improvement preferences, proposals, combined simulation and saved s
         } }),
       });
     }
+    if (requestUrl.pathname.endsWith('/decisions') && route.request().method() === 'PATCH') {
+      const body = route.request().postDataJSON() as { proposalId: string; status: 'accepted' | 'rejected' | 'postponed'; periodMonths: number };
+      decisions = [{ proposalId: body.proposalId, status: body.status, updatedAt: '2026-11-01T12:00:00.000Z' }];
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: decisions[0] }) });
+    }
     if (requestUrl.pathname.endsWith('/scenarios') && route.request().method() === 'POST') {
       const body = route.request().postDataJSON() as { name: string };
       const scenario = {
@@ -971,6 +977,8 @@ test('budget improvement preferences, proposals, combined simulation and saved s
   await expect(improvementPanel.getByRole('heading', { name: 'Propuestas basadas en evidencia (1)' })).toBeVisible();
   await expect(improvementPanel.getByText(/Ahorro hipotético sugerido al 5 %/)).toBeVisible();
   await expect(improvementPanel.getByText(/Señal: aumento frente a la media histórica/)).toBeVisible();
+  await improvementPanel.getByRole('button', { name: 'Descartar' }).click();
+  await expect(improvementPanel.getByText('Decisión: rejected')).toBeVisible();
   await improvementPanel.getByRole('button', { name: 'Simular selección' }).click();
   await expect(improvementPanel.getByText('Ahorro adicional estimado / mes')).toBeVisible();
   await improvementPanel.getByLabel('Nombre del escenario').fill('Ajuste flexible');
