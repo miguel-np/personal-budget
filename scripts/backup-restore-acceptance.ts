@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmod, copyFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -117,8 +117,8 @@ async function verifyAppState(): Promise<void> {
 
 async function roundtrip(): Promise<void> {
   await verifyAppState();
-  const keyBefore = await readFile(keyFile);
   run('npm', ['run', 'backup:actual']);
+  const keyBefore = await readFile(keyFile);
 
   const archives = (await readdir(backupDir))
     .filter((name) => /^personal-budget-.*\.tar\.gz\.enc$/.test(name))
