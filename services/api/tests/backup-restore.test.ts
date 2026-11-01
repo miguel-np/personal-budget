@@ -48,16 +48,29 @@ describe('Actual and Personal Budget backup safety helpers', () => {
     ])).toThrow(/regular files and directories/i);
   });
 
-  it('accepts a versioned manifest with an explicit whitelist of app-owned state', () => {
+  it('accepts both legacy v1 manifests and v2 manifests with binary evidence inventory', () => {
     expect(() => validateBackupManifest(validManifest())).not.toThrow();
     expect(APP_STATE_FILE_NAMES).toContain('planning-data.json');
     expect(APP_STATE_FILE_NAMES).toContain('periodic-reviews.json');
     expect(APP_STATE_FILE_NAMES).toContain('financial-actions.json');
-    expect(APP_STATE_FILE_NAMES).toHaveLength(7);
+    expect(APP_STATE_FILE_NAMES).toContain('wealth-data.json');
+    expect(APP_STATE_FILE_NAMES).toContain('documents-index.json');
+    expect(APP_STATE_FILE_NAMES).toHaveLength(9);
+    const v2 = {
+      ...validManifest(), schemaVersion: 2,
+      personalBudgetState: {
+        ...validManifest().personalBudgetState,
+        documents: { directory: 'documents', files: [{ fileName: '00000000-0000-4000-8000-000000000001.pdf', sizeBytes: 128, sha256: 'b'.repeat(64) }] },
+      },
+    };
+    expect(() => validateBackupManifest(v2)).not.toThrow();
+    const unsafeDocument = structuredClone(v2);
+    unsafeDocument.personalBudgetState.documents.files[0]!.fileName = '../private.pdf';
+    expect(() => validateBackupManifest(unsafeDocument)).toThrow(/document/i);
   });
 
   it('rejects unsupported versions, unexpected fields, duplicate files and invalid checksums', () => {
-    expect(() => validateBackupManifest({ ...validManifest(), schemaVersion: 2 })).toThrow(/version/i);
+    expect(() => validateBackupManifest({ ...validManifest(), schemaVersion: 3 })).toThrow(/version/i);
     expect(() => validateBackupManifest({ ...validManifest(), unexpected: true })).toThrow(/fields/i);
     const duplicate = validManifest();
     duplicate.personalBudgetState.files.push({ ...duplicate.personalBudgetState.files[0]! });
