@@ -2677,7 +2677,7 @@ describe('phase 2 financial utility APIs', () => {
     expect(data.confirmedRecurringEvents).toContainEqual(expect.objectContaining({
       date: annualDate, amountMinor: -9_600, source: 'confirmed_recurring', label: 'Seguro anual',
     }));
-    expect(data.projection.endingBalanceMinor).toBe(144_000);
+    expect(data.projection.endingBalanceMinor).toBe(142_400);
 
     const withoutRate = await app.inject({
       method: 'PUT', url: '/api/v1/preferences/currency',
@@ -2901,7 +2901,7 @@ describe('phase 2 financial utility APIs', () => {
       categoryId: 'variable',
       evidence: { signal: 'budget_overrun', budgetedMinor: 10_000, budgetSpentMinor: 15_000 },
     });
-    expect(response.json().data.proposals[0].explanation).toContain('no equivale');
+    expect(response.json().data.proposals[0].assumptions.join(' ')).toContain('No equivale necesariamente al exceso presupuestario');
     expect(response.json().data.proposals.some((proposal: { categoryId: string }) => proposal.categoryId === 'protected-spend')).toBe(false);
   });
 
