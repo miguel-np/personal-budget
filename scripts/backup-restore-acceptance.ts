@@ -151,6 +151,8 @@ async function roundtrip(): Promise<void> {
     await chmod(keyFile, 0o600).catch(() => undefined);
   }
   await verifyAppState();
+  // Verify the Actual inventory is also unchanged after the rejected wrong-key attempt.
+  run('npm', ['run', 'test:update:acceptance', '--', 'verify']);
 
   // Simulate loss of both data sets in this disposable CI runner.
   run('docker', ['compose', 'stop', 'actual']);
