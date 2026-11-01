@@ -312,7 +312,7 @@ export function BudgetImprovementPanel({ currency }: { currency: string }) {
                     {simulation.goalImpacts.length === 0 ? <p className="muted-copy">No hay objetivos activos compatibles con la divisa, el ámbito y el plazo actuales.</p> : null}
                     {simulation.goalImpacts.map((impact) => (
                       <div className="comparison-row" key={impact.goalId}>
-                        <div><strong>{impact.goalName}</strong><span>Meta {impact.targetDate} · aportación mensual {formatMoney(impact.baselineMonthlyContributionMinor, currency)} → {formatMoney(impact.scenarioMonthlyContributionMinor, currency)}</span></div>
+                        <div><strong>{impact.goalName}</strong><span>Meta {impact.targetDate} · aportación mensual planificada {formatMoney(impact.baselineMonthlyContributionMinor, currency)} → {formatMoney(impact.scenarioMonthlyContributionMinor, currency)}</span><span>Ahorro mensual destinado en el escenario: {formatMoney(impact.estimatedMonthlySavingsAllocatedMinor, currency)}.</span></div>
                         <div className="comparison-meta">
                           <span>Saldo proyectado {formatMoney(impact.baselineProjectedBalanceMinor, currency)} → {formatMoney(impact.scenarioProjectedBalanceMinor, currency)} (+{formatMoney(impact.projectedBalanceIncreaseMinor, currency)}).</span>
                           <span>Progreso {impact.baselineProjectedProgressPercent.toFixed(1)} % → {impact.scenarioProjectedProgressPercent.toFixed(1)} %.</span>
