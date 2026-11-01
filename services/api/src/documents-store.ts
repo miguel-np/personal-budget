@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { chmod, lstat, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { resolve, sep } from 'node:path';
 import { z } from 'zod';
 
@@ -41,7 +41,10 @@ export const DocumentMetadataSchema = DocumentInputSchema.extend({
   addedAt: z.string().datetime(),
   archivedAt: z.string().datetime().optional(),
   links: z.array(LinkSchema).max(100),
-}).strict();
+}).strict().superRefine((document, context) => {
+  const extension = document.mediaType === 'application/pdf' ? '.pdf' : document.mediaType === 'image/jpeg' ? '.jpg' : '.png';
+  if (document.fileName !== document.id + extension) context.addIssue({ code: 'custom', path: ['fileName'], message: 'Stored filename must match the generated identifier and detected file type.' });
+});
 export type DocumentMetadata = z.infer<typeof DocumentMetadataSchema>;
 export const DocumentIndexSchema = z.object({ version: z.literal(1), documents: z.array(DocumentMetadataSchema).max(MAX_DOCUMENTS) }).strict().superRefine((index, context) => {
   const ids = new Set<string>();
@@ -74,7 +77,14 @@ function filePath(directory: string, fileName: string): string {
   if (!path.startsWith(root + sep)) throw new Error('Invalid internal document path.');
   return path;
 }
+async function assertDataDirectory(directory: string): Promise<void> {
+  await mkdir(resolve(directory), { recursive: true, mode: 0o700 });
+  const info = await lstat(resolve(directory));
+  if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('Local application data is not a safe directory.');
+  await chmod(resolve(directory), 0o700).catch(() => undefined);
+}
 async function ensureDocumentDirectory(directory: string): Promise<string> {
+  await assertDataDirectory(directory);
   const root = documentDirectory(directory);
   await mkdir(root, { recursive: true, mode: 0o700 });
   const info = await lstat(root);
@@ -83,6 +93,7 @@ async function ensureDocumentDirectory(directory: string): Promise<string> {
   return root;
 }
 export async function readDocumentIndex(directory: string): Promise<DocumentIndex> {
+  await assertDataDirectory(directory);
   let content: string;
   try { content = await readFile(indexPath(directory), 'utf8'); }
   catch (error) { if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return emptyDocumentIndex(); throw error; }
@@ -91,8 +102,8 @@ export async function readDocumentIndex(directory: string): Promise<DocumentInde
 }
 async function writeIndex(directory: string, value: DocumentIndex): Promise<void> {
   const index = DocumentIndexSchema.parse(value);
+  await assertDataDirectory(directory);
   const path = indexPath(directory);
-  await mkdir(resolve(directory), { recursive: true, mode: 0o700 });
   const temporary = path + '.' + randomUUID() + '.tmp';
   try {
     await writeFile(temporary, JSON.stringify(index, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
@@ -191,9 +202,17 @@ export async function deleteDocument(directory: string, id: string): Promise<boo
     const current = await readDocumentIndex(directory);
     const existing = current.documents.find((item) => item.id === id);
     if (!existing) return false;
-    const next = DocumentIndexSchema.parse({ version: 1, documents: current.documents.filter((item) => item.id !== id) });
-    await writeIndex(directory, next);
-    await rm(filePath(directory, existing.fileName), { force: true });
+    const path = filePath(directory, existing.fileName);
+    const tombstone = path + '.' + randomUUID() + '.deleting';
+    await rename(path, tombstone);
+    try {
+      const next = DocumentIndexSchema.parse({ version: 1, documents: current.documents.filter((item) => item.id !== id) });
+      await writeIndex(directory, next);
+    } catch (error) {
+      await rename(tombstone, path).catch(() => undefined);
+      throw error;
+    }
+    await rm(tombstone, { force: true });
     return true;
   });
 }
@@ -212,7 +231,7 @@ export async function readDocumentFile(directory: string, record: DocumentMetada
 export async function listDocumentFilesForBackup(directory: string): Promise<readonly { fileName: string; sizeBytes: number; sha256: string }[]> {
   const index = await readDocumentIndex(directory);
   const root = await ensureDocumentDirectory(directory);
-  const entries = await import('node:fs/promises').then(({ readdir }) => readdir(root));
+  const entries = await readdir(root);
   const expected = new Map(index.documents.map((item) => [item.fileName, item]));
   if (entries.length !== expected.size || entries.some((name) => !expected.has(name))) {
     throw new Error('Local document files do not match the versioned document index.');
