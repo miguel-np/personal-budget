@@ -1,10 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import Fastify, { LogController, type FastifyInstance, type FastifyReply, type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import helmet from '@fastify/helmet';
-import { buildFinancialAnomalyFindings, buildPeriodChangeFindings, buildUncategorizedFinding, buildBudgetImprovementProposals, calculateSummary, convertAmountMinor, createFinancialFinding, detectRecurringCandidates, estimatePlanningCashFlow, evaluateBudgetAlertRules, expandCommitmentOccurrences, isIsoDate, normalizeCurrencyCode, normalizeTransactions, projectCashFlow, projectSavings, projectSavingsGoal, simulateBudgetImprovement, sortFinancialFindings, suggestCategories, validatePeriod } from '@personal-budget/finance-core';
-import type { BudgetAlertCategory, BudgetAlertRule, BudgetImprovementCategoryPreference, CashFlowEvent, BudgetCategoryClassification, BudgetRepository, BudgetTransaction, CategorySuggestion as CoreCategorySuggestion, FinancialFinding, FindingPriority, ForecastScenario, PlanningCommitment, TransactionCategoryBatchChange, TransactionStructureUpdate } from '@personal-budget/finance-core';
-import { ActualAdapterError } from '@personal-budget/actual-adapter';
-import type { ActualBudgetMonthRecord, ActualImportRecord, ActualImportResult } from '@personal-budget/actual-adapter';
+import { buildFinancialAnomalyFindings, buildPeriodChangeFindings, buildUncategorizedFinding, buildBudgetImprovementProposals, calculateSummary, convertAmountMinor, createFinancialFinding, detectRecurringCandidates, estimatePlanningCashFlow, evaluateBudgetAlertRules, expandCommitmentOccurrences, isIsoDate, normalizeCurrencyCode, normalizeTransactions, projectCashFlow, projectSavings, projectSavingsGoal, simulateBudgetImprovement, sortFinancialFindings, suggestCategories, validatePeriod, BudgetRepositoryError } from '@personal-budget/finance-core';
+import type { BudgetAlertCategory, BudgetAlertRule, BudgetImprovementCategoryPreference, CashFlowEvent, BudgetCategoryClassification, BudgetRepository, BudgetTransaction, CategorySuggestion as CoreCategorySuggestion, FinancialFinding, FindingPriority, ForecastScenario, ImportRecord, PlanningCommitment, TransactionStructureUpdate } from '@personal-budget/finance-core';
 import { z, ZodError } from 'zod';
 import type { AppConfig } from './config.js';
 import { LocalAiBusyError, LocalAiCancelledError, LocalAiClient, LocalAiContextBudgetError, LocalAiUnavailableError } from './local-ai.js';
@@ -425,7 +423,7 @@ function sanitizedErrorResponse(error: unknown): { statusCode: number; body: { e
   if (error instanceof ZodError) {
     return { statusCode: 400, body: { error: { code: 'INVALID_REQUEST', message: 'Request parameters are invalid.' } } };
   }
-  if (error instanceof ActualAdapterError) {
+  if (error instanceof BudgetRepositoryError) {
     if (error.code === 'INVALID_INPUT') return { statusCode: 400, body: { error: { code: error.code, message: error.message } } };
     if (error.code === 'NOT_CONFIGURED') return { statusCode: 503, body: { error: { code: error.code, message: 'The local Actual Budget connection is not configured.' } } };
     if (error.code === 'CLOSED') return { statusCode: 503, body: { error: { code: error.code, message: 'The local Actual Budget connection is closed.' } } };
@@ -998,15 +996,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       const params = z.object({ transactionId: z.string().trim().min(1).max(128) }).strict().parse(request.params);
       const parsed = TransactionUpdateRequestSchema.parse(request.body);
       assertPeriod(parsed.startDate, parsed.endDate);
-      const updater = repository as BudgetRepository & {
-        updateTransactionSafely?: (
-          transactionId: string,
-          accountId: string,
-          beforeDate: string,
-          fields: TransactionStructureUpdate,
-        ) => Promise<{ readonly persisted: boolean; readonly verified: boolean }>;
-      };
-      if (typeof updater.updateTransactionSafely !== 'function') {
+      if (typeof repository.updateTransactionSafely !== 'function') {
         return reply.code(503).send({ error: {
           code: 'TRANSACTION_SAFE_UPDATE_NOT_SUPPORTED',
           message: 'The configured local adapter cannot verify transaction writes; no changes were written.',
@@ -1038,7 +1028,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       // A legacy repository can still edit ordinary rows, but linked structures require
       // the adapter's read-after-write verification. Never fall back to an unverified write.
       if ((Boolean(transaction.transfer_id) || Boolean(splitParent && splitChild)) &&
-          typeof updater.updateTransactionSafely !== 'function') {
+          typeof repository.updateTransactionSafely !== 'function') {
         return reply.code(503).send({ error: {
           code: 'LINKED_TRANSACTION_SAFE_UPDATE_NOT_SUPPORTED',
           message: 'This adapter cannot verify the linked records safely; no changes were written.',
@@ -1057,7 +1047,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         beforeDate: string,
         fields: TransactionStructureUpdate,
       ): Promise<{ readonly persisted: boolean; readonly verified: boolean }> =>
-        updater.updateTransactionSafely!(id, accountId, beforeDate, fields);
+        repository.updateTransactionSafely!(id, accountId, beforeDate, fields);
 
       if (transaction.transfer_id) {
         // Actual links transfer amount and notes across both legs. Reconcile status stays local;
@@ -1247,14 +1237,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   ) => {
     try {
       const parsed = ImportRequestSchema.parse(request.body);
-      const importer = repository as BudgetRepository & {
-        importTransactions?: (
-          accountId: string,
-          records: readonly ActualImportRecord[],
-          options?: { readonly dryRun?: boolean },
-        ) => Promise<ActualImportResult>;
-      };
-      if (typeof importer.importTransactions !== 'function') {
+      if (typeof repository.importTransactions !== 'function') {
         return reply.code(503).send({ error: { code: 'IMPORT_NOT_SUPPORTED', message: 'The configured local adapter does not support transaction imports.' } });
       }
       const [accounts, categories] = await Promise.all([
@@ -1282,7 +1265,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       if (parsed.records.some((record) => record.category !== undefined && !categoryIds.has(record.category))) {
         return reply.code(400).send({ error: { code: 'INVALID_CATEGORY', message: 'One or more records use a category that does not exist in the configured budget.' } });
       }
-      const records: ActualImportRecord[] = parsed.records.map((record) => ({
+      const records: ImportRecord[] = parsed.records.map((record) => ({
         date: record.date,
         amount: record.amount,
         payee_name: record.payee_name,
@@ -1291,7 +1274,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         ...(record.category === undefined ? {} : { category: record.category }),
         ...(record.notes === undefined ? {} : { notes: record.notes }),
       }));
-      const result = await importer.importTransactions(parsed.accountId, records, { dryRun });
+      const result = await repository.importTransactions(parsed.accountId, records, { dryRun });
       if (result.errors.length > 0) {
         return reply.code(409).send({
           error: { code: 'IMPORT_RECONCILIATION_FAILED', message: 'Actual Budget reported an import error; check the budget in Actual before retrying.' },
@@ -1318,15 +1301,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   const handleTransfer = async (request: FastifyRequest, reply: FastifyReply, dryRun: boolean) => {
     try {
       const parsed = TransferRequestSchema.parse(request.body);
-      const transferRepository = repository as BudgetRepository & {
-        importTransactions?: (
-          accountId: string,
-          records: readonly ActualImportRecord[],
-          options?: { readonly dryRun?: boolean },
-        ) => Promise<ActualImportResult>;
-        listTransferPayees?: () => Promise<readonly { readonly name: string; readonly accountId: string }[]>;
-      };
-      if (typeof transferRepository.importTransactions !== 'function' || typeof transferRepository.listTransferPayees !== 'function') {
+      if (typeof repository.importTransactions !== 'function' || typeof repository.listTransferPayees !== 'function') {
         return reply.code(503).send({
           error: { code: 'TRANSFER_NOT_SUPPORTED', message: 'The configured Actual Budget adapter does not support safe linked transfers.' },
         });
@@ -1376,7 +1351,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         });
       }
 
-      const transferPayees = await transferRepository.listTransferPayees();
+      const transferPayees = await repository.listTransferPayees();
       const transferPayee = transferPayees.find((payee) => payee.accountId === destination.id && payee.name.trim().length > 0);
       if (!transferPayee) {
         return reply.code(422).send({
@@ -1384,7 +1359,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         });
       }
 
-      const record: ActualImportRecord = {
+      const record: ImportRecord = {
         date: parsed.date,
         amount: -parsed.amountMinor,
         payee_name: transferPayee.name,
@@ -1392,7 +1367,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         imported_id: parsed.importedId,
         ...(parsed.notes?.trim() ? { notes: parsed.notes.trim() } : {}),
       };
-      const result = await transferRepository.importTransactions(source.id, [record], { dryRun });
+      const result = await repository.importTransactions(source.id, [record], { dryRun });
       if (result.errors.length > 0) {
         return reply.code(409).send({
           error: { code: 'TRANSFER_RECONCILIATION_FAILED', message: 'Actual Budget no ha podido validar la transferencia. Comprueba las cuentas en Actual antes de reintentar.' },
@@ -1423,18 +1398,14 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     try {
       const params = z.object({ month: BudgetMonthSchema }).strict().parse(request.params);
       const query = z.object({ includeHidden: z.enum(['true', 'false']).default('false') }).strict().parse(request.query);
-      const budgetRepository = repository as BudgetRepository & {
-        getBudgetMonth?: (month: string) => Promise<ActualBudgetMonthRecord>;
-        getBudgetAllocations?: (month: string) => Promise<readonly { readonly categoryId: string; readonly amountMinor: number }[]>;
-      };
-      if (typeof budgetRepository.getBudgetMonth !== 'function') {
+      if (typeof repository.getBudgetMonth !== 'function') {
         return reply.code(503).send({ error: { code: 'BUDGET_QUERY_NOT_SUPPORTED', message: 'The configured local adapter does not support budget queries.' } });
       }
-      const allocationSourceAvailable = typeof budgetRepository.getBudgetAllocations === 'function';
+      const allocationSourceAvailable = typeof repository.getBudgetAllocations === 'function';
       const [budget, categories, allocations] = await Promise.all([
-        budgetRepository.getBudgetMonth(params.month),
+        repository.getBudgetMonth(params.month),
         repository.listCategories(),
-        allocationSourceAvailable ? budgetRepository.getBudgetAllocations!(params.month) : Promise.resolve(null),
+        allocationSourceAvailable ? repository.getBudgetAllocations!(params.month) : Promise.resolve(null),
       ]);
       const categoriesById = new Map(categories.map((category) => [category.id, category]));
       const allocationsByCategory = new Map((allocations ?? []).map((allocation) => [allocation.categoryId, allocation.amountMinor]));
@@ -1506,10 +1477,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         categoryId: z.string().trim().min(1).max(128),
       }).strict().parse(request.params);
       const body = BudgetAmountSchema.parse(request.body);
-      const budgetRepository = repository as BudgetRepository & {
-        setBudgetAmount?: (month: string, categoryId: string, amountMinor: number) => Promise<void>;
-      };
-      if (typeof budgetRepository.setBudgetAmount !== 'function') {
+      if (typeof repository.setBudgetAmount !== 'function') {
         return reply.code(503).send({ error: { code: 'BUDGET_WRITE_NOT_SUPPORTED', message: 'The configured local adapter does not support budget updates.' } });
       }
       const categories = await repository.listCategories();
@@ -1517,7 +1485,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       if (!category || category.isIncome) {
         return reply.code(400).send({ error: { code: 'INVALID_CATEGORY', message: 'Choose an expense category from the configured budget.' } });
       }
-      await budgetRepository.setBudgetAmount(params.month, params.categoryId, body.amountMinor);
+      await repository.setBudgetAmount(params.month, params.categoryId, body.amountMinor);
       return { data: { month: params.month, categoryId: params.categoryId, amountMinor: body.amountMinor, updated: true } };
     } catch (error) {
       const normalized = sanitizedErrorResponse(error);
@@ -2085,9 +2053,6 @@ function monthsBefore(date: string, months: number): string {
       }
     }
 
-    const budgetRepository = repository as BudgetRepository & {
-      getBudgetMonth?: (month: string) => Promise<ActualBudgetMonthRecord>;
-    };
     const sameCalendarMonth = startDate.slice(0, 7) === endDate.slice(0, 7);
     const month = startDate.slice(0, 7);
     const lastCalendarDay = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).toISOString().slice(0, 10);
@@ -2095,14 +2060,14 @@ function monthsBefore(date: string, months: number): string {
       startDate === month + '-01' &&
       endDate === lastCalendarDay &&
       endDate < asOfDate;
-    if (sameCalendarMonth && typeof budgetRepository.getBudgetMonth === 'function') {
+    if (sameCalendarMonth && typeof repository.getBudgetMonth === 'function') {
       if (!isFullCompletedMonth) {
         warnings.push('Desviaciones de presupuesto no incluidas: el intervalo no cubre un mes natural completo ya cerrado.');
       } else if (accountPreference.mode !== 'all' || preferences.displayCurrency !== config.budgetCurrency) {
         warnings.push('Desviaciones de presupuesto no incluidas: el presupuesto de Actual es global y/o su divisa no coincide con la divisa de análisis seleccionada.');
       } else {
         try {
-          const monthBudget = await budgetRepository.getBudgetMonth(startDate.slice(0, 7));
+          const monthBudget = await repository.getBudgetMonth(startDate.slice(0, 7));
           for (const group of monthBudget.categoryGroups) {
             for (const category of group.categories ?? []) {
               const metadata = categories.find((item) => item.id === category.id);
@@ -2483,9 +2448,6 @@ function monthsBefore(date: string, months: number): string {
         period.startDate === reviewMonth + '-01' &&
         period.endDate === reviewMonthLastDate &&
         period.endDate < asOfDate;
-      const budgetRepository = repository as BudgetRepository & {
-        getBudgetMonth?: (month: string) => Promise<ActualBudgetMonthRecord>;
-      };
       const budgetLimitations = warnings.filter((warning) => /desviaciones de presupuesto/i.test(warning));
       let budgetUnavailabilityReason: string | null = null;
       if (!isFullClosedMonth) {
@@ -2494,7 +2456,7 @@ function monthsBefore(date: string, months: number): string {
         budgetUnavailabilityReason = 'El presupuesto de Actual es global; el ámbito seleccionado no coincide con el presupuesto completo.';
       } else if (result.currency !== config.budgetCurrency) {
         budgetUnavailabilityReason = 'La divisa de análisis no coincide con la divisa base del presupuesto.';
-      } else if (typeof budgetRepository.getBudgetMonth !== 'function') {
+      } else if (typeof repository.getBudgetMonth !== 'function') {
         budgetUnavailabilityReason = 'El adaptador de Actual no expone una consulta de presupuesto mensual.';
       } else if (budgetLimitations.length > 0) {
         budgetUnavailabilityReason = budgetLimitations[0]!;
@@ -2587,11 +2549,6 @@ function monthsBefore(date: string, months: number): string {
     try {
       const parsed = CategorizeRequestSchema.parse(request.body);
       assertPeriod(parsed.startDate, parsed.endDate);
-      const categorizer = repository as BudgetRepository & {
-        updateTransactionCategoriesBatch?: (changes: readonly TransactionCategoryBatchChange[]) => Promise<{
-          requested: number; updatedTransactionIds: readonly string[]; failedTransactionId?: string; conflictTransactionId?: string; persisted: boolean;
-        }>;
-      };
       const { transactions } = await openAccountTransactions(undefined, parsed.startDate, parsed.endDate);
       const transactionById = new Map(transactions
         .filter((transaction) => !transaction.is_child && !transaction.parent_id)
@@ -2630,13 +2587,13 @@ function monthsBefore(date: string, months: number): string {
         });
         return { data: { preview: true, requested: parsed.transactions.length, changes: parsed.transactions.length, baseline } };
       }
-      if (typeof categorizer.updateTransactionCategoriesBatch === 'function') {
+      if (typeof repository.updateTransactionCategoriesBatch === 'function') {
         const verifiedChanges = parsed.transactions.map((change) => {
           const transaction = transactionById.get(change.transactionId);
           if (!transaction) throw new Error('Transaction disappeared during category batch validation.');
           return { ...change, accountId: transaction.account, date: transaction.date, expectedCategoryId: change.expectedCategoryId ?? null };
         });
-        const outcome = await categorizer.updateTransactionCategoriesBatch(verifiedChanges);
+        const outcome = await repository.updateTransactionCategoriesBatch(verifiedChanges);
         const applied = outcome.updatedTransactionIds.length;
         const complete = applied === outcome.requested && outcome.persisted;
         if (!complete) {
@@ -3249,18 +3206,14 @@ function monthsBefore(date: string, months: number): string {
       monthAmounts.set(entryMonth, (monthAmounts.get(entryMonth) ?? 0) - entry.amountMinor);
       expenseByCategoryMonth.set(entry.categoryId, monthAmounts);
     }
-    const budgetRepository = repository as BudgetRepository & {
-      getBudgetMonth?: (value: string) => Promise<{ readonly categoryGroups: readonly { readonly categories?: readonly { readonly id: string; readonly budgeted?: number | null; readonly spent?: number | null; readonly balance?: number | null }[] }[] }>;
-      getBudgetAllocations?: (value: string) => Promise<readonly { readonly categoryId: string; readonly amountMinor: number }[]>;
-    };
     const budgetWarnings: string[] = [];
     const budgetRows = new Map<string, { budgetedMinor: number | null; spentMinor: number | null; availableMinor: number | null }>();
-    if (typeof budgetRepository.getBudgetMonth === 'function') {
+    if (typeof repository.getBudgetMonth === 'function') {
       try {
-        const allocationsAvailable = typeof budgetRepository.getBudgetAllocations === 'function';
+        const allocationsAvailable = typeof repository.getBudgetAllocations === 'function';
         const [budgetMonth, allocations] = await Promise.all([
-          budgetRepository.getBudgetMonth(endMonth),
-          allocationsAvailable ? budgetRepository.getBudgetAllocations!(endMonth) : Promise.resolve(null),
+          repository.getBudgetMonth(endMonth),
+          allocationsAvailable ? repository.getBudgetAllocations!(endMonth) : Promise.resolve(null),
         ]);
         const allocationByCategory = new Map((allocations ?? []).map((item) => [item.categoryId, item.amountMinor]));
         for (const group of budgetMonth.categoryGroups) {
@@ -3686,17 +3639,13 @@ function monthsBefore(date: string, months: number): string {
       const query = z.object({ month: PlanningMonthSchema.optional() }).strict().parse(request.query);
       const asOfDate = civilDateInTimeZone('UTC');
       const month = query.month ?? asOfDate.slice(0, 7);
-      const budgetRepository = repository as BudgetRepository & {
-        getBudgetMonth?: (value: string) => Promise<ActualBudgetMonthRecord>;
-        getBudgetAllocations?: (value: string) => Promise<readonly { readonly categoryId: string; readonly amountMinor: number }[]>;
-      };
-      if (typeof budgetRepository.getBudgetMonth !== 'function') {
+      if (typeof repository.getBudgetMonth !== 'function') {
         return reply.code(503).send({ error: { code: 'BUDGET_QUERY_NOT_SUPPORTED', message: 'The configured local adapter does not support budget queries.' } });
       }
-      const allocationSourceAvailable = typeof budgetRepository.getBudgetAllocations === 'function';
+      const allocationSourceAvailable = typeof repository.getBudgetAllocations === 'function';
       const [budget, categories, allocations, actionState] = await Promise.all([
-        budgetRepository.getBudgetMonth(month), repository.listCategories(),
-        allocationSourceAvailable ? budgetRepository.getBudgetAllocations!(month) : Promise.resolve(null),
+        repository.getBudgetMonth(month), repository.listCategories(),
+        allocationSourceAvailable ? repository.getBudgetAllocations!(month) : Promise.resolve(null),
         readFinancialActionState(config.actualDataDir),
       ]);
       const categoriesById = new Map(categories.map((category) => [category.id, category]));
