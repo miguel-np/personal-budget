@@ -42,7 +42,7 @@ La IA local de explicación del centro de inteligencia sigue siendo opcional y s
 
 - GET /api/v1/reviews/periodic: historial local versionado.
 - POST /api/v1/reviews/periodic con { "periodType": "weekly" | "monthly", "anchorDate": "YYYY-MM-DD" }: genera el informe, su periodo, corte, resumen, comparación, hallazgos y limitaciones.
-- PATCH /api/v1/reviews/periodic/:reviewId/items con { "findingId": "...", "status": "reviewed" | "postponed", "postponedUntil": "YYYY-MM-DD" }: actualiza un punto. Los aplazamientos deben vencer entre hoy y los próximos 90 días.
+- PATCH /api/v1/reviews/periodic/:reviewId/items con { "findingId": "...", "status": "reviewed" | "postponed", "postponedUntil": "YYYY-MM-DD", "timeZone": "Europe/Madrid" }: actualiza un punto. La zona IANA es opcional y por defecto UTC; la interfaz envía la misma zona del navegador usada al generar la revisión. Los aplazamientos se validan entre la fecha civil actual de esa zona y los próximos 90 días.
 
 Las rutas validan el esquema de entrada, no devuelven contenido sensible de errores internos y operan sobre el repositorio de lectura y los almacenes propios de Personal Budget. Generar o actualizar una revisión no invoca mutaciones del adaptador de Actual.
 
