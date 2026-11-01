@@ -484,40 +484,80 @@ describe('local API', () => {
     }
   });
 
-  it('compares prior review metadata without retaining prior financial snapshots', async () => {
+  it('compares repeated findings by stable identity and stores only metadata', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'periodic-review-comparison-api-'));
     temporaryDirectories.push(directory);
-    const repository = createRepository({
-      listTransactions: vi.fn(async () => [] as readonly BudgetTransaction[]),
-    });
-    const app = await createTestApp(repository, { ...config, actualDataDir: directory, aiEnabled: false });
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-01T09:30:00.000Z'));
+    try {
+      let syntheticTransactions: readonly BudgetTransaction[] = [
+        { id: 'previous-uncategorized', account: 'account-1', currencyCode: 'EUR', date: '2026-10-10', amount: -1_000 },
+        { id: 'current-uncategorized', account: 'account-1', currencyCode: 'EUR', date: '2026-11-01', amount: -2_500 },
+      ];
+      const repository = createRepository({
+        listTransactions: vi.fn(async (_accountId: string, startDate: string, endDate: string) =>
+          syntheticTransactions.filter((transaction) => transaction.date >= startDate && transaction.date <= endDate)),
+      });
+      const app = await createTestApp(repository, { ...config, actualDataDir: directory, aiEnabled: false });
 
-    const previous = await app.inject({
-      method: 'POST',
-      url: '/api/v1/reviews/periodic',
-      payload: { periodType: 'monthly', anchorDate: '2026-09-15', timeZone: 'Europe/Madrid' },
-    });
-    expect(previous.statusCode).toBe(201);
-    expect(previous.json().data.comparisonToPreviousReview).toBeNull();
+      const previous = await app.inject({
+        method: 'POST',
+        url: '/api/v1/reviews/periodic',
+        payload: { periodType: 'monthly', anchorDate: '2026-10-15', timeZone: 'Europe/Madrid' },
+      });
+      expect(previous.statusCode).toBe(201);
+      expect(previous.json().data.period).toMatchObject({ startDate: '2026-10-01', endDate: '2026-10-31', complete: true });
+      expect(previous.json().data.run.items).toHaveLength(1);
+      expect(previous.json().data.run.items[0]).toMatchObject({
+        identityKey: expect.stringMatching(/^[0-9a-f]{16}$/),
+        evidenceFingerprint: expect.stringMatching(/^[0-9a-f]{16}$/),
+      });
+      expect(previous.json().data.comparisonToPreviousReview).toBeNull();
 
-    const current = await app.inject({
-      method: 'POST',
-      url: '/api/v1/reviews/periodic',
-      payload: { periodType: 'monthly', anchorDate: new Date().toISOString().slice(0, 10), timeZone: 'Europe/Madrid' },
-    });
-    expect(current.statusCode).toBe(201);
-    expect(current.json().data.comparisonToPreviousReview).toMatchObject({
-      previousReview: { startDate: '2026-09-01', endDate: '2026-09-30' },
-      newFindingCount: 0,
-      repeatedFindingCount: 0,
-      changedEvidenceCount: 0,
-      noLongerPresentCount: 0,
-    });
+      const current = await app.inject({
+        method: 'POST',
+        url: '/api/v1/reviews/periodic',
+        payload: { periodType: 'monthly', anchorDate: '2026-11-01', timeZone: 'Europe/Madrid' },
+      });
+      expect(current.statusCode).toBe(201);
+      expect(current.json().data.run.items).toHaveLength(1);
+      expect(current.json().data.run.items[0].findingId).not.toBe(previous.json().data.run.items[0].findingId);
+      expect(current.json().data.run.items[0].identityKey).toBe(previous.json().data.run.items[0].identityKey);
+      expect(current.json().data.comparisonToPreviousReview).toMatchObject({
+        previousReview: { startDate: '2026-10-01', endDate: '2026-10-31' },
+        newFindingCount: 0,
+        repeatedFindingCount: 1,
+        changedEvidenceCount: 1,
+        noLongerPresentCount: 0,
+      });
 
-    const state = await readFile(join(directory, 'periodic-reviews.json'), 'utf8');
-    expect(state).not.toContain('incomeMinor');
-    expect(state).not.toContain('expenseMinor');
-    expect(state).not.toContain('account-1');
+      // When the current period no longer contains the same kind of finding, the earlier
+      // comparable review must report it as no longer present rather than as a new item.
+      syntheticTransactions = [];
+      const cleared = await app.inject({
+        method: 'POST',
+        url: '/api/v1/reviews/periodic',
+        payload: { periodType: 'monthly', anchorDate: '2026-11-01', timeZone: 'Europe/Madrid' },
+      });
+      expect(cleared.statusCode).toBe(201);
+      expect(cleared.json().data.run.items).toHaveLength(0);
+      expect(cleared.json().data.comparisonToPreviousReview).toMatchObject({
+        newFindingCount: 0,
+        repeatedFindingCount: 0,
+        changedEvidenceCount: 0,
+        noLongerPresentCount: 1,
+      });
+
+      const state = await readFile(join(directory, 'periodic-reviews.json'), 'utf8');
+      expect(state).not.toContain('incomeMinor');
+      expect(state).not.toContain('expenseMinor');
+      expect(state).not.toContain('amountMinor');
+      expect(state).not.toContain('previous-uncategorized');
+      expect(state).not.toContain('current-uncategorized');
+      expect(state).not.toContain('account-1');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('keeps an empty zero-income review explicit and deterministic with no findings', async () => {
