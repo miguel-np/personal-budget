@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { SearXNGSearchProvider, WebSearchResponseTooLargeError } from '../src/web-search.js';
 import { assessBoeTemporalMetadata, extractOfficialHtmlText, retrieveOfficialDocument } from '../src/official-evidence.js';
+import type { OfficialDocumentFetcher } from '../src/official-evidence.js';
 
 const servers: Array<{ close: () => Promise<void> }> = [];
 async function serve(handler: (request: IncomingMessage, response: ServerResponse) => void) {
@@ -250,6 +251,118 @@ describe('official document evidence and temporal metadata', () => {
     expect(text).toContain('Artículo 1. Texto oficial.');
     expect(text).not.toContain('Menú privado');
     expect(text).not.toContain('INSTRUCCIÓN MALICIOSA');
+  });
+
+  it('retrieves BOE HTML, metadata and prior/later normative relations through fixed official endpoints', async () => {
+    const requested: string[] = [];
+    const metadata = {
+      fecha_publicacion: '20250301',
+      fecha_vigencia: '20250401',
+      fecha_actualizacion: '20261030T100000Z',
+      estatus_derogacion: 'N',
+      estatus_anulacion: 'N',
+      vigencia_agotada: 'N',
+      estado_consolidacion: 'Finalizado',
+    };
+    const analysis = {
+      data: { analisis: { referencias: {
+        anteriores: { anterior: [{ id_norma: 'BOE-A-2023-7', relacion: 'MODIFICA', texto: 'Artículo 2' }] },
+        posteriores: { posterior: [{ id_norma: 'BOE-A-2026-8', relacion: 'DEROGA', texto: 'Disposición final' }] },
+      } } },
+    };
+    const longText = '<html><body><nav>Menú</nav><main><h1>Norma</h1><p>' + 'Texto normativo. '.repeat(210) +
+      'IRPF punto de interés. ' + 'Contenido adicional. '.repeat(220) + '</p></main></body></html>';
+    const fetchOfficial: OfficialDocumentFetcher = async (url) => {
+      requested.push(url.pathname + url.search);
+      if (url.pathname.endsWith('/metadatos')) {
+        return { body: Buffer.from(JSON.stringify({ data: { metadatos: metadata } })), contentType: 'application/json; charset=utf-8' };
+      }
+      if (url.pathname.endsWith('/analisis')) {
+        return { body: Buffer.from(JSON.stringify(analysis)), contentType: 'application/json' };
+      }
+      if (url.pathname === '/buscar/act.php') {
+        return { body: Buffer.from(longText), contentType: 'text/html; charset=utf-8' };
+      }
+      throw new Error('Unexpected official document endpoint.');
+    };
+    const source = {
+      id: 'S1', title: 'Ley', url: 'https://www.boe.es/buscar/act.php?id=BOE-A-2025-1234',
+      domain: 'www.boe.es', institution: 'BOE', publishedAt: null, modifiedAt: null, snippet: 'Snippet',
+      sourceKind: 'normativa' as const, sourceAuthority: 'legislation' as const,
+    };
+    const result = await retrieveOfficialDocument(source, 'IRPF ejercicio 2025', '2026-11-01', 2_000, undefined, fetchOfficial);
+
+    expect(result).toMatchObject({
+      status: 'retrieved',
+      documentType: 'boe_consolidated_legislation',
+      temporal: {
+        assessment: 'not_marked_derogated_or_exhausted',
+        publicationDate: '2025-03-01',
+        effectiveDate: '2025-04-01',
+        lastRegistryUpdate: '2026-10-30',
+      },
+    });
+    expect(result.textLength).toBeGreaterThan(5_000);
+    expect(result.excerpt).toContain('IRPF');
+    expect(result.temporal?.relatedNorms).toEqual([
+      'BOE-A-2023-7 — MODIFICA — Artículo 2',
+      'BOE-A-2026-8 — DEROGA — Disposición final',
+    ]);
+    expect(requested).toHaveLength(3);
+    expect(requested).toContain('/datosabiertos/api/legislacion-consolidada/id/BOE-A-2025-1234/metadatos');
+    expect(requested).toContain('/datosabiertos/api/legislacion-consolidada/id/BOE-A-2025-1234/analisis');
+    expect(requested).toContain('/buscar/act.php?id=BOE-A-2025-1234');
+  });
+
+  it('retains dated BOE metadata when consolidated HTML cannot be retrieved', async () => {
+    const fetchOfficial: OfficialDocumentFetcher = async (url) => {
+      if (url.pathname.endsWith('/metadatos')) {
+        return { body: Buffer.from(JSON.stringify({ data: { metadatos: {
+          fecha_vigencia: '20200101', fecha_derogacion: '20270101', estatus_derogacion: 'S',
+          estatus_anulacion: 'N', vigencia_agotada: 'N', estado_consolidacion: 'Finalizado',
+        } } })), contentType: 'application/json' };
+      }
+      if (url.pathname.endsWith('/analisis')) throw new Error('Synthetic analysis outage.');
+      throw new Error('Synthetic consolidated HTML outage.');
+    };
+    const source = {
+      id: 'S1', title: 'Ley', url: 'https://www.boe.es/buscar/act.php?id=BOE-A-2025-4321',
+      domain: 'www.boe.es', institution: 'BOE', publishedAt: null, modifiedAt: null, snippet: 'Snippet',
+      sourceKind: 'normativa' as const, sourceAuthority: 'legislation' as const,
+    };
+    const result = await retrieveOfficialDocument(source, 'ley', '2026-11-01', 2_000, undefined, fetchOfficial);
+    expect(result).toMatchObject({
+      status: 'partial',
+      excerpt: '',
+      temporal: { assessment: 'derogation_after_reference_date', derogationDate: '2027-01-01' },
+    });
+    expect(result.limitations.join(' ')).toContain('No se pudo recuperar el texto consolidado HTML');
+  });
+
+  it('retrieves generic official text and reports unsupported or empty formats honestly', async () => {
+    const source = {
+      id: 'S1', title: 'AEAT', url: 'https://sede.agenciatributaria.gob.es/info',
+      domain: 'sede.agenciatributaria.gob.es', institution: 'AEAT', publishedAt: null, modifiedAt: null, snippet: 'Snippet',
+      sourceKind: 'organismo_oficial' as const, sourceAuthority: 'tax_agency_guidance' as const,
+    };
+    const textFetcher: OfficialDocumentFetcher = async () => ({
+      body: Buffer.from('Información pública del organismo.'),
+      contentType: 'text/plain; charset=utf-8',
+    });
+    await expect(retrieveOfficialDocument(source, 'información pública', '2026-11-01', 2_000, undefined, textFetcher))
+      .resolves.toMatchObject({ status: 'retrieved', documentType: 'official_html', excerpt: 'Información pública del organismo.' });
+
+    const pdfFetcher: OfficialDocumentFetcher = async () => ({
+      body: Buffer.from('%PDF-synthetic'), contentType: 'application/pdf',
+    });
+    await expect(retrieveOfficialDocument(source, 'documento', '2026-11-01', 2_000, undefined, pdfFetcher))
+      .resolves.toMatchObject({ status: 'unsupported', documentType: 'unsupported_format' });
+
+    const emptyFetcher: OfficialDocumentFetcher = async () => ({
+      body: Buffer.from('<html><body><script>only script</script></body></html>'), contentType: 'text/html',
+    });
+    await expect(retrieveOfficialDocument(source, 'vacío', '2026-11-01', 2_000, undefined, emptyFetcher))
+      .resolves.toMatchObject({ status: 'partial', documentType: 'official_html', excerpt: '' });
   });
 
   it('does not fetch an arbitrary external URL as an official document', async () => {
