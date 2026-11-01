@@ -58,20 +58,38 @@ describe('SearXNG web search provider', () => {
   it('classifies Diario Oficial de Galicia results as published normative sources', async () => {
     const fixture = await serve((_request, response) => {
       response.writeHead(200, { 'content-type': 'application/json' });
-      response.end(JSON.stringify({ results: [{
-        title: 'Disposición publicada en DOG',
-        url: 'https://www.xunta.gal/diario-oficial-galicia/publicados',
-        content: 'Texto normativo autonómico.',
-        publishedDate: '2026-01-15',
-      }] }));
+      response.end(JSON.stringify({ results: [
+        {
+          title: 'Disposición publicada en DOG',
+          url: 'https://www.xunta.gal/diario-oficial-galicia/publicados',
+          content: 'Texto normativo autonómico.',
+          publishedDate: '2026-01-15',
+        },
+        {
+          title: 'Información general Xunta',
+          url: 'https://www.xunta.gal/es/inicio',
+          content: 'Información institucional general.',
+        },
+        {
+          title: 'Subdominio desconocido Xunta',
+          url: 'https://test.xunta.gal/documento',
+          content: 'No debe heredar confianza.',
+        },
+      ] }));
     });
     const provider = new SearXNGSearchProvider(config(fixture.url));
     const result = await provider.search('normativa autonómica', ['xunta.gal']);
+    expect(result.sources).toHaveLength(2);
     expect(result.sources[0]).toMatchObject({
       domain: 'www.xunta.gal',
       institution: 'Diario Oficial de Galicia (DOG)',
       sourceKind: 'normativa',
       sourceAuthority: 'legislation',
+    });
+    expect(result.sources[1]).toMatchObject({
+      institution: 'Xunta de Galicia',
+      sourceKind: 'organismo_oficial',
+      sourceAuthority: 'official_information',
     });
   });
 
