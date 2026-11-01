@@ -49,7 +49,7 @@ describe('SearXNG web search provider', () => {
     expect(result.provider).toBe('SearXNG');
     expect(result.sources).toHaveLength(1);
     expect(result.sources[0]).toMatchObject({
-      id: 'S1', domain: 'www.boe.es', institution: 'Boletín Oficial del Estado (BOE)', sourceKind: 'normativa',
+      id: 'S1', domain: 'www.boe.es', institution: 'Boletín Oficial del Estado (BOE)', sourceKind: 'normativa', sourceAuthority: 'legislation',
       publishedAt: '2025-03-01T00:00:00.000Z', modifiedAt: '2025-04-01T00:00:00.000Z',
     });
   });
@@ -70,6 +70,26 @@ describe('SearXNG web search provider', () => {
       domain: 'dog.gal',
       institution: 'Xunta de Galicia / Diario Oficial de Galicia',
       sourceKind: 'normativa',
+    });
+  });
+
+  it('classifies DGT and TEAC sources distinctly from legislation and generic guidance', async () => {
+    const fixture = await serve((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ results: [
+        { title: 'Consulta vinculante', url: 'https://petete.tributos.hacienda.gob.es/consultas/', content: 'Criterio DGT.' },
+        { title: 'Resolución TEAC', url: 'https://serviciostelematicosext.hacienda.gob.es/TEAC/DYCTEA/', content: 'Criterio TEAC.' },
+      ] }));
+    });
+    const provider = new SearXNGSearchProvider(config(fixture.url));
+    const result = await provider.search('criterio tributario', [
+      'petete.tributos.hacienda.gob.es', 'serviciostelematicosext.hacienda.gob.es',
+    ]);
+    expect(result.sources[0]).toMatchObject({
+      institution: 'Dirección General de Tributos (DGT)', sourceAuthority: 'dgt_criteria',
+    });
+    expect(result.sources[1]).toMatchObject({
+      institution: 'Tribunal Económico-Administrativo Central (TEAC)', sourceAuthority: 'teac_criteria',
     });
   });
 
