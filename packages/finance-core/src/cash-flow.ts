@@ -29,7 +29,7 @@ export interface CashFlowTimelineDay {
   readonly commitmentNetChangeMinor: number;
   readonly confirmedRecurringNetChangeMinor: number;
   readonly recurringCandidateNetChangeMinor: number;
-  readonly scenarioNetChangeMinor;
+  readonly scenarioNetChangeMinor: number;
   readonly totalInflowMinor: number;
   readonly totalOutflowMinor: number;
   readonly netChangeMinor: number;
@@ -100,7 +100,7 @@ export function projectCashFlow(input: CashFlowProjectionInput): CashFlowProject
     seen.add(event.id);
     if (!isIsoDate(event.date) || event.date < input.startDate || event.date > input.endDate) throw new RangeError('Cash-flow event date must be within the selected horizon.');
     if (!Number.isSafeInteger(event.amountMinor) || event.amountMinor === 0) throw new RangeError('Cash-flow event amount must be a non-zero safe integer in minor units.');
-    if (!['actual_transaction', 'manual_commitment', 'scenario'].includes(event.source)) throw new RangeError('Cash-flow event source is invalid.');
+    if (!['actual_transaction', 'manual_commitment', 'confirmed_recurring', 'recurring_candidate', 'scenario'].includes(event.source)) throw new RangeError('Cash-flow event source is invalid.');
     const list = byDate.get(event.date) ?? [];
     list.push(event);
     byDate.set(event.date, list);
