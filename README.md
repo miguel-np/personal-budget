@@ -2,7 +2,7 @@
 
 Aplicación local-first de finanzas personales basada en Actual Budget, con una interfaz web única para cuentas, movimientos, presupuestos, planificación, inteligencia financiera, patrimonio y documentación.
 
-> **Estado a 1 de noviembre de 2026:** las fases de consolidación, inteligencia financiera útil y gestión patrimonial/portabilidad están integradas en `main`. Incluyen backup cifrado unificado (Actual + estado propio), aceptación manual Windows + WSL2, flujo de caja, propuestas y alertas, exportación PDF/XLSX, activos y pasivos externos, justificantes vinculados, exportación portable y contratos financieros neutrales respecto del proveedor. El desacoplamiento preventivo de #65 también está integrado. La búsqueda web controlada de #84 se desarrolla como flujo separado y opcional; no habilita acceso general del modelo a Internet ni comparte contexto financiero.
+> **Estado a 1 de noviembre de 2026:** las fases de consolidación, inteligencia financiera útil y gestión patrimonial/portabilidad están integradas en `main`. Incluyen backup cifrado unificado (Actual + estado propio), aceptación manual Windows + WSL2, flujo de caja, propuestas y alertas, exportación PDF/XLSX, activos y pasivos externos, justificantes vinculados, exportación portable y contratos financieros neutrales respecto del proveedor. El desacoplamiento preventivo de #65 también está integrado. La primera entrega de búsqueda web controlada de #84 está integrada mediante PR [#97](https://github.com/miguel-np/personal-budget/pull/97): funciona como flujo separado y opcional, no habilita acceso general del modelo a Internet ni comparte contexto financiero. La issue permanece abierta para completar recuperación y verificación documental.
 
 ## Capacidades
 

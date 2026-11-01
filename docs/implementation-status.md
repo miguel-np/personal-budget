@@ -1,6 +1,6 @@
 # Estado de implementación
 
-**Baseline: 1-nov-2026.** Las funcionalidades descritas como integradas están presentes en `main`. Se distingue la integración del código, la validación automatizada y la aceptación manual del entorno. La issue #84 está siendo implementada en una rama separada y no debe darse por integrada hasta que su PR esté mergeada y sus checks terminen correctamente.
+**Baseline: 1-nov-2026.** Las funcionalidades descritas como integradas están presentes en `main`. Se distingue la integración del código, la validación automatizada y la aceptación manual del entorno. La primera entrega de búsqueda web de #84 está integrada mediante PR [#97](https://github.com/miguel-np/personal-budget/pull/97), con CI Linux/Windows, E2E y aceptación Actual en verde; la issue permanece abierta para completar la recuperación y verificación de documentos oficiales.
 
 ## Estado general
 
@@ -17,7 +17,7 @@
 | Backup/restore | Integrado | Actual + estado propio, manifiesto v2, nueve JSON y binarios documentales inventariados. |
 | IA/MCP | Integrados como capacidades opcionales | Ollama local y MCP de solo lectura; modelos/modelos runtime concretos requieren validación. |
 | Contratos neutrales | Integrados | #65 cerrada; suite de conformidad para proveedor de referencia y adaptador Actual. |
-| Búsqueda web #84 | En implementación en rama | Debe seguir separada del chat financiero; pendiente de revisión y CI antes de integrarse. |
+| Búsqueda web #84 | Primera entrega integrada (PR [#97](https://github.com/miguel-np/personal-budget/pull/97)); issue abierta | Consentimiento por petición, búsqueda SearXNG acotada, dominios oficiales, una herramienta fija y sin contexto financiero. Pendiente lectura/verificación de documentos completos, jerarquía/vigencia y corpus de discrepancias. |
 
 ## Consolidación — fase 1
 
@@ -85,7 +85,7 @@ No se infieren rentabilidad, deducibilidad ni valoraciones de mercado; las valor
 
 ## Búsqueda web controlada — issue #84
 
-**Estado en esta entrega:** implementación en rama `feat/issue-84-controlled-web-search`; no marcar como integrada hasta merge y CI verde.
+**Estado en main:** primera entrega integrada mediante PR [#97](https://github.com/miguel-np/personal-budget/pull/97). Checks Linux/Windows, E2E, Actual update/restore y Security completados en verde. La issue #84 continúa abierta para los criterios de verificación documental completa.
 
 La arquitectura propuesta mantiene dos flujos separados:
 - El chat financiero recibe solo agregados backend y sigue sin herramientas.

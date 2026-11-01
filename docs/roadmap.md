@@ -44,7 +44,7 @@
 
 ## Siguiente etapa
 
-- [ ] [#84 — Búsqueda web controlada desde el asistente local](https://github.com/miguel-np/personal-budget/issues/84): investigación separada del contexto financiero, consulta explícita, herramienta única backend, proveedor SearXNG configurable, fuentes oficiales, evidencia y límites fiscales. Se está implementando en la rama `feat/issue-84-controlled-web-search`; su cierre depende de CI y revisión de seguridad.
+- [ ] [#84 — Búsqueda web controlada desde el asistente local](https://github.com/miguel-np/personal-budget/issues/84): primera entrega integrada mediante PR [#97](https://github.com/miguel-np/personal-budget/pull/97): consentimiento por petición, consulta exacta, herramienta única backend, SearXNG configurable, dominios oficiales, trazabilidad de fuente y síntesis local separada del contexto financiero. La issue sigue abierta para recuperación del texto oficial completo, verificación de vigencia/jerarquía y pruebas de discrepancias normativas.
 - [ ] [#85 — Proveedores de IA intercambiables](https://github.com/miguel-np/personal-budget/issues/85): Ollama, OpenAI y xAI detrás de adaptadores independientes. Debe seguir siendo opcional y respetar privacidad/capacidades de cada modelo.
 - [ ] [#87 — Espacio fiscal y calendario de obligaciones](https://github.com/miguel-np/personal-budget/issues/87): ejercicios, perfil explícito, tareas y vencimientos basados en fuentes vigentes. No inferir obligaciones a partir de movimientos o ubicación aproximada.
 
