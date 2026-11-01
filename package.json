@@ -21,8 +21,8 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
-    "audit": "npm audit --audit-level=high",
-    "audit:production": "npm audit --omit=dev --audit-level=high",
+    "audit": "npm audit --audit-level=moderate",
+    "audit:production": "npm audit --omit=dev --audit-level=moderate",
     "dev:api": "npm run build --workspace=@personal-budget/finance-core && npm run build --workspace=@personal-budget/actual-adapter && npm run dev --workspace=@personal-budget/api",
     "dev:web": "npm run dev --workspace=@personal-budget/web",
     "backup:actual": "tsx scripts/actual-backup.ts backup",
@@ -60,5 +60,8 @@
   "allowScripts": {
     "better-sqlite3": true,
     "esbuild": true
+  },
+  "overrides": {
+    "minimatch": "11.0.3"
   }
 }
