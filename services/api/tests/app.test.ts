@@ -2976,6 +2976,67 @@ describe('phase 2 financial utility APIs', () => {
     expect(afterDelete.json().data.scenarios.some((item: { id: string }) => item.id === scenarioId)).toBe(false);
   });
 
+  it('prioritizes proposals by the selected budget improvement goal', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'personal-budget-goal-priority-'));
+    temporaryDirectories.push(directory);
+    const expenseCategories: BudgetCategory[] = [
+      ...categories,
+      { id: 'variable-trend', name: 'Gasto variable con aumento', groupId: 'spend', isIncome: false },
+      { id: 'budget-overrun', name: 'Categoría con exceso', groupId: 'spend', isIncome: false },
+    ];
+    const historical: BudgetTransaction[] = [
+      { id: 'trend-aug', account: 'account-1', currencyCode: 'EUR', date: '2026-08-10', amount: -10_000, category: 'variable-trend' },
+      { id: 'trend-sep', account: 'account-1', currencyCode: 'EUR', date: '2026-09-10', amount: -10_000, category: 'variable-trend' },
+      { id: 'trend-oct', account: 'account-1', currencyCode: 'EUR', date: '2026-10-10', amount: -15_000, category: 'variable-trend' },
+      { id: 'overrun-aug', account: 'account-1', currencyCode: 'EUR', date: '2026-08-11', amount: -10_000, category: 'budget-overrun' },
+      { id: 'overrun-sep', account: 'account-1', currencyCode: 'EUR', date: '2026-09-11', amount: -10_000, category: 'budget-overrun' },
+      { id: 'overrun-oct', account: 'account-1', currencyCode: 'EUR', date: '2026-10-11', amount: -10_000, category: 'budget-overrun' },
+    ];
+    const repository = Object.assign(createRepository({
+      listCategories: vi.fn(async () => expenseCategories),
+      listTransactions: vi.fn(async (accountId: string) => accountId === 'account-1' ? [...transactions, ...historical] : []),
+    }), {
+      getBudgetMonth: vi.fn(async (month: string) => ({
+        month,
+        categoryGroups: [{
+          id: 'spend', name: 'Gastos', is_income: false,
+          categories: [
+            { id: 'variable-trend', name: 'Gasto variable con aumento', budgeted: 20_000, spent: -15_000, balance: 5_000 },
+            { id: 'budget-overrun', name: 'Categoría con exceso', budgeted: 5_000, spent: -10_000, balance: -5_000 },
+          ],
+        }],
+        totalBudgeted: 25_000, totalSpent: -25_000, totalBalance: 0,
+      })),
+      getBudgetAllocations: vi.fn(async () => [
+        { categoryId: 'variable-trend', amountMinor: 20_000 },
+        { categoryId: 'budget-overrun', amountMinor: 5_000 },
+      ]),
+    }) as BudgetRepository;
+    const app = await createTestApp(repository, { ...config, actualDataDir: directory });
+    const saved = await app.inject({
+      method: 'PUT', url: '/api/v1/budget-improvements/preferences',
+      payload: {
+        goal: 'reduce_variable_spending',
+        categories: [
+          { categoryId: 'variable-trend', classification: 'flexible' },
+          { categoryId: 'budget-overrun', classification: 'flexible' },
+        ],
+      },
+    });
+    expect(saved.statusCode).toBe(200);
+    const response = await app.inject({ method: 'GET', url: '/api/v1/budget-improvements?periodMonths=3' });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.proposals.map((proposal: { categoryId: string }) => proposal.categoryId)).toEqual([
+      'variable-trend', 'budget-overrun',
+    ]);
+    expect(response.json().data.proposals[0]).toMatchObject({
+      priorityRank: 1, evidence: { signal: 'recent_increase' },
+    });
+    expect(response.json().data.proposals[1]).toMatchObject({
+      priorityRank: 2, evidence: { signal: 'budget_overrun' },
+    });
+  });
+
   it('nets refunds into monthly proposal evidence and avoids suggesting cuts from gross charges alone', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'personal-budget-improvement-refunds-'));
     temporaryDirectories.push(directory);
