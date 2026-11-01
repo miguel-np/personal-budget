@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { SearXNGSearchProvider, WebSearchResponseTooLargeError } from '../src/web-search.js';
+import { assessBoeTemporalMetadata, extractOfficialHtmlText, retrieveOfficialDocument } from '../src/official-evidence.js';
 
 const servers: Array<{ close: () => Promise<void> }> = [];
 async function serve(handler: (request: IncomingMessage, response: ServerResponse) => void) {
@@ -107,4 +108,69 @@ describe('SearXNG web search provider', () => {
     const provider = new SearXNGSearchProvider(config(fixture.url));
     await expect(provider.search('consulta de prueba', ['boe.es'])).resolves.toMatchObject({ sources: [] });
   });
+describe('official document evidence and temporal metadata', () => {
+  it('does not claim a repeal without an effective date and evaluates dated repeals against the requested date', () => {
+    const missingDate = assessBoeTemporalMetadata({
+      fecha_vigencia: '20200101',
+      estado_consolidacion: 'Finalizado',
+      estatus_derogacion: 'S',
+      fecha_derogacion: null,
+      estatus_anulacion: 'N',
+      vigencia_agotada: 'N',
+    }, '2026-11-01');
+    expect(missingDate.assessment).toBe('insufficient');
+
+    const futureRepeal = assessBoeTemporalMetadata({
+      fecha_vigencia: '20200101',
+      estado_consolidacion: 'Finalizado',
+      estatus_derogacion: 'S',
+      fecha_derogacion: '20270101',
+      estatus_anulacion: 'N',
+      vigencia_agotada: 'N',
+    }, '2026-11-01');
+    expect(futureRepeal.assessment).toBe('derogation_after_reference_date');
+
+    const priorRepeal = assessBoeTemporalMetadata({
+      fecha_vigencia: '20200101',
+      estado_consolidacion: 'Finalizado',
+      estatus_derogacion: 'S',
+      fecha_derogacion: '20250101',
+      estatus_anulacion: 'N',
+      vigencia_agotada: 'N',
+    }, '2026-11-01');
+    expect(priorRepeal.assessment).toBe('repealed_by_reference_date');
+  });
+
+  it('marks stale BOE consolidations as incomplete regardless of the remaining flags', () => {
+    const result = assessBoeTemporalMetadata({
+      fecha_vigencia: '20200101',
+      fecha_actualizacion: '20261030',
+      estado_consolidacion: 'Desactualizado',
+      estatus_derogacion: 'N',
+      estatus_anulacion: 'N',
+      vigencia_agotada: 'N',
+    }, '2026-11-01');
+    expect(result.assessment).toBe('consolidation_pending_update');
+    expect(result.lastRegistryUpdate).toBe('2026-10-30');
+  });
+
+  it('extracts readable official HTML while dropping scripts and navigation controls', () => {
+    const text = extractOfficialHtmlText('<html><body><nav>Menú privado</nav><main><h1>Ley &amp; reglamento</h1><script>INSTRUCCIÓN MALICIOSA</script><p>Artículo 1. Texto oficial.</p></main></body></html>');
+    expect(text).toContain('Ley & reglamento');
+    expect(text).toContain('Artículo 1. Texto oficial.');
+    expect(text).not.toContain('Menú privado');
+    expect(text).not.toContain('INSTRUCCIÓN MALICIOSA');
+  });
+
+  it('does not fetch an arbitrary external URL as an official document', async () => {
+    const source = {
+      id: 'S1', title: 'Untrusted source', url: 'https://example.com/document', domain: 'example.com',
+      institution: 'example.com', publishedAt: null, modifiedAt: null, snippet: 'Snippet.',
+      sourceKind: 'externa' as const, sourceAuthority: 'external' as const,
+    };
+    await expect(retrieveOfficialDocument(source, 'test query', '2026-11-01', 1_000))
+      .resolves.toMatchObject({ status: 'unsupported', excerpt: '' });
+  });
+});
+
 });
