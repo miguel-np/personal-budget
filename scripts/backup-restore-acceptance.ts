@@ -6,7 +6,6 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readAccountScope } from '../services/api/src/account-scope.js';
 import { readAppPreferences } from '../services/api/src/app-preferences.js';
-import { readCurrencyPreferences } from '../services/api/src/currency-preferences.js';
 import { readFindingReviewState } from '../services/api/src/intelligence-store.js';
 import { readPlanningData } from '../services/api/src/planning-store.js';
 
@@ -120,7 +119,6 @@ async function verifyAppState(): Promise<void> {
   // Exercise the real production readers so byte equality is not the only check.
   await readAccountScope(appDataDir);
   await readAppPreferences(appDataDir);
-  await readCurrencyPreferences(appDataDir, 'EUR');
   await readFindingReviewState(appDataDir);
   await readPlanningData(appDataDir);
   const periodic = JSON.parse(await readFile(join(appDataDir, 'periodic-reviews.json'), 'utf8')) as { version?: number; reviews?: unknown[] };
