@@ -19,6 +19,8 @@ import type { StoredPlanningCommitment } from './planning-store.js';
 import { effectiveFindingReview, readFindingReviewState, updateFindingReviewState } from './intelligence-store.js';
 import { createPeriodicReview, readPeriodicReviewState, updatePeriodicReviewItem } from './periodic-review-store.js';
 import { readFinancialActionState, updateFinancialActionState } from './financial-actions-store.js';
+import { readWealthData } from './wealth-store.js';
+import { registerPortfolioRoutes } from './portfolio-routes.js';
 
 
 const TransactionQuerySchema = z.object({
@@ -694,7 +696,8 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
 
   app.get('/api/v1/accounts', async (_request, reply) => {
     try {
-      const [accounts, preferences] = await Promise.all([repository.listAccounts(), currencyPreferences()]);
+      const [accounts, preferences, wealth] = await Promise.all([repository.listAccounts(), currencyPreferences(), readWealthData(config.actualDataDir)]);
+      const accountClassifications = new Map(wealth.accountClassifications.map((item) => [item.accountId, item.classification]));
       const today = new Date().toISOString().slice(0, 10);
       return { data: accounts.map((account) => {
         const nativeCurrencyCode = normalizeCurrencyCode(account.currencyCode);
@@ -703,7 +706,8 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
           ? null
           : convertAmountMinor(account.currentBalanceMinor, currencyCode, preferences.displayCurrency, today, preferences.exchangeRates);
         return {
-          ...account, nativeCurrencyCode, currencyCode, displayCurrency: preferences.displayCurrency,
+          ...account, classification: accountClassifications.get(account.id) ?? null,
+          nativeCurrencyCode, currencyCode, displayCurrency: preferences.displayCurrency,
           displayBalanceMinor: conversion?.amountMinor ?? null,
           balanceConversion: conversion ? {
             fromCurrency: conversion.fromCurrency, toCurrency: conversion.toCurrency, rate: conversion.rate,
@@ -4162,6 +4166,8 @@ function monthsBefore(date: string, months: number): string {
       return reply.code(normalized.statusCode).send(normalized.body);
     }
   });
+
+  await registerPortfolioRoutes(app, { config, repository });
 
   return app;
 }
