@@ -2507,5 +2507,703 @@ describe('local API', () => {
     expect(unchangedTransactions.json().pagination.total).toBe(transactions.length);
   });
 
+describe('phase 2 financial utility APIs', () => {
+  function todayInProcessTimeZone(): string {
+    const timeZone = 'UTC';
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(new Date());
+    const value = (type: 'year' | 'month' | 'day') => parts.find((item) => item.type === type)?.value ?? '';
+    return value('year') + '-' + value('month') + '-' + value('day');
+  }
+
+  function plusDays(date: string, days: number): string {
+    const result = new Date(date + 'T00:00:00.000Z');
+    result.setUTCDate(result.getUTCDate() + days);
+    return result.toISOString().slice(0, 10);
+  }
+
+  it('projects Actual movements and commitments without double counting an exact match; scenarios remain ephemeral', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'personal-budget-cash-flow-'));
+    temporaryDirectories.push(directory);
+    const asOfDate = todayInProcessTimeZone();
+    const billDate = plusDays(asOfDate, 3);
+    const scenarioDate = plusDays(asOfDate, 5);
+    const futureTransaction: BudgetTransaction = {
+      id: 'future-internet', account: 'account-1', currencyCode: 'EUR', date: billDate,
+      amount: -15_000, category: 'food', payee_name: 'Factura internet', cleared: false,
+    };
+    const repository = createRepository({
+      listTransactions: vi.fn(async () => [...transactions, futureTransaction]),
+    });
+    const app = await createTestApp(repository, { ...config, actualDataDir: directory });
+
+    const exactCommitment = await app.inject({
+      method: 'POST', url: '/api/v1/planning/commitments',
+      payload: { title: 'Factura internet', amountMinor: 15_000, date: billDate, direction: 'expense', frequency: 'once' },
+    });
+    expect(exactCommitment.statusCode).toBe(201);
+    const uniqueCommitment = await app.inject({
+      method: 'POST', url: '/api/v1/planning/commitments',
+      payload: { title: 'Seguro anual', amountMinor: 20_000, date: billDate, direction: 'expense', frequency: 'once' },
+    });
+    expect(uniqueCommitment.statusCode).toBe(201);
+
+    const response = await app.inject({
+      method: 'POST', url: '/api/v1/cash-flow/project',
+      payload: { horizonDays: 7, reserveMinor: 170_000 },
+    });
+    expect(response.statusCode).toBe(200);
+    const result = response.json().data;
+    expect(result.openingBalanceMinor).toBe(200_000);
+    expect(result.actualEvents).toContainEqual(expect.objectContaining({
+      id: 'actual:future-internet', date: billDate, amountMinor: -15_000, source: 'actual_transaction', clearedStatus: 'pending',
+    }));
+    expect(result.manualEvents).toHaveLength(1);
+    expect(result.manualEvents[0]).toMatchObject({ amountMinor: -20_000, source: 'manual_commitment' });
+    expect(result.duplicateCommitmentIds).toHaveLength(1);
+    expect(result.projection.endingBalanceMinor).toBe(165_000);
+    expect(result.projection.firstReserveBreachDate).toBe(billDate);
+
+    const withScenario = await app.inject({
+      method: 'POST', url: '/api/v1/cash-flow/project',
+      payload: { horizonDays: 7, scenario: { date: scenarioDate, amountMinor: 5_000, direction: 'expense', label: 'Compra hipotética' } },
+    });
+    expect(withScenario.statusCode).toBe(200);
+    expect(withScenario.json().data.scenarioEvents).toHaveLength(1);
+    expect(withScenario.json().data.projection.endingBalanceMinor).toBe(160_000);
+    const planning = await app.inject({ method: 'GET', url: '/api/v1/planning' });
+    expect(planning.json().data.commitments).toHaveLength(2);
+    expect(planning.json().data.commitments.some((item: { title: string }) => item.title === 'Compra hipotética')).toBe(false);
+  });
+
+  it('separates confirmed recurring commitments from optional recurring-candidate scenarios', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'personal-budget-recurring-cash-flow-'));
+    temporaryDirectories.push(directory);
+    const asOfDate = todayInProcessTimeZone();
+    const recurringTransactions: BudgetTransaction[] = [-90, -60, -30].map((days, index) => ({
+      id: 'streaming-history-' + index,
+      account: 'account-1',
+      currencyCode: 'EUR',
+      date: plusDays(asOfDate, days),
+      amount: -1_200,
+      category: 'food',
+      payee_name: 'Streaming service',
+    }));
+    const repository = createRepository({
+      listTransactions: vi.fn(async () => [...transactions, ...recurringTransactions]),
+    });
+    const app = await createTestApp(repository, { ...config, actualDataDir: directory });
+    const commitment = await app.inject({
+      method: 'POST', url: '/api/v1/planning/commitments',
+      payload: {
+        title: 'Alquiler confirmado', amountMinor: 80_000, date: plusDays(asOfDate, 10),
+        direction: 'expense', frequency: 'monthly',
+      },
+    });
+    expect(commitment.statusCode).toBe(201);
+
+    const base = await app.inject({
+      method: 'POST', url: '/api/v1/cash-flow/project', payload: { horizonDays: 90 },
+    });
+    expect(base.statusCode).toBe(200);
+    const baseData = base.json().data;
+    expect(baseData.confirmedRecurringEvents.length).toBeGreaterThan(0);
+    expect(baseData.confirmedRecurringEvents.every((event: { source: string }) => event.source === 'confirmed_recurring')).toBe(true);
+    const candidate = baseData.recurringCandidates.find((item: { payee: string }) => item.payee === 'streaming service');
+    expect(candidate).toBeDefined();
+    expect(candidate.upcomingEventsCount).toBeGreaterThan(0);
+    expect(baseData.recurringCandidateEvents.some((event: { candidateId: string }) => event.candidateId === candidate.id)).toBe(true);
+    expect(baseData.projection.sourceTotals.recurring_candidate.eventCount).toBe(0);
+
+    const selected = await app.inject({
+      method: 'POST', url: '/api/v1/cash-flow/project',
+      payload: { horizonDays: 90, recurringCandidateIds: [candidate.id] },
+    });
+    expect(selected.statusCode).toBe(200);
+    expect(selected.json().data.projection.sourceTotals.recurring_candidate.eventCount).toBe(candidate.upcomingEventsCount);
+    expect(selected.json().data.projection.sourceTotals.confirmed_recurring.eventCount).toBe(baseData.confirmedRecurringEvents.length);
+
+    const staleCandidate = await app.inject({
+      method: 'POST', url: '/api/v1/cash-flow/project',
+      payload: { horizonDays: 90, recurringCandidateIds: ['rc_000000000000000000000000'] },
+    });
+    expect(staleCandidate.statusCode).toBe(400);
+  });
+
+  it('projects annual commitments and split transactions in the analysis currency without counting the split parent', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'personal-budget-cash-flow-splits-currency-'));
+    temporaryDirectories.push(directory);
+    const asOfDate = todayInProcessTimeZone();
+    const splitDate = plusDays(asOfDate, 5);
+    const annualDate = plusDays(asOfDate, 10);
+    const splitParent: BudgetTransaction = {
+      id: 'future-split-parent', account: 'account-1', currencyCode: 'EUR', date: splitDate,
+      amount: -10_000, category: null, is_parent: true,
+      subtransactions: [
+        { id: 'future-split-a', account: 'account-1', currencyCode: 'EUR', date: splitDate, amount: -4_000, category: 'food', payee_name: 'Compra dividida A' },
+        { id: 'future-split-b', account: 'account-1', currencyCode: 'EUR', date: splitDate, amount: -6_000, category: 'food', payee_name: 'Compra dividida B' },
+      ],
+    };
+    const repository = createRepository({
+      listTransactions: vi.fn(async (accountId: string) => accountId === 'account-1' ? [...transactions, splitParent] : []),
+    });
+    const app = await createTestApp(repository, { ...config, actualDataDir: directory });
+    const annual = await app.inject({
+      method: 'POST', url: '/api/v1/planning/commitments',
+      payload: { title: 'Seguro anual', amountMinor: 12_000, date: annualDate, direction: 'expense', frequency: 'yearly' },
+    });
+    expect(annual.statusCode).toBe(201);
+
+    const preferences = await app.inject({
+      method: 'PUT', url: '/api/v1/preferences/currency',
+      payload: {
+        displayCurrency: 'GBP', accountCurrencyOverrides: {},
+        exchangeRates: [{ fromCurrency: 'EUR', toCurrency: 'GBP', rate: '0.8', effectiveDate: asOfDate, source: 'synthetic test rate' }],
+      },
+    });
+    expect(preferences.statusCode).toBe(200);
+
+    const converted = await app.inject({
+      method: 'POST', url: '/api/v1/cash-flow/project', payload: { horizonDays: 30 },
+    });
+    expect(converted.statusCode).toBe(200);
+    const data = converted.json().data;
+    expect(data.currency).toBe('GBP');
+    expect(data.actualEvents.filter((event: { id: string }) => event.id.startsWith('actual:future-split-'))).toHaveLength(2);
+    expect(data.actualEvents.some((event: { id: string }) => event.id === 'actual:future-split-parent')).toBe(false);
+    expect(data.actualEvents.filter((event: { id: string }) => event.id.startsWith('actual:future-split-'))
+      .reduce((sum: number, event: { amountMinor: number }) => sum + event.amountMinor, 0)).toBe(-8_000);
+    expect(data.confirmedRecurringEvents).toContainEqual(expect.objectContaining({
+      date: annualDate, amountMinor: -9_600, source: 'confirmed_recurring', label: 'Seguro anual',
+    }));
+    expect(data.projection.endingBalanceMinor).toBe(142_400);
+
+    const withoutRate = await app.inject({
+      method: 'PUT', url: '/api/v1/preferences/currency',
+      payload: { displayCurrency: 'GBP', accountCurrencyOverrides: {}, exchangeRates: [] },
+    });
+    expect(withoutRate.statusCode).toBe(200);
+    const unavailable = await app.inject({
+      method: 'POST', url: '/api/v1/cash-flow/project', payload: { horizonDays: 30 },
+    });
+    expect(unavailable.statusCode).toBe(200);
+    expect(unavailable.json().data.openingBalanceMinor).toBeNull();
+    expect(unavailable.json().data.confirmedRecurringEvents).toHaveLength(0);
+    expect(unavailable.json().data.projection.warnings.join(' ')).toContain('Seguro anual');
+  });
+
+  it('nets internal transfers for all accounts and shows the in-scope effect when one counterparty is excluded', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'personal-budget-cash-flow-transfers-'));
+    temporaryDirectories.push(directory);
+    const asOfDate = todayInProcessTimeZone();
+    const transferDate = plusDays(asOfDate, 4);
+    const twoAccounts: BudgetAccount[] = [
+      ...accounts,
+      { id: 'account-2', name: 'Ahorro', currencyCode: 'EUR', closed: false, offBudget: false, currentBalanceMinor: 50_000 },
+    ];
+    const outgoing: BudgetTransaction = {
+      id: 'transfer-out-future', account: 'account-1', currencyCode: 'EUR', date: transferDate,
+      amount: -25_000, transfer_id: 'future-paired-transfer', payee_name: 'Transfer to Ahorro',
+    };
+    const incoming: BudgetTransaction = {
+      id: 'transfer-in-future', account: 'account-2', currencyCode: 'EUR', date: transferDate,
+      amount: 25_000, transfer_id: 'future-paired-transfer', payee_name: 'Transfer from Current',
+    };
+    const repository = createRepository({
+      listAccounts: vi.fn(async () => twoAccounts),
+      listTransactions: vi.fn(async (accountId: string) => accountId === 'account-1'
+        ? [...transactions.filter((item) => item.account === accountId), outgoing]
+        : [incoming]),
+    });
+    const app = await createTestApp(repository, { ...config, actualDataDir: directory });
+    const consolidated = await app.inject({
+      method: 'POST', url: '/api/v1/cash-flow/project', payload: { horizonDays: 7 },
+    });
+    expect(consolidated.statusCode).toBe(200);
+    expect(consolidated.json().data.openingBalanceMinor).toBe(250_000);
+    expect(consolidated.json().data.projection).toMatchObject({
+      endingBalanceMinor: 250_000, netChangeMinor: 0,
+      totalInflowMinor: 0, totalOutflowMinor: 0,
+      totalTransferInflowMinor: 25_000, totalTransferOutflowMinor: 25_000,
+    });
+
+    const selectedScope = await app.inject({
+      method: 'PUT', url: '/api/v1/preferences/accounts',
+      payload: { mode: 'selected', accountIds: ['account-1'] },
+    });
+    expect(selectedScope.statusCode).toBe(200);
+    const scoped = await app.inject({
+      method: 'POST', url: '/api/v1/cash-flow/project', payload: { horizonDays: 7 },
+    });
+    expect(scoped.statusCode).toBe(200);
+    expect(scoped.json().data.openingBalanceMinor).toBe(200_000);
+    expect(scoped.json().data.projection).toMatchObject({
+      endingBalanceMinor: 175_000, netChangeMinor: -25_000,
+      totalInflowMinor: 0, totalOutflowMinor: 0,
+      totalTransferInflowMinor: 0, totalTransferOutflowMinor: 25_000,
+    });
+  });
+
+  it('keeps projected balances and deficit dates unknown if any selected account balance is unavailable', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'personal-budget-cash-flow-'));
+    temporaryDirectories.push(directory);
+    const repository = createRepository({
+      listAccounts: vi.fn(async () => [{ ...accounts[0]!, currentBalanceMinor: null }]),
+    });
+    const app = await createTestApp(repository, { ...config, actualDataDir: directory });
+    const response = await app.inject({ method: 'POST', url: '/api/v1/cash-flow/project', payload: { horizonDays: 7 } });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.openingBalanceMinor).toBeNull();
+    expect(response.json().data.projection.endingBalanceMinor).toBeNull();
+    expect(response.json().data.projection.firstDeficitDate).toBeNull();
+    expect(response.json().data.unknownOpeningAccounts).toHaveLength(1);
+  });
+
+  it('persists alert rules and snoozes across an API restart while creating a fresh event for the next month', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'personal-budget-alerts-restart-'));
+    temporaryDirectories.push(directory);
+    const repository = Object.assign(createRepository(), {
+      getBudgetMonth: vi.fn(async (month: string) => ({
+        month,
+        categoryGroups: [{
+          id: 'spend', name: 'Gastos', is_income: false,
+          categories: [{ id: 'food', name: 'Alimentación', budgeted: 100_000, spent: -120_000, balance: -20_000 }],
+        }],
+        totalBudgeted: 100_000, totalSpent: -120_000, totalBalance: -20_000,
+      })),
+      getBudgetAllocations: vi.fn(async () => [{ categoryId: 'food', amountMinor: 100_000 }]),
+    }) as BudgetRepository;
+    const app = await createTestApp(repository, { ...config, actualDataDir: directory });
+    const today = todayInProcessTimeZone();
+    const month = today.slice(0, 7);
+    const nextMonthDate = new Date(month + '-01T00:00:00.000Z');
+    nextMonthDate.setUTCMonth(nextMonthDate.getUTCMonth() + 1);
+    const nextMonth = nextMonthDate.toISOString().slice(0, 7);
+    const saved = await app.inject({
+      method: 'PUT', url: '/api/v1/budget-alerts/rules',
+      payload: { rules: [{ categoryId: 'food', metric: 'percent_used', threshold: 90, enabled: true }] },
+    });
+    expect(saved.statusCode).toBe(200);
+    const active = await app.inject({ method: 'GET', url: '/api/v1/budget-alerts?month=' + month });
+    expect(active.statusCode).toBe(200);
+    expect(active.json().data.alerts).toHaveLength(1);
+    const event = active.json().data.alerts[0];
+    const snoozed = await app.inject({
+      method: 'PATCH', url: '/api/v1/budget-alerts/events/' + event.eventId,
+      payload: {
+        ruleId: event.ruleId, categoryId: event.categoryId, month: event.month,
+        status: 'snoozed', snoozedUntil: plusDays(today, 7),
+      },
+    });
+    expect(snoozed.statusCode).toBe(200);
+
+    const openAppIndex = openApps.indexOf(app);
+    if (openAppIndex >= 0) openApps.splice(openAppIndex, 1);
+    await app.close();
+    const restarted = await createTestApp(repository, { ...config, actualDataDir: directory });
+    const currentMonth = await restarted.inject({ method: 'GET', url: '/api/v1/budget-alerts?month=' + month });
+    expect(currentMonth.statusCode).toBe(200);
+    expect(currentMonth.json().data.rules).toHaveLength(1);
+    expect(currentMonth.json().data.alerts).toHaveLength(0);
+    const nextPeriod = await restarted.inject({ method: 'GET', url: '/api/v1/budget-alerts?month=' + nextMonth });
+    expect(nextPeriod.statusCode).toBe(200);
+    expect(nextPeriod.json().data.alerts).toHaveLength(1);
+    expect(nextPeriod.json().data.alerts[0].eventId).not.toBe(event.eventId);
+  });
+
+  it('requires an explicit category classification and returns deterministic budget-improvement baselines', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'personal-budget-improvements-'));
+    temporaryDirectories.push(directory);
+    const app = await createTestApp(createRepository(), { ...config, actualDataDir: directory });
+    const initial = await app.inject({ method: 'GET', url: '/api/v1/budget-improvements?periodMonths=6' });
+    expect(initial.statusCode).toBe(200);
+    expect(initial.json().data.baseline.periodMonths).toBe(6);
+    expect(initial.json().data.categoryChoices.find((item: { categoryId: string }) => item.categoryId === 'food').classification).toBe('unclassified');
+    expect(initial.json().data.proposals).toEqual([]);
+
+    const saved = await app.inject({
+      method: 'PUT', url: '/api/v1/budget-improvements/preferences',
+      payload: { goal: 'reach_savings_goal', categories: [{ categoryId: 'food', classification: 'flexible' }] },
+    });
+    expect(saved.statusCode).toBe(200);
+    const after = await app.inject({ method: 'GET', url: '/api/v1/budget-improvements?periodMonths=6' });
+    expect(after.statusCode).toBe(200);
+    expect(after.json().data.goal).toBe('reach_savings_goal');
+    expect(after.json().data.categoryChoices.find((item: { categoryId: string }) => item.categoryId === 'food').classification).toBe('flexible');
+
+    const insufficientHistory = await app.inject({
+      method: 'POST', url: '/api/v1/budget-improvements/simulate',
+      payload: { periodMonths: 6, reductions: [{ categoryId: 'food', reductionPercent: 10 }] },
+    });
+    expect(insufficientHistory.statusCode).toBe(400);
+    const invalidCategoryPreference = await app.inject({
+      method: 'PUT', url: '/api/v1/budget-improvements/preferences',
+      payload: { goal: 'reduce_variable_spending', categories: [{ categoryId: 'salary', classification: 'flexible' }] },
+    });
+    expect(invalidCategoryPreference.statusCode).toBe(400);
+  });
+
+  it('creates proposals from completed-month Actual budget evidence and preserves protected classifications', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'personal-budget-improvement-evidence-'));
+    temporaryDirectories.push(directory);
+    const expenseCategories: BudgetCategory[] = [
+      ...categories,
+      { id: 'variable', name: 'Gasto variable', groupId: 'spend', isIncome: false },
+      { id: 'protected-spend', name: 'Gasto protegido', groupId: 'spend', isIncome: false },
+    ];
+    const historical: BudgetTransaction[] = [
+      { id: 'variable-aug', account: 'account-1', currencyCode: 'EUR', date: '2026-08-15', amount: -10_000, category: 'variable' },
+      { id: 'variable-sep', account: 'account-1', currencyCode: 'EUR', date: '2026-09-15', amount: -10_000, category: 'variable' },
+      { id: 'variable-oct', account: 'account-1', currencyCode: 'EUR', date: '2026-10-15', amount: -15_000, category: 'variable' },
+      { id: 'protected-aug', account: 'account-1', currencyCode: 'EUR', date: '2026-08-16', amount: -20_000, category: 'protected-spend' },
+      { id: 'protected-sep', account: 'account-1', currencyCode: 'EUR', date: '2026-09-16', amount: -20_000, category: 'protected-spend' },
+      { id: 'protected-oct', account: 'account-1', currencyCode: 'EUR', date: '2026-10-16', amount: -30_000, category: 'protected-spend' },
+    ];
+    const repository = Object.assign(createRepository({
+      listCategories: vi.fn(async () => expenseCategories),
+      listTransactions: vi.fn(async (accountId: string) => accountId === 'account-1' ? [...transactions, ...historical] : []),
+    }), {
+      getBudgetMonth: vi.fn(async (month: string) => ({
+        month,
+        categoryGroups: [{
+          id: 'spend', name: 'Gastos', is_income: false,
+          categories: [
+            { id: 'variable', name: 'Gasto variable', budgeted: 10_000, spent: -15_000, balance: -5_000 },
+            { id: 'protected-spend', name: 'Gasto protegido', budgeted: 20_000, spent: -30_000, balance: -10_000 },
+          ],
+        }],
+        totalBudgeted: 30_000, totalSpent: -45_000, totalBalance: -15_000,
+      })),
+      getBudgetAllocations: vi.fn(async () => [
+        { categoryId: 'variable', amountMinor: 10_000 },
+        { categoryId: 'protected-spend', amountMinor: 20_000 },
+      ]),
+    }) as BudgetRepository;
+    const app = await createTestApp(repository, { ...config, actualDataDir: directory });
+    const goalCreation = await app.inject({
+      method: 'POST', url: '/api/v1/planning/goals',
+      payload: {
+        name: 'Fondo de emergencia', targetAmountMinor: 500_000, initialAmountMinor: 100_000,
+        monthlyContributionMinor: 20_000, targetDate: plusDays(todayInProcessTimeZone(), 180),
+      },
+    });
+    expect(goalCreation.statusCode).toBe(201);
+    const saved = await app.inject({
+      method: 'PUT', url: '/api/v1/budget-improvements/preferences',
+      payload: {
+        goal: 'reach_savings_goal',
+        categories: [
+          { categoryId: 'variable', classification: 'flexible' },
+          { categoryId: 'protected-spend', classification: 'protected' },
+        ],
+      },
+    });
+    expect(saved.statusCode).toBe(200);
+    const response = await app.inject({ method: 'GET', url: '/api/v1/budget-improvements?periodMonths=3' });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.baseline.startDate).toBe('2026-08-01');
+    expect(response.json().data.baseline.endDate).toBe('2026-10-31');
+    expect(response.json().data.proposals).toHaveLength(1);
+    expect(response.json().data.proposals[0]).toMatchObject({
+      categoryId: 'variable',
+      evidence: { signal: 'budget_overrun', budgetedMinor: 10_000, budgetSpentMinor: 15_000 },
+    });
+    expect(response.json().data.proposals[0].assumptions.join(' ')).toContain('No equivale necesariamente al exceso presupuestario');
+    expect(response.json().data.proposals[0]).toMatchObject({
+      priorityRank: 1, goalImpact: { goalName: 'Fondo de emergencia' },
+    });
+    expect(response.json().data.proposals[0].priorityReason).toContain('Fondo de emergencia');
+    expect(response.json().data.proposals.some((proposal: { categoryId: string }) => proposal.categoryId === 'protected-spend')).toBe(false);
+
+    const simulation = await app.inject({
+      method: 'POST', url: '/api/v1/budget-improvements/simulate',
+      payload: { periodMonths: 3, reductions: [{ categoryId: 'variable', reductionPercent: 10 }] },
+    });
+    expect(simulation.statusCode).toBe(200);
+    expect(simulation.json().data.goalImpacts).toContainEqual(expect.objectContaining({
+      goalId: goalCreation.json().data.id, goalName: 'Fondo de emergencia',
+      scenarioMonthlyContributionMinor: expect.any(Number), projectedBalanceIncreaseMinor: expect.any(Number),
+    }));
+    const goalImpact = simulation.json().data.goalImpacts[0];
+    expect(goalImpact.scenarioMonthlyContributionMinor).toBeGreaterThan(goalImpact.baselineMonthlyContributionMinor);
+    expect(goalImpact.estimatedMonthlySavingsAllocatedMinor).toBe(simulation.json().data.simulation.estimatedMonthlySavingsMinor);
+    expect(goalImpact.scenarioProjectedBalanceMinor).toBeGreaterThan(goalImpact.baselineProjectedBalanceMinor);
+    expect(simulation.json().data.comparison).toMatchObject({
+      referenceStartDate: '2026-08-01', referenceEndDate: '2026-10-31',
+      improvementMonthlyMinor: simulation.json().data.simulation.estimatedMonthlySavingsMinor,
+    });
+
+    const proposalId = response.json().data.proposals[0].id as string;
+    for (const decisionStatus of ['accepted', 'postponed', 'rejected'] as const) {
+      const decision = await app.inject({
+        method: 'PATCH', url: '/api/v1/budget-improvements/decisions',
+        payload: { proposalId, status: decisionStatus, periodMonths: 3 },
+      });
+      expect(decision.statusCode).toBe(200);
+      expect(decision.json().data).toMatchObject({ proposalId, status: decisionStatus });
+    }
+    const withDecision = await app.inject({ method: 'GET', url: '/api/v1/budget-improvements?periodMonths=3' });
+    expect(withDecision.json().data.decisions).toContainEqual(expect.objectContaining({ proposalId, status: 'rejected' }));
+    const stalePeriodDecision = await app.inject({
+      method: 'PATCH', url: '/api/v1/budget-improvements/decisions',
+      payload: { proposalId, status: 'accepted', periodMonths: 12 },
+    });
+    expect(stalePeriodDecision.statusCode).toBe(409);
+
+    const scenario = await app.inject({
+      method: 'POST', url: '/api/v1/budget-improvements/scenarios',
+      payload: { name: 'Ahorro variable', periodMonths: 3, reductions: [{ categoryId: 'variable', reductionPercent: 10 }] },
+    });
+    expect(scenario.statusCode).toBe(201);
+    const scenarioId = scenario.json().data.id as string;
+    const withScenario = await app.inject({ method: 'GET', url: '/api/v1/budget-improvements?periodMonths=3' });
+    expect(withScenario.json().data.scenarios).toContainEqual(expect.objectContaining({
+      id: scenarioId, name: 'Ahorro variable', comparisonStatus: 'comparable',
+      comparison: expect.objectContaining({
+        baselineMonthlySavingsMinor: expect.any(Number),
+        estimatedMonthlySavingsMinor: expect.any(Number),
+        projectedMonthlySavingsMinor: expect.any(Number),
+      }),
+    }));
+    const differentPeriod = await app.inject({ method: 'GET', url: '/api/v1/budget-improvements?periodMonths=6' });
+    expect(differentPeriod.json().data.scenarios).toContainEqual(expect.objectContaining({
+      id: scenarioId, comparisonStatus: 'different_period', comparison: null,
+    }));
+    const selectedScope = await app.inject({
+      method: 'PUT', url: '/api/v1/preferences/accounts',
+      payload: { mode: 'selected', accountIds: ['account-1'] },
+    });
+    expect(selectedScope.statusCode).toBe(200);
+    const differentScope = await app.inject({ method: 'GET', url: '/api/v1/budget-improvements?periodMonths=3' });
+    expect(differentScope.json().data.scenarios).toContainEqual(expect.objectContaining({
+      id: scenarioId, comparisonStatus: 'different_scope', comparison: null,
+    }));
+    const removed = await app.inject({ method: 'DELETE', url: '/api/v1/budget-improvements/scenarios/' + scenarioId });
+    expect(removed.statusCode).toBe(200);
+    expect(removed.json().data.deleted).toBe(true);
+    const afterDelete = await app.inject({ method: 'GET', url: '/api/v1/budget-improvements?periodMonths=3' });
+    expect(afterDelete.json().data.scenarios.some((item: { id: string }) => item.id === scenarioId)).toBe(false);
+  });
+
+  it('prioritizes proposals by the selected budget improvement goal', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'personal-budget-goal-priority-'));
+    temporaryDirectories.push(directory);
+    const expenseCategories: BudgetCategory[] = [
+      ...categories,
+      { id: 'variable-trend', name: 'Gasto variable con aumento', groupId: 'spend', isIncome: false },
+      { id: 'budget-overrun', name: 'Categoría con exceso', groupId: 'spend', isIncome: false },
+    ];
+    const historical: BudgetTransaction[] = [
+      { id: 'trend-aug', account: 'account-1', currencyCode: 'EUR', date: '2026-08-10', amount: -10_000, category: 'variable-trend' },
+      { id: 'trend-sep', account: 'account-1', currencyCode: 'EUR', date: '2026-09-10', amount: -10_000, category: 'variable-trend' },
+      { id: 'trend-oct', account: 'account-1', currencyCode: 'EUR', date: '2026-10-10', amount: -15_000, category: 'variable-trend' },
+      { id: 'overrun-aug', account: 'account-1', currencyCode: 'EUR', date: '2026-08-11', amount: -10_000, category: 'budget-overrun' },
+      { id: 'overrun-sep', account: 'account-1', currencyCode: 'EUR', date: '2026-09-11', amount: -10_000, category: 'budget-overrun' },
+      { id: 'overrun-oct', account: 'account-1', currencyCode: 'EUR', date: '2026-10-11', amount: -10_000, category: 'budget-overrun' },
+    ];
+    const repository = Object.assign(createRepository({
+      listCategories: vi.fn(async () => expenseCategories),
+      listTransactions: vi.fn(async (accountId: string) => accountId === 'account-1' ? [...transactions, ...historical] : []),
+    }), {
+      getBudgetMonth: vi.fn(async (month: string) => ({
+        month,
+        categoryGroups: [{
+          id: 'spend', name: 'Gastos', is_income: false,
+          categories: [
+            { id: 'variable-trend', name: 'Gasto variable con aumento', budgeted: 20_000, spent: -15_000, balance: 5_000 },
+            { id: 'budget-overrun', name: 'Categoría con exceso', budgeted: 5_000, spent: -10_000, balance: -5_000 },
+          ],
+        }],
+        totalBudgeted: 25_000, totalSpent: -25_000, totalBalance: 0,
+      })),
+      getBudgetAllocations: vi.fn(async () => [
+        { categoryId: 'variable-trend', amountMinor: 20_000 },
+        { categoryId: 'budget-overrun', amountMinor: 5_000 },
+      ]),
+    }) as BudgetRepository;
+    const app = await createTestApp(repository, { ...config, actualDataDir: directory });
+    const saved = await app.inject({
+      method: 'PUT', url: '/api/v1/budget-improvements/preferences',
+      payload: {
+        goal: 'reduce_variable_spending',
+        categories: [
+          { categoryId: 'variable-trend', classification: 'flexible' },
+          { categoryId: 'budget-overrun', classification: 'flexible' },
+        ],
+      },
+    });
+    expect(saved.statusCode).toBe(200);
+    const response = await app.inject({ method: 'GET', url: '/api/v1/budget-improvements?periodMonths=3' });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.proposals.map((proposal: { categoryId: string }) => proposal.categoryId)).toEqual([
+      'variable-trend', 'budget-overrun',
+    ]);
+    expect(response.json().data.proposals[0]).toMatchObject({
+      priorityRank: 1, evidence: { signal: 'recent_increase' },
+    });
+    expect(response.json().data.proposals[1]).toMatchObject({
+      priorityRank: 2, evidence: { signal: 'budget_overrun' },
+    });
+  });
+
+  it('nets refunds into monthly proposal evidence and avoids suggesting cuts from gross charges alone', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'personal-budget-improvement-refunds-'));
+    temporaryDirectories.push(directory);
+    const refundCategory: BudgetCategory = { id: 'refunds', name: 'Compras reembolsadas', groupId: 'spend', isIncome: false };
+    const historical: BudgetTransaction[] = [
+      { id: 'refunds-aug-expense', account: 'account-1', currencyCode: 'EUR', date: '2026-08-10', amount: -10_000, category: 'refunds' },
+      { id: 'refunds-sep-expense', account: 'account-1', currencyCode: 'EUR', date: '2026-09-10', amount: -10_000, category: 'refunds' },
+      { id: 'refunds-oct-expense', account: 'account-1', currencyCode: 'EUR', date: '2026-10-10', amount: -15_000, category: 'refunds' },
+      { id: 'refunds-oct-refund', account: 'account-1', currencyCode: 'EUR', date: '2026-10-20', amount: 10_000, category: 'refunds' },
+    ];
+    const repository = Object.assign(createRepository({
+      listCategories: vi.fn(async () => [...categories, refundCategory]),
+      listTransactions: vi.fn(async (accountId: string) => accountId === 'account-1' ? [...transactions, ...historical] : []),
+    }), {
+      getBudgetMonth: vi.fn(async (month: string) => ({
+        month,
+        categoryGroups: [{
+          id: 'spend', name: 'Gastos', is_income: false,
+          categories: [{ id: 'refunds', name: 'Compras reembolsadas', budgeted: 10_000, spent: -5_000, balance: 5_000 }],
+        }],
+        totalBudgeted: 10_000, totalSpent: -5_000, totalBalance: 5_000,
+      })),
+      getBudgetAllocations: vi.fn(async () => [{ categoryId: 'refunds', amountMinor: 10_000 }]),
+    }) as BudgetRepository;
+    const app = await createTestApp(repository, { ...config, actualDataDir: directory });
+    const saved = await app.inject({
+      method: 'PUT', url: '/api/v1/budget-improvements/preferences',
+      payload: { goal: 'reduce_variable_spending', categories: [{ categoryId: 'refunds', classification: 'flexible' }] },
+    });
+    expect(saved.statusCode).toBe(200);
+    const response = await app.inject({ method: 'GET', url: '/api/v1/budget-improvements?periodMonths=3' });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.categoryBreakdown.find((item: { categoryId: string }) => item.categoryId === 'refunds')).toMatchObject({
+      observedExpenseMinor: 25_000, latestMonthExpenseMinor: 5_000, priorMonthsAverageExpenseMinor: 10_000,
+      budgetedMinor: 10_000, budgetSpentMinor: 5_000,
+    });
+    expect(response.json().data.proposals).toEqual([]);
+  });
+
+  it('links budget improvement analysis to saved savings goals in the same currency and account scope', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'personal-budget-improvement-goal-context-'));
+    temporaryDirectories.push(directory);
+    const today = todayInProcessTimeZone();
+    const targetDate = plusDays(today, 180);
+    const app = await createTestApp(createRepository(), { ...config, actualDataDir: directory });
+    const goal = await app.inject({
+      method: 'POST', url: '/api/v1/planning/goals',
+      payload: {
+        name: 'Fondo de emergencia', targetAmountMinor: 500_000,
+        initialAmountMinor: 100_000, monthlyContributionMinor: 20_000, targetDate,
+      },
+    });
+    expect(goal.statusCode).toBe(201);
+    const savedGoal = goal.json().data;
+    const preferences = await app.inject({
+      method: 'PUT', url: '/api/v1/budget-improvements/preferences',
+      payload: { goal: 'reach_savings_goal', categories: [{ categoryId: 'food', classification: 'flexible' }] },
+    });
+    expect(preferences.statusCode).toBe(200);
+    const response = await app.inject({ method: 'GET', url: '/api/v1/budget-improvements?periodMonths=6' });
+    expect(response.statusCode).toBe(200);
+    const context = response.json().data;
+    expect(context.savingsGoalContextStatus).toBe('ready');
+    expect(context.savingsGoals).toContainEqual(expect.objectContaining({
+      id: savedGoal.id, name: 'Fondo de emergencia', targetAmountMinor: 500_000,
+      monthlyContributionMinor: 20_000, currency: 'EUR', scopeMatches: true, currencyMatches: true,
+      projection: expect.objectContaining({
+        requiredMonthlyContributionMinor: expect.any(Number),
+        projectedBalanceMinor: expect.any(Number),
+        projectedProgressPercent: expect.any(Number),
+      }),
+    }));
+
+    const reviewScope = await app.inject({
+      method: 'PUT', url: '/api/v1/preferences/accounts',
+      payload: { mode: 'selected', accountIds: ['account-1'] },
+    });
+    expect(reviewScope.statusCode).toBe(200);
+    const scoped = await app.inject({ method: 'GET', url: '/api/v1/budget-improvements?periodMonths=6' });
+    expect(scoped.statusCode).toBe(200);
+    expect(scoped.json().data.savingsGoals.find((item: { id: string }) => item.id === savedGoal.id)).toMatchObject({
+      scopeMatches: false, projection: null,
+    });
+    expect(scoped.json().data.savingsGoalContextStatus).toBe('review_required');
+
+    const restoreAllScope = await app.inject({
+      method: 'PUT', url: '/api/v1/preferences/accounts', payload: { mode: 'all', accountIds: [] },
+    });
+    expect(restoreAllScope.statusCode).toBe(200);
+    const changeCurrency = await app.inject({
+      method: 'PUT', url: '/api/v1/preferences/currency',
+      payload: { displayCurrency: 'GBP', accountCurrencyOverrides: {}, exchangeRates: [] },
+    });
+    expect(changeCurrency.statusCode).toBe(200);
+    const changedCurrency = await app.inject({ method: 'GET', url: '/api/v1/budget-improvements?periodMonths=6' });
+    expect(changedCurrency.statusCode).toBe(200);
+    expect(changedCurrency.json().data.savingsGoalContextStatus).toBe('review_required');
+    expect(changedCurrency.json().data.savingsGoals.find((item: { id: string }) => item.id === savedGoal.id)).toMatchObject({
+      currencyMatches: false, projection: null,
+    });
+    expect(changedCurrency.json().data.savingsGoalContextWarnings.join(' ')).toContain('divisa guardada');
+  });
+
+  it('evaluates budget rules once per month and supports dismissing the event', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'personal-budget-alerts-'));
+    temporaryDirectories.push(directory);
+    const repository = Object.assign(createRepository(), {
+      getBudgetMonth: vi.fn(async (month: string) => ({
+        month,
+        categoryGroups: [{
+          id: 'spend', name: 'Gastos', is_income: false,
+          categories: [{ id: 'food', name: 'Alimentación', budgeted: 100_000, spent: -120_000, balance: -20_000 }],
+        }],
+        totalBudgeted: 100_000, totalSpent: -120_000, totalBalance: -20_000,
+      })),
+      getBudgetAllocations: vi.fn(async () => [{ categoryId: 'food', amountMinor: 100_000 }]),
+    }) as BudgetRepository;
+    const app = await createTestApp(repository, { ...config, actualDataDir: directory });
+    const alertMonth = todayInProcessTimeZone().slice(0, 7);
+    const initial = await app.inject({ method: 'GET', url: '/api/v1/budget-alerts?month=' + alertMonth });
+    expect(initial.statusCode).toBe(200);
+    expect(initial.json().data.alerts).toEqual([]);
+    expect(initial.json().data.evaluatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+
+    const saved = await app.inject({
+      method: 'PUT', url: '/api/v1/budget-alerts/rules',
+      payload: { rules: [
+        { categoryId: 'food', metric: 'percent_used', threshold: 90, enabled: true },
+        { categoryId: 'food', metric: 'overspend_percent', threshold: 10, enabled: true },
+      ] },
+    });
+    expect(saved.statusCode).toBe(200);
+    const active = await app.inject({ method: 'GET', url: '/api/v1/budget-alerts?month=' + alertMonth });
+    expect(active.statusCode).toBe(200);
+    expect(active.json().data.alerts).toHaveLength(2);
+    expect(active.json().data.alerts.find((item: { metric: string }) => item.metric === 'percent_used')?.observedValue).toBe(120);
+    expect(active.json().data.alerts.find((item: { metric: string }) => item.metric === 'overspend_percent')?.observedValue).toBe(20);
+
+    const event = active.json().data.alerts.find((item: { metric: string }) => item.metric === 'percent_used');
+    const dismissed = await app.inject({
+      method: 'PATCH', url: '/api/v1/budget-alerts/events/' + event.eventId,
+      payload: { ruleId: event.ruleId, categoryId: event.categoryId, month: event.month, status: 'dismissed' },
+    });
+    expect(dismissed.statusCode).toBe(200);
+    const after = await app.inject({ method: 'GET', url: '/api/v1/budget-alerts?month=' + alertMonth });
+    expect(after.statusCode).toBe(200);
+    expect(after.json().data.alerts).toHaveLength(1);
+    expect(after.json().data.alerts[0].metric).toBe('overspend_percent');
+
+    const invalidRule = await app.inject({
+      method: 'PUT', url: '/api/v1/budget-alerts/rules',
+      payload: { rules: [{ categoryId: 'food', metric: 'overspend_minor', threshold: 0, enabled: true }] },
+    });
+    expect(invalidRule.statusCode).toBe(400);
+  });
+});
+
+
 
 });

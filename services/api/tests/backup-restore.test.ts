@@ -52,7 +52,8 @@ describe('Actual and Personal Budget backup safety helpers', () => {
     expect(() => validateBackupManifest(validManifest())).not.toThrow();
     expect(APP_STATE_FILE_NAMES).toContain('planning-data.json');
     expect(APP_STATE_FILE_NAMES).toContain('periodic-reviews.json');
-    expect(APP_STATE_FILE_NAMES).toHaveLength(6);
+    expect(APP_STATE_FILE_NAMES).toContain('financial-actions.json');
+    expect(APP_STATE_FILE_NAMES).toHaveLength(7);
   });
 
   it('rejects unsupported versions, unexpected fields, duplicate files and invalid checksums', () => {

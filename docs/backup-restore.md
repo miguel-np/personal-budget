@@ -18,6 +18,7 @@ La whitelist de estado de Personal Budget es:
 | account-scope-preferences.json | Selección de cuentas |
 | currency-preferences.json | Divisa visible, excepciones por cuenta y tipos de cambio |
 | financial-intelligence-state.json | Decisiones/metadatos de revisión de hallazgos |
+| financial-actions.json | Reglas/estado de alertas, preferencias de categorías, decisiones y escenarios de mejora presupuestaria |
 | planning-data.json | Objetivos de ahorro y compromisos |
 | periodic-reviews.json | Historial y estado de revisiones periódicas (cuando está disponible) |
 
@@ -43,7 +44,7 @@ La exclusión de los ficheros no inventariados evita incorporar accidentalmente 
    npm run backup:actual
    ~~~
 
-4. El script detiene el servicio actual, copia el volumen y los seis almacenes JSON permitidos, crea el manifiesto, empaqueta y valida rutas/tipos, cifra el paquete con AES-256-GCM y escribe un checksum SHA-256. Después vuelve a iniciar Actual y comprueba que responde.
+4. El script detiene el servicio actual, copia el volumen y los siete almacenes JSON permitidos, crea el manifiesto, empaqueta y valida rutas/tipos, cifra el paquete con AES-256-GCM y escribe un checksum SHA-256. Después vuelve a iniciar Actual y comprueba que responde.
 5. El archivo se guarda en .local/backups/personal-budget-<fecha>.tar.gz.enc, acompañado de .sha256.
 
 ACTUAL_SERVER_DATA_DIR controla la ruta montada por Compose y la ruta leída por el backup; ambas usan la misma variable. ACTUAL_DATA_DIR identifica el directorio de trabajo de la API y sus almacenes propios. BACKUP_DIR, BACKUP_ENCRYPTION_KEY_FILE y BACKUP_RETENTION_DAYS controlan el destino, la clave y la retención. Las rutas relativas se resuelven desde la raíz del repositorio.
@@ -80,7 +81,7 @@ La API de Personal Budget debe permanecer detenida hasta que termine la restaura
 
 ## Validación automatizada y límites
 
-La aceptación de CI utiliza un servidor Actual fijado a una versión concreta y un presupuesto sintético. Crea los seis almacenes, genera la copia cifrada, comprueba que una clave incorrecta falla antes de modificar el estado activo, elimina los datos sintéticos y restaura el paquete completo. Después compara el inventario financiero sintético de Actual y el contenido exacto de los seis almacenes JSON.
+La aceptación de CI utiliza un servidor Actual fijado a una versión concreta y un presupuesto sintético. Crea los siete almacenes, genera la copia cifrada, comprueba que una clave incorrecta falla antes de modificar el estado activo, elimina los datos sintéticos y restaura el paquete completo. Después compara el inventario financiero sintético de Actual y el contenido exacto de los siete almacenes JSON.
 
 Esta comprobación automatizada no equivale a una restauración manual de un backup personal ni acredita que se haya ejecutado el flujo dentro de una distribución WSL2 concreta. Antes de depender del sistema en el entorno de uso, conserva la clave por separado y ejecuta una restauración de ensayo en una instancia aislada con datos sintéticos.
 

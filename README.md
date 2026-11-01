@@ -58,7 +58,7 @@ En otra terminal WSL:
 npm run dev:web
 ~~~
 
-Abre http://127.0.0.1:5173. La aplicación incluye Resumen, Movimientos, Informes, Presupuestos, Planificación, Asistente y Configuración. Configura ACTUAL_BUDGET_ID con el Sync ID del presupuesto de Actual. En Movimientos puedes registrar movimientos o importar CSV/OFX; ambas operaciones muestran una previsualización y exigen confirmar antes de escribir en Actual. OFX admite perfiles SGML 1.02/1.03 y XML OFX 2.x delimitados; consulta [la guía de importación OFX](docs/ofx-import.md). El fichero se procesa en el navegador; solo se envían a la API local los registros normalizados tras la revisión. Planificación detecta pagos recurrentes, sugiere categorías con confirmación y simula escenarios explicables. Objetivos permite gestionar metas y compromisos futuros locales, con proyecciones deterministas, una agenda accesible y avisos por divisa/ámbito. El Asistente es opcional (AI_ENABLED/OLLAMA_MODEL en .env) y funciona con Ollama local.
+Abre http://127.0.0.1:5173. La aplicación incluye Resumen, Movimientos, Informes, Presupuestos, Planificación, Asistente y Configuración. Configura ACTUAL_BUDGET_ID con el Sync ID del presupuesto de Actual. En Movimientos puedes registrar movimientos o importar CSV/OFX; ambas operaciones muestran una previsualización y exigen confirmar antes de escribir en Actual. OFX admite perfiles SGML 1.02/1.03 y XML OFX 2.x delimitados; consulta [la guía de importación OFX](docs/ofx-import.md). El fichero se procesa en el navegador; solo se envían a la API local los registros normalizados tras la revisión. Planificación detecta pagos recurrentes, sugiere categorías con confirmación, proyecta el flujo de caja con movimientos futuros y compromisos, y permite simular objetivos y mejoras presupuestarias. Las categorías solo se consideran flexibles/revisables cuando el usuario lo indica. Presupuestos incluye alertas locales configurables, sin procesos en segundo plano ni cambios automáticos. Objetivos conserva metas y compromisos locales con proyecciones deterministas. El Asistente es opcional (AI_ENABLED/OLLAMA_MODEL en .env) y funciona con Ollama local.
 
 ## Prueba opcional con un presupuesto de Actual existente
 
@@ -93,7 +93,7 @@ La prueba arranca el runtime dos veces con un directorio temporal aislado y un p
 
 ## Privacidad
 
-No se configura sincronización bancaria automática ni se requieren credenciales bancarias. Actual Budget y la API se vinculan a localhost; Ollama será local por defecto cuando se integre. Las pruebas usan datos sintéticos. No subas .env, extractos, bases de datos financieras, logs sensibles, modelos ni copias de seguridad a Git.
+No se configura sincronización bancaria automática ni se requieren credenciales bancarias. Actual Budget y la API se vinculan a localhost; Ollama es opcional y local cuando se habilita. Las pruebas usan datos sintéticos. No subas .env, extractos, bases de datos financieras, logs sensibles, modelos ni copias de seguridad a Git.
 
 La ejecución local reduce la exposición externa, pero no elimina los riesgos de malware, acceso del sistema operativo ni conexiones necesarias para descargar dependencias o actualizaciones. Consulta [privacidad](docs/privacy.md) y [seguridad](SECURITY.md).
 

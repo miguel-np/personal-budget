@@ -6,6 +6,7 @@ export const APP_STATE_FILE_NAMES = [
   'app-preferences.json',
   'currency-preferences.json',
   'financial-intelligence-state.json',
+  'financial-actions.json',
   'periodic-reviews.json',
   'planning-data.json',
 ] as const;

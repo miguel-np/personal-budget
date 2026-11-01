@@ -813,3 +813,276 @@ test('settings persist theme and regional formatting and reset only local prefer
   expect(finalState.currencyPreferences.displayCurrency).toBe('EUR');
   expect(finalState.accountScope).toEqual({ mode: 'all', accountIds: [] });
 });
+
+
+test('cash-flow projection separates actual movements, commitments and unsaved scenarios', async ({ page, request }) => {
+  const submittedBodies: { horizonDays: number; reserveMinor?: number; recurringCandidateIds?: string[]; scenario?: { date: string; amountMinor: number; direction: 'income' | 'expense'; label: string } }[] = [];
+  await page.route('**/api/v1/cash-flow/project', async (route) => {
+    const body = route.request().postDataJSON() as { horizonDays: number; reserveMinor?: number; recurringCandidateIds?: string[]; scenario?: { date: string; amountMinor: number; direction: 'income' | 'expense'; label: string } };
+    submittedBodies.push(body);
+    const hasScenario = Boolean(body.scenario);
+    const scenarioMinor = hasScenario ? (body.scenario.direction === 'expense' ? -body.scenario.amountMinor : body.scenario.amountMinor) : 0;
+    const selectedRecurring = body.recurringCandidateIds?.includes('rc_aaaaaaaaaaaaaaaaaaaaaaaa') ?? false;
+    const recurringMinor = selectedRecurring ? -2_000 : 0;
+    const projection = {
+      isEstimate: true, asOfDate: '2026-11-01', startDate: '2026-11-01', endDate: '2026-11-30',
+      openingBalanceMinor: 200_000, endingBalanceMinor: 138_000 + scenarioMinor + recurringMinor,
+      minimumProjectedBalanceMinor: 138_000 + scenarioMinor + recurringMinor, minimumBalanceDate: '2026-11-05',
+      firstDeficitDate: null, reserveMinor: body.reserveMinor ?? null, firstReserveBreachDate: null,
+      totalInflowMinor: 0, totalOutflowMinor: 62_000 + Math.abs(scenarioMinor), netChangeMinor: -62_000 + scenarioMinor,
+      timeline: [{
+        date: '2026-11-05', actualNetChangeMinor: -12_000, actualClearedCount: 0, actualPendingCount: 1, actualUnknownCount: 0,
+        commitmentNetChangeMinor: -50_000, confirmedRecurringNetChangeMinor: 0,
+        recurringCandidateNetChangeMinor: recurringMinor, scenarioNetChangeMinor: scenarioMinor,
+        totalInflowMinor: 0, totalOutflowMinor: 62_000 + Math.abs(scenarioMinor) + Math.abs(recurringMinor),
+        netChangeMinor: -62_000 + scenarioMinor + recurringMinor, projectedBalanceMinor: 138_000 + scenarioMinor + recurringMinor,
+        belowReserve: null, eventIds: ['actual:internet', 'manual:rent'],
+      }],
+      sourceTotals: {
+        actual_transaction: { inflowMinor: 0, outflowMinor: 12_000, netChangeMinor: -12_000, eventCount: 1 },
+        manual_commitment: { inflowMinor: 0, outflowMinor: 50_000, netChangeMinor: -50_000, eventCount: 1 },
+        confirmed_recurring: { inflowMinor: 0, outflowMinor: 0, netChangeMinor: 0, eventCount: 0 },
+        recurring_candidate: { inflowMinor: 0, outflowMinor: Math.abs(recurringMinor), netChangeMinor: recurringMinor, eventCount: selectedRecurring ? 1 : 0 },
+        scenario: { inflowMinor: 0, outflowMinor: Math.abs(scenarioMinor), netChangeMinor: scenarioMinor, eventCount: hasScenario ? 1 : 0 },
+      },
+      assumptions: ['Proyección sintética para E2E.'], warnings: [],
+    };
+    return route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ data: {
+        asOfDate: '2026-11-01', endDate: '2026-11-30', currency: 'EUR', openingBalanceMinor: 200_000,
+        unknownOpeningAccounts: [],
+        actualEvents: [{ id: 'actual:internet', date: '2026-11-05', amountMinor: -12_000, source: 'actual_transaction', label: 'Internet', clearedStatus: 'pending' }],
+        manualEvents: [{ id: 'manual:rent', date: '2026-11-05', amountMinor: -50_000, source: 'manual_commitment', label: 'Alquiler' }],
+        confirmedRecurringEvents: [],
+        recurringCandidates: [{
+          id: 'rc_aaaaaaaaaaaaaaaaaaaaaaaa', payee: 'Suscripción sintética', occurrenceCount: 4,
+          estimatedIntervalDays: 30, estimatedFrequency: 'mensual', meanAbsoluteAmountMinor: 2_000,
+          amountDeviationPercent: 0, nextDate: '2026-11-15', upcomingEventsCount: 1,
+          signals: ['Cuatro cargos mensuales.'], warnings: ['Candidato estadístico, no confirmado.'],
+        }],
+        recurringCandidateEvents: [{ id: 'candidate:subscription', candidateId: 'rc_aaaaaaaaaaaaaaaaaaaaaaaa', date: '2026-11-15', amountMinor: -2_000, source: 'recurring_candidate', label: 'Suscripción sintética' }],
+        scenarioEvents: hasScenario ? [{ id: 'scenario:unsaved', date: body.scenario.date, amountMinor: scenarioMinor, source: 'scenario', label: body.scenario.label }] : [],
+        duplicateCommitmentIds: [], possibleDuplicateCommitments: [],
+        projection,
+        notes: ['Saldo actual comunicado por Actual; no es saldo bancario garantizado.'],
+      } }),
+    });
+  });
+
+  await page.goto('/planning');
+  await expect(page.getByRole('heading', { name: 'Planificación', level: 2 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Saldo estimado y flujo de caja' })).toBeVisible();
+  await page.getByRole('button', { name: 'Calcular flujo de caja' }).click();
+  await expect(page.getByText('Saldo final proyectado')).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: 'Estado (confirmado / pendiente / desconocido)' })).toBeVisible();
+  await expect(page.getByText('Proyección determinista')).toBeVisible();
+
+  const cashPanel = page.locator('article.planning-panel').filter({ has: page.getByRole('heading', { name: 'Saldo estimado y flujo de caja' }) });
+  await expect(cashPanel.getByText('Suscripción sintética')).toBeVisible();
+  await cashPanel.getByRole('checkbox', { name: 'Incluir Suscripción sintética como hipótesis' }).check();
+  await cashPanel.getByRole('button', { name: 'Recalcular con las recurrencias seleccionadas' }).click();
+  await expect(cashPanel.getByRole('status')).toContainText('hipótesis seleccionadas');
+  await expect(cashPanel.getByRole('cell', { name: 'Candidato hipotético' })).toBeVisible();
+  await cashPanel.getByLabel('Fecha', { exact: true }).fill('2026-11-05');
+  await cashPanel.getByLabel('Importe (EUR)', { exact: true }).fill('12.50');
+  await cashPanel.getByLabel('Descripción', { exact: true }).fill('Compra hipotética');
+  await cashPanel.getByRole('button', { name: 'Simular sin guardar' }).click();
+  await expect(cashPanel.getByRole('status')).toContainText('No se ha guardado ni modificado Actual Budget');
+  expect(submittedBodies).toHaveLength(3);
+  expect(submittedBodies[0]).not.toHaveProperty('scenario');
+  expect(submittedBodies[1].recurringCandidateIds).toEqual(['rc_aaaaaaaaaaaaaaaaaaaaaaaa']);
+  expect(submittedBodies[2].recurringCandidateIds).toEqual(['rc_aaaaaaaaaaaaaaaaaaaaaaaa']);
+  expect(submittedBodies[2].scenario).toMatchObject({ date: '2026-11-05', amountMinor: 1_250, direction: 'expense', label: 'Compra hipotética' });
+
+  const state = await (await request.get(fixtureApi + '/__test__/state')).json();
+  expect(state.transactionWrites).toBe(0);
+  expect(state.commitCount).toBe(0);
+});
+
+test('budget improvement preferences, proposals, combined simulation and saved scenario remain local', async ({ page, request }) => {
+  let classification = 'unclassified';
+  let savedScenarios: Record<string, unknown>[] = [];
+  let decisions: { proposalId: string; status: 'accepted' | 'rejected' | 'postponed'; updatedAt: string }[] = [];
+  const analysis = () => ({
+    asOfDate: '2026-11-01', currency: 'EUR', accountScope: { label: 'Todas las cuentas abiertas' },
+    baseline: {
+      currency: 'EUR', startDate: '2026-05-01', endDate: '2026-10-31', periodMonths: 6,
+      monthlyIncomeMinor: 250_000, monthlyExpenseMinor: 190_000, monthlySavingsMinor: 60_000,
+      savingsRatePercent: 24, transactionCount: 30, unconvertedTransactionCount: 0,
+    },
+    proposals: classification === 'flexible' ? [{
+      id: 'flexible-spend:flex:2026-05-01:2026-10-31', categoryId: 'flex', categoryName: 'Gasto flexible sintético',
+      suggestedReductionPercent: 5, observedMonthlyExpenseMinor: 10_000,
+      estimatedMonthlySavingsMinor: 500, estimatedAnnualSavingsMinor: 6_000, confidence: 'high',
+      explanation: 'Has marcado esta categoría como flexible. Una reducción hipotética del 5 % permite evaluar el gasto observado.',
+      priorityRank: 1, priorityReason: 'Prioridad por margen basada en el ahorro mensual observado.', goalImpact: null,
+      evidence: { signal: 'recent_increase', periodMonths: 6, transactionCount: 12, observedExpenseMinor: 60_000, budgetedMinor: null, budgetSpentMinor: null, latestMonthExpenseMinor: 10_000, priorMonthsAverageExpenseMinor: 9_000, rule: 'Fixture sintético.' },
+      assumptions: ['Ahorro hipotético.'], warnings: [],
+    }] : [],
+    categoryChoices: [{ categoryId: 'flex', categoryName: 'Gasto flexible sintético', classification }],
+    goal: 'increase_monthly_margin', decisions, scenarios: savedScenarios, warnings: [],
+    savingsGoals: [], savingsGoalContextStatus: 'not_configured', savingsGoalContextWarnings: [],
+  });
+
+  await page.route('**/api/v1/budget-improvements**', async (route) => {
+    const requestUrl = new URL(route.request().url());
+    if (route.request().method() === 'GET') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: analysis() }) });
+    }
+    if (requestUrl.pathname.endsWith('/preferences') && route.request().method() === 'PUT') {
+      const body = route.request().postDataJSON() as { categories: { classification: string }[] };
+      classification = body.categories[0]?.classification ?? 'unclassified';
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: body }) });
+    }
+    if (requestUrl.pathname.endsWith('/simulate') && route.request().method() === 'POST') {
+      return route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ data: {
+          baseline: analysis().baseline, accountScope: analysis().accountScope, warnings: [],
+          simulation: {
+            isEstimate: true, currency: 'EUR', baselineMonthlySavingsMinor: 60_000,
+            estimatedMonthlySavingsMinor: 500, estimatedAnnualSavingsMinor: 6_000,
+            projectedMonthlySavingsMinor: 60_500, projectedAnnualSavingsMinor: 726_000,
+            selectedCategories: [{ categoryId: 'flex', categoryName: 'Gasto flexible sintético', reductionPercent: 5, monthlySavingsMinor: 500 }],
+            assumptions: ['Escenario hipotético.'], warnings: [],
+          },
+          goalImpacts: [],
+          goal: 'increase_monthly_margin',
+          comparison: {
+            baselineMonthlySavingsMinor: 60_000, scenarioMonthlySavingsMinor: 60_500,
+            improvementMonthlyMinor: 500, referenceStartDate: '2026-05-01', referenceEndDate: '2026-10-31',
+          },
+        } }),
+      });
+    }
+    if (requestUrl.pathname.endsWith('/decisions') && route.request().method() === 'PATCH') {
+      const body = route.request().postDataJSON() as { proposalId: string; status: 'accepted' | 'rejected' | 'postponed'; periodMonths: number };
+      decisions = [{ proposalId: body.proposalId, status: body.status, updatedAt: '2026-11-01T12:00:00.000Z' }];
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: decisions[0] }) });
+    }
+    if (requestUrl.pathname.endsWith('/scenarios') && route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as { name: string };
+      const scenario = {
+        id: '00000000-0000-4000-8000-000000000001', name: body.name,
+        currency: 'EUR', startDate: '2026-05-01', endDate: '2026-10-31',
+        reductions: [{ categoryId: 'flex', reductionPercent: 5 }],
+        estimatedMonthlySavingsMinor: 500, estimatedAnnualSavingsMinor: 6_000, createdAt: '2026-11-01T10:00:00.000Z',
+        comparisonStatus: 'comparable',
+        comparison: {
+          baselineMonthlySavingsMinor: 60_000, estimatedMonthlySavingsMinor: 500,
+          projectedMonthlySavingsMinor: 60_500, estimatedAnnualSavingsMinor: 6_000,
+          projectedAnnualSavingsMinor: 726_000,
+          assumptions: ['Cada reducción se aplica al promedio observado.'], warnings: [],
+        },
+      };
+      savedScenarios = [scenario];
+      return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: scenario }) });
+    }
+    if (requestUrl.pathname.includes('/scenarios/') && route.request().method() === 'DELETE') {
+      savedScenarios = [];
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { deleted: true } }) });
+    }
+    return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: { message: 'Ruta E2E no disponible.' } }) });
+  });
+
+  await page.goto('/planning');
+  await expect(page.getByRole('heading', { name: 'Propuestas personalizadas y simulaciones' })).toBeVisible();
+  const improvementPanel = page.locator('article.planning-panel').filter({ has: page.getByRole('heading', { name: 'Propuestas personalizadas y simulaciones' }) });
+  await expect(improvementPanel.getByText('No hay propuestas fiables todavía.')).toBeVisible();
+  await improvementPanel.getByLabel('Gasto flexible sintético').selectOption('flexible');
+  await improvementPanel.getByRole('button', { name: 'Guardar prioridades' }).click();
+  await expect(improvementPanel.getByRole('heading', { name: 'Propuestas basadas en evidencia (1)' })).toBeVisible();
+  await expect(improvementPanel.getByText(/Ahorro hipotético sugerido al 5 %/)).toBeVisible();
+  await expect(improvementPanel.getByText(/Prioridad #1: Prioridad por margen/)).toBeVisible();
+  await expect(improvementPanel.getByText(/Ahorro neto mensual hipotético tras adoptar solo esta propuesta/)).toBeVisible();
+  await expect(improvementPanel.getByText(/Señal: aumento frente a la media histórica/)).toBeVisible();
+  await improvementPanel.getByRole('button', { name: 'Aceptar propuesta' }).click();
+  await expect(improvementPanel.getByText('Decisión: accepted')).toBeVisible();
+  await improvementPanel.getByRole('button', { name: 'Posponer' }).click();
+  await expect(improvementPanel.getByText('Decisión: postponed')).toBeVisible();
+  await improvementPanel.getByRole('button', { name: 'Descartar' }).click();
+  await expect(improvementPanel.getByText('Decisión: rejected')).toBeVisible();
+  await improvementPanel.getByRole('button', { name: 'Simular selección' }).click();
+  await expect(improvementPanel.getByText('Ahorro adicional estimado / mes')).toBeVisible();
+  await expect(improvementPanel.getByText(/Comparación del escenario · periodo/)).toBeVisible();
+  await improvementPanel.getByLabel('Nombre del escenario').fill('Ajuste flexible');
+  await improvementPanel.getByRole('button', { name: 'Guardar escenario local' }).click();
+  await expect(improvementPanel.getByText('Escenario guardado como metadatos locales')).toBeVisible();
+  await expect(improvementPanel.getByRole('heading', { name: 'Escenarios guardados (1)' })).toBeVisible();
+  await expect(improvementPanel.getByText(/Comparación sobre la misma base/)).toBeVisible();
+  await improvementPanel.getByRole('button', { name: 'Eliminar escenario' }).click();
+  await expect(improvementPanel.getByRole('heading', { name: 'Escenarios guardados (1)' })).toHaveCount(0);
+  await expect(improvementPanel.getByText('Ajuste flexible')).toHaveCount(0);
+
+  const state = await (await request.get(fixtureApi + '/__test__/state')).json();
+  expect(state.transactionWrites).toBe(0);
+  expect(state.categoryWrites).toBe(0);
+  expect(state.commitCount).toBe(0);
+});
+
+test('budget alerts can create, edit, trigger, snooze and deduplicate an in-app rule', async ({ page, request }) => {
+  let rules: { id: string; categoryId: string; metric: string; threshold: number; enabled: boolean }[] = [];
+  let snoozed = false;
+  await page.route('**/api/v1/budget-alerts**', async (route) => {
+    const url = new URL(route.request().url());
+    const month = url.searchParams.get('month') ?? '2026-11';
+    if (route.request().method() === 'GET') {
+      const alerts = rules.filter((rule) => rule.enabled && !snoozed).map((rule) => ({
+        eventId: rule.id.replace(/-/g, '').slice(0, 32), ruleId: rule.id,
+        categoryId: rule.categoryId, categoryName: 'Alimentación sintética',
+        metric: rule.metric, threshold: rule.threshold, observedValue: 20,
+        month, message: 'El gasto supera el presupuesto de Alimentación sintética en un 20 %.',
+        status: 'active', currency: 'EUR',
+      }));
+      return route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ data: {
+          month, evaluatedAt: '2026-11-01T12:00:00.000Z', currency: 'EUR', rules, alerts,
+          categories: [{ categoryId: 'synthetic-food', categoryName: 'Alimentación sintética', budgetedMinor: 100_000, spentMinor: 120_000, state: 'budgeted', hidden: false }],
+          warnings: [],
+        } }),
+      });
+    }
+    if (route.request().method() === 'PUT') {
+      const body = route.request().postDataJSON() as { rules: typeof rules };
+      rules = body.rules;
+      snoozed = false;
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: rules }) });
+    }
+    if (route.request().method() === 'PATCH') {
+      snoozed = true;
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { status: 'snoozed' } }) });
+    }
+    return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: { message: 'Ruta E2E no disponible.' } }) });
+  });
+
+  await page.goto('/budgets');
+  await expect(page.getByRole('heading', { name: 'Presupuestos por categoría' })).toBeVisible();
+  const alertsPanel = page.locator('article.planning-panel').filter({ has: page.getByRole('heading', { name: 'Alertas presupuestarias locales' }) });
+  await expect(alertsPanel.getByRole('heading', { name: 'Reglas configuradas (0)' })).toBeVisible();
+  await alertsPanel.getByLabel('Categoría').selectOption('synthetic-food');
+  await alertsPanel.getByLabel('Qué medir').selectOption('overspend_percent');
+  await alertsPanel.getByLabel('Umbral (%)').fill('10');
+  await alertsPanel.getByRole('button', { name: 'Añadir regla' }).click();
+  await alertsPanel.getByRole('button', { name: 'Guardar reglas' }).click();
+  await expect(alertsPanel.getByRole('heading', { name: 'Avisos del periodo (1)' })).toBeVisible();
+  await expect(alertsPanel.getByText('Exceso relativo sobre presupuesto · 10 %', { exact: true })).toBeVisible();
+  await expect(alertsPanel.getByText(/Asignado:.*Gastado:.*Disponible:/)).toBeVisible();
+  await alertsPanel.getByRole('link', { name: 'Ver detalle en Presupuestos' }).click();
+  await expect(page).toHaveURL(/#budget-category-synthetic-food$/);
+
+  await alertsPanel.getByRole('button', { name: 'Editar' }).click();
+  await alertsPanel.getByLabel('Umbral (%)').fill('15');
+  await alertsPanel.getByRole('button', { name: 'Actualizar regla' }).click();
+  await alertsPanel.getByRole('button', { name: 'Guardar reglas' }).click();
+  await expect(alertsPanel.getByText('15 %')).toBeVisible();
+  await expect(alertsPanel.getByRole('heading', { name: 'Avisos del periodo (1)' })).toBeVisible();
+  await alertsPanel.getByRole('button', { name: 'Posponer 7 días' }).click();
+  await expect(alertsPanel.getByRole('heading', { name: 'Avisos del periodo (0)' })).toBeVisible();
+
+  const state = await (await request.get(fixtureApi + '/__test__/state')).json();
+  expect(state.transactionWrites).toBe(0);
+  expect(state.categoryWrites).toBe(0);
+  expect(state.commitCount).toBe(0);
+});

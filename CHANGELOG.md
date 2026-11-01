@@ -15,3 +15,5 @@
 - CI verde: 40 pruebas aprobadas, 1 prueba live opcional omitida, cobertura global del 94,5 % de sentencias, 86,02 % de ramas y 96,1 % de líneas; `npm audit` y auditoría de dependencias de producción reportan cero vulnerabilidades conocidas.
 - Añadido lockfile npm inicial por CI.
 - Pendiente: validar resultados de CI, probar adaptador contra Actual local y completar funciones del producto en P1.
+
+- Preparada en la rama de Fase 2 una proyección de flujo de caja local (con estados de conciliación disponibles), propuestas/simulaciones presupuestarias que respetan categorías protegidas y alertas in-app configurables. El nuevo almacén `financial-actions.json` se incorpora al backup cifrado unificado. Pendiente de CI, revisión e integración.

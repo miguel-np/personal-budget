@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import Fastify, { LogController, type FastifyInstance, type FastifyReply, type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import helmet from '@fastify/helmet';
-import { buildFinancialAnomalyFindings, buildPeriodChangeFindings, buildUncategorizedFinding, calculateSummary, convertAmountMinor, createFinancialFinding, detectRecurringCandidates, estimatePlanningCashFlow, expandCommitmentOccurrences, isIsoDate, normalizeCurrencyCode, normalizeTransactions, projectSavings, projectSavingsGoal, sortFinancialFindings, suggestCategories, validatePeriod } from '@personal-budget/finance-core';
-import type { BudgetRepository, BudgetTransaction, CategorySuggestion as CoreCategorySuggestion, FinancialFinding, FindingPriority, ForecastScenario, PlanningCommitment, TransactionCategoryBatchChange, TransactionStructureUpdate } from '@personal-budget/finance-core';
+import { buildFinancialAnomalyFindings, buildPeriodChangeFindings, buildUncategorizedFinding, buildBudgetImprovementProposals, calculateSummary, convertAmountMinor, createFinancialFinding, detectRecurringCandidates, estimatePlanningCashFlow, evaluateBudgetAlertRules, expandCommitmentOccurrences, isIsoDate, normalizeCurrencyCode, normalizeTransactions, projectCashFlow, projectSavings, projectSavingsGoal, simulateBudgetImprovement, sortFinancialFindings, suggestCategories, validatePeriod } from '@personal-budget/finance-core';
+import type { BudgetAlertCategory, BudgetAlertRule, BudgetImprovementCategoryPreference, CashFlowEvent, BudgetCategoryClassification, BudgetRepository, BudgetTransaction, CategorySuggestion as CoreCategorySuggestion, FinancialFinding, FindingPriority, ForecastScenario, PlanningCommitment, TransactionCategoryBatchChange, TransactionStructureUpdate } from '@personal-budget/finance-core';
 import { ActualAdapterError } from '@personal-budget/actual-adapter';
 import type { ActualBudgetMonthRecord, ActualImportRecord, ActualImportResult } from '@personal-budget/actual-adapter';
 import { z, ZodError } from 'zod';
@@ -18,6 +18,7 @@ import { PlanningCommitmentInputSchema, PlanningGoalInputSchema, readPlanningDat
 import type { StoredPlanningCommitment } from './planning-store.js';
 import { effectiveFindingReview, readFindingReviewState, updateFindingReviewState } from './intelligence-store.js';
 import { createPeriodicReview, readPeriodicReviewState, updatePeriodicReviewItem } from './periodic-review-store.js';
+import { readFinancialActionState, updateFinancialActionState } from './financial-actions-store.js';
 
 
 const TransactionQuerySchema = z.object({
@@ -278,6 +279,84 @@ const PlanningIntentDraftSchema = z.object({
   clarificationQuestion: z.string().trim().min(1).max(240).nullable(),
 }).strict();
 
+const CashFlowRequestSchema = z.object({
+  horizonDays: z.union([z.literal(7), z.literal(30), z.literal(90)]).default(30),
+  reserveMinor: SafeMinorAmountSchema.nonnegative().optional(),
+  scenario: z.object({
+    date: z.string().refine(isIsoDate),
+    amountMinor: SafeMinorAmountSchema.positive(),
+    direction: z.enum(['income', 'expense']),
+    label: z.string().trim().min(1).max(100),
+  }).strict().optional(),
+  recurringCandidateIds: z.array(z.string().regex(/^rc_[a-f0-9]{24}$/)).max(50).default([]),
+}).strict();
+const BudgetImprovementPreferencesRequestSchema = z.object({
+  goal: z.enum(['increase_monthly_margin', 'reduce_variable_spending', 'reach_savings_goal', 'free_cash_flow']),
+  categories: z.array(z.object({
+    categoryId: z.string().trim().min(1).max(128),
+    classification: z.enum(['unclassified', 'essential', 'protected', 'flexible', 'reviewable']),
+  }).strict()).max(500),
+}).strict().superRefine((value, context) => {
+  const ids = new Set<string>();
+  value.categories.forEach((item, index) => {
+    if (ids.has(item.categoryId)) context.addIssue({ code: 'custom', path: ['categories', index, 'categoryId'], message: 'Category preferences must be unique.' });
+    ids.add(item.categoryId);
+  });
+});
+const BudgetImprovementSimulationRequestSchema = z.object({
+  periodMonths: z.union([z.literal(3), z.literal(6), z.literal(12)]).default(6),
+  reductions: z.array(z.object({
+    categoryId: z.string().trim().min(1).max(128),
+    reductionPercent: z.number().int().min(1).max(100),
+  }).strict()).max(100),
+}).strict().superRefine((value, context) => {
+  const ids = new Set<string>();
+  value.reductions.forEach((item, index) => {
+    if (ids.has(item.categoryId)) context.addIssue({ code: 'custom', path: ['reductions', index, 'categoryId'], message: 'A category can only appear once in a combined scenario.' });
+    ids.add(item.categoryId);
+  });
+});
+const BudgetImprovementScenarioRequestSchema = BudgetImprovementSimulationRequestSchema.extend({
+  name: z.string().trim().min(1).max(80),
+}).strict();
+const BudgetImprovementDecisionRequestSchema = z.object({
+  proposalId: z.string().trim().min(1).max(256),
+  status: z.enum(['accepted', 'rejected', 'postponed']),
+  periodMonths: z.union([z.literal(3), z.literal(6), z.literal(12)]).default(6),
+}).strict();
+const BudgetAlertRulesRequestSchema = z.object({
+  rules: z.array(z.object({
+    id: z.string().uuid().optional(),
+    categoryId: z.string().trim().min(1).max(128),
+    metric: z.enum(['percent_used', 'remaining_minor', 'overspend_minor', 'overspend_percent']),
+    threshold: SafeMinorAmountSchema.nonnegative().max(1_000_000_000_000),
+    enabled: z.boolean().default(true),
+  }).strict().superRefine((rule, context) => {
+    if ((rule.metric === 'percent_used' || rule.metric === 'overspend_percent') && (rule.threshold < 1 || rule.threshold > 500)) {
+      context.addIssue({ code: 'custom', path: ['threshold'], message: 'Percentage threshold must be between 1 and 500.' });
+    }
+    if (rule.metric === 'overspend_minor' && rule.threshold < 1) {
+      context.addIssue({ code: 'custom', path: ['threshold'], message: 'Overspend threshold must be greater than zero.' });
+    }
+  })).max(500),
+}).strict().superRefine((value, context) => {
+  const keys = new Set<string>();
+  value.rules.forEach((rule, index) => {
+    const key = rule.categoryId + ':' + rule.metric;
+    if (keys.has(key)) context.addIssue({ code: 'custom', path: ['rules', index], message: 'Only one active rule per category and metric is supported.' });
+    keys.add(key);
+  });
+});
+const BudgetAlertEventDecisionSchema = z.object({
+  ruleId: z.string().uuid(),
+  categoryId: z.string().trim().min(1).max(128),
+  month: PlanningMonthSchema,
+  status: z.enum(['dismissed', 'snoozed']),
+  snoozedUntil: z.string().refine(isIsoDate).optional(),
+}).strict().superRefine((value, context) => {
+  if (value.status === 'snoozed' && !value.snoozedUntil) context.addIssue({ code: 'custom', path: ['snoozedUntil'], message: 'Choose an expiry date when postponing an alert.' });
+  if (value.status === 'dismissed' && value.snoozedUntil) context.addIssue({ code: 'custom', path: ['snoozedUntil'], message: 'Dismissed alerts cannot include a snooze expiry.' });
+});
 const DeletePlanningDataRequestSchema = z.object({ confirmation: z.literal('DELETE_PLANNING_DATA') }).strict();
 const AssistantRequestSchema = z.object({
   question: z.string().trim().min(1).max(2_000),
@@ -2935,6 +3014,802 @@ function monthsBefore(date: string, months: number): string {
     } finally {
       request.raw.removeListener('aborted', abortRequest);
       reply.raw.removeListener('close', abortResponse);
+    }
+  });
+
+  function addCivilDays(date: string, days: number): string {
+    const value = new Date(date + 'T00:00:00.000Z');
+    value.setUTCDate(value.getUTCDate() + days);
+    return value.toISOString().slice(0, 10);
+  }
+
+  function normalizedActionLabel(value: string): string {
+    return value.normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '').toLocaleLowerCase('es').replace(/[^a-z0-9]+/g, ' ').trim();
+  }
+
+  app.post('/api/v1/cash-flow/project', async (request, reply) => {
+    try {
+      const parsed = CashFlowRequestSchema.parse(request.body);
+      const asOfDate = civilDateInTimeZone('UTC');
+      const endDate = addCivilDays(asOfDate, parsed.horizonDays);
+      const [accounts, preferences, accountPreference, planning] = await Promise.all([
+        repository.listAccounts(), currencyPreferences(), accountScopePreference(), readPlanningData(config.actualDataDir),
+      ]);
+      const scope = resolveAccountScope(accounts, accountPreference);
+      const unknownOpeningAccounts: { id: string; name: string }[] = [];
+      let openingBalanceMinor = 0;
+      let openingKnown = scope.accounts.length > 0;
+      const originalAccountsById = new Map(accounts.map((account) => [account.id, account]));
+      for (const scopedAccount of scope.accounts) {
+        const account = originalAccountsById.get(scopedAccount.id);
+        const nativeCurrency = account ? accountNativeCurrency(account, preferences) : null;
+        if (!account || account.currentBalanceMinor === null || nativeCurrency === null) {
+          openingKnown = false;
+          unknownOpeningAccounts.push({ id: scopedAccount.id, name: scopedAccount.name });
+          continue;
+        }
+        const conversion = convertAmountMinor(account.currentBalanceMinor, nativeCurrency, preferences.displayCurrency, asOfDate, preferences.exchangeRates);
+        if (conversion.amountMinor === null) {
+          openingKnown = false;
+          unknownOpeningAccounts.push({ id: scopedAccount.id, name: scopedAccount.name });
+          continue;
+        }
+        openingBalanceMinor += conversion.amountMinor;
+        if (!Number.isSafeInteger(openingBalanceMinor)) throw new RangeError('The consolidated opening balance exceeds the supported integer range.');
+      }
+      const rawFutureTransactions = await transactionsForAccounts(scope.accounts, asOfDate, endDate, preferences);
+      const convertedFuture = convertTransactionsForAnalysis(rawFutureTransactions, preferences);
+      const ledgerEntries = normalizeTransactions(convertedFuture.transactions);
+      const actualEvents: CashFlowEvent[] = ledgerEntries
+        .filter((entry) => entry.date > asOfDate && entry.amountMinor !== 0)
+        .map((entry) => ({
+          id: 'actual:' + entry.id,
+          date: entry.date,
+          amountMinor: entry.amountMinor,
+          source: 'actual_transaction',
+          label: entry.payeeLabel ?? 'Movimiento registrado en Actual',
+          clearedStatus: entry.cleared === true ? 'cleared' : entry.cleared === false ? 'pending' : 'unknown',
+          isTransfer: entry.isTransfer,
+        }));
+      const actualMatchKeys = new Set(ledgerEntries.filter((entry) => entry.date > asOfDate && entry.amountMinor !== 0).map((entry) =>
+        [entry.date, Math.abs(entry.amountMinor), entry.amountMinor < 0 ? 'expense' : 'income'].join('|') + '|' + normalizedActionLabel(entry.payeeLabel ?? ''),
+      ));
+      const actualAmountKeys = new Set(ledgerEntries.filter((entry) => entry.date > asOfDate && entry.amountMinor !== 0).map((entry) =>
+        [entry.date, Math.abs(entry.amountMinor), entry.amountMinor < 0 ? 'expense' : 'income'].join('|'),
+      ));
+      const scopedActiveCommitments = planning.commitments.filter((item) =>
+        item.status === 'active' && planningScopeMatches(item.scope, accountPreference),
+      );
+      const unconvertedCommitmentTitles: string[] = [];
+      const eligibleCommitments = scopedActiveCommitments.flatMap((item) => {
+        if (item.currency === preferences.displayCurrency) return [toPlanningCommitment(item)];
+        const conversion = convertAmountMinor(item.amountMinor, item.currency, preferences.displayCurrency, asOfDate, preferences.exchangeRates);
+        if (conversion.amountMinor === null || conversion.amountMinor <= 0) { unconvertedCommitmentTitles.push(item.title); return []; }
+        return [{ ...toPlanningCommitment(item), amountMinor: conversion.amountMinor, currency: preferences.displayCurrency }];
+      });
+      const manualOccurrences = expandCommitmentOccurrences(eligibleCommitments, asOfDate, endDate);
+      const manualEvents: CashFlowEvent[] = [];
+      const confirmedRecurringEvents: CashFlowEvent[] = [];
+      const duplicateCommitmentIds: string[] = [];
+      const possibleDuplicateCommitments: string[] = [];
+      for (const occurrence of manualOccurrences) {
+        if (occurrence.occurrenceDate <= asOfDate) continue;
+        const signedAmount = occurrence.direction === 'expense' ? -occurrence.amountMinor : occurrence.amountMinor;
+        const key = [occurrence.occurrenceDate, occurrence.amountMinor, occurrence.direction].join('|');
+        const label = normalizedActionLabel(occurrence.title);
+        if (actualMatchKeys.has(key + '|' + label)) {
+          duplicateCommitmentIds.push(occurrence.id + '@' + occurrence.occurrenceDate);
+          continue;
+        }
+        if (actualAmountKeys.has(key)) possibleDuplicateCommitments.push(occurrence.title + ' · ' + occurrence.occurrenceDate);
+        const isRecurring = occurrence.frequency !== 'once';
+        const event: CashFlowEvent = {
+          id: (isRecurring ? 'confirmed-recurring:' : 'manual:') + occurrence.id + '@' + occurrence.occurrenceDate,
+          date: occurrence.occurrenceDate,
+          amountMinor: signedAmount,
+          source: isRecurring ? 'confirmed_recurring' : 'manual_commitment',
+          label: occurrence.title,
+        };
+        (isRecurring ? confirmedRecurringEvents : manualEvents).push(event);
+      }
+      const recurringHistoryStartDate = addCivilDays(asOfDate, -800);
+      const recurringHistoryRaw = await transactionsForAccounts(scope.accounts, recurringHistoryStartDate, asOfDate, preferences);
+      const recurringHistoryConverted = convertTransactionsForAnalysis(recurringHistoryRaw, preferences);
+      const recurringHistoryCandidates = detectRecurringCandidates(recurringHistoryConverted.transactions, {
+        startDate: recurringHistoryStartDate, endDate: asOfDate, minOccurrences: 3, intervalWindowDays: [20, 400],
+      });
+      const recurringCandidateEvents: (CashFlowEvent & { candidateId: string })[] = [];
+      const recurringCandidates = recurringHistoryCandidates.map((candidate) => {
+        const normalizedPayee = normalizedActionLabel(candidate.payee);
+        const candidateId = 'rc_' + createHash('sha256').update(normalizedPayee + '|' + candidate.firstDate).digest('hex').slice(0, 24);
+        let nextDate = candidate.estimatedIntervalDays === null ? null : addCivilDays(candidate.lastDate, candidate.estimatedIntervalDays);
+        if (nextDate !== null) {
+          while (nextDate <= asOfDate) nextDate = addCivilDays(nextDate, candidate.estimatedIntervalDays!);
+          let date = nextDate;
+          let occurrenceIndex = 0;
+          while (date <= endDate && occurrenceIndex < 12) {
+            const amountMinor = candidate.meanAbsoluteAmountMinor;
+            const amountKey = [date, amountMinor, 'expense'].join('|');
+            const exactActualMatch = actualMatchKeys.has(amountKey + '|' + normalizedPayee);
+            const exactCommitmentMatch = [...manualEvents, ...confirmedRecurringEvents].some((event) =>
+              event.date === date && event.amountMinor === -amountMinor && normalizedActionLabel(event.label) === normalizedPayee,
+            );
+            if (!exactActualMatch && !exactCommitmentMatch) recurringCandidateEvents.push({
+              id: 'recurring-candidate:' + candidateId + ':' + date, candidateId, date,
+              amountMinor: -amountMinor, source: 'recurring_candidate', label: candidate.payee,
+            });
+            occurrenceIndex += 1;
+            date = addCivilDays(date, candidate.estimatedIntervalDays!);
+          }
+        }
+        return {
+          id: candidateId, payee: candidate.payee, occurrenceCount: candidate.occurrenceCount,
+          estimatedIntervalDays: candidate.estimatedIntervalDays, estimatedFrequency: candidate.estimatedFrequency,
+          meanAbsoluteAmountMinor: candidate.meanAbsoluteAmountMinor, amountDeviationPercent: candidate.amountDeviationPercent,
+          nextDate, upcomingEventsCount: recurringCandidateEvents.filter((event) => event.candidateId === candidateId).length,
+          signals: candidate.signals, warnings: candidate.warnings,
+        };
+      });
+      const requestedCandidateIds = new Set(parsed.recurringCandidateIds);
+      const knownCandidateIds = new Set(recurringCandidates.map((candidate) => candidate.id));
+      if ([...requestedCandidateIds].some((id) => !knownCandidateIds.has(id))) {
+        return reply.code(400).send({ error: { code: 'UNKNOWN_RECURRING_CANDIDATE', message: 'One or more selected recurring candidates are stale. Refresh the cash-flow projection before selecting them.' } });
+      }
+      const selectedRecurringCandidateEvents: CashFlowEvent[] = recurringCandidateEvents
+        .filter((event) => requestedCandidateIds.has(event.candidateId))
+        .map((event) => ({ id: event.id, date: event.date, amountMinor: event.amountMinor, source: event.source, label: event.label }));
+      const scenarioEvents: CashFlowEvent[] = parsed.scenario ? [{
+        id: 'scenario:unsaved',
+        date: parsed.scenario.date,
+        amountMinor: parsed.scenario.direction === 'expense' ? -parsed.scenario.amountMinor : parsed.scenario.amountMinor,
+        source: 'scenario',
+        label: parsed.scenario.label,
+      }] : [];
+      const projection = projectCashFlow({
+        asOfDate,
+        startDate: asOfDate,
+        endDate,
+        openingBalanceMinor: openingKnown ? openingBalanceMinor : null,
+        reserveMinor: parsed.reserveMinor ?? null,
+        events: [...actualEvents, ...manualEvents, ...confirmedRecurringEvents, ...selectedRecurringCandidateEvents, ...scenarioEvents],
+      });
+      const warnings = [
+        ...projection.warnings,
+        ...convertedFuture.warnings,
+        ...(unknownOpeningAccounts.length > 0 ? ['Saldo no disponible o sin conversión para: ' + unknownOpeningAccounts.map((account) => account.name).join(', ') + '.'] : []),
+        ...(scope.accounts.length === 0 ? ['El ámbito no contiene cuentas; selecciona cuentas antes de estimar saldo.'] : []),
+        ...(duplicateCommitmentIds.length > 0 ? [duplicateCommitmentIds.length + ' compromiso(s) manual(es) se han omitido porque coinciden exactamente con un movimiento futuro de Actual.'] : []),
+        ...(possibleDuplicateCommitments.length > 0 ? ['Posibles duplicados no confirmados; se han conservado ambos elementos: ' + possibleDuplicateCommitments.join(', ') + '. Revisa la agenda antes de interpretar el saldo.'] : []),
+        ...(unconvertedCommitmentTitles.length > 0 ? [unconvertedCommitmentTitles.length + ' compromiso(s) activos no se han convertido a la divisa de análisis por falta de tasa local fechada: ' + unconvertedCommitmentTitles.join(', ') + '.'] : []),
+        ...recurringHistoryConverted.warnings,
+      ];
+      return {
+        data: {
+          asOfDate, endDate, currency: preferences.displayCurrency, accountScope: scope.metadata,
+          openingBalanceMinor: projection.openingBalanceMinor,
+          unknownOpeningAccounts,
+          actualEvents, manualEvents, confirmedRecurringEvents, recurringCandidates, recurringCandidateEvents, scenarioEvents,
+          duplicateCommitmentIds, possibleDuplicateCommitments,
+          projection: { ...projection, warnings },
+          notes: [
+            'Saldo estimado a partir del campo balance_current de Actual; no equivale a saldo bancario disponible, saldo liquidado ni efectivo garantizado.',
+            'Las transferencias se incluyen con su signo para proyectar el ámbito seleccionado; las dos patas se compensan si ambas cuentas están dentro del ámbito.',
+            'Los candidatos recurrentes se detectan sobre hasta 800 días de historial convertido; solo se proyectan como hipótesis cuando se seleccionan expresamente.',
+            'Los compromisos en otra divisa se convierten con la tasa local conocida a la fecha de corte; cuando falta tasa, se excluyen y se advierten, sin tratarlos como cero.',
+            ...(parsed.recurringCandidateIds.length > 0 ? ['Se han incorporado como hipótesis los candidatos recurrentes seleccionados; no son obligaciones confirmadas.'] : []),
+          ],
+        },
+      };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  async function loadBudgetImprovementContext(periodMonths: 3 | 6 | 12) {
+    const asOfDate = civilDateInTimeZone('UTC');
+    const endMonth = shiftPlanningMonth(asOfDate.slice(0, 7), -1);
+    const startMonth = shiftPlanningMonth(endMonth, -(periodMonths - 1));
+    const startDate = startMonth + '-01';
+    const endDate = planningMonthPeriod(endMonth).endDate;
+    const [accounts, categories, preferences, accountPreference, actionState, planningData] = await Promise.all([
+      repository.listAccounts(), repository.listCategories(), currencyPreferences(), accountScopePreference(),
+      readFinancialActionState(config.actualDataDir), readPlanningData(config.actualDataDir),
+    ]);
+    const scope = resolveAccountScope(accounts, accountPreference);
+    const accountScopeSignature = createHash('sha256').update(JSON.stringify({
+      mode: scope.metadata.mode, accountIds: [...scope.metadata.accountIds].sort(),
+    })).digest('hex');
+    const rawTransactions = await transactionsForAccounts(scope.accounts, startDate, endDate, preferences);
+    const converted = convertTransactionsForAnalysis(rawTransactions, preferences);
+    const entries = normalizeTransactions(converted.transactions);
+    const summary = calculateSummary(entries, categories, {
+      startDate, endDate, currency: preferences.displayCurrency, exchangeRates: preferences.exchangeRates,
+    });
+    const monthsByCategory = new Map<string, Set<string>>();
+    const expenseByCategoryMonth = new Map<string, Map<string, number>>();
+    const incomeCategoryIds = new Set(categories.filter((category) => category.isIncome).map((category) => category.id));
+    for (const entry of entries) {
+      if (entry.isTransfer || !entry.categoryId || incomeCategoryIds.has(entry.categoryId)) continue;
+      const entryMonth = entry.date.slice(0, 7);
+      if (entry.amountMinor < 0) {
+        const months = monthsByCategory.get(entry.categoryId) ?? new Set<string>();
+        months.add(entryMonth);
+        monthsByCategory.set(entry.categoryId, months);
+      }
+      const monthAmounts = expenseByCategoryMonth.get(entry.categoryId) ?? new Map<string, number>();
+      // Positive movements in expense categories are refunds; net them against
+      // the month's outflows before producing trend evidence.
+      monthAmounts.set(entryMonth, (monthAmounts.get(entryMonth) ?? 0) - entry.amountMinor);
+      expenseByCategoryMonth.set(entry.categoryId, monthAmounts);
+    }
+    const budgetRepository = repository as BudgetRepository & {
+      getBudgetMonth?: (value: string) => Promise<{ readonly categoryGroups: readonly { readonly categories?: readonly { readonly id: string; readonly budgeted?: number | null; readonly spent?: number | null; readonly balance?: number | null }[] }[] }>;
+      getBudgetAllocations?: (value: string) => Promise<readonly { readonly categoryId: string; readonly amountMinor: number }[]>;
+    };
+    const budgetWarnings: string[] = [];
+    const budgetRows = new Map<string, { budgetedMinor: number | null; spentMinor: number | null; availableMinor: number | null }>();
+    if (typeof budgetRepository.getBudgetMonth === 'function') {
+      try {
+        const allocationsAvailable = typeof budgetRepository.getBudgetAllocations === 'function';
+        const [budgetMonth, allocations] = await Promise.all([
+          budgetRepository.getBudgetMonth(endMonth),
+          allocationsAvailable ? budgetRepository.getBudgetAllocations!(endMonth) : Promise.resolve(null),
+        ]);
+        const allocationByCategory = new Map((allocations ?? []).map((item) => [item.categoryId, item.amountMinor]));
+        for (const group of budgetMonth.categoryGroups) {
+          for (const row of group.categories ?? []) {
+            budgetRows.set(row.id, {
+              budgetedMinor: allocationsAvailable ? (allocationByCategory.get(row.id) ?? null) : (row.budgeted ?? null),
+              spentMinor: row.spent === undefined || row.spent === null ? null : Math.abs(row.spent),
+              availableMinor: row.balance ?? null,
+            });
+          }
+        }
+      } catch {
+        budgetWarnings.push('No se pudo recuperar el presupuesto asignado del último mes completo; las propuestas se basan solo en el historial de movimientos.');
+      }
+    } else {
+      budgetWarnings.push('El adaptador no expone asignaciones mensuales; las propuestas no pueden contrastarse con límites presupuestarios explícitos.');
+    }
+    const referenceMonths = Array.from({ length: periodMonths - 1 }, (_, index) => shiftPlanningMonth(startMonth, index));
+    const observations = summary.expensesByCategory
+      .filter((item) => item.categoryId !== null && item.amountMinor > 0)
+      .map((item) => {
+        const categoryId = item.categoryId as string;
+        const monthAmounts = expenseByCategoryMonth.get(categoryId) ?? new Map<string, number>();
+        const priorTotal = referenceMonths.reduce((sum, month) => sum + (monthAmounts.get(month) ?? 0), 0);
+        const budget = budgetRows.get(categoryId);
+        return {
+          categoryId, categoryName: item.categoryName, expenseMinor: item.amountMinor,
+          transactionCount: item.transactionCount,
+          monthsWithActivity: monthsByCategory.get(categoryId)?.size ?? 0,
+          latestMonthExpenseMinor: monthAmounts.get(endMonth) ?? 0,
+          priorMonthsAverageExpenseMinor: Math.round(priorTotal / Math.max(1, periodMonths - 1)),
+          budgetedMinor: budget?.budgetedMinor ?? null,
+          budgetSpentMinor: budget?.spentMinor ?? null,
+          budgetAvailableMinor: budget?.availableMinor ?? null,
+        };
+      });
+    const categoryBreakdown = categories.filter((category) => !category.isIncome).map((category) => {
+      const observation = observations.find((item) => item.categoryId === category.id);
+      const budget = budgetRows.get(category.id);
+      return {
+        categoryId: category.id, categoryName: category.name,
+        observedExpenseMinor: observation?.expenseMinor ?? 0,
+        observedMonthlyExpenseMinor: observation ? Math.round(observation.expenseMinor / periodMonths) : 0,
+        transactionCount: observation?.transactionCount ?? 0,
+        monthsWithActivity: observation?.monthsWithActivity ?? 0,
+        latestMonthExpenseMinor: observation?.latestMonthExpenseMinor ?? 0,
+        priorMonthsAverageExpenseMinor: observation?.priorMonthsAverageExpenseMinor ?? 0,
+        budgetedMinor: budget?.budgetedMinor ?? null,
+        budgetSpentMinor: budget?.spentMinor ?? null,
+        budgetAvailableMinor: budget?.availableMinor ?? null,
+      };
+    }).filter((item) => item.observedExpenseMinor > 0 || item.budgetedMinor !== null);
+    const recurringCandidates = detectRecurringCandidates(converted.transactions, {
+      startDate, endDate, minOccurrences: 3, intervalWindowDays: [20, 400],
+    }).map((candidate) => ({
+      payee: candidate.payee, occurrenceCount: candidate.occurrenceCount,
+      estimatedIntervalDays: candidate.estimatedIntervalDays, estimatedFrequency: candidate.estimatedFrequency,
+      meanAbsoluteAmountMinor: candidate.meanAbsoluteAmountMinor, amountDeviationPercent: candidate.amountDeviationPercent,
+      lastObservedDate: candidate.lastDate, signals: candidate.signals, warnings: candidate.warnings,
+    }));
+    const activeCommitments = planningData.commitments.filter((item) =>
+      item.status === 'active' && planningScopeMatches(item.scope, accountPreference),
+    ).map((item) => {
+      const conversion = item.currency === preferences.displayCurrency
+        ? { amountMinor: item.amountMinor }
+        : convertAmountMinor(item.amountMinor, item.currency, preferences.displayCurrency, asOfDate, preferences.exchangeRates);
+      return {
+        id: item.id, title: item.title, date: item.date, direction: item.direction, frequency: item.frequency,
+        amountMinor: conversion.amountMinor, sourceCurrency: item.currency,
+        currency: conversion.amountMinor === null ? item.currency : preferences.displayCurrency,
+        conversionAvailable: conversion.amountMinor !== null && conversion.amountMinor > 0,
+      };
+    });
+    if (activeCommitments.some((item) => !item.conversionAvailable)) {
+      budgetWarnings.push('Hay compromisos activos cuyo importe no se puede convertir a la divisa de análisis; se muestran en su divisa original y no se suman a los escenarios.');
+    }
+    const rawEntryCount = normalizeTransactions(rawTransactions).length;
+    const unconvertedTransactionCount = Math.max(0, rawEntryCount - entries.length);
+    const baseline = {
+      currency: preferences.displayCurrency, startDate, endDate, periodMonths,
+      monthlyIncomeMinor: Math.round(summary.incomeMinor / periodMonths),
+      monthlyExpenseMinor: Math.round(summary.expenseMinor / periodMonths),
+      monthlySavingsMinor: Math.round(summary.savingsMinor / periodMonths),
+      savingsRatePercent: summary.savingsRatePercent,
+      transactionCount: summary.transactionCount,
+      unconvertedTransactionCount,
+      observations,
+    };
+    const storedPreferences = actionState.budgetImprovements.categories;
+    const corePreferences: BudgetImprovementCategoryPreference[] = storedPreferences
+      .filter((item) => item.classification !== 'unclassified')
+      .map((item) => ({ categoryId: item.categoryId, classification: item.classification as BudgetCategoryClassification }));
+    const proposals = buildBudgetImprovementProposals(baseline, corePreferences, actionState.budgetImprovements.goal);
+    const compatibleCommitments = planningData.commitments.filter((item) =>
+      item.status === 'active' && item.currency === preferences.displayCurrency && planningScopeMatches(item.scope, accountPreference),
+    ).map(toPlanningCommitment);
+    const savingsGoals = planningData.goals.map((goal) => {
+      const scopeMatches = planningScopeMatches(goal.scope, accountPreference);
+      const currencyMatches = goal.currency === preferences.displayCurrency;
+      const goalWarnings: string[] = [];
+      if (!scopeMatches) goalWarnings.push('El ámbito guardado del objetivo ha cambiado; revísalo desde Objetivos antes de usarlo para esta simulación.');
+      if (!currencyMatches) goalWarnings.push('La divisa guardada del objetivo no coincide con la divisa de análisis; no se convierten importes automáticamente.');
+      if (goal.status === 'paused') goalWarnings.push('El objetivo está pausado; reanúdalo desde Objetivos antes de incluirlo en una proyección.');
+      if (goal.targetDate <= asOfDate) goalWarnings.push('La fecha objetivo ya ha pasado; actualiza el objetivo para proyectarlo.');
+      const projection = goal.status === 'active' && scopeMatches && currencyMatches && goal.targetDate > asOfDate
+        ? projectSavingsGoal({
+            asOfDate, targetDate: goal.targetDate, targetAmountMinor: goal.targetAmountMinor,
+            initialAmountMinor: goal.initialAmountMinor, monthlyContributionMinor: goal.monthlyContributionMinor,
+            currency: preferences.displayCurrency,
+            monthlyIncomeMinor: goal.monthlyIncomeMinor ?? baseline.monthlyIncomeMinor,
+            monthlyExpenseMinor: goal.monthlyExpenseMinor ?? baseline.monthlyExpenseMinor,
+            commitments: compatibleCommitments,
+          })
+        : null;
+      return {
+        id: goal.id, name: goal.name, targetDate: goal.targetDate,
+        targetAmountMinor: goal.targetAmountMinor, initialAmountMinor: goal.initialAmountMinor,
+        monthlyContributionMinor: goal.monthlyContributionMinor,
+        monthlyIncomeMinor: goal.monthlyIncomeMinor ?? baseline.monthlyIncomeMinor,
+        monthlyExpenseMinor: goal.monthlyExpenseMinor ?? baseline.monthlyExpenseMinor,
+        currency: goal.currency, status: goal.status, scopeMatches, currencyMatches, projection, warnings: goalWarnings,
+      };
+    });
+    const savingsGoalContextStatus = savingsGoals.some((goal) => goal.projection !== null)
+      ? 'ready'
+      : savingsGoals.length > 0 ? 'review_required' : 'not_configured';
+    const savingsGoalContextWarnings = savingsGoals.flatMap((goal) => goal.warnings.map((warning) => goal.name + ': ' + warning));
+    const targetSavingsGoal = savingsGoals
+      .filter((goal) => goal.status === 'active' && goal.projection !== null && goal.projection.requiredMonthlyContributionMinor !== null)
+      .sort((left, right) => {
+        const leftGap = Math.max(0, left.projection!.requiredMonthlyContributionMinor! - left.monthlyContributionMinor);
+        const rightGap = Math.max(0, right.projection!.requiredMonthlyContributionMinor! - right.monthlyContributionMinor);
+        return rightGap - leftGap || left.targetDate.localeCompare(right.targetDate);
+      })[0] ?? null;
+    const targetRequiredMonthlyContributionMinor = targetSavingsGoal?.projection?.requiredMonthlyContributionMinor ?? null;
+    const targetSavingsGapMinor = targetSavingsGoal && targetRequiredMonthlyContributionMinor !== null
+      ? Math.max(0, targetRequiredMonthlyContributionMinor - targetSavingsGoal.monthlyContributionMinor)
+      : null;
+    const prioritizedProposals = proposals
+      .map((proposal) => {
+        let priorityTier = 0;
+        let priorityValue = proposal.estimatedMonthlySavingsMinor;
+        let priorityReason = 'Ordenada por el margen mensual hipotético que podría liberar, calculado sobre el gasto observado.';
+        let goalImpact: {
+          goalId: string; goalName: string; monthlyContributionGapMinor: number;
+          estimatedGapCoveredMinor: number; estimatedGapRemainingMinor: number;
+        } | null = null;
+        if (actionState.budgetImprovements.goal === 'reduce_variable_spending') {
+          const latest = proposal.evidence.latestMonthExpenseMinor ?? 0;
+          const previous = proposal.evidence.priorMonthsAverageExpenseMinor ?? 0;
+          const increase = Math.max(0, latest - previous);
+          priorityTier = increase > 0 ? 1 : 0;
+          priorityValue = increase;
+          priorityReason = priorityTier
+            ? 'Prioridad por tendencia: el último mes completo superó la media de referencia. Revisa primero esta variación antes de fijar un recorte.'
+            : 'No hay un aumento reciente cuantificado; se mantiene como alternativa secundaria basada en el presupuesto y el historial.';
+        } else if (actionState.budgetImprovements.goal === 'reach_savings_goal') {
+          if (targetSavingsGoal && targetSavingsGapMinor !== null) {
+            const covered = Math.min(
+              targetSavingsGapMinor, proposal.estimatedMonthlySavingsMinor,
+              Math.max(0, targetSavingsGoal.monthlyExpenseMinor),
+            );
+            goalImpact = {
+              goalId: targetSavingsGoal.id, goalName: targetSavingsGoal.name,
+              monthlyContributionGapMinor: targetSavingsGapMinor,
+              estimatedGapCoveredMinor: covered,
+              estimatedGapRemainingMinor: Math.max(0, targetSavingsGapMinor - covered),
+            };
+            priorityTier = targetSavingsGapMinor > 0 ? 1 : 0;
+            priorityValue = covered;
+            priorityReason = targetSavingsGapMinor > 0
+              ? 'Prioridad vinculada a «' + targetSavingsGoal.name + '»: se ordena por la parte de la brecha de aportación mensual que esta propuesta podría cubrir si se destina íntegramente al objetivo.'
+              : 'El plan actual ya cubre la aportación mensual requerida para «' + targetSavingsGoal.name + '»; se ordena por ahorro potencial adicional.';
+          } else {
+            priorityReason = 'No hay un objetivo activo compatible con la divisa, el ámbito y una fecha proyectable; se ordena por ahorro mensual potencial sin atribuir impacto a una meta.';
+          }
+        } else if (actionState.budgetImprovements.goal === 'free_cash_flow') {
+          priorityTier = proposal.evidence.latestMonthExpenseMinor === null ? 0 : 1;
+          priorityValue = proposal.evidence.latestMonthExpenseMinor ?? proposal.estimatedMonthlySavingsMinor;
+          priorityReason = 'Prioridad por liquidez inmediata: se ordena por el gasto neto del último mes completo, además de mostrar el ahorro mensual potencial; los compromisos activos siguen siendo independientes.';
+        } else {
+          priorityReason = 'Prioridad por margen: se ordena por el ahorro mensual hipotético derivado del gasto observado, sin asumir cambios automáticos.';
+        }
+        return { proposal, priorityTier, priorityValue, priorityReason, goalImpact };
+      })
+      .sort((left, right) => right.priorityTier - left.priorityTier ||
+        right.priorityValue - left.priorityValue ||
+        right.proposal.estimatedMonthlySavingsMinor - left.proposal.estimatedMonthlySavingsMinor ||
+        left.proposal.categoryName.localeCompare(right.proposal.categoryName))
+      .map(({ proposal, priorityReason, goalImpact }, index) => ({
+        ...proposal, priorityRank: index + 1, priorityReason, goalImpact,
+      }));
+    const scenarios = actionState.budgetImprovements.scenarios.map((scenario) => {
+      if (scenario.currency !== baseline.currency) {
+        return { ...scenario, comparisonStatus: 'different_currency' as const, comparison: null };
+      }
+      if (scenario.startDate !== baseline.startDate || scenario.endDate !== baseline.endDate) {
+        return { ...scenario, comparisonStatus: 'different_period' as const, comparison: null };
+      }
+      if (!scenario.accountScopeSignature || scenario.accountScopeSignature !== accountScopeSignature) {
+        return { ...scenario, comparisonStatus: 'different_scope' as const, comparison: null };
+      }
+      try {
+        const comparison = simulateBudgetImprovement(baseline, corePreferences, scenario.reductions);
+        return {
+          ...scenario, comparisonStatus: 'comparable' as const,
+          comparison: {
+            baselineMonthlySavingsMinor: baseline.monthlySavingsMinor,
+            estimatedMonthlySavingsMinor: comparison.estimatedMonthlySavingsMinor,
+            projectedMonthlySavingsMinor: comparison.projectedMonthlySavingsMinor,
+            estimatedAnnualSavingsMinor: comparison.estimatedAnnualSavingsMinor,
+            projectedAnnualSavingsMinor: comparison.projectedAnnualSavingsMinor,
+            assumptions: comparison.assumptions, warnings: comparison.warnings,
+          },
+        };
+      } catch {
+        return { ...scenario, comparisonStatus: 'preferences_changed' as const, comparison: null };
+      }
+    });
+    const categoryChoices = categories.filter((category) => !category.isIncome).map((category) => ({
+      categoryId: category.id,
+      categoryName: category.name,
+      classification: storedPreferences.find((item) => item.categoryId === category.id)?.classification ?? 'unclassified',
+    }));
+    return {
+      asOfDate, currency: preferences.displayCurrency, accountScope: scope.metadata, accountScopeSignature, baseline,
+      categoryBreakdown, recurringCandidates, commitments: compatibleCommitments,
+      proposals: prioritizedProposals, corePreferences, categoryChoices, savingsGoals, savingsGoalContextStatus, savingsGoalContextWarnings,
+      goal: actionState.budgetImprovements.goal,
+      decisions: actionState.budgetImprovements.decisions,
+      scenarios,
+      warnings: [...summary.warnings, ...converted.warnings, ...budgetWarnings, 'Se usan ' + periodMonths + ' meses naturales completos, hasta ' + endDate + '; el mes en curso se excluye para evitar extrapolar un periodo parcial.', 'La comparación de tendencia usa el último mes completo frente a la media de los meses anteriores; un patrón recurrente detectado es un candidato, no una obligación.'],
+    };
+  }
+
+  app.get('/api/v1/budget-improvements', async (request, reply) => {
+    try {
+      const query = z.object({ periodMonths: z.coerce.number().int().pipe(z.union([z.literal(3), z.literal(6), z.literal(12)])).default(6) }).strict().parse(request.query);
+      const context = await loadBudgetImprovementContext(query.periodMonths);
+      return { data: context };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.put('/api/v1/budget-improvements/preferences', async (request, reply) => {
+    try {
+      const parsed = BudgetImprovementPreferencesRequestSchema.parse(request.body);
+      const categories = await repository.listCategories();
+      const validIds = new Set(categories.filter((category) => !category.isIncome).map((category) => category.id));
+      if (parsed.categories.some((item) => !validIds.has(item.categoryId))) {
+        return reply.code(400).send({ error: { code: 'INVALID_CATEGORY', message: 'Choose only expense categories from the configured Actual budget.' } });
+      }
+      const saved = await updateFinancialActionState(config.actualDataDir, (current) => ({
+        state: {
+          ...current,
+          budgetImprovements: { ...current.budgetImprovements, goal: parsed.goal, categories: parsed.categories },
+        },
+        result: parsed,
+      }));
+      return { data: saved };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.post('/api/v1/budget-improvements/simulate', async (request, reply) => {
+    try {
+      const parsed = BudgetImprovementSimulationRequestSchema.parse(request.body);
+      const context = await loadBudgetImprovementContext(parsed.periodMonths);
+      const simulation = simulateBudgetImprovement(context.baseline, context.corePreferences, parsed.reductions);
+      const goalImpacts = context.savingsGoals
+        .filter((goal) => goal.status === 'active' && goal.projection !== null && goal.scopeMatches && goal.currencyMatches)
+        .map((goal) => {
+          // Treat simulated savings as both a reduction in the goal's monthly
+          // expense assumption and an equal additional recurring contribution.
+          // This lets projectSavingsGoal recalculate available cash after
+          // commitments instead of pretending the new contribution was free.
+          const estimatedMonthlySavingsAllocatedMinor = Math.min(
+            simulation.estimatedMonthlySavingsMinor, Math.max(0, goal.monthlyExpenseMinor),
+          );
+          const scenarioMonthlyContributionMinor = goal.monthlyContributionMinor + estimatedMonthlySavingsAllocatedMinor;
+          const scenarioMonthlyExpenseMinor = Math.max(0, goal.monthlyExpenseMinor - estimatedMonthlySavingsAllocatedMinor);
+          if (!Number.isSafeInteger(scenarioMonthlyContributionMinor) || !Number.isSafeInteger(scenarioMonthlyExpenseMinor)) {
+            throw new RangeError('Scenario monthly contribution or expense exceeds the supported integer range.');
+          }
+          const scenarioProjection = projectSavingsGoal({
+            asOfDate: context.asOfDate,
+            targetDate: goal.targetDate,
+            targetAmountMinor: goal.targetAmountMinor,
+            initialAmountMinor: goal.initialAmountMinor,
+            monthlyContributionMinor: scenarioMonthlyContributionMinor,
+            currency: goal.currency,
+            monthlyIncomeMinor: goal.monthlyIncomeMinor,
+            monthlyExpenseMinor: scenarioMonthlyExpenseMinor,
+            commitments: context.commitments,
+          });
+          const currentRequired = goal.projection!.requiredMonthlyContributionMinor;
+          const gapBefore = currentRequired === null ? null : Math.max(0, currentRequired - goal.monthlyContributionMinor);
+          const gapAfter = currentRequired === null ? null : Math.max(0, currentRequired - scenarioMonthlyContributionMinor);
+          return {
+            goalId: goal.id, goalName: goal.name, targetDate: goal.targetDate, currency: goal.currency,
+            baselineMonthlyContributionMinor: goal.monthlyContributionMinor,
+            scenarioMonthlyContributionMinor,
+            estimatedMonthlySavingsAllocatedMinor,
+            requiredMonthlyContributionMinor: currentRequired,
+            monthlyContributionGapBeforeMinor: gapBefore,
+            monthlyContributionGapAfterMinor: gapAfter,
+            baselineProjectedBalanceMinor: goal.projection!.projectedBalanceMinor,
+            scenarioProjectedBalanceMinor: scenarioProjection.projectedBalanceMinor,
+            projectedBalanceIncreaseMinor: scenarioProjection.projectedBalanceMinor - goal.projection!.projectedBalanceMinor,
+            baselineProjectedProgressPercent: goal.projection!.projectedProgressPercent,
+            scenarioProjectedProgressPercent: scenarioProjection.projectedProgressPercent,
+            baselineEstimatedCompletionDate: goal.projection!.estimatedCompletionDate,
+            scenarioEstimatedCompletionDate: scenarioProjection.estimatedCompletionDate,
+            baselineAchievableUnderCashFlow: goal.projection!.achievableUnderCashFlow,
+            scenarioAchievableUnderCashFlow: scenarioProjection.achievableUnderCashFlow,
+            assumptions: [
+              ...scenarioProjection.assumptions,
+              'El ahorro simulado reduce el gasto mensual supuesto y se destina íntegramente a incrementar la aportación mensual de este objetivo; el usuario no ha reservado ni transferido dinero.',
+            ],
+            warnings: [
+              ...scenarioProjection.warnings,
+              ...(estimatedMonthlySavingsAllocatedMinor < simulation.estimatedMonthlySavingsMinor
+                ? ['El ahorro simulado supera el gasto mensual configurado para este objetivo; el impacto se limita al gasto disponible y no asigna el excedente.']
+                : []),
+            ],
+          };
+        });
+      return {
+        data: {
+          baseline: context.baseline, simulation, goalImpacts, goal: context.goal,
+          accountScope: context.accountScope, warnings: context.warnings,
+          comparison: {
+            baselineMonthlySavingsMinor: context.baseline.monthlySavingsMinor,
+            scenarioMonthlySavingsMinor: simulation.projectedMonthlySavingsMinor,
+            improvementMonthlyMinor: simulation.estimatedMonthlySavingsMinor,
+            referenceStartDate: context.baseline.startDate,
+            referenceEndDate: context.baseline.endDate,
+          },
+        },
+      };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.post('/api/v1/budget-improvements/scenarios', async (request, reply) => {
+    try {
+      const parsed = BudgetImprovementScenarioRequestSchema.parse(request.body);
+      const context = await loadBudgetImprovementContext(parsed.periodMonths);
+      const simulation = simulateBudgetImprovement(context.baseline, context.corePreferences, parsed.reductions);
+      const scenario = {
+        id: randomUUID(), name: parsed.name, startDate: context.baseline.startDate, endDate: context.baseline.endDate,
+        currency: context.currency, accountScopeSignature: context.accountScopeSignature, reductions: parsed.reductions,
+        estimatedMonthlySavingsMinor: simulation.estimatedMonthlySavingsMinor,
+        estimatedAnnualSavingsMinor: simulation.estimatedAnnualSavingsMinor, createdAt: new Date().toISOString(),
+      };
+      const saved = await updateFinancialActionState(config.actualDataDir, (current) => ({
+        state: {
+          ...current,
+          budgetImprovements: { ...current.budgetImprovements, scenarios: [scenario, ...current.budgetImprovements.scenarios].slice(0, 100) },
+        },
+        result: scenario,
+      }));
+      return reply.code(201).send({ data: saved });
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.patch('/api/v1/budget-improvements/decisions', async (request, reply) => {
+    try {
+      const parsed = BudgetImprovementDecisionRequestSchema.parse(request.body);
+      const context = await loadBudgetImprovementContext(parsed.periodMonths);
+      if (!context.proposals.some((proposal) => proposal.id === parsed.proposalId)) {
+        return reply.code(409).send({ error: { code: 'STALE_PROPOSAL', message: 'The proposal no longer matches the current evidence. Refresh the analysis before recording a decision.' } });
+      }
+      const decision = { proposalId: parsed.proposalId, status: parsed.status, updatedAt: new Date().toISOString() };
+      const saved = await updateFinancialActionState(config.actualDataDir, (current) => ({
+        state: {
+          ...current,
+          budgetImprovements: {
+            ...current.budgetImprovements,
+            decisions: [decision, ...current.budgetImprovements.decisions.filter((item) => item.proposalId !== parsed.proposalId)].slice(0, 2_000),
+          },
+        },
+        result: decision,
+      }));
+      return { data: saved };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.delete('/api/v1/budget-improvements/scenarios/:id', async (request, reply) => {
+    try {
+      const params = z.object({ id: z.string().uuid() }).strict().parse(request.params);
+      const deleted = await updateFinancialActionState(config.actualDataDir, (current) => ({
+        state: {
+          ...current,
+          budgetImprovements: {
+            ...current.budgetImprovements,
+            scenarios: current.budgetImprovements.scenarios.filter((scenario) => scenario.id !== params.id),
+          },
+        },
+        result: current.budgetImprovements.scenarios.some((scenario) => scenario.id === params.id),
+      }));
+      return { data: { deleted } };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.get('/api/v1/budget-alerts', async (request, reply) => {
+    try {
+      const query = z.object({ month: PlanningMonthSchema.optional() }).strict().parse(request.query);
+      const asOfDate = civilDateInTimeZone('UTC');
+      const month = query.month ?? asOfDate.slice(0, 7);
+      const budgetRepository = repository as BudgetRepository & {
+        getBudgetMonth?: (value: string) => Promise<ActualBudgetMonthRecord>;
+        getBudgetAllocations?: (value: string) => Promise<readonly { readonly categoryId: string; readonly amountMinor: number }[]>;
+      };
+      if (typeof budgetRepository.getBudgetMonth !== 'function') {
+        return reply.code(503).send({ error: { code: 'BUDGET_QUERY_NOT_SUPPORTED', message: 'The configured local adapter does not support budget queries.' } });
+      }
+      const allocationSourceAvailable = typeof budgetRepository.getBudgetAllocations === 'function';
+      const [budget, categories, allocations, actionState] = await Promise.all([
+        budgetRepository.getBudgetMonth(month), repository.listCategories(),
+        allocationSourceAvailable ? budgetRepository.getBudgetAllocations!(month) : Promise.resolve(null),
+        readFinancialActionState(config.actualDataDir),
+      ]);
+      const categoriesById = new Map(categories.map((category) => [category.id, category]));
+      const allocationsByCategory = new Map((allocations ?? []).map((allocation) => [allocation.categoryId, allocation.amountMinor]));
+      const budgetCategories: BudgetAlertCategory[] = budget.categoryGroups.flatMap((group) =>
+        (group.categories ?? []).map((category) => {
+          const metadata = categoriesById.get(category.id);
+          const explicitAllocation = allocationsByCategory.get(category.id);
+          const budgetedMinor = allocationSourceAvailable
+            ? (explicitAllocation ?? 0)
+            : category.budgeted === undefined || category.budgeted === null ? null : category.budgeted;
+          const state: BudgetAlertCategory['state'] = allocationSourceAvailable
+            ? explicitAllocation === undefined ? 'unbudgeted' : explicitAllocation === 0 ? 'zero' : 'budgeted'
+            : category.budgeted === undefined ? 'unbudgeted' : category.budgeted === null ? 'unknown' : category.budgeted === 0 ? 'zero' : 'budgeted';
+          return {
+            categoryId: category.id,
+            categoryName: metadata?.name ?? category.name,
+            budgetedMinor,
+            spentMinor: category.spent === undefined || category.spent === null ? null : Math.abs(category.spent),
+            availableMinor: category.balance ?? null,
+            state,
+            hidden: category.hidden ?? group.hidden ?? false,
+          };
+        }),
+      ).filter((item) => !item.hidden);
+      const rules = actionState.budgetAlerts.rules;
+      const crossingAlerts = evaluateBudgetAlertRules(rules, budgetCategories, month);
+      const alerts = crossingAlerts.flatMap((alert) => {
+        const eventId = createHash('sha256').update([alert.ruleId, alert.categoryId, month].join('|')).digest('hex').slice(0, 32);
+        const decision = actionState.budgetAlerts.events.find((event) => event.id === eventId);
+        if (decision?.status === 'dismissed') return [];
+        if (decision?.status === 'snoozed' && decision.snoozedUntil && decision.snoozedUntil >= asOfDate) return [];
+        return [{ ...alert, eventId, status: 'active' as const, currency: config.budgetCurrency }];
+      });
+      return {
+        data: {
+          month, evaluatedAt: new Date().toISOString(), currency: config.budgetCurrency, rules, alerts,
+          categories: budgetCategories.filter((item) => !item.hidden),
+          warnings: [
+            'El presupuesto mensual de Actual se expone por categoría y no por cuenta; las alertas usan el mismo ámbito presupuestario global que la pantalla Presupuestos, sin inferir un reparto por cuentas.',
+            ...(allocationSourceAvailable ? [] : ['El adaptador no distingue de forma fiable una asignación explícita de cero de una asignación ausente; las reglas omiten esos estados desconocidos.']),
+            ...(budgetCategories.some((item) => item.state === 'unbudgeted' || item.state === 'unknown') ? ['Las categorías sin presupuesto explícito o con importe desconocido no generan alertas de consumo.'] : []),
+          ],
+        },
+      };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.put('/api/v1/budget-alerts/rules', async (request, reply) => {
+    try {
+      const parsed = BudgetAlertRulesRequestSchema.parse(request.body);
+      const categories = await repository.listCategories();
+      const expenseIds = new Set(categories.filter((category) => !category.isIncome).map((category) => category.id));
+      if (parsed.rules.some((rule) => !expenseIds.has(rule.categoryId))) {
+        return reply.code(400).send({ error: { code: 'INVALID_CATEGORY', message: 'Alert rules must target existing expense categories.' } });
+      }
+      const rules: BudgetAlertRule[] = parsed.rules.map((rule) => ({
+        id: rule.id ?? randomUUID(), categoryId: rule.categoryId, metric: rule.metric,
+        threshold: rule.threshold, enabled: rule.enabled,
+      }));
+      const saved = await updateFinancialActionState(config.actualDataDir, (current) => ({
+        state: {
+          ...current,
+          budgetAlerts: {
+            rules,
+            events: current.budgetAlerts.events.filter((event) => {
+              const previous = current.budgetAlerts.rules.find((rule) => rule.id === event.ruleId);
+              const replacement = rules.find((rule) => rule.id === event.ruleId);
+              return Boolean(previous && replacement && previous.categoryId === replacement.categoryId && previous.metric === replacement.metric && previous.threshold === replacement.threshold && previous.enabled === replacement.enabled);
+            }),
+          },
+        },
+        result: rules,
+      }));
+      return { data: saved };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.patch('/api/v1/budget-alerts/events/:eventId', async (request, reply) => {
+    try {
+      const params = z.object({ eventId: z.string().regex(/^[a-f0-9]{32}$/) }).strict().parse(request.params);
+      const parsed = BudgetAlertEventDecisionSchema.parse(request.body);
+      const expectedId = createHash('sha256').update([parsed.ruleId, parsed.categoryId, parsed.month].join('|')).digest('hex').slice(0, 32);
+      if (expectedId !== params.eventId) return reply.code(400).send({ error: { code: 'INVALID_ALERT_EVENT', message: 'Alert event identity does not match its rule, category and period.' } });
+      const today = civilDateInTimeZone('UTC');
+      if (parsed.status === 'snoozed' && (!parsed.snoozedUntil || parsed.snoozedUntil <= today || parsed.snoozedUntil > addCivilDays(today, 90))) {
+        return reply.code(400).send({ error: { code: 'INVALID_SNOOZE', message: 'Snooze expiry must be between tomorrow and 90 days from today.' } });
+      }
+      const saved = await updateFinancialActionState(config.actualDataDir, (current) => {
+        if (!current.budgetAlerts.rules.some((rule) => rule.id === parsed.ruleId)) {
+          throw new Error('The alert rule no longer exists.');
+        }
+        const event = {
+          id: params.eventId, ruleId: parsed.ruleId, categoryId: parsed.categoryId,
+          month: parsed.month, status: parsed.status,
+          ...(parsed.snoozedUntil === undefined ? {} : { snoozedUntil: parsed.snoozedUntil }),
+          updatedAt: new Date().toISOString(),
+        };
+        return {
+          state: {
+            ...current,
+            budgetAlerts: {
+              ...current.budgetAlerts,
+              events: [event, ...current.budgetAlerts.events.filter((item) => item.id !== params.eventId)].slice(0, 2_000),
+            },
+          },
+          result: event,
+        };
+      });
+      return { data: saved };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
     }
   });
 

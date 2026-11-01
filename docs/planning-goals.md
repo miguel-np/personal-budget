@@ -41,7 +41,7 @@ Las cifras son estimaciones deterministas, no asesoramiento financiero ni garant
 
 ## Copias de seguridad
 
-**planning-data.json está excluido del backup cifrado actual de Actual.** scripts/actual-backup.ts empaqueta el directorio configurado por ACTUAL_SERVER_DATA_DIR (por defecto .local/actual-server-data), mientras que las preferencias y la planificación de esta aplicación se guardan en ACTUAL_DATA_DIR (por defecto .local/actual-api). Por tanto, que npm run backup:actual termine correctamente no implica que los objetivos se hayan respaldado. Si quieres conservarlos, incluye el fichero en un procedimiento local de copia separado, con protección equivalente de acceso y confidencialidad. No lo subas al repositorio ni a un servicio externo.
+**`planning-data.json` está incluido en el backup cifrado unificado** mediante la whitelist `APP_STATE_FILE_NAMES` de `scripts/backup-restore.ts`. Se respalda junto con el volumen de Actual y el resto de almacenes explícitos de Personal Budget. La copia sigue siendo local: conserva la clave de cifrado separada, verifica el resultado y realiza un ensayo de restauración en una instancia sintética antes de depender de ella. No subas el fichero local al repositorio ni a un servicio externo.
 
 ## Pruebas
 

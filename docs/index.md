@@ -16,6 +16,9 @@ Esta documentación describe el diseño objetivo de `personal-budget`, una aplic
 - [Planificación: recurrentes, sugerencias y previsiones](planning.md)
 - [Centro de inteligencia financiera](financial-intelligence.md)
 - [Objetivos de ahorro y compromisos futuros](planning-goals.md)
+- [Saldo estimado y flujo de caja](cash-flow.md)
+- [Propuestas de mejora presupuestaria](budget-improvements.md)
+- [Alertas presupuestarias](budget-alerts.md)
 
 - [Arquitectura](architecture.md)
 - [Registro de movimientos e importaciones](transactions-and-imports.md)
