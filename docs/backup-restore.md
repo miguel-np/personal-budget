@@ -1,37 +1,87 @@
-# Copias de seguridad cifradas y restauración
+# Copias de seguridad unificadas y restauración
 
-Los datos de Actual contienen información financiera personal. Los comandos trabajan sobre el volumen persistente de Compose (.local/actual-server-data por defecto), no sobre el directorio de trabajo de @actual-app/api.
+Los datos financieros de Actual Budget y la información de planificación de Personal Budget son estado persistente crítico. El comando npm run backup:actual crea una única copia cifrada que contiene ambos conjuntos y un manifiesto versionado. No realiza una sincronización en la nube.
 
-## Crear una copia consistente y cifrada
+## Qué se incluye
 
-1. Verifica que Actual funciona y que hay espacio disponible.
-2. Desde la raíz del repositorio en WSL2, ejecuta npm run backup:actual.
-3. El script valida o genera una clave aleatoria de 32 bytes antes de detener Actual. Después detiene el servicio, empaqueta únicamente el directorio de datos configurado, comprueba las rutas y tipos del archivo, cifra con AES-256-GCM, guarda el archivo cifrado con permisos restrictivos, escribe un SHA-256 y vuelve a iniciar Actual aunque falle la copia.
-4. Las copias se guardan como .local/backups/actual-server-<fecha>.tar.gz.enc, con un sidecar .sha256. El sidecar detecta corrupción previa a la desencriptación; la etiqueta de autenticación GCM verifica que el contenido no haya sido alterado y que la clave sea correcta.
-5. La clave se guarda por separado como .local/backup-key.bin por defecto. Puede cambiarse con BACKUP_ENCRYPTION_KEY_FILE a una ruta absoluta, por ejemplo una ubicación protegida fuera del directorio del proyecto. La clave nunca se incluye en el archivo ni se imprime en stdout, argumentos de proceso o logs.
+El archivo cifrado contiene esta estructura lógica:
 
-La clave se genera en el primer backup y es irreemplazable para las copias creadas con ella. Antes de depender del backup, copia la clave a un gestor de contraseñas o soporte seguro independiente y comprueba que puedes recuperarla. Perder la clave implica perder acceso a todos los backups cifrados con ella. No guardes la única copia de la clave junto al único archivo de backup.
+- actual-server-data/: volumen persistente completo del servidor Actual Budget (ACTUAL_SERVER_DATA_DIR).
+- personal-budget-state/: únicamente los almacenes JSON que pertenecen a Personal Budget y que están inventariados expresamente en el manifiesto.
+- backup-manifest.json: formato, versión, fecha de creación, inventario de los ficheros propios y SHA-256 por fichero.
 
-BACKUP_RETENTION_DAYS controla la retención (1–3650 días; por defecto 30). ACTUAL_SERVER_DATA_DIR, BACKUP_DIR y BACKUP_ENCRYPTION_KEY_FILE admiten rutas relativas a la raíz del proyecto o absolutas. Protege la carpeta de copias y la clave con permisos del sistema operativo. No subas datos, backups ni claves a Git o CI.
+La whitelist de estado de Personal Budget es:
+
+| Archivo | Contenido recuperado |
+|---|---|
+| app-preferences.json | Tema e idioma |
+| account-scope-preferences.json | Selección de cuentas |
+| currency-preferences.json | Divisa visible, excepciones por cuenta y tipos de cambio |
+| financial-intelligence-state.json | Decisiones/metadatos de revisión de hallazgos |
+| planning-data.json | Objetivos de ahorro y compromisos |
+| periodic-reviews.json | Historial y estado de revisiones periódicas (cuando está disponible) |
+
+Los archivos ausentes se registran como ausentes: no se inventa estado durante la restauración. El almacén periodic-reviews.json se contempla desde el inicio para que la consolidación no vuelva a dejar sin protección la funcionalidad de #72.
+
+## Qué se excluye deliberadamente
+
+- .env, contraseñas, tokens, claves de cifrado y otros secretos.
+- La clave de backup, que se guarda separada del archivo cifrado.
+- El contenido no inventariado de ACTUAL_DATA_DIR que pertenece al espacio de trabajo/caché de @actual-app/api; no se copia indiscriminadamente ese directorio.
+- Importaciones temporales, extractos intermedios, logs, node_modules, cachés, imágenes Docker y modelos locales de Ollama.
+- Datos externos a este checkout que no estén en el volumen persistente del servidor Actual.
+
+La exclusión de los ficheros no inventariados evita incorporar accidentalmente credenciales, cachés o datos internos del cliente Actual. Si una nueva funcionalidad añade un almacén persistente de Personal Budget, debe añadirse a APP_STATE_FILE_NAMES, a la validación/fixture de backup y a este inventario antes de considerarla recuperable.
+
+## Crear una copia consistente
+
+1. Cierra Personal Budget con Ctrl+C (npm run start:local, npm run dev:api o el proceso que esté utilizando el puerto local de la API). El comando de backup comprueba que APP_HOST:APP_PORT no acepta conexiones y falla antes de modificar nada si la API sigue activa.
+2. Comprueba que Docker/Actual está disponible y que hay espacio.
+3. Ejecuta desde la raíz del repositorio:
+
+   ~~~bash
+   npm run backup:actual
+   ~~~
+
+4. El script detiene el servicio actual, copia el volumen y los seis almacenes JSON permitidos, crea el manifiesto, empaqueta y valida rutas/tipos, cifra el paquete con AES-256-GCM y escribe un checksum SHA-256. Después vuelve a iniciar Actual y comprueba que responde.
+5. El archivo se guarda en .local/backups/personal-budget-<fecha>.tar.gz.enc, acompañado de .sha256.
+
+ACTUAL_SERVER_DATA_DIR controla la ruta montada por Compose y la ruta leída por el backup; ambas usan la misma variable. ACTUAL_DATA_DIR identifica el directorio de trabajo de la API y sus almacenes propios. BACKUP_DIR, BACKUP_ENCRYPTION_KEY_FILE y BACKUP_RETENTION_DAYS controlan el destino, la clave y la retención. Las rutas relativas se resuelven desde la raíz del repositorio.
+
+El backup exige que el servidor API esté parado para no competir con las escrituras atómicas. No uses el directorio .local/actual-api como sustituto del volumen de Actual: contienen datos diferentes y ambos quedan cubiertos solo por la copia unificada.
+
+## Clave y protección
+
+La clave aleatoria de 32 bytes se crea en la primera copia y se guarda separada del archivo, en .local/backup-key.bin por defecto. Puede cambiarse con BACKUP_ENCRYPTION_KEY_FILE; es preferible una ruta protegida fuera del checkout. El archivo no se incluye en el backup ni se imprime en argumentos o logs. Conserva una copia independiente de la clave en un gestor de contraseñas o soporte seguro y comprueba que puedes recuperarla.
+
+Perder la clave impide descifrar todas las copias creadas con ella. No la reemplaces por una nueva esperando recuperar archivos antiguos. La rotación requiere conservar la clave antigua hasta que sus backups hayan caducado o se hayan migrado y verificado con la nueva clave.
+
+Los permisos locales restringen el acceso a la clave, al paquete y a los archivos temporales. SHA-256 detecta corrupción del archivo cifrado; AES-256-GCM autentica el contenido y detecta una clave incorrecta o manipulación.
 
 ## Restaurar
 
-    npm run restore:actual -- .local/backups/actual-server-YYYYMMDDTHHMMSSZ.tar.gz.enc --confirm-data-restore
+La restauración sustituye datos y requiere confirmación explícita. Cierra Personal Budget antes de ejecutar:
 
-Antes de parar Actual, el script verifica el checksum, descifra a una carpeta temporal con permisos restringidos, valida el formato del archivo y rechaza rutas inseguras, enlaces y tipos especiales. Solo entonces detiene el servicio, extrae en staging y conserva el directorio actual como copia pre-restore. Si el arranque de la nueva instancia falla, intenta recuperar el directorio anterior. La carpeta temporal se elimina en ambos casos.
+~~~bash
+npm run restore:actual -- .local/backups/personal-budget-YYYYMMDDTHHMMSSZ.tar.gz.enc --confirm-data-restore
+~~~
 
-Clave incorrecta, archivo truncado, contenido alterado o copia sin una etiqueta de autenticación válida provocan un fallo antes de la restauración; nunca se intenta abrir la copia parcialmente descifrada. Las operaciones de restauración sustituyen datos y deben tratarse como destructivas; el comando exige --confirm-data-restore. Antes de confirmar, acepta explícitamente que se perderán los cambios hechos después de la copia. No borres la copia pre-restore hasta validar la instancia.
+Antes de parar Actual o sustituir cualquier fichero, el script:
 
-## Integridad, cifrado y rotación de claves
+1. Comprueba el checksum y la etiqueta de autenticación AES-GCM.
+2. Descifra en un directorio temporal privado.
+3. Rechaza miembros con rutas inseguras, enlaces o tipos especiales.
+4. Rechaza manifiestos ausentes, malformados o con una versión no soportada.
+5. Comprueba que los archivos restaurables coinciden exactamente con el manifiesto (nombre, tamaño y SHA-256) y que contienen JSON válido.
 
-- SHA-256 detecta corrupción accidental de los bytes del archivo cifrado, pero no autentica por sí mismo el contenido si alguien puede sustituir tanto el archivo como su checksum.
-- AES-256-GCM cifra y autentica el contenido; una clave errónea o cualquier modificación no se acepta como archivo válido.
-- Los permisos limitan el acceso local al archivo y a la clave, pero no sustituyen el cifrado.
-- Rotación: conserva la clave antigua hasta que todas las copias que la usan hayan caducado o se hayan migrado. Para rotar, crea primero una nueva clave fuera del repositorio, restaura una copia válida en una instancia aislada y genera con la nueva clave un backup cifrado; verifica el nuevo backup antes de retirar copias antiguas. No reemplaces la clave activa y borres la anterior sin verificar la migración.
-- Pérdida de clave: no hay recuperación criptográfica de una clave perdida. Restaura la clave desde su copia segura independiente; no se debe generar una clave nueva intentando restaurar un archivo antiguo.
+Después detiene Actual, conserva el directorio de datos anterior y una copia separada de los almacenes JSON existentes, instala el volumen y los almacenes del backup y vuelve a iniciar Actual. Si el servicio no arranca, el procedimiento intenta recuperar el volumen y los almacenes anteriores y reinicia el servicio con el estado previo. Las copias *.pre-restore-* se conservan para inspección; no las borres hasta comprobar la restauración.
 
-Prueba la restauración en una instancia aislada con datos sintéticos antes de usar backups personales. La verificación criptográfica del archivo no demuestra por sí sola la integridad semántica del presupuesto restaurado.
+La API de Personal Budget debe permanecer detenida hasta que termine la restauración. No se sobrescribe el directorio de trabajo completo de @actual-app/api: solo se reemplazan los almacenes explícitos de la whitelist, mientras que los datos del servidor Actual se restauran desde su propio volumen.
 
-## Ensayo de restauración registrado
+## Validación automatizada y límites
 
-El ensayo sintético original del 25-oct-2026 validó la restauración del archivo sin cifrar (RESTORE_OK). Ese ensayo no prueba el nuevo formato cifrado. Antes de cerrar la verificación de despliegue debe ejecutarse el ensayo actualizado en una instancia aislada: inventario previo, backup cifrado, eliminación de la instancia desechable, restore con la clave original y comparación de cuentas, categorías, movimientos, IDs, fechas y saldos. CI valida el cifrado y autenticación con archivos sintéticos, pero no sustituye esa prueba live con la versión fijada de Actual Budget.
+La aceptación de CI utiliza un servidor Actual fijado a una versión concreta y un presupuesto sintético. Crea los seis almacenes, genera la copia cifrada, comprueba que una clave incorrecta falla antes de modificar el estado activo, elimina los datos sintéticos y restaura el paquete completo. Después compara el inventario financiero sintético de Actual y el contenido exacto de los seis almacenes JSON.
+
+Esta comprobación automatizada no equivale a una restauración manual de un backup personal ni acredita que se haya ejecutado el flujo dentro de una distribución WSL2 concreta. Antes de depender del sistema en el entorno de uso, conserva la clave por separado y ejecuta una restauración de ensayo en una instancia aislada con datos sintéticos.
+
+La prueba npm run test:backup:acceptance -- roundtrip es destructiva para .local/actual-server-data y los almacenes inventariados. Solo debe ejecutarse en el runner de CI o en un checkout desechable con un servidor Actual sintético; nunca en el directorio con el presupuesto personal.
