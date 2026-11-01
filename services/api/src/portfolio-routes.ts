@@ -32,7 +32,7 @@ const AssetInputSchema = z.object({
   includeInNetWorth: z.boolean().default(true),
   actualAccountId: z.string().trim().min(1).max(128).optional(),
 }).strict();
-const AssetPatchSchema = AssetInputSchema.partial().strict();
+const AssetPatchSchema = AssetInputSchema.partial().extend({ actualAccountId: z.string().trim().min(1).max(128).nullable().optional() }).strict();
 const ValuationInputSchema = z.object({
   valuedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   amountMinor: z.number().int().refine(Number.isSafeInteger).nonnegative().optional(),
@@ -58,7 +58,7 @@ const LinkListSchema = z.array(z.object({
   accountId: z.string().trim().min(1).max(128),
   transactionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 }).strict()).max(100);
-const ExportDatasetSchema = z.enum(['planning', 'preferences', 'financial-actions', 'periodic-reviews', 'wealth', 'documents']);
+const ExportDatasetSchema = z.enum(['planning', 'preferences', 'financial-actions', 'periodic-reviews', 'wealth', 'documents', 'budgets']);
 
 type Classification = 'asset' | 'liability';
 interface Dependencies { readonly config: AppConfig; readonly repository: BudgetRepository; }
@@ -129,8 +129,8 @@ export async function registerPortfolioRoutes(app: FastifyInstance, dependencies
       const result = await updateWealthData(directory, (current) => {
         const existing = current.assets.find((item) => item.id === id);
         if (!existing) return { data: current, result: null };
-        const actualAccountId = patch.actualAccountId === undefined ? existing.actualAccountId : patch.actualAccountId;
-        const includeInNetWorth = actualAccountId ? false : (patch.includeInNetWorth ?? existing.includeInNetWorth);
+        const actualAccountId = patch.actualAccountId === undefined ? existing.actualAccountId : (patch.actualAccountId ?? undefined);
+        const includeInNetWorth = actualAccountId ? false : (patch.actualAccountId === null ? (patch.includeInNetWorth ?? true) : (patch.includeInNetWorth ?? existing.includeInNetWorth));
         if (actualAccountId && current.assets.some((item) => item.id !== id && item.actualAccountId === actualAccountId)) {
           throw new RangeError('La cuenta de Actual ya está vinculada a otro elemento patrimonial.');
         }
@@ -249,7 +249,8 @@ export async function registerPortfolioRoutes(app: FastifyInstance, dependencies
       const accountClassifications = new Map(wealth.accountClassifications.map((item) => [item.accountId, item.classification]));
       const includedAccounts = resolvedScope.accounts.filter((account) => wealth.settings.includeOffBudgetAccounts || !account.offBudget);
       const warnings: string[] = [];
-      let complete = includedAccounts.length > 0;
+      const externalItems = wealth.assets.filter((item) => item.status === 'active');
+      let complete = includedAccounts.length > 0 || externalItems.some((item) => item.includeInNetWorth && !item.actualAccountId);
       let totalMinor = 0;
       let actualMinor = 0;
       let externalMinor = 0;
@@ -270,7 +271,6 @@ export async function registerPortfolioRoutes(app: FastifyInstance, dependencies
         if (classification === 'liability') actualLiabilitiesMinor += Math.abs(conversion.amountMinor);
         else actualAssetsMinor += conversion.amountMinor;
       }
-      const externalItems = wealth.assets.filter((item) => item.status === 'active');
       const staleAssets: string[] = [];
       const missingValuations: string[] = [];
       const excludedAsDuplicates: string[] = [];
@@ -422,10 +422,11 @@ export async function registerPortfolioRoutes(app: FastifyInstance, dependencies
     try {
       const query = z.object({
         datasets: z.string().min(1).max(300),
+        budgetMonths: z.string().max(100).optional(),
         includeDocumentFiles: z.enum(['true', 'false']).default('false'),
       }).strict().parse(request.query);
       const names = [...new Set(query.datasets.split(',').map((item) => item.trim()).filter(Boolean))];
-      const datasets = z.array(ExportDatasetSchema).min(1).max(6).parse(names);
+      const datasets = z.array(ExportDatasetSchema).min(1).max(7).parse(names);
       const data: Record<string, unknown> = {};
       const manifest: Array<{ id: string; schemaVersion: number; source: string; recordCount: number; included: boolean; limitations: string[] }> = [];
       const add = (id: string, schemaVersion: number, source: string, value: unknown, recordCount: number, limitations: string[] = []) => {
@@ -451,6 +452,53 @@ export async function registerPortfolioRoutes(app: FastifyInstance, dependencies
         } else if (dataset === 'wealth') {
           const value = await readWealthData(directory);
           add(dataset, 1, 'personal-budget-manual-valuations', value, value.assets.length + value.accountClassifications.length);
+        } else if (dataset === 'budgets') {
+          const months = query.budgetMonths?.split(',').map((item) => item.trim()).filter(Boolean) ?? [today().slice(0, 7)];
+          const requestedMonths = [...new Set(z.array(z.string().regex(/^\\d{4}-(0[1-9]|1[0-2])$/)).min(1).max(12).parse(months))];
+          const budgetRepository = repository as BudgetRepository & {
+            getBudgetMonth?: (month: string) => Promise<{ readonly month: string; readonly totalBudgeted?: number | null; readonly totalSpent?: number | null; readonly totalBalance?: number | null; readonly totalIncome?: number | null; readonly incomeAvailable?: number | null; readonly toBudget?: number | null; readonly categoryGroups: readonly { readonly id: string; readonly name: string; readonly is_income?: boolean; readonly categories?: readonly { readonly id: string; readonly name: string; readonly budgeted?: number | null; readonly spent?: number | null; readonly balance?: number | null; readonly hidden?: boolean; readonly carryover?: boolean | null }[] }[] }>;
+            getBudgetAllocations?: (month: string) => Promise<readonly { readonly categoryId: string; readonly amountMinor: number }[]>;
+          };
+          if (typeof budgetRepository.getBudgetMonth !== 'function') {
+            manifest.push({ id: dataset, schemaVersion: 1, source: 'actual-budget-api', recordCount: 0, included: false, limitations: ['El adaptador conectado no expone la consulta mensual de presupuestos; no se ha generado un conjunto vacío engañoso.'] });
+            continue;
+          }
+          const categories = await repository.listCategories();
+          const categoriesById = new Map(categories.map((category) => [category.id, category]));
+          const budgetSnapshots = [];
+          let recordCount = 0;
+          let explicitAllocationAvailable = true;
+          for (const month of requestedMonths) {
+            const [budget, allocations] = await Promise.all([
+              budgetRepository.getBudgetMonth(month),
+              typeof budgetRepository.getBudgetAllocations === 'function' ? budgetRepository.getBudgetAllocations(month) : Promise.resolve(null),
+            ]);
+            if (allocations === null) explicitAllocationAvailable = false;
+            const allocationByCategory = new Map((allocations ?? []).map((item) => [item.categoryId, item.amountMinor]));
+            const groups = budget.categoryGroups.map((group) => ({
+              id: group.id, name: group.name, isIncome: group.is_income ?? false,
+              categories: (group.categories ?? []).map((category) => {
+                recordCount += 1;
+                const explicit = allocationByCategory.get(category.id);
+                const metadata = categoriesById.get(category.id);
+                return {
+                  id: category.id, name: metadata?.name ?? category.name,
+                  budgetedMinor: allocations !== null ? (explicit ?? 0) : (category.budgeted ?? null),
+                  spentMinor: category.spent === undefined || category.spent === null ? null : Math.abs(category.spent),
+                  availableMinor: category.balance ?? null,
+                  hidden: category.hidden ?? group.hidden ?? false,
+                  categoryGroup: group.name, state: allocations !== null ? (explicit === undefined ? 'unbudgeted' : explicit === 0 ? 'zero' : 'budgeted') : 'allocation-detail-unavailable',
+                };
+              }),
+            }));
+            budgetSnapshots.push({
+              month: budget.month,
+              totals: { totalBudgetedMinor: budget.totalBudgeted ?? null, totalSpentMinor: budget.totalSpent === undefined || budget.totalSpent === null ? null : Math.abs(budget.totalSpent), totalBalanceMinor: budget.totalBalance ?? null, totalIncomeMinor: budget.totalIncome ?? null, incomeAvailableMinor: budget.incomeAvailable ?? null, toBudgetMinor: budget.toBudget ?? null },
+              groups,
+              source: 'actual-budget-api',
+            });
+          }
+          add(dataset, 1, 'actual-budget-api', { months: budgetSnapshots }, recordCount, explicitAllocationAvailable ? [] : ['El adaptador no expone asignaciones de presupuesto explícitas; no se puede distinguir un cero guardado de una categoría sin asignación.']);
         } else if (dataset === 'documents') {
           const index = await readDocumentIndex(directory);
           const files: Array<{ documentId: string; fileName: string; mediaType: string; base64: string }> = [];
