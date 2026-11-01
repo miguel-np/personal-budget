@@ -902,7 +902,7 @@ test('budget improvement preferences, proposals, combined simulation and saved s
     goal: 'increase_monthly_margin', decisions: [], scenarios: savedScenarios, warnings: [],
   });
 
-  await page.route('**/api/v1/budget-improvements*', async (route) => {
+  await page.route('**/api/v1/budget-improvements**', async (route) => {
     const requestUrl = new URL(route.request().url());
     if (route.request().method() === 'GET') {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: analysis() }) });
@@ -965,7 +965,7 @@ test('budget improvement preferences, proposals, combined simulation and saved s
 test('budget alerts can create, edit, trigger, snooze and deduplicate an in-app rule', async ({ page, request }) => {
   let rules: { id: string; categoryId: string; metric: string; threshold: number; enabled: boolean }[] = [];
   let snoozed = false;
-  await page.route('**/api/v1/budget-alerts*', async (route) => {
+  await page.route('**/api/v1/budget-alerts**', async (route) => {
     const url = new URL(route.request().url());
     const month = url.searchParams.get('month') ?? '2026-11';
     if (route.request().method() === 'GET') {

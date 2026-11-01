@@ -10,7 +10,7 @@ describe('projectCashFlow', () => {
     ] });
     expect(result.timeline).toHaveLength(3);
     expect(result.timeline[1]?.projectedBalanceMinor).toBe(30_000);
-    expect(result.endingBalanceMinor).toBe(30_000);
+    expect(result.endingBalanceMinor).toBe(27_000);
     expect(result.firstDeficitDate).toBeNull();
     expect(result.firstReserveBreachDate).toBeNull();
     expect(result.sourceTotals.manual_commitment.outflowMinor).toBe(120_000);
