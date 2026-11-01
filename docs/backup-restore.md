@@ -1,14 +1,14 @@
 # Copias de seguridad unificadas y restauración
 
-Los datos financieros de Actual Budget y la información de planificación de Personal Budget son estado persistente crítico. El comando npm run backup:actual crea una única copia cifrada que contiene ambos conjuntos y un manifiesto versionado. No realiza una sincronización en la nube.
+Los datos financieros de Actual Budget y el estado propio de Personal Budget (planificación, decisiones, patrimonio manual y justificantes) son persistencia crítica. El comando npm run backup:actual crea una única copia cifrada que contiene ambos conjuntos y un manifiesto versionado. No realiza una sincronización en la nube.
 
 ## Qué se incluye
 
 El archivo cifrado contiene esta estructura lógica:
 
 - actual-server-data/: volumen persistente completo del servidor Actual Budget (ACTUAL_SERVER_DATA_DIR).
-- personal-budget-state/: únicamente los almacenes JSON que pertenecen a Personal Budget y que están inventariados expresamente en el manifiesto.
-- backup-manifest.json: formato, versión, fecha de creación, inventario de los ficheros propios y SHA-256 por fichero.
+- personal-budget-state/: almacenes JSON propios, más `documents/` con los binarios PDF/JPEG/PNG privados inventariados.
+- backup-manifest.json: formato, versión, fecha de creación, inventario JSON y binario, tamaños y SHA-256 por fichero.
 
 La whitelist de estado de Personal Budget es:
 
@@ -20,9 +20,13 @@ La whitelist de estado de Personal Budget es:
 | financial-intelligence-state.json | Decisiones/metadatos de revisión de hallazgos |
 | financial-actions.json | Reglas/estado de alertas, preferencias de categorías, decisiones y escenarios de mejora presupuestaria |
 | planning-data.json | Objetivos de ahorro y compromisos |
-| periodic-reviews.json | Historial y estado de revisiones periódicas (cuando está disponible) |
+| periodic-reviews.json | Historial y estado de revisiones periódicas |
+| wealth-data.json | Clasificaciones patrimoniales de cuentas Actual, activos/pasivos externos, reglas de vigencia y snapshots de valoración |
+| documents-index.json | Metadata versionada, estado de revisión y vínculos de justificantes locales |
 
-Los archivos ausentes se registran como ausentes: no se inventa estado durante la restauración. El almacén periodic-reviews.json se contempla desde el inicio para que la consolidación no vuelva a dejar sin protección la funcionalidad de #72.
+Los binarios se guardan en `personal-budget-state/documents/<uuid>.(pdf|jpg|png)`. El nombre es generado por el servidor; el índice, tamaño, firma real y SHA-256 deben coincidir. El backup no sigue rutas suministradas por usuarios.
+
+Los archivos ausentes se registran como ausentes: no se inventa estado durante la restauración. La whitelist contiene nueve almacenes JSON. Los documentos se respaldan en una carpeta separada del índice para mantener el inventario binario explícito. Los ficheros que no estén referenciados por el índice provocan un fallo cerrado del backup, en lugar de quedar excluidos silenciosamente.
 
 ## Qué se excluye deliberadamente
 
@@ -44,7 +48,7 @@ La exclusión de los ficheros no inventariados evita incorporar accidentalmente 
    npm run backup:actual
    ~~~
 
-4. El script detiene el servicio actual, copia el volumen y los siete almacenes JSON permitidos, crea el manifiesto, empaqueta y valida rutas/tipos, cifra el paquete con AES-256-GCM y escribe un checksum SHA-256. Después vuelve a iniciar Actual y comprueba que responde.
+4. El script detiene el servicio actual, copia el volumen, los nueve almacenes JSON permitidos y el inventario de documentos binarios, crea el manifiesto, empaqueta y valida rutas/tipos, cifra el paquete con AES-256-GCM y escribe un checksum SHA-256. Después vuelve a iniciar Actual y comprueba que responde.
 5. El archivo se guarda en .local/backups/personal-budget-<fecha>.tar.gz.enc, acompañado de .sha256.
 
 ACTUAL_SERVER_DATA_DIR controla la ruta montada por Compose y la ruta leída por el backup; ambas usan la misma variable. ACTUAL_DATA_DIR identifica el directorio de trabajo de la API y sus almacenes propios. BACKUP_DIR, BACKUP_ENCRYPTION_KEY_FILE y BACKUP_RETENTION_DAYS controlan el destino, la clave y la retención. Las rutas relativas se resuelven desde la raíz del repositorio.
@@ -75,13 +79,13 @@ Antes de parar Actual o sustituir cualquier fichero, el script:
 4. Rechaza manifiestos ausentes, malformados o con una versión no soportada.
 5. Comprueba que los archivos restaurables coinciden exactamente con el manifiesto (nombre, tamaño y SHA-256) y que contienen JSON válido.
 
-Después detiene Actual, conserva el directorio de datos anterior y una copia separada de los almacenes JSON existentes, instala el volumen y los almacenes del backup y vuelve a iniciar Actual. Si el servicio no arranca, el procedimiento intenta recuperar el volumen y los almacenes anteriores y reinicia el servicio con el estado previo. Las copias *.pre-restore-* se conservan para inspección; no las borres hasta comprobar la restauración.
+Después detiene Actual, conserva el directorio de datos anterior y una copia separada de los almacenes JSON y la carpeta documental existentes, instala el volumen, los almacenes y los binarios documentales del backup y vuelve a iniciar Actual. Si el servicio no arranca, el procedimiento intenta recuperar el volumen y los almacenes anteriores y reinicia el servicio con el estado previo. Las copias *.pre-restore-* se conservan para inspección; no las borres hasta comprobar la restauración.
 
 La API de Personal Budget debe permanecer detenida hasta que termine la restauración. No se sobrescribe el directorio de trabajo completo de @actual-app/api: solo se reemplazan los almacenes explícitos de la whitelist, mientras que los datos del servidor Actual se restauran desde su propio volumen.
 
 ## Validación automatizada y límites
 
-La aceptación de CI utiliza un servidor Actual fijado a una versión concreta y un presupuesto sintético. Crea los siete almacenes, genera la copia cifrada, comprueba que una clave incorrecta falla antes de modificar el estado activo, elimina los datos sintéticos y restaura el paquete completo. Después compara el inventario financiero sintético de Actual y el contenido exacto de los siete almacenes JSON.
+La aceptación de CI utiliza un servidor Actual fijado a una versión concreta, un presupuesto sintético, nueve almacenes JSON, una valoración externa y un PDF ficticio. Genera la copia cifrada, comprueba que una clave incorrecta falla antes de modificar el estado activo, elimina los datos sintéticos y restaura el paquete completo. Después compara el inventario financiero de Actual, los bytes de los almacenes y la integridad/hash del justificante.
 
 Esta comprobación automatizada no equivale a una restauración manual de un backup personal ni acredita que se haya ejecutado el flujo dentro de una distribución WSL2 concreta. Antes de depender del sistema en el entorno de uso, conserva la clave por separado y ejecuta una restauración de ensayo en una instancia aislada con datos sintéticos.
 

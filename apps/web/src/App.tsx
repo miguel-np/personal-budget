@@ -15,6 +15,7 @@ const PeriodicReviewPanel = lazy(() => import('./PeriodicReviewPanel.js').then((
 const PlanningPanel = lazy(() => import('./PlanningPanel.js').then((module) => ({ default: module.PlanningPanel })));
 const ReportExportPanel = lazy(() => import('./ReportExportPanel.js').then((module) => ({ default: module.ReportExportPanel })));
 const SettingsCenter = lazy(() => import('./SettingsCenter.js').then((module) => ({ default: module.SettingsCenter })));
+const WealthDocumentsPanel = lazy(() => import('./WealthDocumentsPanel.js').then((module) => ({ default: module.WealthDocumentsPanel })));
 
 type ConnectionState = 'checking' | 'connected' | 'unconfigured' | 'error';
 type PeriodMode = 'day' | 'month' | 'year' | 'custom';
@@ -31,6 +32,7 @@ interface Account {
   displayBalanceMinor?: number | null;
   displayCurrency?: string;
   balanceConversion?: { warning?: string };
+  classification?: 'asset' | 'liability' | null;
 }
 interface Category {
   id: string;
@@ -134,7 +136,8 @@ class ApiError extends Error {
 const NAV_ITEMS = [
   { href: '/', label: 'Resumen', icon: '◫' },
   { href: '/movements', label: 'Movimientos', icon: '↕' },
-  { href: '/accounts', label: 'Cuentas', icon: '€' }, 
+  { href: '/accounts', label: 'Cuentas', icon: '€' },
+  { href: '/patrimony', label: 'Patrimonio y documentos', icon: '◇' }, 
   { href: '/reports', label: 'Informes', icon: '▥' },
   { href: '/budgets', label: 'Presupuestos', icon: '◷' },
   { href: '/planning', label: 'Planificación', icon: '◎' },
@@ -867,6 +870,7 @@ export function App() {
             {route === '/intelligence' && <Suspense fallback={<LoadingState />}><FinancialIntelligencePanel key={period.startDate + ':' + period.endDate} startDate={period.startDate} endDate={period.endDate} refreshKey={refreshKey} onNavigate={(target) => navigateTo(target)} /></Suspense>}
             {route === '/review' && <Suspense fallback={<LoadingState />}><PeriodicReviewPanel onNavigate={(target) => navigateTo(target)} /></Suspense>}
             {route === '/goals' && <Suspense fallback={<LoadingState />}><GoalsPanel currency={currency} /></Suspense>}
+            {route === '/patrimony' && <Suspense fallback={<LoadingState />}><WealthDocumentsPanel accounts={accounts} currency={currency} /></Suspense>}
 
             {route === '/settings' && (
               <section className="content-section">
@@ -962,7 +966,7 @@ export function App() {
               </section>
             )}
 
-            {!['/', '/movements', '/accounts', '/reports', '/budgets', '/planning', '/intelligence', '/goals', '/assistant', '/settings'].includes(route) && (
+            {!['/', '/movements', '/accounts', '/patrimony', '/reports', '/budgets', '/planning', '/intelligence', '/goals', '/assistant', '/settings'].includes(route) && (
               <section className="content-section"><EmptyState title="Sección no encontrada" body="Utiliza la navegación principal para abrir una sección disponible." /><a className="button primary" href="/">Volver al resumen</a></section>
             )}
           </>

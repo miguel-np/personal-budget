@@ -26,3 +26,14 @@ El límite máximo para exportar movimientos a CSV/JSON/XLSX es de 10.000 regist
 Los archivos conservan por separado el importe nativo y el importe de análisis. El importe de análisis solo se incluye cuando la API proporciona una conversión válida. La exportación no inventa tipos de cambio y no rellena importes o conversiones desconocidas con cero. En XLSX, los campos suministrados como texto siempre se serializan como celdas de texto y nunca como fórmulas; los valores numéricos legítimos permanecen numéricos.
 
 Los filtros, periodos, ámbito de cuentas, divisa y fecha de generación se muestran en la previsualización o en el propio archivo cuando corresponda. Una exportación no es un respaldo restaurable ni sustituye al procedimiento de backup/restore de Personal Budget. Los PDF son documentos de lectura/impresión, no informes financieros certificados ni asesoramiento profesional.
+
+
+## Estado portable local
+
+La sección **Patrimonio y justificantes → Exportar estado local** genera un JSON humano versionado bajo el formato personal-budget-portable-export. El manifiesto identifica la versión de cada conjunto, procedencia, recuentos, divisa/ámbito y limitaciones.
+
+Los conjuntos se eligen expresamente: planificación, preferencias, decisiones/alertas, revisiones periódicas, patrimonio externo, justificantes y meses concretos de presupuestos de Actual cuando el adaptador lo permite. La metadata documental se incluye por defecto al seleccionar justificantes; los binarios requieren una casilla explícita y un máximo conjunto de 20 MiB.
+
+No se vuelve a exportar aquí el ledger de movimientos ni los informes que ya tienen CSV/JSON/XLSX propios. No se incluyen credenciales, claves, variables de entorno, logs ni rutas privadas. JSON no se trata como fórmula de hoja de cálculo; los exportadores CSV existentes siguen aplicando protección frente a inyección de fórmulas.
+
+Este snapshot no es importable ni restaurable. No sustituye al backup cifrado unificado, que incluye los almacenes versionados y los binarios locales verificados.

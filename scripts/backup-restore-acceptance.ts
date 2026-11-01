@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { chmod, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
@@ -7,6 +7,9 @@ import { fileURLToPath } from 'node:url';
 import { readAccountScope } from '../services/api/src/account-scope.js';
 import { readAppPreferences } from '../services/api/src/app-preferences.js';
 import { readFindingReviewState } from '../services/api/src/intelligence-store.js';
+import { readFinancialActionState } from '../services/api/src/financial-actions-store.js';
+import { readWealthData } from '../services/api/src/wealth-store.js';
+import { readDocumentFile, readDocumentIndex } from '../services/api/src/documents-store.js';
 import { readPlanningData } from '../services/api/src/planning-store.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -21,9 +24,17 @@ const files = [
   'app-preferences.json',
   'currency-preferences.json',
   'financial-intelligence-state.json',
+  'financial-actions.json',
   'periodic-reviews.json',
   'planning-data.json',
+  'wealth-data.json',
+  'documents-index.json',
 ] as const;
+
+const syntheticDocumentId = '00000000-0000-4000-8000-000000000010';
+const syntheticDocumentBytes = Buffer.from('%PDF-1.4\\n% synthetic evidence\\n1 0 obj<</Type/Catalog>>endobj\\n%%EOF\\n', 'ascii');
+const syntheticDocumentFileName = syntheticDocumentId + '.pdf';
+const syntheticDocumentHash = createHash('sha256').update(syntheticDocumentBytes).digest('hex');
 
 const fixture = {
   'account-scope-preferences.json': {
@@ -46,6 +57,31 @@ const fixture = {
       fingerprint: '0123456789abcdef',
       status: 'reviewed',
       updatedAt: '2026-11-01T00:00:00.000Z',
+    }],
+  },
+  'financial-actions.json': {
+    version: 1,
+    budgetAlerts: { rules: [], events: [] },
+    budgetImprovements: { goal: 'increase_monthly_margin', categories: [], decisions: [], scenarios: [] },
+  },
+  'wealth-data.json': {
+    version: 1,
+    settings: { staleAfterDays: 90, includeOffBudgetAccounts: true },
+    accountClassifications: [],
+    assets: [{
+      id: '00000000-0000-4000-8000-000000000011', name: 'Inversión sintética', kind: 'investment_portfolio',
+      currency: 'EUR', status: 'active', includeInNetWorth: true, valuations: [{
+        id: '00000000-0000-4000-8000-000000000012', valuedAt: '2026-11-01', amountMinor: 125000,
+        currency: 'EUR', source: 'manual', createdAt: '2026-11-01T00:00:00.000Z',
+      }], createdAt: '2026-11-01T00:00:00.000Z', updatedAt: '2026-11-01T00:00:00.000Z',
+    }],
+  },
+  'documents-index.json': {
+    version: 1,
+    documents: [{
+      id: syntheticDocumentId, fileName: syntheticDocumentFileName, displayName: 'Justificante sintético',
+      mediaType: 'application/pdf', sizeBytes: syntheticDocumentBytes.length, sha256: syntheticDocumentHash,
+      addedAt: '2026-11-01T00:00:00.000Z', classification: 'receipt', reviewStatus: 'pending', tags: ['synthetic'], links: [],
     }],
   },
   'periodic-reviews.json': {
@@ -107,7 +143,11 @@ async function seed(): Promise<void> {
     await writeFile(join(appDataDir, name), JSON.stringify(fixture[name], null, 2) + '\n', { mode: 0o600 });
     await chmod(join(appDataDir, name), 0o600).catch(() => undefined);
   }
-  process.stdout.write('Seeded six synthetic Personal Budget state files.\n');
+  const documentDirectory = join(appDataDir, 'documents');
+  await mkdir(documentDirectory, { recursive: true, mode: 0o700 });
+  await writeFile(join(documentDirectory, syntheticDocumentFileName), syntheticDocumentBytes, { flag: 'w', mode: 0o600 });
+  await chmod(join(documentDirectory, syntheticDocumentFileName), 0o600).catch(() => undefined);
+  process.stdout.write('Seeded nine synthetic Personal Budget state files and one local document.\\n');
 }
 
 async function verifyAppState(): Promise<void> {
@@ -120,12 +160,19 @@ async function verifyAppState(): Promise<void> {
   await readAccountScope(appDataDir);
   await readAppPreferences(appDataDir);
   await readFindingReviewState(appDataDir);
+  await readFinancialActionState(appDataDir);
   await readPlanningData(appDataDir);
+  const wealth = await readWealthData(appDataDir);
+  if (wealth.assets.length !== 1 || wealth.assets[0]?.valuations[0]?.amountMinor !== 125000) throw new Error('Restored wealth valuation differs from the synthetic fixture.');
+  const documents = await readDocumentIndex(appDataDir);
+  if (documents.documents.length !== 1 || documents.documents[0]?.sha256 !== syntheticDocumentHash) throw new Error('Restored document index differs from the synthetic fixture.');
+  const documentBytes = await readDocumentFile(appDataDir, documents.documents[0]!);
+  if (!documentBytes.equals(syntheticDocumentBytes)) throw new Error('Restored local document binary differs from the synthetic fixture.');
   const periodic = JSON.parse(await readFile(join(appDataDir, 'periodic-reviews.json'), 'utf8')) as { version?: number; reviews?: unknown[] };
   if (periodic.version !== 1 || !Array.isArray(periodic.reviews)) {
     throw new Error('Restored periodic review metadata does not match the versioned state contract.');
   }
-  process.stdout.write('Verified six restored Personal Budget state files using production readers.\n');
+  process.stdout.write('Verified nine restored Personal Budget state files, one wealth valuation and one PDF using production readers.\\n');
 }
 
 async function roundtrip(): Promise<void> {
