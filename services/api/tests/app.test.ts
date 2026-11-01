@@ -896,28 +896,34 @@ describe('local API', () => {
   });
 
   it('records a reproducible bounded-page benchmark at 10k/50k/100k synthetic movements', async () => {
-    let syntheticTransactions: readonly BudgetTransaction[] = [];
-    const listTransactions = vi.fn(async (_accountId: string, startDate: string, endDate: string) =>
-      syntheticTransactions.filter((transaction) => transaction.date >= startDate && transaction.date <= endDate));
-    const app = await createTestApp(createRepository({ listTransactions }));
+    const dataDir = await mkdtemp(join(tmpdir(), 'personal-budget-benchmark-'));
+    temporaryDirectories.push(dataDir);
+    const benchmarkConfig = { ...config, actualDataDir: dataDir };
     const measurements: Array<{
+      scenario: string;
       records: number;
+      accounts: number;
       medianLatencyMs: number;
       maxSampledHeapDeltaBytes: number;
       repositoryReadsPerRequest: number;
     }> = [];
 
-    for (const size of [10_000, 50_000, 100_000]) {
-      // Reverse source order and deliberately share date/amount to exercise the
-      // ID tie-breaker rather than relying on insertion order.
-      syntheticTransactions = Array.from({ length: size }, (_, index) => ({
-        id: 'synthetic-' + String(size - index - 1).padStart(6, '0'),
-        account: 'account-1',
-        currencyCode: 'EUR',
-        date: '2026-' + String((index % 12) + 1).padStart(2, '0') + '-15',
-        amount: -100,
-        category: 'food',
-      }));
+    const measureScenario = async (options: {
+      scenario: string;
+      rows: readonly BudgetTransaction[];
+      accounts: readonly BudgetAccount[];
+      url: string;
+      expectedTotal: number;
+      expectedReads: number;
+      expectedFirstPageIds?: readonly string[];
+    }) => {
+      const listTransactions = vi.fn(async (accountId: string, startDate: string, endDate: string) =>
+        options.rows.filter((transaction) =>
+          transaction.account === accountId && transaction.date >= startDate && transaction.date <= endDate));
+      const app = await createTestApp(createRepository({
+        listAccounts: vi.fn(async () => options.accounts),
+        listTransactions,
+      }), benchmarkConfig);
       const latencies: number[] = [];
       let maxSampledHeapDeltaBytes = 0;
       for (let repeat = 0; repeat < 3; repeat += 1) {
@@ -932,15 +938,14 @@ describe('local API', () => {
         };
         // Heap deltas measured only before/after a request can miss transient
         // allocations that are reclaimed before the response resolves. Sample
-        // while the request is in flight and once more after it completes.
+        // while the request is in flight and once more after it completes, and
+        // keep the maximum across the three repetitions so neither a single run
+        // nor a final post-GC reading can determine the reported peak.
         const heapSampler = setInterval(sampleHeap, 1);
         const started = performance.now();
         let response: Awaited<ReturnType<typeof app.inject>>;
         try {
-          response = await app.inject({
-            method: 'GET',
-            url: '/api/v1/transactions?startDate=2026-01-01&endDate=2026-12-31&limit=20&offset=0&sortBy=amount&order=asc',
-          });
+          response = await app.inject({ method: 'GET', url: options.url });
         } finally {
           clearInterval(heapSampler);
           sampleHeap();
@@ -948,26 +953,105 @@ describe('local API', () => {
         latencies.push(performance.now() - started);
         maxSampledHeapDeltaBytes = Math.max(maxSampledHeapDeltaBytes, sampledPeakHeapDeltaBytes);
         expect(response!.statusCode).toBe(200);
-        expect(response.json().pagination.total).toBe(size);
+        expect(response.json().pagination.total).toBe(options.expectedTotal);
         expect(response.json().data).toHaveLength(20);
-        const expectedFirstPage = [...syntheticTransactions]
-          .sort((left, right) => left.date.localeCompare(right.date) || left.id.localeCompare(right.id))
-          .slice(0, 20)
-          .map((transaction) => transaction.id);
-        expect(response.json().data.map((item: BudgetTransaction) => item.id)).toEqual(expectedFirstPage);
-        expect(listTransactions).toHaveBeenCalledTimes(12);
+        if (options.expectedFirstPageIds) {
+          expect(response.json().data.map((item: BudgetTransaction) => item.id)).toEqual(options.expectedFirstPageIds);
+        }
+        expect(listTransactions).toHaveBeenCalledTimes(options.expectedReads);
       }
       latencies.sort((left, right) => left - right);
       measurements.push({
-        records: size,
+        scenario: options.scenario,
+        records: options.expectedTotal,
+        accounts: options.accounts.length,
         medianLatencyMs: Number(latencies[1]!.toFixed(2)),
         maxSampledHeapDeltaBytes,
-        repositoryReadsPerRequest: 12,
+        repositoryReadsPerRequest: options.expectedReads,
+      });
+    };
+
+    // (a) Twelve-month spread on a single account: the original baseline dataset.
+    for (const size of [10_000, 50_000, 100_000]) {
+      // Reverse source order and deliberately share date/amount to exercise the
+      // ID tie-breaker rather than relying on insertion order.
+      const rows: readonly BudgetTransaction[] = Array.from({ length: size }, (_, index) => ({
+        id: 'synthetic-' + String(size - index - 1).padStart(6, '0'),
+        account: 'account-1',
+        currencyCode: 'EUR',
+        date: '2026-' + String((index % 12) + 1).padStart(2, '0') + '-15',
+        amount: -100,
+        category: 'food',
+      }));
+      const expectedFirstPage = [...rows]
+        .sort((left, right) => left.date.localeCompare(right.date) || left.id.localeCompare(right.id))
+        .slice(0, 20)
+        .map((transaction) => transaction.id);
+      await measureScenario({
+        scenario: 'spread-12-months',
+        rows,
+        accounts,
+        url: '/api/v1/transactions?startDate=2026-01-01&endDate=2026-12-31&limit=20&offset=0&sortBy=amount&order=asc',
+        expectedTotal: size,
+        expectedReads: 12,
+        expectedFirstPageIds: expectedFirstPage,
+      });
+    }
+
+    // (b) Dense month: 100k movements concentrated in one calendar month so the
+    // per-month SDK materialization cannot be amortized across twelve windows.
+    {
+      const rows: readonly BudgetTransaction[] = Array.from({ length: 100_000 }, (_, index) => ({
+        id: 'dense-' + String(100_000 - index - 1).padStart(6, '0'),
+        account: 'account-1',
+        currencyCode: 'EUR',
+        date: '2026-09-15',
+        amount: -100,
+        category: 'food',
+      }));
+      await measureScenario({
+        scenario: 'dense-single-month',
+        rows,
+        accounts,
+        url: '/api/v1/transactions?startDate=2026-09-01&endDate=2026-09-30&limit=20&offset=0&sortBy=amount&order=asc',
+        expectedTotal: 100_000,
+        expectedReads: 1,
+        expectedFirstPageIds: [...rows].sort((left, right) => left.id.localeCompare(right.id)).slice(0, 20).map((transaction) => transaction.id),
+      });
+    }
+
+    // (c) Several accounts: 100k movements distributed across four accounts so
+    // reads and heap scale with the number of accounts, not a single stream.
+    {
+      const benchmarkAccounts: readonly BudgetAccount[] = Array.from({ length: 4 }, (_, accountIndex) => ({
+        id: 'bench-account-' + accountIndex,
+        name: 'Cuenta de benchmark ' + accountIndex,
+        currencyCode: 'EUR',
+        closed: false,
+        offBudget: false,
+        currentBalanceMinor: 0,
+      }));
+      const rows: readonly BudgetTransaction[] = Array.from({ length: 100_000 }, (_, index) => ({
+        id: 'multi-' + String(100_000 - index - 1).padStart(6, '0'),
+        account: 'bench-account-' + (index % 4),
+        currencyCode: 'EUR',
+        date: '2026-' + String((index % 12) + 1).padStart(2, '0') + '-15',
+        amount: -100,
+        category: 'food',
+      }));
+      await measureScenario({
+        scenario: 'multi-account-spread',
+        rows,
+        accounts: benchmarkAccounts,
+        url: '/api/v1/transactions?startDate=2026-01-01&endDate=2026-12-31&limit=20&offset=0&sortBy=amount&order=asc',
+        expectedTotal: 100_000,
+        expectedReads: 4 * 12,
       });
     }
 
     // Regression ceilings are deliberately generous multiples of the recorded baseline
-    // so ordinary CI scheduling variance does not cause false failures.
+    // so ordinary CI scheduling variance does not cause false failures. They are fixed
+    // limits that apply to every scenario and repetition.
     expect(measurements.every((measurement) => measurement.medianLatencyMs < 3_000)).toBe(true);
     expect(measurements.every((measurement) => measurement.maxSampledHeapDeltaBytes < 128 * 1024 * 1024)).toBe(true);
 
@@ -997,6 +1081,129 @@ describe('local API', () => {
     expect(overBudget.json().error.code).toBe('TRANSACTION_QUERY_TOO_BROAD');
     expect(overBudgetReads).toHaveBeenCalledTimes(1);
     expect(overBudgetReads).toHaveBeenCalledWith('account-1', '2026-09-01', '2026-09-30');
+  });
+
+  it('traverses every page of a static multi-account history without skipping or duplicating movements', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'personal-budget-traversal-'));
+    temporaryDirectories.push(dataDir);
+    const traversalAccounts: readonly BudgetAccount[] = [
+      { id: 'account-a', name: 'Cuenta A', currencyCode: 'EUR', closed: false, offBudget: false, currentBalanceMinor: 0 },
+      { id: 'account-b', name: 'Cuenta B', currencyCode: 'EUR', closed: false, offBudget: false, currentBalanceMinor: 0 },
+      { id: 'account-c', name: 'Cuenta C', currencyCode: 'EUR', closed: false, offBudget: false, currentBalanceMinor: 0 },
+    ];
+    // Forty rows sharing the exact same date and amount, inserted in reverse ID
+    // order: the deterministic ID tie-breaker must decide their position.
+    const identicalCluster: BudgetTransaction[] = Array.from({ length: 40 }, (_, index) => ({
+      id: 'dup-' + String(40 - index - 1).padStart(2, '0'),
+      account: 'account-' + String.fromCharCode(97 + (index % 3)),
+      currencyCode: 'EUR',
+      date: '2026-06-15',
+      amount: -10_000,
+      category: 'food',
+    }));
+    // Three hundred rows across three months and three accounts, mixing
+    // categorized and uncategorized movements.
+    const spreadRows: BudgetTransaction[] = Array.from({ length: 300 }, (_, index) => ({
+      id: 'spread-' + String(300 - index - 1).padStart(3, '0'),
+      account: 'account-' + String.fromCharCode(97 + (index % 3)),
+      currencyCode: 'EUR',
+      date: '2026-' + String(6 + (index % 3)).padStart(2, '0') + '-' + String(1 + (index % 28)).padStart(2, '0'),
+      amount: -(100 + (index % 7) * 1_000),
+      ...(index % 3 === 0 ? { category: 'food' } : {}),
+    }));
+    // A split whose children cross the July/August month boundary.
+    const splitParent: BudgetTransaction = {
+      id: 'split-parent-cross-month',
+      account: 'account-a',
+      currencyCode: 'EUR',
+      date: '2026-07-31',
+      amount: -1_000,
+      is_parent: true,
+      category: 'food',
+      subtransactions: [
+        { id: 'split-child-july', account: 'account-a', date: '2026-07-31', amount: -400, category: 'food', parent_id: 'split-parent-cross-month', is_child: true },
+        { id: 'split-child-august', account: 'account-a', date: '2026-08-01', amount: -600, category: 'food', parent_id: 'split-parent-cross-month', is_child: true },
+      ],
+    };
+    const rows: readonly BudgetTransaction[] = [...identicalCluster, ...spreadRows, splitParent];
+    interface TraversalPresentedRow {
+      readonly id: string;
+      readonly account: string;
+      readonly date: string;
+      readonly amount: number;
+      readonly category: string | null | undefined;
+    }
+    const presentedRows: readonly TraversalPresentedRow[] = rows.flatMap((transaction): TraversalPresentedRow[] => {
+      if (transaction.is_child === true || transaction.parent_id) return [];
+      if (transaction.subtransactions && transaction.subtransactions.length > 0) {
+        return transaction.subtransactions.map((child, index) => ({
+          id: child.id || transaction.id + ':split:' + index,
+          account: child.account || transaction.account,
+          date: child.date || transaction.date,
+          amount: child.amount,
+          category: child.category ?? transaction.category,
+        }));
+      }
+      return [{ id: transaction.id, account: transaction.account, date: transaction.date, amount: transaction.amount, category: transaction.category }];
+    });
+    const compareForTraversal = (
+      left: Pick<TraversalPresentedRow, 'id' | 'account' | 'date'>,
+      right: Pick<TraversalPresentedRow, 'id' | 'account' | 'date'>,
+    ): number => left.date.localeCompare(right.date) || left.id.localeCompare(right.id) || left.account.localeCompare(right.account);
+    const expectedIds = [...presentedRows].sort(compareForTraversal).map((transaction) => transaction.id);
+    const expectedFoodIds = presentedRows
+      .filter((transaction) => transaction.category === 'food')
+      .sort(compareForTraversal)
+      .map((transaction) => transaction.id);
+
+    const listTransactions = vi.fn(async (accountId: string, startDate: string, endDate: string) =>
+      rows.filter((transaction) => transaction.account === accountId && transaction.date >= startDate && transaction.date <= endDate));
+    const app = await createTestApp(createRepository({
+      listAccounts: vi.fn(async () => traversalAccounts),
+      listTransactions,
+    }), { ...config, actualDataDir: dataDir });
+
+    const collectPages = async (urlWithoutOffset: string, pageLimit: number, expectedTotal: number, expectedReadsPerPage: number): Promise<string[]> => {
+      const collected: string[] = [];
+      let offset = 0;
+      let reads = 0;
+      while (offset < expectedTotal) {
+        const response = await app.inject({
+          method: 'GET',
+          url: urlWithoutOffset + '&offset=' + offset,
+        });
+        expect(response.statusCode).toBe(200);
+        expect(response.json().pagination.total).toBe(expectedTotal);
+        expect(response.json().data).toHaveLength(Math.min(pageLimit, expectedTotal - offset));
+        collected.push(...response.json().data.map((item: BudgetTransaction) => item.id));
+        offset += pageLimit;
+        reads += expectedReadsPerPage;
+      }
+      expect(listTransactions).toHaveBeenCalledTimes(reads);
+      return collected;
+    };
+
+    // Every page keeps the same total; the union of all pages equals the
+    // reference order exactly, so nothing is skipped, duplicated or reordered.
+    const allPages = await collectPages(
+      '/api/v1/transactions?startDate=2026-06-01&endDate=2026-08-31&limit=37&sortBy=date&order=asc',
+      37,
+      expectedIds.length,
+      3 * 3,
+    );
+    expect(allPages).toEqual(expectedIds);
+    expect(new Set(allPages).size).toBe(allPages.length);
+
+    // The same guarantee holds with an active filter over a subset of rows.
+    listTransactions.mockClear();
+    const foodPages = await collectPages(
+      '/api/v1/transactions?startDate=2026-06-01&endDate=2026-08-31&categoryId=food&limit=19&sortBy=date&order=asc',
+      19,
+      expectedFoodIds.length,
+      3 * 3,
+    );
+    expect(foodPages).toEqual(expectedFoodIds);
+    expect(new Set(foodPages).size).toBe(foodPages.length);
   });
 
   it('reports unsupported budget read and write capabilities without exposing details', async () => {

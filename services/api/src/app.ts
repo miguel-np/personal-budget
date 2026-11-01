@@ -377,7 +377,9 @@ const MAX_TRANSACTION_SCAN = 100_000;
  * The official Actual SDK has no cursor API. Query one calendar month at a time so
  * a multi-year history never has to be materialized as one SDK result. The route
  * stops scanning after MAX_TRANSACTION_SCAN presented rows and does not fetch later
- * months once that budget is exhausted.
+ * months once that budget is exhausted. The SDK's aqlQuery does expose limit/offset,
+ * but without cursor or snapshot semantics; that evaluation and the decision to keep
+ * monthly windows are recorded in docs/transactions-and-imports.md.
  */
 function* transactionDateRanges(startDate: string, endDate: string): Generator<{ startDate: string; endDate: string }> {
   let cursor = startDate;
