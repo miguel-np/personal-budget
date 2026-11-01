@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -5,6 +6,15 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createPeriodicReview, readPeriodicReviewState, updatePeriodicReviewItem } from '../src/periodic-review-store.js';
 
 const directories: string[] = [];
+const fingerprint = (label: string): string => createHash('sha256').update(label).digest('hex').slice(0, 16);
+const scopeAllFingerprint = fingerprint('synthetic scope all');
+const scopeSelectedFingerprint = fingerprint('synthetic scope selected');
+const identityA = fingerprint('synthetic identity a');
+const identityB = fingerprint('synthetic identity b');
+const evidenceA = fingerprint('synthetic evidence a');
+const evidenceB = fingerprint('synthetic evidence b');
+const fullA = fingerprint('synthetic full fingerprint a');
+const fullB = fingerprint('synthetic full fingerprint b');
 async function makeDirectory(): Promise<string> {
   const path = await mkdtemp(join(tmpdir(), 'pb-periodic-review-'));
   directories.push(path);
@@ -22,8 +32,8 @@ describe('periodic review store', () => {
       startDate: '2026-10-01',
       endDate: '2026-10-30',
       currency: 'EUR',
-      accountScope: { mode: 'all', label: 'Todas las cuentas abiertas', fingerprint: '0123456789abcdef' },
-      items: [{ findingId: 'pending-categorization:2026-10', findingType: 'pending-categorization', identityKey: '0123456789abcdef', evidenceFingerprint: 'fedcba9876543210', fingerprint: '0123456789abcdef', status: 'pending' }],
+      accountScope: { mode: 'all', label: 'Todas las cuentas abiertas', fingerprint: scopeAllFingerprint },
+      items: [{ findingId: 'pending-categorization:2026-10', findingType: 'pending-categorization', identityKey: identityA, evidenceFingerprint: evidenceA, fingerprint: fullA, status: 'pending' }],
     });
 
     expect(review).toMatchObject({ periodType: 'monthly', status: 'in_progress', currency: 'EUR' });
@@ -43,10 +53,10 @@ describe('periodic review store', () => {
       startDate: '2026-10-26',
       endDate: '2026-10-30',
       currency: 'EUR',
-      accountScope: { mode: 'selected', label: 'Dos cuentas seleccionadas', fingerprint: 'fedcba9876543210' },
+      accountScope: { mode: 'selected', label: 'Dos cuentas seleccionadas', fingerprint: fullB },
       items: [
-        { findingId: 'finding-a', findingType: 'expense-change', identityKey: '0123456789abcdef', evidenceFingerprint: 'fedcba9876543210', fingerprint: '0123456789abcdef', status: 'pending' },
-        { findingId: 'finding-b', findingType: 'financial-anomaly', identityKey: 'abcdef0123456789', evidenceFingerprint: '0123456789abcdef', fingerprint: 'fedcba9876543210', status: 'pending' },
+        { findingId: 'finding-a', findingType: 'expense-change', identityKey: identityA, evidenceFingerprint: evidenceA, fingerprint: fullA, status: 'pending' },
+        { findingId: 'finding-b', findingType: 'financial-anomaly', identityKey: identityB, evidenceFingerprint: evidenceB, fingerprint: fullB, status: 'pending' },
       ],
     });
 
@@ -54,8 +64,8 @@ describe('periodic review store', () => {
     expect(partlyHandled?.status).toBe('in_progress');
     expect(partlyHandled?.items[0]).toMatchObject({
       status: 'reviewed',
-      identityKey: '0123456789abcdef',
-      evidenceFingerprint: 'fedcba9876543210',
+      identityKey: identityA,
+      evidenceFingerprint: evidenceA,
     });
 
     const completed = await updatePeriodicReviewItem(directory, review.id, 'finding-b', 'postponed', '2026-11-06');
@@ -64,8 +74,8 @@ describe('periodic review store', () => {
     expect(completed?.items[1]).toMatchObject({
       status: 'postponed',
       postponedUntil: '2026-11-06',
-      identityKey: 'abcdef0123456789',
-      evidenceFingerprint: '0123456789abcdef',
+      identityKey: identityB,
+      evidenceFingerprint: fullA,
     });
     expect(await updatePeriodicReviewItem(directory, review.id, 'missing', 'reviewed')).toBeNull();
     expect((await readPeriodicReviewState(directory)).reviews[0]?.status).toBe('completed');
@@ -78,10 +88,10 @@ describe('periodic review store', () => {
       startDate: '2026-09-01',
       endDate: '2026-09-30',
       currency: 'EUR',
-      accountScope: { mode: 'all', label: 'Todas las cuentas abiertas', fingerprint: '0123456789abcdef' },
+      accountScope: { mode: 'all', label: 'Todas las cuentas abiertas', fingerprint: scopeAllFingerprint },
       items: [
-        { findingId: 'finding-a', findingType: 'expense-change', identityKey: '0123456789abcdef', evidenceFingerprint: 'fedcba9876543210', fingerprint: '0123456789abcdef', status: 'pending' },
-        { findingId: 'finding-b', findingType: 'income-change', identityKey: 'abcdef0123456789', evidenceFingerprint: '0123456789abcdef', fingerprint: 'abcdef0123456789', status: 'pending' },
+        { findingId: 'finding-a', findingType: 'expense-change', identityKey: identityA, evidenceFingerprint: evidenceA, fingerprint: fullA, status: 'pending' },
+        { findingId: 'finding-b', findingType: 'income-change', identityKey: identityB, evidenceFingerprint: fullA, fingerprint: identityB, status: 'pending' },
       ],
     });
     await Promise.all([
@@ -98,10 +108,10 @@ describe('periodic review store', () => {
       startDate: '2026-10-01',
       endDate: '2026-10-30',
       currency: 'EUR',
-      accountScope: { mode: 'all', label: 'Todas las cuentas abiertas', fingerprint: '0123456789abcdef' },
+      accountScope: { mode: 'all', label: 'Todas las cuentas abiertas', fingerprint: scopeAllFingerprint },
       items: [
-        { findingId: 'same-finding', findingType: 'expense-change', identityKey: '0123456789abcdef', evidenceFingerprint: 'fedcba9876543210', fingerprint: '0123456789abcdef', status: 'pending' },
-        { findingId: 'same-finding', findingType: 'expense-change', identityKey: '0123456789abcdef', evidenceFingerprint: 'fedcba9876543210', fingerprint: '0123456789abcdef', status: 'pending' },
+        { findingId: 'same-finding', findingType: 'expense-change', identityKey: identityA, evidenceFingerprint: evidenceA, fingerprint: fullA, status: 'pending' },
+        { findingId: 'same-finding', findingType: 'expense-change', identityKey: identityA, evidenceFingerprint: evidenceA, fingerprint: fullA, status: 'pending' },
       ],
     })).rejects.toThrow();
   });
@@ -117,12 +127,12 @@ describe('periodic review store', () => {
         endDate: '2026-10-31',
         generatedAt: '2026-11-01T00:00:00.000Z',
         currency: 'EUR',
-        accountScope: { mode: 'all', label: 'Todas las cuentas abiertas', fingerprint: '0123456789abcdef' },
+        accountScope: { mode: 'all', label: 'Todas las cuentas abiertas', fingerprint: scopeAllFingerprint },
         status: 'in_progress',
         items: [{
           findingId: 'legacy-period-specific-id',
           findingType: 'pending-categorization',
-          fingerprint: '0123456789abcdef',
+          fingerprint: fullA,
           status: 'pending',
         }],
       }],
