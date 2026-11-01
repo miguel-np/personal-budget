@@ -345,7 +345,13 @@ describe('local API', () => {
   it('generates and persists a guided periodic review without AI or financial mutations', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'periodic-review-api-'));
     temporaryDirectories.push(directory);
-    const today = new Date().toISOString().slice(0, 10);
+    const reviewTimeZone = 'Europe/Madrid';
+    const madridDateParts = new Intl.DateTimeFormat('en-US', {
+      timeZone: reviewTimeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(new Date());
+    const today = ['year', 'month', 'day'].map((type) =>
+      madridDateParts.find((part) => part.type === type)?.value ?? '',
+    ).join('-');
     const syntheticTransactions: readonly BudgetTransaction[] = [
       { id: 'review-uncategorized', account: 'account-1', currencyCode: 'EUR', date: today, amount: -5_000 },
     ];
@@ -374,19 +380,13 @@ describe('local API', () => {
     const generated = await app.inject({
       method: 'POST',
       url: '/api/v1/reviews/periodic',
-      payload: { periodType: 'monthly', anchorDate: today, timeZone: 'Europe/Madrid' },
+      payload: { periodType: 'monthly', anchorDate: today, timeZone: reviewTimeZone },
     });
     expect(generated.statusCode).toBe(201);
     const data = generated.json().data;
     expect(data.schemaVersion).toBe(1);
-    const madridDateParts = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit',
-    }).formatToParts(new Date());
-    const madridDate = ['year', 'month', 'day'].map((type) =>
-      madridDateParts.find((part) => part.type === type)?.value ?? '',
-    ).join('-');
-    expect(data.asOfDate).toBe(madridDate);
-    expect(data.timeZone).toBe('Europe/Madrid');
+    expect(data.asOfDate).toBe(today);
+    expect(data.timeZone).toBe(reviewTimeZone);
     expect(data.summary).toMatchObject({ currency: 'EUR', incomeMinor: 0, expenseMinor: 5_000, savingsMinor: -5_000, savingsRatePercent: null });
     expect(data.budgetAssessment).toMatchObject({ available: false, overBudgetCategoryCount: 0 });
     expect(data.budgetAssessment.reason).toBeTruthy();
@@ -410,7 +410,7 @@ describe('local API', () => {
     const postponed = await app.inject({
       method: 'PATCH',
       url: '/api/v1/reviews/periodic/' + data.run.id + '/items',
-      payload: { findingId: item.findingId, status: 'postponed', postponedUntil },
+      payload: { findingId: item.findingId, status: 'postponed', postponedUntil, timeZone: reviewTimeZone },
     });
     expect(postponed.statusCode).toBe(200);
     expect(postponed.json().data.items[0]).toMatchObject({ status: 'postponed', postponedUntil });
@@ -418,7 +418,7 @@ describe('local API', () => {
     const regenerated = await app.inject({
       method: 'POST',
       url: '/api/v1/reviews/periodic',
-      payload: { periodType: 'monthly', anchorDate: today },
+      payload: { periodType: 'monthly', anchorDate: today, timeZone: reviewTimeZone },
     });
     expect(regenerated.statusCode).toBe(201);
     expect(regenerated.json().data.run.items.find((candidate: { findingId: string }) => candidate.findingId === item.findingId))
@@ -429,6 +429,59 @@ describe('local API', () => {
     expect(history.json().data.reviews).toHaveLength(2);
     expect(repository.listTransactions).toHaveBeenCalled();
     expect(listTransactions.mock.calls.every(([, start, end]) => start <= end)).toBe(true);
+  });
+
+  it('validates postponed review dates in the submitted IANA time zone', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'periodic-review-time-zone-api-'));
+    temporaryDirectories.push(directory);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-02T01:30:00.000Z'));
+    try {
+      const syntheticTransactions: readonly BudgetTransaction[] = [
+        { id: 'review-local-boundary', account: 'account-1', currencyCode: 'EUR', date: '2026-11-01', amount: -5_000 },
+      ];
+      const listTransactions = vi.fn(async (_accountId: string, startDate: string, endDate: string) =>
+        syntheticTransactions.filter((transaction) => transaction.date >= startDate && transaction.date <= endDate));
+      const repository = createRepository({ listTransactions });
+      const app = await createTestApp(repository, { ...config, actualDataDir: directory, aiEnabled: false });
+      const generated = await app.inject({
+        method: 'POST',
+        url: '/api/v1/reviews/periodic',
+        payload: { periodType: 'weekly', anchorDate: '2026-11-01', timeZone: 'America/Los_Angeles' },
+      });
+      expect(generated.statusCode).toBe(201);
+      expect(generated.json().data.asOfDate).toBe('2026-11-01');
+      const item = generated.json().data.run.items.find((candidate: { findingType: string }) => candidate.findingType === 'pending-categorization');
+      expect(item).toBeTruthy();
+
+      // At this instant UTC is already Nov 2, while the browser's LA civil date is still Nov 1.
+      // Expiring on the browser's current day is valid and must use the same calendar as generation.
+      const postponed = await app.inject({
+        method: 'PATCH',
+        url: '/api/v1/reviews/periodic/' + generated.json().data.run.id + '/items',
+        payload: {
+          findingId: item.findingId,
+          status: 'postponed',
+          postponedUntil: '2026-11-01',
+          timeZone: 'America/Los_Angeles',
+        },
+      });
+      expect(postponed.statusCode).toBe(200);
+      expect(postponed.json().data.items[0]).toMatchObject({ status: 'postponed', postponedUntil: '2026-11-01' });
+
+      const invalidTimeZone = await app.inject({
+        method: 'PATCH',
+        url: '/api/v1/reviews/periodic/' + generated.json().data.run.id + '/items',
+        payload: {
+          findingId: item.findingId,
+          status: 'reviewed',
+          timeZone: 'Not/A-Time-Zone',
+        },
+      });
+      expect(invalidTimeZone.statusCode).toBe(400);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('compares prior review metadata without retaining prior financial snapshots', async () => {
