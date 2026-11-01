@@ -81,7 +81,7 @@ La API de Personal Budget debe permanecer detenida hasta que termine la restaura
 
 ## Validación automatizada y límites
 
-La aceptación de CI utiliza un servidor Actual fijado a una versión concreta y un presupuesto sintético. Crea los seis almacenes, genera la copia cifrada, comprueba que una clave incorrecta falla antes de modificar el estado activo, elimina los datos sintéticos y restaura el paquete completo. Después compara el inventario financiero sintético de Actual y el contenido exacto de los siete almacenes JSON.
+La aceptación de CI utiliza un servidor Actual fijado a una versión concreta y un presupuesto sintético. Crea los siete almacenes, genera la copia cifrada, comprueba que una clave incorrecta falla antes de modificar el estado activo, elimina los datos sintéticos y restaura el paquete completo. Después compara el inventario financiero sintético de Actual y el contenido exacto de los siete almacenes JSON.
 
 Esta comprobación automatizada no equivale a una restauración manual de un backup personal ni acredita que se haya ejecutado el flujo dentro de una distribución WSL2 concreta. Antes de depender del sistema en el entorno de uso, conserva la clave por separado y ejecuta una restauración de ensayo en una instancia aislada con datos sintéticos.
 
