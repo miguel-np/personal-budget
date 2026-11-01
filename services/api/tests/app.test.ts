@@ -431,6 +431,60 @@ describe('local API', () => {
     expect(listTransactions.mock.calls.every(([, start, end]) => start <= end)).toBe(true);
   });
 
+  it('returns expired postponed decisions to pending when the same period is regenerated', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'periodic-review-expired-postpone-api-'));
+    temporaryDirectories.push(directory);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-01T10:00:00.000Z'));
+    try {
+      const reviewTimeZone = 'Europe/Madrid';
+      const syntheticTransactions: readonly BudgetTransaction[] = [
+        { id: 'expired-postpone-uncategorized', account: 'account-1', currencyCode: 'EUR', date: '2026-10-10', amount: -5_000 },
+      ];
+      const repository = createRepository({
+        listTransactions: vi.fn(async (_accountId: string, startDate: string, endDate: string) =>
+          syntheticTransactions.filter((transaction) => transaction.date >= startDate && transaction.date <= endDate)),
+      });
+      const app = await createTestApp(repository, { ...config, actualDataDir: directory, aiEnabled: false });
+      const initial = await app.inject({
+        method: 'POST',
+        url: '/api/v1/reviews/periodic',
+        payload: { periodType: 'monthly', anchorDate: '2026-10-15', timeZone: reviewTimeZone },
+      });
+      expect(initial.statusCode).toBe(201);
+      expect(initial.json().data.period).toMatchObject({ startDate: '2026-10-01', endDate: '2026-10-31', complete: true });
+      const item = initial.json().data.run.items.find((candidate: { findingType: string }) => candidate.findingType === 'pending-categorization');
+      expect(item).toBeTruthy();
+
+      const postponed = await app.inject({
+        method: 'PATCH',
+        url: '/api/v1/reviews/periodic/' + initial.json().data.run.id + '/items',
+        payload: {
+          findingId: item.findingId,
+          status: 'postponed',
+          postponedUntil: '2026-11-08',
+          timeZone: reviewTimeZone,
+        },
+      });
+      expect(postponed.statusCode).toBe(200);
+
+      // The October period remains closed and has the same full evidence fingerprint;
+      // only the postponement expiry has moved into the past.
+      vi.setSystemTime(new Date('2026-11-10T10:00:00.000Z'));
+      const regenerated = await app.inject({
+        method: 'POST',
+        url: '/api/v1/reviews/periodic',
+        payload: { periodType: 'monthly', anchorDate: '2026-10-15', timeZone: reviewTimeZone },
+      });
+      expect(regenerated.statusCode).toBe(201);
+      const regeneratedItem = regenerated.json().data.run.items.find((candidate: { findingId: string }) => candidate.findingId === item.findingId);
+      expect(regeneratedItem).toMatchObject({ status: 'pending' });
+      expect(regeneratedItem.postponedUntil).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('validates postponed review dates in the submitted IANA time zone', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'periodic-review-time-zone-api-'));
     temporaryDirectories.push(directory);
