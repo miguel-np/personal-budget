@@ -15,6 +15,9 @@ const FindingTypeSchema = z.enum([
 const ReviewItemSchema = z.object({
   findingId: z.string().trim().min(1).max(200),
   findingType: FindingTypeSchema,
+  // Optional when reading legacy version-1 histories written before cross-period identity existed.
+  identityKey: z.string().regex(/^[0-9a-f]{16}$/).optional(),
+  evidenceFingerprint: z.string().regex(/^[0-9a-f]{16}$/).optional(),
   fingerprint: z.string().regex(/^[0-9a-f]{16}$/),
   status: z.enum(['pending', 'reviewed', 'postponed']),
   postponedUntil: DateSchema.optional(),
