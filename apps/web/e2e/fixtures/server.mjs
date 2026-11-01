@@ -34,7 +34,7 @@ const categories = [
   { id: 'synthetic-income', name: 'Ingresos sintéticos', groupId: 'synthetic-income-group', isIncome: true },
 ];
 const transactions = Array.from({ length: 22 }, (_, index) => {
-  const date = new Date(now.getFullYear(), now.getMonth(), Math.max(1, now.getDate() - index));
+  const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - index);
   return {
     id: 'synthetic-tx-' + (index + 1),
     account: index % 2 === 1 ? secondaryAccount.id : account.id,
@@ -69,10 +69,7 @@ const splitParent = {
 };
 const linkedTransactions = [transferSource, transferCounterpart, splitParent];
 function allTransactions() {
-  // Keep the linked-transfer and split fixtures inside the first paginated page
-  // even when the suite runs on the first day of a month and every generated
-  // transaction receives the same clamped date.
-  return [...linkedTransactions, ...transactions];
+  return [...transactions, ...linkedTransactions];
 }
 function resetLinkedTransactions() {
   Object.assign(transferSource, { date: iso(now), amount: -5_000, notes: 'Transferencia sintética', cleared: false });
