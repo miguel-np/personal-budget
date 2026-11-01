@@ -1,9 +1,9 @@
-import { createServer, type AddressInfo } from 'node:http';
+import { createServer, type AddressInfo, type IncomingMessage, type ServerResponse } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { SearXNGSearchProvider, WebSearchResponseTooLargeError } from '../src/web-search.js';
 
 const servers: Array<{ close: () => Promise<void> }> = [];
-async function serve(handler: (request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse) => void) {
+async function serve(handler: (request: IncomingMessage, response: ServerResponse) => void) {
   const server = createServer(handler);
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
@@ -53,14 +53,12 @@ describe('SearXNG web search provider', () => {
   });
 
   it('does not follow provider redirects', async () => {
-    let redirected = false;
     const fixture = await serve((_request, response) => {
       response.writeHead(302, { location: 'http://127.0.0.1:1/internal' });
       response.end();
     });
     const provider = new SearXNGSearchProvider(config(fixture.url));
     await expect(provider.search('consulta pública', [])).rejects.toThrow();
-    expect(redirected).toBe(false);
   });
 
   it('rejects non-HTTPS remote provider endpoints and local metadata destinations', () => {

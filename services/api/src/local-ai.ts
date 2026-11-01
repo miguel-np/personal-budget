@@ -163,7 +163,12 @@ interface OllamaTagsPayload {
   readonly models?: readonly { readonly name?: string; readonly model?: string }[];
 }
 interface OllamaChatPayload {
-  readonly message?: { readonly content?: string };
+  readonly message?: {
+    readonly content?: string;
+    readonly tool_calls?: readonly {
+      readonly function?: { readonly name?: string; readonly arguments?: unknown };
+    }[];
+  };
 }
 
 function isLoopback(value: string): boolean {

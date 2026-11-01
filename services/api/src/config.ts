@@ -64,6 +64,14 @@ const EnvironmentSchema = z.object({
   AI_CATEGORY_CLASSIFICATION_INCLUDE_PAYEE: z.enum(['true', 'false']).default('true').transform((value) => value === 'true'),
   OLLAMA_REQUEST_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(180).default(120),
   AI_MAX_CONTEXT_CHARS: z.coerce.number().int().min(512).max(8_000).default(4_000),
+  WEB_SEARCH_ENABLED: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
+  WEB_SEARCH_BASE_URL: z.string().url().default('http://127.0.0.1:8080').refine(isAllowedWebSearchURL, {
+    message: 'WEB_SEARCH_BASE_URL must use HTTPS, or HTTP on loopback for a local SearXNG instance.',
+  }),
+  WEB_SEARCH_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(30).default(8),
+  WEB_SEARCH_MAX_RESULTS: z.coerce.number().int().min(1).max(8).default(5),
+  WEB_SEARCH_MAX_QUERY_CHARS: z.coerce.number().int().min(20).max(500).default(300),
+  WEB_SEARCH_MAX_RESPONSE_KB: z.coerce.number().int().min(8).max(256).default(128),
   ACTUAL_BUDGET_ID: z.string().trim().max(128).optional(),
   ACTUAL_DATA_DIR: z.string().trim().min(1).max(1024).default('./.local/actual-api'),
   BUDGET_CURRENCY: z.string().regex(/^[A-Z]{3}$/).default('EUR'),
@@ -84,6 +92,12 @@ export interface AppConfig {
   readonly aiCategoryClassificationIncludePayee: boolean;
   readonly ollamaTimeoutMs: number;
   readonly aiMaxContextChars: number;
+  readonly webSearchEnabled: boolean;
+  readonly webSearchBaseURL: string;
+  readonly webSearchTimeoutMs: number;
+  readonly webSearchMaxResults: number;
+  readonly webSearchMaxQueryChars: number;
+  readonly webSearchMaxResponseBytes: number;
   readonly actualBudgetId?: string;
   readonly actualDataDir: string;
   readonly budgetCurrency: string;
@@ -110,6 +124,12 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
     aiCategoryClassificationIncludePayee: parsed.AI_CATEGORY_CLASSIFICATION_INCLUDE_PAYEE,
     ollamaTimeoutMs: parsed.OLLAMA_REQUEST_TIMEOUT_SECONDS * 1_000,
     aiMaxContextChars: parsed.AI_MAX_CONTEXT_CHARS,
+    webSearchEnabled: parsed.WEB_SEARCH_ENABLED,
+    webSearchBaseURL: parsed.WEB_SEARCH_BASE_URL,
+    webSearchTimeoutMs: parsed.WEB_SEARCH_TIMEOUT_SECONDS * 1_000,
+    webSearchMaxResults: parsed.WEB_SEARCH_MAX_RESULTS,
+    webSearchMaxQueryChars: parsed.WEB_SEARCH_MAX_QUERY_CHARS,
+    webSearchMaxResponseBytes: parsed.WEB_SEARCH_MAX_RESPONSE_KB * 1_024,
     ...(normalizedBudgetId ? { actualBudgetId: normalizedBudgetId } : {}),
     actualDataDir: parsed.ACTUAL_DATA_DIR,
     budgetCurrency: parsed.BUDGET_CURRENCY,

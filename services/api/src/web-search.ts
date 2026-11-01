@@ -194,7 +194,7 @@ export class SearXNGSearchProvider implements WebSearchProvider {
     if (callerSignal?.aborted) throw new WebSearchUnavailableError();
 
     const hostname = hostWithoutBrackets(this.baseURL.hostname);
-    let addresses: Array<{ readonly address: string; readonly family: 4 | 6 }> = [];
+    let addresses: Array<{ readonly address: string; readonly family: number }> = [];
     if (isIP(hostname) !== 0) {
       const family = isIP(hostname);
       if (!isLoopbackAddress(hostname, family) && !isPublicAddress(hostname, family)) throw new WebSearchUnavailableError();
