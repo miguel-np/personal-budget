@@ -3225,14 +3225,19 @@ function monthsBefore(date: string, months: number): string {
     });
     const monthsByCategory = new Map<string, Set<string>>();
     const expenseByCategoryMonth = new Map<string, Map<string, number>>();
+    const incomeCategoryIds = new Set(categories.filter((category) => category.isIncome).map((category) => category.id));
     for (const entry of entries) {
-      if (entry.isTransfer || entry.amountMinor >= 0 || !entry.categoryId) continue;
+      if (entry.isTransfer || !entry.categoryId || incomeCategoryIds.has(entry.categoryId)) continue;
       const entryMonth = entry.date.slice(0, 7);
-      const months = monthsByCategory.get(entry.categoryId) ?? new Set<string>();
-      months.add(entryMonth);
-      monthsByCategory.set(entry.categoryId, months);
+      if (entry.amountMinor < 0) {
+        const months = monthsByCategory.get(entry.categoryId) ?? new Set<string>();
+        months.add(entryMonth);
+        monthsByCategory.set(entry.categoryId, months);
+      }
       const monthAmounts = expenseByCategoryMonth.get(entry.categoryId) ?? new Map<string, number>();
-      monthAmounts.set(entryMonth, (monthAmounts.get(entryMonth) ?? 0) + Math.abs(entry.amountMinor));
+      // Positive movements in expense categories are refunds; net them against
+      // the month's outflows before producing trend evidence.
+      monthAmounts.set(entryMonth, (monthAmounts.get(entryMonth) ?? 0) - entry.amountMinor);
       expenseByCategoryMonth.set(entry.categoryId, monthAmounts);
     }
     const budgetRepository = repository as BudgetRepository & {

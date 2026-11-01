@@ -2936,6 +2936,45 @@ describe('phase 2 financial utility APIs', () => {
     expect(afterDelete.json().data.scenarios.some((item: { id: string }) => item.id === scenarioId)).toBe(false);
   });
 
+  it('nets refunds into monthly proposal evidence and avoids suggesting cuts from gross charges alone', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'personal-budget-improvement-refunds-'));
+    temporaryDirectories.push(directory);
+    const refundCategory: BudgetCategory = { id: 'refunds', name: 'Compras reembolsadas', groupId: 'spend', isIncome: false };
+    const historical: BudgetTransaction[] = [
+      { id: 'refunds-aug-expense', account: 'account-1', currencyCode: 'EUR', date: '2026-08-10', amount: -10_000, category: 'refunds' },
+      { id: 'refunds-sep-expense', account: 'account-1', currencyCode: 'EUR', date: '2026-09-10', amount: -10_000, category: 'refunds' },
+      { id: 'refunds-oct-expense', account: 'account-1', currencyCode: 'EUR', date: '2026-10-10', amount: -15_000, category: 'refunds' },
+      { id: 'refunds-oct-refund', account: 'account-1', currencyCode: 'EUR', date: '2026-10-20', amount: 10_000, category: 'refunds' },
+    ];
+    const repository = Object.assign(createRepository({
+      listCategories: vi.fn(async () => [...categories, refundCategory]),
+      listTransactions: vi.fn(async (accountId: string) => accountId === 'account-1' ? [...transactions, ...historical] : []),
+    }), {
+      getBudgetMonth: vi.fn(async (month: string) => ({
+        month,
+        categoryGroups: [{
+          id: 'spend', name: 'Gastos', is_income: false,
+          categories: [{ id: 'refunds', name: 'Compras reembolsadas', budgeted: 10_000, spent: -5_000, balance: 5_000 }],
+        }],
+        totalBudgeted: 10_000, totalSpent: -5_000, totalBalance: 5_000,
+      })),
+      getBudgetAllocations: vi.fn(async () => [{ categoryId: 'refunds', amountMinor: 10_000 }]),
+    }) as BudgetRepository;
+    const app = await createTestApp(repository, { ...config, actualDataDir: directory });
+    const saved = await app.inject({
+      method: 'PUT', url: '/api/v1/budget-improvements/preferences',
+      payload: { goal: 'reduce_variable_spending', categories: [{ categoryId: 'refunds', classification: 'flexible' }] },
+    });
+    expect(saved.statusCode).toBe(200);
+    const response = await app.inject({ method: 'GET', url: '/api/v1/budget-improvements?periodMonths=3' });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.categoryBreakdown.find((item: { categoryId: string }) => item.categoryId === 'refunds')).toMatchObject({
+      observedExpenseMinor: 25_000, latestMonthExpenseMinor: 5_000, priorMonthsAverageExpenseMinor: 10_000,
+      budgetedMinor: 10_000, budgetSpentMinor: 5_000,
+    });
+    expect(response.json().data.proposals).toEqual([]);
+  });
+
   it('links budget improvement analysis to saved savings goals in the same currency and account scope', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'personal-budget-improvement-goal-context-'));
     temporaryDirectories.push(directory);
