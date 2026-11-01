@@ -118,13 +118,21 @@ function fieldText(value: unknown): string | null {
   }
   return null;
 }
+function validatedIsoDate(value: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const timestamp = Date.parse(value + 'T00:00:00.000Z');
+  if (!Number.isFinite(timestamp)) return null;
+  return new Date(timestamp).toISOString().slice(0, 10) === value ? value : null;
+}
 function normalizeBoeDate(value: unknown): string | null {
   const raw = fieldText(value);
   if (!raw) return null;
-  if (/^\d{8}$/.test(raw)) return raw.slice(0, 4) + '-' + raw.slice(4, 6) + '-' + raw.slice(6, 8);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw) && Number.isFinite(Date.parse(raw + 'T00:00:00Z'))) return raw;
+  if (/^\d{8}$/.test(raw)) {
+    return validatedIsoDate(raw.slice(0, 4) + '-' + raw.slice(4, 6) + '-' + raw.slice(6, 8));
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return validatedIsoDate(raw);
   const compact = raw.match(/^(\d{8})T\d{6}Z$/);
-  if (compact) return compact[1]!.slice(0, 4) + '-' + compact[1]!.slice(4, 6) + '-' + compact[1]!.slice(6, 8);
+  if (compact) return validatedIsoDate(compact[1]!.slice(0, 4) + '-' + compact[1]!.slice(4, 6) + '-' + compact[1]!.slice(6, 8));
   return null;
 }
 function affirmative(value: unknown): boolean | null {
@@ -383,7 +391,13 @@ export async function retrieveOfficialDocument(
       const htmlPayload = pageResult.status === 'fulfilled' ? pageResult.value : null;
       const htmlContentType = htmlPayload?.contentType ?? '';
       if (!htmlPayload || !(htmlContentType.includes('text/html') || htmlContentType.includes('application/xhtml+xml'))) {
-        return unavailableEvidence(metadata ? 'partial' : 'unavailable', 'boe_consolidated_legislation');
+        const temporal = makeBoeTemporal(metadata, analysisPayload, referenceDate);
+        return {
+          ...unavailableEvidence(metadata || analysisPayload ? 'partial' : 'unavailable', 'boe_consolidated_legislation'),
+          ...(temporal ? { retrievedAt: new Date().toISOString(), temporal, limitations: temporalLimitations(temporal.assessment).concat(
+            'No se pudo recuperar el texto consolidado HTML; consulta la publicación oficial y el enlace original.',
+          ) } : {}),
+        };
       }
       const fullText = extractOfficialHtmlText(htmlPayload.body.toString('utf8'));
       if (!fullText) return unavailableEvidence('partial', 'boe_consolidated_legislation');
