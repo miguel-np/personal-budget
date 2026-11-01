@@ -302,9 +302,13 @@ export async function registerPortfolioRoutes(app: FastifyInstance, dependencies
         netWorthMinor: complete && Number.isSafeInteger(totalMinor) ? totalMinor : null,
         actual: { netWorthMinor: Number.isSafeInteger(actualMinor) ? actualMinor : null, assetsMinor: actualAssetsMinor, liabilitiesMinor: actualLiabilitiesMinor, accountCount: includedAccounts.length },
         external: { netWorthMinor: Number.isSafeInteger(externalMinor) ? externalMinor : null, assetsMinor: externalAssetsMinor, liabilitiesMinor: externalLiabilitiesMinor, itemCount: externalItems.length },
-        liquidity: { cashLikeExternalMinor: externalItems.filter((item) => item.kind === 'cash_external' && item.includeInNetWorth).reduce((sum, item) => {
+        liquidity: { cashLikeExternalMinor: externalItems.filter((item) => item.kind === 'cash_external' && item.includeInNetWorth && !item.actualAccountId).reduce((sum, item) => {
           const value = latestValuation(item);
-          return value && dayAge(value.valuedAt, todayDate) <= wealth.settings.staleAfterDays && value.currency === displayCurrency ? sum + value.amountMinor : sum;
+          if (!value) return sum;
+          const age = dayAge(value.valuedAt, todayDate);
+          if (age < 0 || age > wealth.settings.staleAfterDays) return sum;
+          const conversion = convertAmountMinor(value.amountMinor, value.currency, displayCurrency, value.valuedAt, preferences.exchangeRates);
+          return conversion.amountMinor === null ? sum : sum + conversion.amountMinor;
         }, 0) },
         coverage: { includedActualAccounts: includedAccounts.length, unclassifiedAccountIds, unconvertibleAccountIds, staleAssetIds: staleAssets, missingValuationIds: missingValuations, excludedDuplicateOrOptOutIds: excludedAsDuplicates },
         settings: wealth.settings, warnings,
@@ -517,22 +521,29 @@ export async function registerPortfolioRoutes(app: FastifyInstance, dependencies
           }, index.documents.length, query.includeDocumentFiles === 'true' ? [] : ['Se exportan los metadatos y vínculos; el contenido binario de los justificantes queda fuera.']);
         }
       }
-      const [exportCurrency, exportScope, exportAccounts] = await Promise.all([
-        readCurrencyPreferences(directory, config.budgetCurrency), readAccountScope(directory), repository.listAccounts(),
+      const [exportCurrency, exportScope] = await Promise.all([
+        readCurrencyPreferences(directory, config.budgetCurrency), readAccountScope(directory),
       ]);
-      const resolvedExportScope = resolveAccountScope(exportAccounts, exportScope);
+      let accountCount: number | null = null;
+      let accountScopeWarning: string | null = null;
+      try {
+        const exportAccounts = await repository.listAccounts();
+        accountCount = resolveAccountScope(exportAccounts, exportScope).accounts.length;
+      } catch {
+        accountScopeWarning = 'Actual no está disponible para verificar el recuento de cuentas del contexto; los conjuntos locales seleccionados sí se han exportado.';
+      }
       const result = {
         format: 'personal-budget-portable-export',
         schemaVersion: 1,
         generatedAt: new Date().toISOString(),
         context: {
           asOfDate: today(), currency: exportCurrency.displayCurrency,
-          accountScope: { mode: resolvedExportScope.metadata.mode, accountCount: resolvedExportScope.accounts.length },
+          accountScope: { mode: exportScope.mode, accountCount },
           budgetMonths: datasets.includes('budgets') ? (query.budgetMonths?.split(',').map((item) => item.trim()).filter(Boolean) ?? [today().slice(0, 7)]) : [],
         },
         manifest,
         data,
-        warnings: manifest.flatMap((entry) => entry.limitations),
+        warnings: [...manifest.flatMap((entry) => entry.limitations), ...(accountScopeWarning ? [accountScopeWarning] : [])],
         exclusions: [
           'Actual transactions and financial reports: export them using the existing Movements and Reports export flows.',
           'Secrets, credentials, encryption keys, environment variables, logs and private filesystem paths are never included.',
