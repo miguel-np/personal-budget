@@ -124,8 +124,8 @@ export function CashFlowPanel({ currency }: { currency: string }) {
             <article className={'stat-card ' + (projection.minimumProjectedBalanceMinor !== null && projection.minimumProjectedBalanceMinor < 0 ? 'negative' : '')}><p>Mínimo proyectado</p><strong>{amount(projection.minimumProjectedBalanceMinor, currency)}</strong><span>{projection.minimumBalanceDate ?? 'No calculable'}</span></article>
           </div>
           <div className="stats-grid">
-            <article className="panel"><p className="eyebrow">Entradas</p><strong>{amount(projection.totalInflowMinor, currency)}</strong></article>
-            <article className="panel"><p className="eyebrow">Salidas</p><strong>{amount(projection.totalOutflowMinor, currency)}</strong></article>
+            <article className="panel"><p className="eyebrow">Entradas externas</p><strong>{amount(projection.totalInflowMinor, currency)}</strong></article>
+            <article className="panel"><p className="eyebrow">Salidas externas</p><strong>{amount(projection.totalOutflowMinor, currency)}</strong></article>
             <article className="panel"><p className="eyebrow">Variación neta</p><strong>{amount(projection.netChangeMinor, currency)}</strong></article>
             <article className="panel"><p className="eyebrow">Transferencias entrantes / salientes</p><strong>{amount(projection.totalTransferInflowMinor ?? 0, currency)} / {amount(projection.totalTransferOutflowMinor ?? 0, currency)}</strong><span>No son ingresos ni gastos externos; solo cambian el saldo si una pata queda fuera del ámbito.</span></article>
           </div>
@@ -158,9 +158,10 @@ export function CashFlowPanel({ currency }: { currency: string }) {
             ))}
             {(result?.recurringCandidates ?? []).some((candidate) => candidate.upcomingEventsCount > 0) ? <button className="button secondary" type="button" disabled={busy} onClick={() => { void calculate(undefined, false); }}>Recalcular con las recurrencias seleccionadas</button> : null}
           </div>
+          <p className="section-footnote">Entradas y salidas externas excluyen transferencias. La variación neta de Actual sí incluye las patas de transferencias; las columnas de traspasos muestran su importe bruto por separado. Las transferencias dentro del ámbito se compensan en el saldo consolidado.</p>
           <div className="trend-table-wrap">
             <table className="trend-table">
-              <thead><tr><th>Fecha</th><th>Actual</th><th>Estado (confirmado / pendiente / desconocido)</th><th>Transferencias entrantes / salientes</th><th>Compromisos puntuales</th><th>Recurrente confirmado</th><th>Candidato hipotético</th><th>Escenario</th><th>Saldo estimado</th></tr></thead>
+              <thead><tr><th>Fecha</th><th>Variación neta Actual</th><th>Estado (confirmado / pendiente / desconocido)</th><th>Transferencias entrantes / salientes</th><th>Compromisos puntuales</th><th>Recurrente confirmado</th><th>Candidato hipotético</th><th>Escenario</th><th>Saldo estimado</th></tr></thead>
               <tbody>{projection.timeline.map((day) => (
                 <tr key={day.date}>
                   <td>{day.date}</td><td>{amount(day.actualNetChangeMinor, currency)}</td>

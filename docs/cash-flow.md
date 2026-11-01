@@ -12,7 +12,7 @@ El saldo inicial consolidado solo se calcula cuando todas las cuentas del ámbit
 
 - La consulta se ejecuta bajo demanda con horizontes de 7, 30 o 90 días, desde la fecha civil actual (incluida).
 - Usa la selección global de cuentas vigente. El saldo inicial es la suma de los saldos actuales de esas cuentas después de conversión local a la divisa de análisis.
-- La proyección es del ámbito elegido, no del patrimonio total. Las transferencias se muestran separadas de ingresos/gastos externos y siguen afectando al saldo. Las dos patas entre cuentas incluidas se compensan; una pata hacia/desde una cuenta excluida representa una salida/entrada del ámbito.
+- La proyección es del ámbito elegido, no del patrimonio total. Las transferencias se muestran separadas de ingresos/gastos externos y siguen afectando al saldo. Las dos patas entre cuentas incluidas se compensan; una pata hacia/desde una cuenta excluida representa una salida/entrada del ámbito. La interfaz presenta entradas/salidas externas sin transferencias y muestra el importe bruto de traspasos en columnas propias; la variación neta de movimientos de Actual sí incluye las patas de transferencias para explicar el cambio del saldo.
 - No se combinan importes de divisas distintas sin una tasa local, explícita y fechada. Las cuentas sin divisa, saldo o conversión válida se enumeran como no disponibles.
 - El colchón mínimo es una reserva para el ámbito global seleccionado. Se compara con el saldo consolidado diario; no distribuye una reserva por cuenta.
 
