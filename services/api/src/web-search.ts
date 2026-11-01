@@ -7,17 +7,6 @@ import type { OfficialDocumentEvidence } from './official-evidence.js';
 
 export { OFFICIAL_SOURCE_DOMAINS } from './official-evidence.js';
 
-export const OFFICIAL_SOURCE_DOMAINS = [
-  'agenciatributaria.gob.es',
-  'boe.es',
-  'hacienda.gob.es',
-  'seg-social.es',
-  'xunta.gal',
-  'dog.gal',
-  'cnmv.es',
-  'bde.es',
-] as const;
-
 export type OfficialSourceDomain = (typeof OFFICIAL_SOURCE_DOMAINS)[number];
 export interface WebSearchSource {
   readonly id: string;
