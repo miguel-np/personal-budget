@@ -361,6 +361,7 @@ async function restore(archiveInput: string, confirmed: boolean): Promise<{ actu
   const archive = resolve(root, archiveInput);
   if (!archive.endsWith('.tar.gz.enc')) throw new Error('Restore accepts encrypted .tar.gz.enc backups only.');
   await assertApiStopped();
+  await mkdir(dirname(dataDir), { recursive: true, mode: 0o700 });
   const key = await readBackupKey(keyFile);
   const extracted = await extractAndValidate(archive, key, dirname(dataDir));
   const timestamp = new Date().toISOString().replace(/[-:.]/g, '');
