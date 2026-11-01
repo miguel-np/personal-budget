@@ -2355,30 +2355,33 @@ function monthsBefore(date: string, months: number): string {
         .sort((left, right) =>
           right.endDate.localeCompare(left.endDate) || right.generatedAt.localeCompare(left.generatedAt))[0];
       // Match equivalent findings across periods by stable rule/entity/scope identity.
-      // Legacy records lack identityKey and safely fall back to their old period-specific ID.
-      const comparableIdentity = (item: { identityKey?: string; findingId: string }) => item.identityKey ?? item.findingId;
+      // A legacy run without these hashes is readable but cannot support a truthful comparison.
+      const legacyComparisonUnavailable = Boolean(previousComparableRun?.items.some((item) =>
+        !item.identityKey || !item.evidenceFingerprint));
       const previousComparableItems = new Map(
-        (previousComparableRun?.items ?? []).map((item) => [comparableIdentity(item), item]),
+        (previousComparableRun?.items ?? []).map((item) => [item.identityKey ?? item.findingId, item]),
       );
-      const currentItemsByIdentity = new Map(items.map((item) => [comparableIdentity(item), item]));
-      const reviewComparison = previousComparableRun ? {
+      const currentItemsByIdentity = new Map(items.map((item) => [item.identityKey, item]));
+      const reviewComparison = previousComparableRun && !legacyComparisonUnavailable ? {
         previousReview: {
           startDate: previousComparableRun.startDate,
           endDate: previousComparableRun.endDate,
           generatedAt: previousComparableRun.generatedAt,
           status: previousComparableRun.status,
         },
-        newFindingCount: items.filter((item) => !previousComparableItems.has(comparableIdentity(item))).length,
-        repeatedFindingCount: items.filter((item) => previousComparableItems.has(comparableIdentity(item))).length,
+        newFindingCount: items.filter((item) => !previousComparableItems.has(item.identityKey)).length,
+        repeatedFindingCount: items.filter((item) => previousComparableItems.has(item.identityKey)).length,
         changedEvidenceCount: items.filter((item) => {
-          const previousItem = previousComparableItems.get(comparableIdentity(item));
-          return previousItem !== undefined && previousItem.evidenceFingerprint !== undefined &&
-            previousItem.evidenceFingerprint !== item.evidenceFingerprint;
+          const previousItem = previousComparableItems.get(item.identityKey);
+          return previousItem !== undefined && previousItem.evidenceFingerprint !== item.evidenceFingerprint;
         }).length,
         noLongerPresentCount: (previousComparableRun.items ?? [])
-          .filter((item) => !currentItemsByIdentity.has(comparableIdentity(item))).length,
+          .filter((item) => !currentItemsByIdentity.has(item.identityKey ?? item.findingId)).length,
       } : null;
       const warnings = [...result.warnings, ...result.currentSummary.warnings, ...previousSummary.warnings];
+      if (legacyComparisonUnavailable) {
+        warnings.push('La revisión anterior usa un historial v1 sin identidad estable de hallazgos. Se conserva y puede consultarse, pero se omite la comparación histórica para no clasificar hallazgos como nuevos o ausentes sin evidencia suficiente.');
+      }
       if (!period.complete) {
         warnings.push('El periodo está incompleto: solo se incluyen movimientos hasta la fecha de corte. Los resultados pueden cambiar al cerrarse el periodo.');
       }
