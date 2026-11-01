@@ -141,7 +141,10 @@ async function roundtrip(): Promise<void> {
 
   // Simulate loss of both data sets in this disposable CI runner.
   run('docker', ['compose', 'stop', 'actual']);
-  await rm(actualDataDir, { recursive: true, force: true });
+  // Actual writes files as root inside Docker. Use the same image/user namespace to
+  // clear its disposable test volume; the GitHub runner cannot unlink those files.
+  run('docker', ['compose', 'run', '--rm', '--no-deps', '--entrypoint', 'sh', 'actual', '-c',
+    'find /data -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +']);
   await mkdir(actualDataDir, { recursive: true, mode: 0o700 });
   for (const name of files) await rm(join(appDataDir, name), { force: true });
 
