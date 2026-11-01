@@ -14,7 +14,11 @@ const execFileAsync = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const envPath = join(root, '.env');
 const inheritedActualImage = process.env.ACTUAL_IMAGE !== undefined;
-if (existsSync(envPath)) process.loadEnvFile(envPath);
+if (existsSync(envPath)) {
+  process.loadEnvFile(envPath);
+  // Compose must read the file again after this script changes ACTUAL_IMAGE.
+  if (!inheritedActualImage) delete process.env.ACTUAL_IMAGE;
+}
 const statePath = resolve(root, '.local/update-state.json');
 const dataDir = resolve(root, process.env.ACTUAL_SERVER_DATA_DIR ?? '.local/actual-server-data');
 const keyFile = resolve(root, process.env.BACKUP_ENCRYPTION_KEY_FILE ?? '.local/backup-key.bin');
