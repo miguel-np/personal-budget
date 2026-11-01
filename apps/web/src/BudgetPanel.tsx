@@ -154,7 +154,7 @@ export function BudgetPanel({ currency, onBudgetUpdated }: { currency: string; o
                         : category.state === 'unbudgeted' ? 'Sin asignación explícita' : 'Desconocido';
                     const used = category.percentUsed;
                     return (
-                      <tr key={category.categoryId}>
+                      <tr id={'budget-category-' + category.categoryId} key={category.categoryId}>
                         <td><strong>{category.categoryName}</strong><small>{category.groupName}</small>{deviation !== null ? <span className={'budget-deviation' + (deviation < 0 ? ' over' : '')}>{deviation < 0 ? 'Exceso: ' : 'Restante: '}{money(Math.abs(deviation), currency)}</span> : null}</td>
                         <td>{editingId === category.categoryId ? <label className="allocation-input"><span className="sr-only">Nueva asignación para {category.categoryName}</span><input type="text" inputMode="decimal" value={allocation} onChange={(event) => setAllocation(event.currentTarget.value)} autoComplete="off" /></label> : money(category.budgetedMinor, currency)}</td>
                         <td>{money(category.spentMinor, currency)}</td>

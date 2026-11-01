@@ -1,19 +1,19 @@
 import { useState, type FormEvent } from 'react';
 import { formatMoney } from './finance-format.js';
 
-interface CashFlowEvent { id: string; date: string; amountMinor: number; source: 'actual_transaction' | 'manual_commitment' | 'confirmed_recurring' | 'recurring_candidate' | 'scenario'; label: string; clearedStatus?: 'cleared' | 'pending' | 'unknown'; }
+interface CashFlowEvent { id: string; date: string; amountMinor: number; source: 'actual_transaction' | 'manual_commitment' | 'confirmed_recurring' | 'recurring_candidate' | 'scenario'; label: string; clearedStatus?: 'cleared' | 'pending' | 'unknown'; isTransfer?: boolean; }
 interface RecurringCandidateEvent extends CashFlowEvent { candidateId: string; }
 interface RecurringCandidate { id: string; payee: string; occurrenceCount: number; estimatedIntervalDays: number | null; estimatedFrequency: string | null; meanAbsoluteAmountMinor: number; amountDeviationPercent: number; nextDate: string | null; upcomingEventsCount: number; signals: readonly string[]; warnings: readonly string[]; }
 interface CashFlowDay {
   date: string; actualNetChangeMinor: number; actualClearedCount: number; actualPendingCount: number; actualUnknownCount: number; commitmentNetChangeMinor: number; confirmedRecurringNetChangeMinor?: number; recurringCandidateNetChangeMinor?: number; scenarioNetChangeMinor: number;
-  totalInflowMinor: number; totalOutflowMinor: number; netChangeMinor: number; projectedBalanceMinor: number | null;
+  totalInflowMinor: number; totalOutflowMinor: number; totalTransferInflowMinor?: number; totalTransferOutflowMinor?: number; netChangeMinor: number; projectedBalanceMinor: number | null;
   belowReserve: boolean | null; eventIds: readonly string[];
 }
 interface CashFlowResult {
   isEstimate: true; asOfDate: string; startDate: string; endDate: string; openingBalanceMinor: number | null;
   endingBalanceMinor: number | null; minimumProjectedBalanceMinor: number | null; minimumBalanceDate: string | null;
   firstDeficitDate: string | null; reserveMinor: number | null; firstReserveBreachDate: string | null;
-  totalInflowMinor: number; totalOutflowMinor: number; netChangeMinor: number;
+  totalInflowMinor: number; totalOutflowMinor: number; totalTransferInflowMinor?: number; totalTransferOutflowMinor?: number; netChangeMinor: number;
   timeline: readonly CashFlowDay[];
   sourceTotals: Record<string, { inflowMinor: number; outflowMinor: number; netChangeMinor: number; eventCount: number }>;
   assumptions: readonly string[]; warnings: readonly string[];
@@ -76,7 +76,13 @@ export function CashFlowPanel({ currency }: { currency: string }) {
         method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body),
       });
       const payload = await response.json() as ApiPayload<CashFlowResponse>;
-      if (!response.ok || !payload.data) throw new Error(payload.error?.message ?? 'No se pudo calcular el flujo de caja.');
+      if (!response.ok || !payload.data) {
+        if (response.status === 400 && payload.error?.code === 'UNKNOWN_RECURRING_CANDIDATE') {
+          setSelectedRecurringCandidateIds([]);
+          throw new Error('El historial ha cambiado y los candidatos seleccionados ya no son válidos. Se ha limpiado la selección; vuelve a calcular para actualizarla.');
+        }
+        throw new Error(payload.error?.message ?? 'No se pudo calcular el flujo de caja.');
+      }
       setResult(payload.data);
       setNotice(includeScenario || selectedRecurringCandidateIds.length > 0
         ? 'Escenario calculado en memoria con hipótesis seleccionadas. No se ha guardado ni modificado Actual Budget.'
@@ -121,6 +127,7 @@ export function CashFlowPanel({ currency }: { currency: string }) {
             <article className="panel"><p className="eyebrow">Entradas</p><strong>{amount(projection.totalInflowMinor, currency)}</strong></article>
             <article className="panel"><p className="eyebrow">Salidas</p><strong>{amount(projection.totalOutflowMinor, currency)}</strong></article>
             <article className="panel"><p className="eyebrow">Variación neta</p><strong>{amount(projection.netChangeMinor, currency)}</strong></article>
+            <article className="panel"><p className="eyebrow">Transferencias entrantes / salientes</p><strong>{amount(projection.totalTransferInflowMinor ?? 0, currency)} / {amount(projection.totalTransferOutflowMinor ?? 0, currency)}</strong><span>No son ingresos ni gastos externos; solo cambian el saldo si una pata queda fuera del ámbito.</span></article>
           </div>
           {projection.firstDeficitDate ? <p className="form-alert error" role="alert">El saldo proyectado sería negativo por primera vez el {projection.firstDeficitDate}.</p> : null}
           {projection.firstReserveBreachDate ? <p className="form-alert warning" role="note">El saldo caería por debajo de la reserva el {projection.firstReserveBreachDate}.</p> : null}
@@ -142,11 +149,12 @@ export function CashFlowPanel({ currency }: { currency: string }) {
           </div>
           <div className="trend-table-wrap">
             <table className="trend-table">
-              <thead><tr><th>Fecha</th><th>Actual</th><th>Estado (confirmado / pendiente / desconocido)</th><th>Compromisos puntuales</th><th>Recurrente confirmado</th><th>Candidato hipotético</th><th>Escenario</th><th>Saldo estimado</th></tr></thead>
+              <thead><tr><th>Fecha</th><th>Actual</th><th>Estado (confirmado / pendiente / desconocido)</th><th>Transferencias entrantes / salientes</th><th>Compromisos puntuales</th><th>Recurrente confirmado</th><th>Candidato hipotético</th><th>Escenario</th><th>Saldo estimado</th></tr></thead>
               <tbody>{projection.timeline.map((day) => (
                 <tr key={day.date}>
                   <td>{day.date}</td><td>{amount(day.actualNetChangeMinor, currency)}</td>
                   <td>{day.actualClearedCount} / {day.actualPendingCount} / {day.actualUnknownCount}</td>
+                  <td>{amount(day.totalTransferInflowMinor ?? 0, currency)} / {amount(day.totalTransferOutflowMinor ?? 0, currency)}</td>
                   <td>{amount(day.commitmentNetChangeMinor, currency)}</td><td>{amount(day.confirmedRecurringNetChangeMinor ?? 0, currency)}</td>
                   <td>{amount(day.recurringCandidateNetChangeMinor ?? 0, currency)}</td><td>{amount(day.scenarioNetChangeMinor, currency)}</td>
                   <td>{amount(day.projectedBalanceMinor, currency)}</td>
@@ -163,7 +171,7 @@ export function CashFlowPanel({ currency }: { currency: string }) {
                 ...(result?.actualEvents ?? []), ...(result?.manualEvents ?? []), ...(result?.confirmedRecurringEvents ?? []),
                 ...(result?.recurringCandidateEvents ?? []).filter((event) => selectedRecurringCandidateIds.includes(event.candidateId)), ...(result?.scenarioEvents ?? []),
               ].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)).map((event) => (
-                <tr key={event.id}><td>{event.date}</td><td>{event.source === 'actual_transaction' ? 'Actual' : event.source === 'manual_commitment' ? 'Compromiso puntual' : event.source === 'confirmed_recurring' ? 'Recurrente confirmado' : event.source === 'recurring_candidate' ? 'Candidato hipotético' : 'Escenario'}</td><td>{event.label}</td><td>{formatMoney(event.amountMinor, currency)}</td><td>{event.clearedStatus === 'cleared' ? 'Confirmado' : event.clearedStatus === 'pending' ? 'Pendiente' : event.source === 'actual_transaction' ? 'Desconocido' : '—'}</td></tr>
+                <tr key={event.id}><td>{event.date}</td><td>{event.isTransfer ? 'Transferencia entre cuentas' : event.source === 'actual_transaction' ? 'Movimiento Actual' : event.source === 'manual_commitment' ? 'Compromiso puntual' : event.source === 'confirmed_recurring' ? 'Recurrente confirmado' : event.source === 'recurring_candidate' ? 'Candidato hipotético' : 'Escenario'}</td><td>{event.label}</td><td>{formatMoney(event.amountMinor, currency)}</td><td>{event.clearedStatus === 'cleared' ? 'Confirmado' : event.clearedStatus === 'pending' ? 'Pendiente' : event.source === 'actual_transaction' ? 'Desconocido' : '—'}</td></tr>
               ))}</tbody>
             </table></div>
           </div>

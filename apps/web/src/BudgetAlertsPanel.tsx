@@ -3,7 +3,7 @@ import { formatMoney } from './finance-format.js';
 
 type Metric = 'percent_used' | 'remaining_minor' | 'overspend_minor' | 'overspend_percent';
 interface Rule { id: string; categoryId: string; metric: Metric; threshold: number; enabled: boolean; }
-interface Category { categoryId: string; categoryName: string; budgetedMinor: number | null; spentMinor: number | null; state: 'budgeted' | 'zero' | 'unbudgeted' | 'unknown'; hidden?: boolean; }
+interface Category { categoryId: string; categoryName: string; budgetedMinor: number | null; spentMinor: number | null; availableMinor: number | null; state: 'budgeted' | 'zero' | 'unbudgeted' | 'unknown'; hidden?: boolean; }
 interface Alert { eventId: string; ruleId: string; categoryId: string; categoryName: string; metric: Metric; threshold: number; observedValue: number; month: string; message: string; status: 'active'; currency: string; }
 interface AlertsData { month: string; evaluatedAt: string; currency: string; rules: readonly Rule[]; alerts: readonly Alert[]; categories: readonly Category[]; warnings: readonly string[]; }
 interface ApiPayload<T> { data?: T; error?: { message?: string } }
@@ -114,6 +114,7 @@ export function BudgetAlertsPanel({ month, currency }: { month: string; currency
     <article className="panel planning-panel">
       <div className="panel-heading"><div><p className="eyebrow">SEGUIMIENTO · #74</p><h3>Alertas presupuestarias locales</h3></div><span className="date-badge">{month}</span></div>
       <p className="section-footnote">Avisos informativos dentro de la aplicación. No modifican asignaciones ni generan notificaciones externas o procesos residentes.</p>
+      <p className="section-footnote">El presupuesto de Actual está agregado por categoría y no se desglosa por cuenta; las alertas siguen el mismo ámbito global de la pantalla de Presupuestos.</p>
       {data ? <p className="section-footnote">Última evaluación: {new Date(data.evaluatedAt).toLocaleString('es-ES')} · periodo {data.month} · divisa {data.currency}.</p> : null}
       {data ? (
         <>
@@ -164,9 +165,14 @@ export function BudgetAlertsPanel({ month, currency }: { month: string; currency
           <div className="suggestion-block">
             <h4>Avisos del periodo ({data.alerts.length})</h4>
             {data.alerts.length === 0 ? <p className="muted-copy">No hay umbrales cruzados en este periodo o todos los avisos ya están revisados/pospuestos.</p> : null}
-            {data.alerts.map((alert) => (
+            {data.alerts.map((alert) => {
+              const category = data.categories.find((item) => item.categoryId === alert.categoryId);
+              return (
               <div className="comparison-row" key={alert.eventId}>
-                <div><strong>{alert.categoryName}</strong><span>{alert.message}</span></div>
+                <div><strong>{alert.categoryName}</strong><span>{alert.message}</span>
+                  <span>Asignado: {formatMoney(category?.budgetedMinor ?? null, data.currency)} · Gastado: {formatMoney(category?.spentMinor ?? null, data.currency)} · Disponible: {formatMoney(category?.availableMinor ?? null, data.currency)}</span>
+                  <a href={'#budget-category-' + encodeURIComponent(alert.categoryId)}>Ver detalle en Presupuestos</a>
+                </div>
                 <div className="comparison-meta">
                   <span>Observado: {displayObserved(alert)} · Umbral: {thresholdLabel({ id: alert.ruleId, categoryId: alert.categoryId, metric: alert.metric, threshold: alert.threshold, enabled: true }, alert.currency)}</span>
                   <div className="button-row">
@@ -175,7 +181,8 @@ export function BudgetAlertsPanel({ month, currency }: { month: string; currency
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
           {data.warnings.map((warning) => <p className="form-alert warning" role="note" key={warning}>{warning}</p>)}
         </>
