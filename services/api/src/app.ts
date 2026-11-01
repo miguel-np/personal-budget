@@ -3406,7 +3406,7 @@ function monthsBefore(date: string, months: number): string {
           priorityTier = proposal.evidence.signal === 'recent_increase' && increase > 0 ? 1 : 0;
           priorityValue = increase;
           priorityReason = priorityTier
-            ? 'Prioridad por tendencia: el último mes completo superó en ' + increase + ' unidades menores la media de referencia. Revisa primero la variación antes de fijar un recorte.'
+            ? 'Prioridad por tendencia: el último mes completo superó la media de referencia. Revisa primero esta variación antes de fijar un recorte.'
             : 'No hay un aumento reciente cuantificado; se mantiene como alternativa secundaria basada en el presupuesto y el historial.';
         } else if (actionState.budgetImprovements.goal === 'reach_savings_goal') {
           if (targetSavingsGoal && targetSavingsGapMinor !== null) {
@@ -3420,19 +3420,16 @@ function monthsBefore(date: string, months: number): string {
             priorityTier = targetSavingsGapMinor > 0 ? 1 : 0;
             priorityValue = covered;
             priorityReason = targetSavingsGapMinor > 0
-              ? 'Para «' + targetSavingsGoal.name + '», el ahorro hipotético podría cubrir ' + covered +
-                ' de ' + targetSavingsGapMinor + ' unidades menores de la aportación mensual que falta, solo si lo asignas íntegramente al objetivo.'
+              ? 'Prioridad vinculada a «' + targetSavingsGoal.name + '»: se ordena por la parte de la brecha de aportación mensual que esta propuesta podría cubrir si se destina íntegramente al objetivo.'
               : 'El plan actual ya cubre la aportación mensual requerida para «' + targetSavingsGoal.name + '»; se ordena por ahorro potencial adicional.';
           } else {
             priorityReason = 'No hay un objetivo activo compatible con la divisa, el ámbito y una fecha proyectable; se ordena por ahorro mensual potencial sin atribuir impacto a una meta.';
           }
         } else if (actionState.budgetImprovements.goal === 'free_cash_flow') {
           priorityValue = proposal.estimatedMonthlySavingsMinor;
-          priorityReason = 'Prioridad por liquidez: esta alternativa podría liberar ' + proposal.estimatedMonthlySavingsMinor +
-            ' unidades menores al mes según el gasto histórico; los compromisos activos siguen siendo independientes.';
+          priorityReason = 'Prioridad por liquidez: se ordena por el margen mensual hipotético que podría liberar el gasto histórico; los compromisos activos siguen siendo independientes.';
         } else {
-          priorityReason = 'Prioridad por margen: esta alternativa ofrece un ahorro mensual hipotético de ' +
-            proposal.estimatedMonthlySavingsMinor + ' unidades menores, sin asumir cambios automáticos.';
+          priorityReason = 'Prioridad por margen: se ordena por el ahorro mensual hipotético derivado del gasto observado, sin asumir cambios automáticos.';
         }
         return { ...proposal, priorityTier, priorityValue, priorityReason, goalImpact };
       })
@@ -3474,7 +3471,7 @@ function monthsBefore(date: string, months: number): string {
     }));
     return {
       asOfDate, currency: preferences.displayCurrency, accountScope: scope.metadata, baseline,
-      categoryBreakdown, recurringCandidates, commitments: activeCommitments,
+      categoryBreakdown, recurringCandidates, commitments: compatibleCommitments,
       proposals: prioritizedProposals, corePreferences, categoryChoices, savingsGoals, savingsGoalContextStatus, savingsGoalContextWarnings,
       goal: actionState.budgetImprovements.goal,
       decisions: actionState.budgetImprovements.decisions,
