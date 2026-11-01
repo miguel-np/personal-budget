@@ -251,10 +251,17 @@ function relevantExcerpt(text: string, query: string): string {
   return (start > 0 ? '[…] ' : '') + text.slice(start, start + MAX_EXCERPT_CHARS) + (start + MAX_EXCERPT_CHARS < text.length ? ' […]' : '');
 }
 
-interface HttpsPayload {
+export interface OfficialDocumentFetchResponse {
   readonly body: Buffer;
   readonly contentType: string;
 }
+export type OfficialDocumentFetcher = (
+  url: URL,
+  maxBytes: number,
+  timeoutMs: number,
+  callerSignal?: AbortSignal,
+) => Promise<OfficialDocumentFetchResponse>;
+type HttpsPayload = OfficialDocumentFetchResponse;
 async function requestOfficialHttps(url: URL, maxBytes: number, timeoutMs: number, callerSignal?: AbortSignal): Promise<HttpsPayload> {
   if (url.protocol !== 'https:' || url.username || url.password || url.port || url.hash || !isOfficialHost(url.hostname)) {
     throw new Error('Official document URL rejected.');
@@ -367,6 +374,7 @@ export async function retrieveOfficialDocument(
   referenceDate: string,
   timeoutMs: number,
   callerSignal?: AbortSignal,
+  fetchOfficial: OfficialDocumentFetcher = requestOfficialHttps,
 ): Promise<OfficialDocumentEvidence> {
   let sourceUrl: URL;
   try { sourceUrl = new URL(source.url); } catch { return unavailableEvidence('unsupported', 'unsupported_format'); }
@@ -381,9 +389,9 @@ export async function retrieveOfficialDocument(
       const analysisURL = new URL('/datosabiertos/api/legislacion-consolidada/id/' + id + '/analisis', 'https://www.boe.es');
       const pageURL = new URL('/buscar/act.php?id=' + encodeURIComponent(id), 'https://www.boe.es');
       const [metadataResult, analysisResult, pageResult] = await Promise.allSettled([
-        requestOfficialHttps(metadataURL, MAX_BOE_METADATA_BYTES, timeoutMs, callerSignal),
-        requestOfficialHttps(analysisURL, MAX_BOE_ANALYSIS_BYTES, timeoutMs, callerSignal),
-        requestOfficialHttps(pageURL, MAX_HTML_BYTES, timeoutMs, callerSignal),
+        fetchOfficial(metadataURL, MAX_BOE_METADATA_BYTES, timeoutMs, callerSignal),
+        fetchOfficial(analysisURL, MAX_BOE_ANALYSIS_BYTES, timeoutMs, callerSignal),
+        fetchOfficial(pageURL, MAX_HTML_BYTES, timeoutMs, callerSignal),
       ]);
       const metadataPayload = metadataResult.status === 'fulfilled' ? parseJsonPayload(metadataResult.value) : null;
       const analysisPayload = analysisResult.status === 'fulfilled' ? parseJsonPayload(analysisResult.value) : null;
@@ -418,7 +426,7 @@ export async function retrieveOfficialDocument(
   }
 
   try {
-    const payload = await requestOfficialHttps(sourceUrl, MAX_HTML_BYTES, timeoutMs, callerSignal);
+    const payload = await fetchOfficial(sourceUrl, MAX_HTML_BYTES, timeoutMs, callerSignal);
     if (!(payload.contentType.includes('text/html') || payload.contentType.includes('application/xhtml+xml') || payload.contentType.includes('text/plain'))) {
       return unavailableEvidence('unsupported', 'unsupported_format');
     }
