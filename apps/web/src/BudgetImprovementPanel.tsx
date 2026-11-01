@@ -29,7 +29,7 @@ interface Scenario {
   id: string; name: string; currency: string; startDate: string; endDate: string;
   reductions: readonly { categoryId: string; reductionPercent: number }[];
   estimatedMonthlySavingsMinor: number; estimatedAnnualSavingsMinor: number; createdAt: string;
-  comparisonStatus?: 'comparable' | 'different_currency' | 'different_period' | 'preferences_changed';
+  comparisonStatus?: 'comparable' | 'different_currency' | 'different_period' | 'different_scope' | 'preferences_changed';
   comparison?: {
     baselineMonthlySavingsMinor: number; estimatedMonthlySavingsMinor: number;
     projectedMonthlySavingsMinor: number; estimatedAnnualSavingsMinor: number;
@@ -345,7 +345,7 @@ export function BudgetImprovementPanel({ currency }: { currency: string }) {
                       {scenario.comparison.warnings.map((warning) => <span className="warning-text" key={warning}>{warning}</span>)}
                     </> : <>
                       <span>Resultado guardado al crear: {formatMoney(scenario.estimatedMonthlySavingsMinor, currency)} / mes · {formatMoney(scenario.estimatedAnnualSavingsMinor, currency)} / año.</span>
-                      <span>{scenario.comparisonStatus === 'different_currency' ? 'No comparable: la divisa ha cambiado.' : scenario.comparisonStatus === 'different_period' ? 'No comparable: el periodo de referencia ha cambiado.' : 'No comparable: las preferencias o la evidencia ya no permiten reproducir esta alternativa.'}</span>
+                      <span>{scenario.comparisonStatus === 'different_currency' ? 'No comparable: la divisa ha cambiado.' : scenario.comparisonStatus === 'different_period' ? 'No comparable: el periodo de referencia ha cambiado.' : scenario.comparisonStatus === 'different_scope' ? 'No comparable: el ámbito de cuentas ha cambiado o el escenario antiguo no conserva su huella de ámbito.' : 'No comparable: las preferencias o la evidencia ya no permiten reproducir esta alternativa.'}</span>
                     </>}
                     <button className="button small" type="button" disabled={busy} onClick={() => void deleteScenario(scenario.id)}>Eliminar escenario</button>
                   </div>
