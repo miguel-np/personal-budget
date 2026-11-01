@@ -3387,10 +3387,10 @@ function monthsBefore(date: string, months: number): string {
         const rightGap = Math.max(0, right.projection!.requiredMonthlyContributionMinor! - right.monthlyContributionMinor);
         return rightGap - leftGap || left.targetDate.localeCompare(right.targetDate);
       })[0] ?? null;
-    const targetSavingsGapMinor = targetSavingsGoal?.projection?.requiredMonthlyContributionMinor === null ||
-      targetSavingsGoal?.projection?.requiredMonthlyContributionMinor === undefined
-      ? null
-      : Math.max(0, targetSavingsGoal.projection.requiredMonthlyContributionMinor - targetSavingsGoal.monthlyContributionMinor);
+    const targetRequiredMonthlyContributionMinor = targetSavingsGoal?.projection?.requiredMonthlyContributionMinor ?? null;
+    const targetSavingsGapMinor = targetSavingsGoal && targetRequiredMonthlyContributionMinor !== null
+      ? Math.max(0, targetRequiredMonthlyContributionMinor - targetSavingsGoal.monthlyContributionMinor)
+      : null;
     const prioritizedProposals = proposals
       .map((proposal) => {
         let priorityTier = 0;
