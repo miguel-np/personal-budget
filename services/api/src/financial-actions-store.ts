@@ -43,6 +43,7 @@ const ScenarioSchema = z.object({
   startDate: isoDate,
   endDate: isoDate,
   currency: z.string().regex(/^[A-Z]{3}$/),
+  accountScopeSignature: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   reductions: z.array(ReductionSchema).max(100),
   estimatedMonthlySavingsMinor: safeNonNegative,
   estimatedAnnualSavingsMinor: safeNonNegative,
