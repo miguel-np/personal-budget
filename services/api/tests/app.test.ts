@@ -154,9 +154,15 @@ describe('local API', () => {
       method: 'POST', url: '/api/v1/assistant/web-search',
       payload: { consent: true, query: 'IRPF', mode: 'general', domains: ['boe.es', 'boe.es'] },
     });
+    const approvedDgtDomain = await app.inject({
+      method: 'POST', url: '/api/v1/assistant/web-search',
+      payload: { consent: true, query: 'consulta DGT', mode: 'general', domains: ['petete.tributos.hacienda.gob.es'] },
+    });
     expect(incompleteTax.statusCode).toBe(400);
     expect(unapprovedDomain.statusCode).toBe(400);
     expect(duplicateDomains.statusCode).toBe(400);
+    expect(approvedDgtDomain.statusCode).toBe(503);
+    expect(approvedDgtDomain.json().error.code).toBe('AI_DISABLED');
   });
 
   it('applies a bounded per-process rate limit before Ollama or the external search provider is invoked', async () => {
