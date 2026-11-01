@@ -117,7 +117,8 @@ describe('financial intelligence findings', () => {
       period: { startDate: '2026-10-01', endDate: '2026-10-31' },
       accountScope: scope, currency: 'EUR', confidence: 'observed' as const,
       priority: 'low' as const, priorityReason: 'Rule', impactMinor: 1,
-      metrics: { count: 1 }, evidence: [{ label: 'Count', value: 1, source: 'test', rule: 'test' }],
+      metrics: { count: 1, previousStartDate: '2026-09-01', previousEndDate: '2026-09-30' },
+      evidence: [{ label: 'Count', value: 1, source: 'test', rule: 'test' }],
       limitations: [], calculatedAt, navigationTarget: '/movements' as const,
     };
     const first = createFinancialFinding(draft);
@@ -125,6 +126,7 @@ describe('financial intelligence findings', () => {
     const nextPeriod = createFinancialFinding({
       ...draft,
       period: { startDate: '2026-11-01', endDate: '2026-11-30' },
+      metrics: { count: 1, previousStartDate: '2026-10-01', previousEndDate: '2026-10-31' },
       calculatedAt: '2026-11-30T12:00:00.000Z',
     });
     const changed = createFinancialFinding({ ...draft, impactMinor: 2, metrics: { count: 2 } });
