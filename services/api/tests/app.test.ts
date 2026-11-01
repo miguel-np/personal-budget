@@ -2881,10 +2881,18 @@ describe('phase 2 financial utility APIs', () => {
       ]),
     }) as BudgetRepository;
     const app = await createTestApp(repository, { ...config, actualDataDir: directory });
+    const goalCreation = await app.inject({
+      method: 'POST', url: '/api/v1/planning/goals',
+      payload: {
+        name: 'Fondo de emergencia', targetAmountMinor: 500_000, initialAmountMinor: 100_000,
+        monthlyContributionMinor: 20_000, targetDate: plusDays(todayInProcessTimeZone(), 180),
+      },
+    });
+    expect(goalCreation.statusCode).toBe(201);
     const saved = await app.inject({
       method: 'PUT', url: '/api/v1/budget-improvements/preferences',
       payload: {
-        goal: 'increase_monthly_margin',
+        goal: 'reach_savings_goal',
         categories: [
           { categoryId: 'variable', classification: 'flexible' },
           { categoryId: 'protected-spend', classification: 'protected' },
@@ -2902,7 +2910,28 @@ describe('phase 2 financial utility APIs', () => {
       evidence: { signal: 'budget_overrun', budgetedMinor: 10_000, budgetSpentMinor: 15_000 },
     });
     expect(response.json().data.proposals[0].assumptions.join(' ')).toContain('No equivale necesariamente al exceso presupuestario');
+    expect(response.json().data.proposals[0]).toMatchObject({
+      priorityRank: 1, goalImpact: { goalName: 'Fondo de emergencia' },
+    });
+    expect(response.json().data.proposals[0].priorityReason).toContain('Fondo de emergencia');
     expect(response.json().data.proposals.some((proposal: { categoryId: string }) => proposal.categoryId === 'protected-spend')).toBe(false);
+
+    const simulation = await app.inject({
+      method: 'POST', url: '/api/v1/budget-improvements/simulate',
+      payload: { periodMonths: 3, reductions: [{ categoryId: 'variable', reductionPercent: 10 }] },
+    });
+    expect(simulation.statusCode).toBe(200);
+    expect(simulation.json().data.goalImpacts).toContainEqual(expect.objectContaining({
+      goalId: goalCreation.json().data.id, goalName: 'Fondo de emergencia',
+      scenarioMonthlyContributionMinor: expect.any(Number), projectedBalanceIncreaseMinor: expect.any(Number),
+    }));
+    const goalImpact = simulation.json().data.goalImpacts[0];
+    expect(goalImpact.scenarioMonthlyContributionMinor).toBeGreaterThan(goalImpact.baselineMonthlyContributionMinor);
+    expect(goalImpact.scenarioProjectedBalanceMinor).toBeGreaterThanOrEqual(goalImpact.baselineProjectedBalanceMinor);
+    expect(simulation.json().data.comparison).toMatchObject({
+      referenceStartDate: '2026-08-01', referenceEndDate: '2026-10-31',
+      improvementMonthlyMinor: simulation.json().data.simulation.estimatedMonthlySavingsMinor,
+    });
 
     const proposalId = response.json().data.proposals[0].id as string;
     for (const decisionStatus of ['accepted', 'postponed', 'rejected'] as const) {
@@ -2928,7 +2957,18 @@ describe('phase 2 financial utility APIs', () => {
     expect(scenario.statusCode).toBe(201);
     const scenarioId = scenario.json().data.id as string;
     const withScenario = await app.inject({ method: 'GET', url: '/api/v1/budget-improvements?periodMonths=3' });
-    expect(withScenario.json().data.scenarios).toContainEqual(expect.objectContaining({ id: scenarioId, name: 'Ahorro variable' }));
+    expect(withScenario.json().data.scenarios).toContainEqual(expect.objectContaining({
+      id: scenarioId, name: 'Ahorro variable', comparisonStatus: 'comparable',
+      comparison: expect.objectContaining({
+        baselineMonthlySavingsMinor: expect.any(Number),
+        estimatedMonthlySavingsMinor: expect.any(Number),
+        projectedMonthlySavingsMinor: expect.any(Number),
+      }),
+    }));
+    const differentPeriod = await app.inject({ method: 'GET', url: '/api/v1/budget-improvements?periodMonths=6' });
+    expect(differentPeriod.json().data.scenarios).toContainEqual(expect.objectContaining({
+      id: scenarioId, comparisonStatus: 'different_period', comparison: null,
+    }));
     const removed = await app.inject({ method: 'DELETE', url: '/api/v1/budget-improvements/scenarios/' + scenarioId });
     expect(removed.statusCode).toBe(200);
     expect(removed.json().data.deleted).toBe(true);
