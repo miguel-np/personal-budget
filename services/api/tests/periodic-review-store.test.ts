@@ -53,7 +53,7 @@ describe('periodic review store', () => {
       startDate: '2026-10-26',
       endDate: '2026-10-30',
       currency: 'EUR',
-      accountScope: { mode: 'selected', label: 'Dos cuentas seleccionadas', fingerprint: fullB },
+      accountScope: { mode: 'selected', label: 'Dos cuentas seleccionadas', fingerprint: scopeSelectedFingerprint },
       items: [
         { findingId: 'finding-a', findingType: 'expense-change', identityKey: identityA, evidenceFingerprint: evidenceA, fingerprint: fullA, status: 'pending' },
         { findingId: 'finding-b', findingType: 'financial-anomaly', identityKey: identityB, evidenceFingerprint: evidenceB, fingerprint: fullB, status: 'pending' },
@@ -75,7 +75,7 @@ describe('periodic review store', () => {
       status: 'postponed',
       postponedUntil: '2026-11-06',
       identityKey: identityB,
-      evidenceFingerprint: fullA,
+      evidenceFingerprint: evidenceB,
     });
     expect(await updatePeriodicReviewItem(directory, review.id, 'missing', 'reviewed')).toBeNull();
     expect((await readPeriodicReviewState(directory)).reviews[0]?.status).toBe('completed');
@@ -91,7 +91,7 @@ describe('periodic review store', () => {
       accountScope: { mode: 'all', label: 'Todas las cuentas abiertas', fingerprint: scopeAllFingerprint },
       items: [
         { findingId: 'finding-a', findingType: 'expense-change', identityKey: identityA, evidenceFingerprint: evidenceA, fingerprint: fullA, status: 'pending' },
-        { findingId: 'finding-b', findingType: 'income-change', identityKey: identityB, evidenceFingerprint: fullA, fingerprint: identityB, status: 'pending' },
+        { findingId: 'finding-b', findingType: 'income-change', identityKey: identityB, evidenceFingerprint: evidenceB, fingerprint: fullB, status: 'pending' },
       ],
     });
     await Promise.all([
