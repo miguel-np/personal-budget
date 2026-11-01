@@ -95,7 +95,7 @@ Para activar IA opcional, instala Ollama local, descarga el modelo elegido y con
 
 MCP se lanza por stdio con npm run mcp:serve después de arrancar la API. No abre un puerto de red y sus herramientas son de solo lectura.
 
-Antes de actualizaciones o importaciones masivas, ejecuta npm run backup:actual. Para restaurar, ejecuta npm run restore:actual -- <ruta-de-copia>. Compara cuentas, categorías y movimientos en una instancia aislada; la integridad del archivo no demuestra por sí sola que la restauración sea funcional.
+Antes de crear una copia unificada o restaurar, detén Personal Budget con Ctrl+C para que la API no escriba durante la operación. Ejecuta `npm run backup:actual` para respaldar el volumen de Actual y los seis almacenes JSON propios inventariados. Para restaurar, usa `npm run restore:actual -- <ruta-de-copia-cifrada.tar.gz.enc> --confirm-data-restore`; la restauración exige confirmación explícita y conserva copias pre-restore. Revisa [Backup y restauración](backup-restore.md) para las exclusiones, custodia de la clave y ensayo de recuperación. No pruebes la restauración sobre el único presupuesto personal.
 
 ## 6. Validar calidad
 
