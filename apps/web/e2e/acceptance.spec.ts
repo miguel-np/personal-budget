@@ -965,6 +965,10 @@ test('budget improvement preferences, proposals, combined simulation and saved s
       savedScenarios = [scenario];
       return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: scenario }) });
     }
+    if (requestUrl.pathname.includes('/scenarios/') && route.request().method() === 'DELETE') {
+      savedScenarios = [];
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { deleted: true } }) });
+    }
     return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: { message: 'Ruta E2E no disponible.' } }) });
   });
 
@@ -977,6 +981,10 @@ test('budget improvement preferences, proposals, combined simulation and saved s
   await expect(improvementPanel.getByRole('heading', { name: 'Propuestas basadas en evidencia (1)' })).toBeVisible();
   await expect(improvementPanel.getByText(/Ahorro hipotético sugerido al 5 %/)).toBeVisible();
   await expect(improvementPanel.getByText(/Señal: aumento frente a la media histórica/)).toBeVisible();
+  await improvementPanel.getByRole('button', { name: 'Aceptar propuesta' }).click();
+  await expect(improvementPanel.getByText('Decisión: accepted')).toBeVisible();
+  await improvementPanel.getByRole('button', { name: 'Posponer' }).click();
+  await expect(improvementPanel.getByText('Decisión: postponed')).toBeVisible();
   await improvementPanel.getByRole('button', { name: 'Descartar' }).click();
   await expect(improvementPanel.getByText('Decisión: rejected')).toBeVisible();
   await improvementPanel.getByRole('button', { name: 'Simular selección' }).click();
@@ -985,6 +993,9 @@ test('budget improvement preferences, proposals, combined simulation and saved s
   await improvementPanel.getByRole('button', { name: 'Guardar escenario local' }).click();
   await expect(improvementPanel.getByText('Escenario guardado como metadatos locales')).toBeVisible();
   await expect(improvementPanel.getByRole('heading', { name: 'Escenarios guardados (1)' })).toBeVisible();
+  await improvementPanel.getByRole('button', { name: 'Eliminar escenario' }).click();
+  await expect(improvementPanel.getByRole('heading', { name: 'Escenarios guardados (1)' })).toHaveCount(0);
+  await expect(improvementPanel.getByText('Ajuste flexible')).toHaveCount(0);
 
   const state = await (await request.get(fixtureApi + '/__test__/state')).json();
   expect(state.transactionWrites).toBe(0);

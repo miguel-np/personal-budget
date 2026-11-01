@@ -2905,12 +2905,14 @@ describe('phase 2 financial utility APIs', () => {
     expect(response.json().data.proposals.some((proposal: { categoryId: string }) => proposal.categoryId === 'protected-spend')).toBe(false);
 
     const proposalId = response.json().data.proposals[0].id as string;
-    const rejected = await app.inject({
-      method: 'PATCH', url: '/api/v1/budget-improvements/decisions',
-      payload: { proposalId, status: 'rejected', periodMonths: 3 },
-    });
-    expect(rejected.statusCode).toBe(200);
-    expect(rejected.json().data).toMatchObject({ proposalId, status: 'rejected' });
+    for (const decisionStatus of ['accepted', 'postponed', 'rejected'] as const) {
+      const decision = await app.inject({
+        method: 'PATCH', url: '/api/v1/budget-improvements/decisions',
+        payload: { proposalId, status: decisionStatus, periodMonths: 3 },
+      });
+      expect(decision.statusCode).toBe(200);
+      expect(decision.json().data).toMatchObject({ proposalId, status: decisionStatus });
+    }
     const withDecision = await app.inject({ method: 'GET', url: '/api/v1/budget-improvements?periodMonths=3' });
     expect(withDecision.json().data.decisions).toContainEqual(expect.objectContaining({ proposalId, status: 'rejected' }));
     const stalePeriodDecision = await app.inject({
