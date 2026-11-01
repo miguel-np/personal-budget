@@ -23,13 +23,13 @@ function isLoopbackUrl(value: string): boolean {
 function isAllowedWebSearchURL(value: string): boolean {
   try {
     const parsed = new URL(value);
-    const hostname = parsed.hostname.replace(/^\\[|\\]$/g, '').toLowerCase();
+    const hostname = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase();
     const loopback = hostname === 'localhost' || hostname === '::1' || hostname.startsWith('127.');
     return (parsed.protocol === 'https:' || (parsed.protocol === 'http:' && loopback)) &&
       !parsed.username && !parsed.password && !parsed.search && !parsed.hash &&
       (parsed.pathname === '/' || parsed.pathname === '') &&
       !hostname.endsWith('.local') && !hostname.endsWith('.internal') &&
-      (loopback || !/^\\d{1,3}(?:\\.\\d{1,3}){3}$/.test(hostname) && !hostname.includes(':'));
+      (loopback || !/^\d{1,3}(?:\\.\d{1,3}){3}$/.test(hostname) && !hostname.includes(':'));
   } catch {
     return false;
   }

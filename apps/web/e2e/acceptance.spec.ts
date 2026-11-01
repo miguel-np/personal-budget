@@ -329,7 +329,7 @@ test('controlled web research requires per-query consent and shows official sour
         sourceCount: 1,
         sources: [{
           id: 'S1', title: 'Disposición publicada en el BOE', url: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2025-1',
-          domain: 'www.boe.es', publishedAt: '2025-03-01T00:00:00.000Z',
+          domain: 'www.boe.es', institution: 'Boletín Oficial del Estado (BOE)', publishedAt: '2025-03-01T00:00:00.000Z', modifiedAt: null,
           snippet: 'Fragmento sintético de una disposición oficial.', sourceKind: 'normativa',
         }],
       } }),
@@ -359,6 +359,8 @@ test('controlled web research requires per-query consent and shows official sour
   });
   expect(JSON.stringify(approvedPayload)).not.toContain('synthetic-account');
   expect(JSON.stringify(approvedPayload)).not.toContain('Supermercado sintético');
+  await expect(form.getByRole('checkbox', { name: /Confirmo que autorizo enviar únicamente esta consulta/ })).not.toBeChecked();
+  await expect(form.getByRole('button', { name: 'Buscar y sintetizar fuentes' })).toBeDisabled();
 });
 
 test('global account scope persists and narrows the movements view', async ({ page, request }) => {

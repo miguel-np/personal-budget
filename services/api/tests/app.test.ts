@@ -131,6 +131,41 @@ describe('local API', () => {
     expect(noConsent.statusCode).toBe(400);
   });
 
+  it('requires explicit fiscal context and rejects domains outside the official allowlist', async () => {
+    const app = await createTestApp();
+    const incompleteTax = await app.inject({
+      method: 'POST', url: '/api/v1/assistant/web-search',
+      payload: { consent: true, query: 'IRPF', mode: 'tax' },
+    });
+    const unapprovedDomain = await app.inject({
+      method: 'POST', url: '/api/v1/assistant/web-search',
+      payload: { consent: true, query: 'IRPF', mode: 'general', domains: ['example.com'] },
+    });
+    const duplicateDomains = await app.inject({
+      method: 'POST', url: '/api/v1/assistant/web-search',
+      payload: { consent: true, query: 'IRPF', mode: 'general', domains: ['boe.es', 'boe.es'] },
+    });
+    expect(incompleteTax.statusCode).toBe(400);
+    expect(unapprovedDomain.statusCode).toBe(400);
+    expect(duplicateDomains.statusCode).toBe(400);
+  });
+
+  it('applies a bounded per-process rate limit before Ollama or the external search provider is invoked', async () => {
+    const app = await createTestApp(createRepository(), {
+      ...config, aiEnabled: true, webSearchEnabled: true,
+    });
+    const payload = { consent: true, query: 'consulta de prueba', mode: 'general', domains: [] };
+    for (let index = 0; index < 6; index += 1) {
+      const response = await app.inject({ method: 'POST', url: '/api/v1/assistant/web-search', payload });
+      expect(response.statusCode).toBe(503);
+      expect(response.json().error.code).toBe('AI_UNAVAILABLE');
+    }
+    const limited = await app.inject({ method: 'POST', url: '/api/v1/assistant/web-search', payload });
+    expect(limited.statusCode).toBe(429);
+    expect(limited.json().error.code).toBe('WEB_SEARCH_RATE_LIMIT');
+    expect(limited.headers['retry-after']).toBe('60');
+  });
+
   it('uses only the approved query for web search and never reads financial context', async () => {
     let chatCall = 0;
     const modelRequests: Array<Record<string, unknown>> = [];

@@ -32,7 +32,7 @@ describe('SearXNG web search provider', () => {
       requestedURL = request.url ?? '';
       response.writeHead(200, { 'content-type': 'application/json' });
       response.end(JSON.stringify({ results: [
-        { title: 'Ley publicada', url: 'https://www.boe.es/buscar/act.php?id=BOE-A-2025-1', content: 'Texto oficial y fecha de entrada en vigor.', publishedDate: '2025-03-01' },
+        { title: 'Ley publicada', url: 'https://www.boe.es/buscar/act.php?id=BOE-A-2025-1', content: 'Texto oficial y fecha de entrada en vigor.', publishedDate: '2025-03-01', modifiedDate: '2025-04-01' },
         { title: 'Internal metadata', url: 'https://169.254.169.254/latest/meta-data', content: 'Debe descartarse.' },
         { title: 'Private UI', url: 'https://127.0.0.1/admin', content: 'Debe descartarse.' },
         { title: 'Domain outside filter', url: 'https://example.com/article', content: 'Debe descartarse por dominio.' },
@@ -47,8 +47,8 @@ describe('SearXNG web search provider', () => {
     expect(result.provider).toBe('SearXNG');
     expect(result.sources).toHaveLength(1);
     expect(result.sources[0]).toMatchObject({
-      id: 'S1', domain: 'www.boe.es', sourceKind: 'normativa',
-      publishedAt: '2025-03-01T00:00:00.000Z',
+      id: 'S1', domain: 'www.boe.es', institution: 'Boletín Oficial del Estado (BOE)', sourceKind: 'normativa',
+      publishedAt: '2025-03-01T00:00:00.000Z', modifiedAt: '2025-04-01T00:00:00.000Z',
     });
   });
 

@@ -378,8 +378,8 @@ const WebResearchRequestSchema = z.object({
   domains: z.array(z.enum(OFFICIAL_SOURCE_DOMAINS)).max(OFFICIAL_SOURCE_DOMAINS.length).default([]),
   jurisdiction: z.string().trim().min(1).max(120).optional(),
   matter: z.string().trim().min(1).max(120).optional(),
-  taxYear: z.string().regex(/^\\d{4}$/).optional(),
-  filingYear: z.string().regex(/^\\d{4}$/).optional(),
+  taxYear: z.string().regex(/^\d{4}$/).optional(),
+  filingYear: z.string().regex(/^\d{4}$/).optional(),
   referenceDate: z.string().refine(isIsoDate, 'referenceDate must be a valid YYYY-MM-DD date.').optional(),
 }).strict().superRefine((value, context) => {
   if (new Set(value.domains).size !== value.domains.length) {

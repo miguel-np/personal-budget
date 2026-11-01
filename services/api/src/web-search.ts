@@ -20,7 +20,9 @@ export interface WebSearchSource {
   readonly title: string;
   readonly url: string;
   readonly domain: string;
+  readonly institution: string;
   readonly publishedAt: string | null;
+  readonly modifiedAt: string | null;
   readonly snippet: string;
   readonly sourceKind: 'normativa' | 'criterio_administrativo' | 'organismo_oficial' | 'externa';
 }
@@ -118,13 +120,23 @@ function matchesDomain(hostname: string, domain: string): boolean {
 }
 function cleanText(value: string, maximum: number): string {
   return value.replace(/<[^>]*>/g, ' ').replace(/&(?:nbsp|amp|lt|gt|quot);/gi, ' ')
-    .replace(/[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F]/g, ' ')
-    .replace(/\\s+/g, ' ').trim().slice(0, maximum);
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ')
+    .replace(/\s+/g, ' ').trim().slice(0, maximum);
 }
 function publishedDate(value: unknown): string | null {
   if (typeof value !== 'string' && typeof value !== 'number') return null;
   const date = typeof value === 'number' ? new Date(value < 10_000_000_000 ? value * 1_000 : value) : new Date(value);
   return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+function institutionLabel(hostname: string): string {
+  if (matchesDomain(hostname, 'agenciatributaria.gob.es')) return 'Agencia Estatal de Administración Tributaria (AEAT)';
+  if (matchesDomain(hostname, 'boe.es')) return 'Boletín Oficial del Estado (BOE)';
+  if (matchesDomain(hostname, 'hacienda.gob.es')) return 'Ministerio de Hacienda';
+  if (matchesDomain(hostname, 'seg-social.es')) return 'Seguridad Social';
+  if (matchesDomain(hostname, 'xunta.gal') || matchesDomain(hostname, 'dog.gal')) return 'Xunta de Galicia / Diario Oficial de Galicia';
+  if (matchesDomain(hostname, 'cnmv.es')) return 'Comisión Nacional del Mercado de Valores (CNMV)';
+  if (matchesDomain(hostname, 'bde.es')) return 'Banco de España';
+  return hostname;
 }
 function sourceKind(hostname: string): WebSearchSource['sourceKind'] {
   if (hostname === 'boe.es' || hostname.endsWith('.boe.es')) return 'normativa';
@@ -150,7 +162,9 @@ function parseSource(value: unknown, index: number, allowedDomains: readonly str
     title,
     url: url.toString().slice(0, 2_048),
     domain: hostname,
+    institution: institutionLabel(hostname),
     publishedAt: publishedDate(item.publishedDate),
+    modifiedAt: publishedDate(item.modifiedDate ?? item.updatedDate ?? item.lastUpdated),
     snippet,
     sourceKind: sourceKind(hostname),
   };
@@ -171,8 +185,8 @@ export class SearXNGSearchProvider implements WebSearchProvider {
   }
 
   public async search(query: string, allowedDomains: readonly string[], callerSignal?: AbortSignal): Promise<WebSearchResponse> {
-    const safeQuery = cleanText(query, this.config.maxQueryChars);
-    if (safeQuery.length < 2 || safeQuery.length !== query.trim().length) throw new WebSearchUnavailableError();
+    const safeQuery = query.trim();
+    if (safeQuery.length < 2 || safeQuery.length > this.config.maxQueryChars || /[\u0000-\u001F\u007F]/.test(safeQuery)) throw new WebSearchUnavailableError();
     if (allowedDomains.length > OFFICIAL_SOURCE_DOMAINS.length ||
       allowedDomains.some((domain) => !OFFICIAL_SOURCE_DOMAINS.includes(domain as OfficialSourceDomain))) {
       throw new WebSearchUnavailableError();
