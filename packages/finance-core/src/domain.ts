@@ -1,5 +1,22 @@
 import type { ExchangeRateUsage } from './currency.js';
 
+/**
+ * Provider-independent repository error taxonomy. Every adapter must surface its
+ * failures through this class (or a subclass) so the API layer can map errors to
+ * HTTP responses without knowing which provider is connected.
+ */
+export type BudgetRepositoryErrorCode = 'NOT_CONFIGURED' | 'CLOSED' | 'UPSTREAM_FAILURE' | 'INVALID_INPUT';
+
+export class BudgetRepositoryError extends Error {
+  public readonly code: BudgetRepositoryErrorCode;
+
+  public constructor(code: BudgetRepositoryErrorCode, message: string) {
+    super(message);
+    this.name = 'BudgetRepositoryError';
+    this.code = code;
+  }
+}
+
 export interface BudgetAccount {
   readonly id: string;
   readonly name: string;
@@ -135,6 +152,101 @@ export interface TransactionCategoryBatchResult {
   readonly persisted: boolean;
 }
 
+/** Monthly budget category values exposed by the repository, in integer minor units. */
+export interface BudgetMonthCategory {
+  readonly id: string;
+  readonly name: string;
+  readonly hidden?: boolean;
+  readonly budgeted?: number | null;
+  readonly spent?: number | null;
+  readonly balance?: number | null;
+  readonly carryover?: boolean | null;
+}
+
+export interface BudgetMonthGroup {
+  readonly id: string;
+  readonly name: string;
+  readonly is_income?: boolean;
+  readonly hidden?: boolean;
+  readonly categories?: readonly BudgetMonthCategory[];
+}
+
+export interface BudgetMonthRecord {
+  readonly month: string;
+  readonly categoryGroups: readonly BudgetMonthGroup[];
+  readonly totalBudgeted?: number;
+  readonly totalSpent?: number;
+  readonly totalBalance?: number;
+  readonly totalIncome?: number;
+  readonly incomeAvailable?: number;
+  readonly toBudget?: number;
+}
+
+/** Explicit per-category budget allocation, in integer minor units. */
+export interface BudgetAllocation {
+  readonly categoryId: string;
+  readonly amountMinor: number;
+}
+
+/** Provider-independent import record accepted by importTransactions. */
+export interface ImportRecord {
+  readonly date: string;
+  readonly amount: number;
+  readonly payee_name?: string;
+  readonly imported_payee?: string;
+  readonly category?: string;
+  readonly notes?: string;
+  readonly imported_id?: string;
+  readonly cleared?: boolean;
+}
+
+export interface ImportResult {
+  readonly errors: readonly unknown[];
+  readonly added: readonly string[];
+  readonly updated: readonly string[];
+}
+
+/**
+ * Read/write boundary every financial provider must implement.
+ *
+ * Mandatory operations (always required):
+ * - isConfigured, listAccounts, listCategories, listTransactions.
+ *
+ * Optional capabilities (adapters implement them only when the provider really
+ * supports them; consumers must probe with typeof checks and must not simulate
+ * the capability with fake data):
+ * - updateTransaction / updateTransactionSafely: safe editing with read-after-write
+ *   verification. updateTransactionSafely returns { persisted, verified } and must
+ *   never report a silent success when persistence could not be confirmed.
+ * - updateTransactionCategoriesBatch: non-atomic category batch. Providers that
+ *   cannot guarantee atomicity must preflight every change and surface conflicts
+ *   and partial failures explicitly through TransactionCategoryBatchResult.
+ * - updateTransactionCategory: single-category fallback for repositories without
+ *   batch support.
+ * - getBudgetMonth / getBudgetAllocations / setBudgetAmount: monthly budget reads
+ *   and writes when the provider exposes them.
+ * - listTransferPayees / importTransactions: transfer payee discovery and imports
+ *   when the provider supports them.
+ *
+ * Provider lifecycle (session init, close/shutdown and resource release) is part
+ * of the concrete adapter contract, not of this read/write boundary.
+ *
+ * Error semantics: every failure the consumer should distinguish must be thrown as
+ * a BudgetRepositoryError. INVALID_INPUT is for callers that violate a contract
+ * precondition; NOT_CONFIGURED and CLOSED are lifecycle states; UPSTREAM_FAILURE
+ * is for provider outages or missing provider capabilities. Unexpected native
+ * errors are rethrown as UPSTREAM_FAILURE, never silently converted to success.
+ *
+ * Persistence/sync guarantees: write methods must sync with the provider after
+ * applying changes (see the adapter's documented sync semantics) and, where a
+ * verified result is returned, must only report verified=true after the new state
+ * is observable through a subsequent read. Amounts are always integer minor
+ * currency units; dates are civil YYYY-MM-DD strings.
+ *
+ * This abstraction eases a future provider substitution but does not imply that
+ * switching providers is possible without a data migration: the source of truth
+ * and its backup/restore lifecycle remain provider-specific.
+ */
 export interface BudgetRepository {
   readonly isConfigured: boolean;
   listAccounts(): Promise<readonly BudgetAccount[]>;
@@ -153,4 +265,18 @@ export interface BudgetRepository {
   updateTransactionCategoriesBatch?(changes: readonly TransactionCategoryBatchChange[]): Promise<TransactionCategoryBatchResult>;
   /** Backwards-compatible single category update for repositories without batch support. */
   updateTransactionCategory?(transactionId: string, categoryId: string): Promise<void>;
+  /** Budget month reads (totals and category groups); optional when the provider has no monthly budgets. */
+  getBudgetMonth?(month: string): Promise<BudgetMonthRecord>;
+  /** Explicit per-category budget allocations for a month; optional when the provider cannot expose them. */
+  getBudgetAllocations?(month: string): Promise<readonly BudgetAllocation[]>;
+  /** Persists a non-negative budget allocation in integer minor units. */
+  setBudgetAmount?(month: string, categoryId: string, amountMinor: number): Promise<void>;
+  /** Transfer payees usable for manual transfer creation; optional when the provider exposes another path. */
+  listTransferPayees?(): Promise<readonly { readonly name: string; readonly accountId: string }[]>;
+  /** Imports records in integer minor units; dry-run is the default unless the caller opts in. */
+  importTransactions?(
+    accountId: string,
+    records: readonly ImportRecord[],
+    options?: { readonly dryRun?: boolean },
+  ): Promise<ImportResult>;
 }

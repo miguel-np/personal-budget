@@ -1,9 +1,7 @@
 import { existsSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import * as ActualApiNamespace from '@actual-app/api';
-import { ActualBudgetAdapter } from '@personal-budget/actual-adapter';
-import type { ActualApiContract } from '@personal-budget/actual-adapter';
+import { ActualBudgetAdapter, createActualApiContract } from '@personal-budget/actual-adapter';
 import { buildApp } from './app.js';
 import { loadConfig } from './config.js';
 
@@ -23,29 +21,12 @@ async function main(): Promise<void> {
     ...parsedConfig,
     actualDataDir: isAbsolute(parsedConfig.actualDataDir) ? parsedConfig.actualDataDir : resolve(repositoryRoot, parsedConfig.actualDataDir),
   };
-  const api = Object.create(ActualApiNamespace) as ActualApiContract;
-  api.getBudgetAllocations = async (month: string) => {
-    const monthId = Number(month.replace('-', ''));
-    type BudgetAllocationRow = { readonly category: string; readonly amount: number };
-    type BudgetQueryResult = { readonly data?: readonly BudgetAllocationRow[] };
-    const [zeroBudgetRaw, trackingBudgetRaw] = await Promise.all([
-      ActualApiNamespace.aqlQuery(ActualApiNamespace.q('zero_budgets').filter({ month: monthId }).select(['category', 'amount'])),
-      ActualApiNamespace.aqlQuery(ActualApiNamespace.q('reflect_budgets').filter({ month: monthId }).select(['category', 'amount'])),
-    ]);
-    const zeroBudgetResult = zeroBudgetRaw as BudgetQueryResult;
-    const trackingBudgetResult = trackingBudgetRaw as BudgetQueryResult;
-    const rows = [
-      ...(zeroBudgetResult.data ?? []),
-      ...(trackingBudgetResult.data ?? []),
-    ];
-    return rows.map((row) => ({ categoryId: row.category, amountMinor: row.amount }));
-  };
   const repository = new ActualBudgetAdapter({
     serverURL: config.actualServerURL,
     dataDir: config.actualDataDir,
     ...(config.actualBudgetId ? { budgetId: config.actualBudgetId } : {}),
     ...(config.actualServerPassword ? { password: config.actualServerPassword } : {}),
-  }, api);
+  }, createActualApiContract());
   const app = await buildApp({ repository, config });
 
   const shutdown = async (signal: string): Promise<void> => {

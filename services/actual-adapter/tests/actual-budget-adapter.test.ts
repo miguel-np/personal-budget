@@ -4,7 +4,8 @@ import { resolve } from 'node:path';
 import type { BudgetTransaction, TransactionStructureUpdate } from '@personal-budget/finance-core';
 import { ActualBudgetAdapter } from '../src/actual-budget-adapter.js';
 import { mapActualAccount, mapActualCategory } from '../src/actual-api-contract.js';
-import type { ActualApiContract, ActualBudgetMonthRecord, ActualImportRecord } from '../src/actual-api-contract.js';
+import type { BudgetMonthRecord, ImportRecord } from '@personal-budget/finance-core';
+import type { ActualApiContract } from '../src/actual-api-contract.js';
 
 function createApi(overrides: Partial<ActualApiContract> = {}): ActualApiContract {
   return {
@@ -155,7 +156,7 @@ describe('ActualBudgetAdapter', () => {
   });
 
   it('reads official budget month data and persists explicit category allocation updates', async () => {
-    const monthRecord: ActualBudgetMonthRecord = {
+    const monthRecord: BudgetMonthRecord = {
       month: '2026-10',
       totalBudgeted: 15_000,
       totalSpent: -9_000,
@@ -198,7 +199,7 @@ describe('ActualBudgetAdapter', () => {
   it('syncs explicitly persisted imports and never asks to reimport deleted transactions', async () => {
     const api = createApi();
     const adapter = new ActualBudgetAdapter(config, api);
-    const input: ActualImportRecord[] = [{ date: '2026-10-10', amount: -1299, payee_name: 'Supermercado' }];
+    const input: ImportRecord[] = [{ date: '2026-10-10', amount: -1299, payee_name: 'Supermercado' }];
     await adapter.importTransactions('account-1', input, { dryRun: false });
     expect(api.importTransactions).toHaveBeenCalledWith('account-1', input, {
       dryRun: false, reimportDeleted: false, defaultCleared: false, payeeNameNormalization: 'original',
@@ -261,7 +262,7 @@ describe('ActualBudgetAdapter', () => {
   it('defaults imports to dry-run and prevents deleted transactions being reimported', async () => {
     const api = createApi();
     const adapter = new ActualBudgetAdapter(config, api);
-    const input: ActualImportRecord[] = [{ date: '2026-10-10', amount: -1299, payee_name: 'Supermercado' }];
+    const input: ImportRecord[] = [{ date: '2026-10-10', amount: -1299, payee_name: 'Supermercado' }];
     await adapter.importTransactions('account-1', input);
     expect(api.importTransactions).toHaveBeenCalledWith('account-1', input, {
       dryRun: true, reimportDeleted: false, defaultCleared: false, payeeNameNormalization: 'original',
@@ -270,7 +271,7 @@ describe('ActualBudgetAdapter', () => {
   it('rejects invalid import records before calling Actual', async () => {
     const api = createApi();
     const adapter = new ActualBudgetAdapter(config, api);
-    await expect(adapter.importTransactions('account-1', [{ date: 'not-a-date', amount: 1.5 }] as unknown as ActualImportRecord[]))
+    await expect(adapter.importTransactions('account-1', [{ date: 'not-a-date', amount: 1.5 }] as unknown as ImportRecord[]))
       .rejects.toMatchObject({ code: 'INVALID_INPUT' });
     expect(api.importTransactions).not.toHaveBeenCalled();
   });

@@ -14,6 +14,7 @@ Esta documentación describe el diseño objetivo de `personal-budget`, una aplic
 
 - [Criterios y procedimiento de aceptación P2](p2-acceptance.md)
 - [Planificación: recurrentes, sugerencias y previsiones](planning.md)
+- [Contratos financieros independientes del proveedor](provider-contracts.md)
 - [Centro de inteligencia financiera](financial-intelligence.md)
 - [Objetivos de ahorro y compromisos futuros](planning-goals.md)
 - [Saldo estimado y flujo de caja](cash-flow.md)

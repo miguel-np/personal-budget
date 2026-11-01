@@ -1,36 +1,9 @@
-import type { BudgetAccount, BudgetCategory, BudgetTransaction, TransactionStructureUpdate } from '@personal-budget/finance-core';
+import type {
+  BudgetAccount, BudgetAllocation, BudgetCategory, BudgetMonthRecord,
+  BudgetTransaction, ImportRecord, ImportResult, TransactionStructureUpdate,
+} from '@personal-budget/finance-core';
 
-export interface ActualBudgetMonthCategory {
-  readonly id: string;
-  readonly name: string;
-  readonly hidden?: boolean;
-  readonly budgeted?: number | null;
-  readonly spent?: number | null;
-  readonly balance?: number | null;
-  readonly carryover?: boolean | null;
-}
-export interface ActualBudgetMonthGroup {
-  readonly id: string;
-  readonly name: string;
-  readonly is_income?: boolean;
-  readonly hidden?: boolean;
-  readonly categories?: readonly ActualBudgetMonthCategory[];
-}
-export interface ActualBudgetAllocation {
-  readonly categoryId: string;
-  readonly amountMinor: number;
-}
-export interface ActualBudgetMonthRecord {
-  readonly month: string;
-  readonly categoryGroups: readonly ActualBudgetMonthGroup[];
-  readonly totalBudgeted?: number;
-  readonly totalSpent?: number;
-  readonly totalBalance?: number;
-  readonly totalIncome?: number;
-  readonly incomeAvailable?: number;
-  readonly toBudget?: number;
-}
-
+/** SDK-facing raw records: these shapes stay inside the adapter boundary. */
 export interface ActualAccountRecord {
   readonly id: string;
   readonly name: string;
@@ -54,23 +27,6 @@ export interface ActualCategoryRecord {
   readonly is_income?: boolean;
 }
 
-export interface ActualImportRecord {
-  readonly date: string;
-  readonly amount: number;
-  readonly payee_name?: string;
-  readonly imported_payee?: string;
-  readonly category?: string;
-  readonly notes?: string;
-  readonly imported_id?: string;
-  readonly cleared?: boolean;
-}
-
-export interface ActualImportResult {
-  readonly errors: readonly unknown[];
-  readonly added: readonly string[];
-  readonly updated: readonly string[];
-}
-
 export interface ActualApiContract {
   init(config: { readonly dataDir: string; readonly serverURL: string; readonly password?: string }): Promise<void>;
   downloadBudget(budgetId: string): Promise<void>;
@@ -79,21 +35,21 @@ export interface ActualApiContract {
   getAccounts(): Promise<readonly ActualAccountRecord[]>;
   getCategories(): Promise<readonly ActualCategoryRecord[]>;
   getPayees?(): Promise<readonly ActualPayeeRecord[]>;
-  getBudgetMonth?(month: string): Promise<ActualBudgetMonthRecord>;
-  getBudgetAllocations?(month: string): Promise<readonly ActualBudgetAllocation[]>;
+  getBudgetMonth?(month: string): Promise<BudgetMonthRecord>;
+  getBudgetAllocations?(month: string): Promise<readonly BudgetAllocation[]>;
   setBudgetAmount?(month: string, categoryId: string, amount: number): Promise<null>;
   updateTransaction?(transactionId: string, fields: TransactionStructureUpdate): Promise<unknown>;
   getTransactions(accountId: string, startDate: string, endDate: string): Promise<readonly BudgetTransaction[]>;
   importTransactions(
     accountId: string,
-    transactions: readonly ActualImportRecord[],
+    transactions: readonly ImportRecord[],
     options?: {
       readonly defaultCleared?: boolean;
       readonly dryRun?: boolean;
       readonly reimportDeleted?: boolean;
       readonly payeeNameNormalization?: 'title-case' | 'original';
     },
-  ): Promise<ActualImportResult>;
+  ): Promise<ImportResult>;
 }
 
 export interface ActualAdapterConfig {

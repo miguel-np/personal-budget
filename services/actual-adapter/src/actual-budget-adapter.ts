@@ -1,18 +1,15 @@
 import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import type { BudgetAccount, BudgetCategory, BudgetRepository, BudgetTransaction, TransactionCategoryBatchChange, TransactionCategoryBatchResult, TransactionStructureUpdate, TransactionUpdate, TransactionWriteResult } from '@personal-budget/finance-core';
-import { isIsoDate, validatePeriod } from '@personal-budget/finance-core';
+import type { BudgetAccount, BudgetAllocation, BudgetCategory, BudgetMonthRecord, BudgetRepository, BudgetRepositoryErrorCode, BudgetTransaction, ImportRecord, ImportResult, TransactionCategoryBatchChange, TransactionCategoryBatchResult, TransactionStructureUpdate, TransactionUpdate, TransactionWriteResult } from '@personal-budget/finance-core';
+import { BudgetRepositoryError, isIsoDate, validatePeriod } from '@personal-budget/finance-core';
 import { z } from 'zod';
-import type { ActualAdapterConfig, ActualApiContract, ActualBudgetAllocation, ActualBudgetMonthRecord, ActualImportRecord, ActualImportResult } from './actual-api-contract.js';
+import type { ActualAdapterConfig, ActualApiContract } from './actual-api-contract.js';
 import { mapActualAccount, mapActualCategory } from './actual-api-contract.js';
 
-export class ActualAdapterError extends Error {
-  public readonly code: 'NOT_CONFIGURED' | 'CLOSED' | 'UPSTREAM_FAILURE' | 'INVALID_INPUT';
-
-  public constructor(code: ActualAdapterError['code'], message: string) {
-    super(message);
+export class ActualAdapterError extends BudgetRepositoryError {
+  public constructor(code: BudgetRepositoryErrorCode, message: string) {
+    super(code, message);
     this.name = 'ActualAdapterError';
-    this.code = code;
   }
 }
 
@@ -100,7 +97,7 @@ const ImportRecordSchema = z.object({
 
 function omitUndefinedImportFields(
   record: z.infer<typeof ImportRecordSchema>,
-): ActualImportRecord {
+): ImportRecord {
   return {
     date: record.date,
     amount: record.amount,
@@ -151,7 +148,7 @@ export class ActualBudgetAdapter implements BudgetRepository {
     }));
   }
 
-  public async getBudgetMonth(month: string): Promise<ActualBudgetMonthRecord> {
+  public async getBudgetMonth(month: string): Promise<BudgetMonthRecord> {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
       throw new ActualAdapterError('INVALID_INPUT', 'Budget month must use YYYY-MM.');
     }
@@ -161,7 +158,7 @@ export class ActualBudgetAdapter implements BudgetRepository {
     return this.enqueue(async () => this.api.getBudgetMonth!(month));
   }
 
-  public async getBudgetAllocations(month: string): Promise<readonly ActualBudgetAllocation[]> {
+  public async getBudgetAllocations(month: string): Promise<readonly BudgetAllocation[]> {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
       throw new ActualAdapterError('INVALID_INPUT', 'Budget month must use YYYY-MM.');
     }
@@ -453,9 +450,9 @@ export class ActualBudgetAdapter implements BudgetRepository {
   /** Dry-run is the default; persistence requires an explicit caller choice. */
   public async importTransactions(
     accountId: string,
-    records: readonly ActualImportRecord[],
+    records: readonly ImportRecord[],
     options: { readonly dryRun?: boolean } = {},
-  ): Promise<ActualImportResult> {
+  ): Promise<ImportResult> {
     const parsedAccountId = IdentifierSchema.safeParse(accountId);
     if (!parsedAccountId.success) throw new ActualAdapterError('INVALID_INPUT', 'accountId is invalid.');
     const parsedRecords = z.array(ImportRecordSchema).max(10_000).safeParse(records);

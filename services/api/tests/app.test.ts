@@ -7,7 +7,7 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BudgetAccount, BudgetCategory, BudgetRepository, BudgetTransaction, TransactionCategoryBatchChange, TransactionCategoryBatchResult, TransactionStructureUpdate, TransactionUpdate, TransactionWriteResult } from '@personal-budget/finance-core';
 import { ActualAdapterError } from '@personal-budget/actual-adapter';
-import type { ActualBudgetMonthRecord, ActualImportRecord, ActualImportResult } from '@personal-budget/actual-adapter';
+import type { BudgetMonthRecord, ImportRecord, ImportResult } from '@personal-budget/finance-core';
 import { buildApp } from '../src/app.js';
 import type { AppConfig } from '../src/config.js';
 
@@ -775,7 +775,7 @@ describe('local API', () => {
     const repository = {
       ...createRepository({ listTransactions }),
       getBudgetMonth,
-    } as BudgetRepository & { getBudgetMonth: (month: string) => Promise<ActualBudgetMonthRecord> };
+    } as BudgetRepository & { getBudgetMonth: (month: string) => Promise<BudgetMonthRecord> };
     const app = await createTestApp(repository, { ...config, actualDataDir: directory });
     const partial = await app.inject({
       method: 'GET', url: '/api/v1/intelligence/findings?startDate=2026-09-01&endDate=2026-09-15',
@@ -1360,9 +1360,9 @@ describe('local API', () => {
   it('previews and explicitly commits validated, idempotent transaction imports', async () => {
     const importTransactions = vi.fn(async (
       _accountId: string,
-      _records: readonly ActualImportRecord[],
+      _records: readonly ImportRecord[],
       options?: { readonly dryRun?: boolean },
-    ): Promise<ActualImportResult> => ({
+    ): Promise<ImportResult> => ({
       errors: [],
       added: [options?.dryRun ? 'preview-id' : 'saved-id'],
       updated: [],
@@ -1396,7 +1396,7 @@ describe('local API', () => {
   });
 
   it('blocks OFX preview and commit when the declared currency differs from the destination account', async () => {
-    const importTransactions = vi.fn(async (): Promise<ActualImportResult> => ({ errors: [], added: ['should-not-write'], updated: [] }));
+    const importTransactions = vi.fn(async (): Promise<ImportResult> => ({ errors: [], added: ['should-not-write'], updated: [] }));
     const repository = Object.assign(createRepository(), { importTransactions }) as BudgetRepository & {
       importTransactions: typeof importTransactions;
     };
@@ -1420,9 +1420,9 @@ describe('local API', () => {
   it('requires explicit confirmation when OFX or destination currency cannot be verified', async () => {
     const importTransactions = vi.fn(async (
       _accountId: string,
-      _records: readonly ActualImportRecord[],
+      _records: readonly ImportRecord[],
       options?: { readonly dryRun?: boolean },
-    ): Promise<ActualImportResult> => ({
+    ): Promise<ImportResult> => ({
       errors: [], added: [options?.dryRun ? 'preview-id' : 'saved-id'], updated: [],
     }));
     const repository = Object.assign(createRepository(), { importTransactions }) as BudgetRepository & {
@@ -1450,7 +1450,7 @@ describe('local API', () => {
   });
 
   it('rejects invalid categories and malformed import rows without writing', async () => {
-    const importTransactions = vi.fn(async (): Promise<ActualImportResult> => ({ errors: [], added: [], updated: [] }));
+    const importTransactions = vi.fn(async (): Promise<ImportResult> => ({ errors: [], added: [], updated: [] }));
     const repository = Object.assign(createRepository(), { importTransactions }) as BudgetRepository & {
       importTransactions: typeof importTransactions;
     };
@@ -1481,7 +1481,7 @@ describe('local API', () => {
   });
 
   it('rejects imports for accounts that are not open in the configured budget', async () => {
-    const importTransactions = vi.fn(async (): Promise<ActualImportResult> => ({ errors: [], added: [], updated: [] }));
+    const importTransactions = vi.fn(async (): Promise<ImportResult> => ({ errors: [], added: [], updated: [] }));
     const repository = Object.assign(createRepository(), { importTransactions }) as BudgetRepository & {
       importTransactions: typeof importTransactions;
     };
@@ -1496,7 +1496,7 @@ describe('local API', () => {
   });
 
   it('reports reconciliation failures as conflicts without leaking import internals', async () => {
-    const importTransactions = vi.fn(async (): Promise<ActualImportResult> => ({
+    const importTransactions = vi.fn(async (): Promise<ImportResult> => ({
       errors: [{ message: 'private upstream reconciliation dump' }],
       added: [], updated: [],
     }));
@@ -2266,9 +2266,9 @@ describe('local API', () => {
     ];
     const importTransactions = vi.fn(async (
       _accountId: string,
-      _records: readonly ActualImportRecord[],
+      _records: readonly ImportRecord[],
       options?: { readonly dryRun?: boolean },
-    ): Promise<ActualImportResult> => ({
+    ): Promise<ImportResult> => ({
       errors: [], added: [options?.dryRun ? 'preview-transfer' : 'linked-transfer'], updated: [],
     }));
     const listTransferPayees = vi.fn(async () => [{ name: 'Transfer: Cuenta de ahorro', accountId: 'account-2' }]);
@@ -2307,7 +2307,7 @@ describe('local API', () => {
       { id: 'account-1', name: 'Cuenta corriente', currencyCode: 'EUR', closed: false, offBudget: false, currentBalanceMinor: 200_000 },
       { id: 'account-2', name: 'Cuenta externa', currencyCode: 'GBP', closed: false, offBudget: false, currentBalanceMinor: 100_000 },
     ];
-    const importTransactions = vi.fn(async (): Promise<ActualImportResult> => ({ errors: [], added: ['unexpected'], updated: [] }));
+    const importTransactions = vi.fn(async (): Promise<ImportResult> => ({ errors: [], added: ['unexpected'], updated: [] }));
     const listTransferPayees = vi.fn(async () => [{ name: 'Transfer: Cuenta externa', accountId: 'account-2' }]);
     const repository = Object.assign(
       createRepository({ listAccounts: vi.fn(async () => transferAccounts) }),
