@@ -11,3 +11,4 @@ export * from './intelligence.js';
 export * from './anomalies.js';
 export * from './cash-flow.js';
 export * from './budget-improvement.js';
+export * from './budget-alerts.js';
