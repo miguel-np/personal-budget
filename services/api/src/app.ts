@@ -3217,6 +3217,7 @@ function monthsBefore(date: string, months: number): string {
       readFinancialActionState(config.actualDataDir), readPlanningData(config.actualDataDir),
     ]);
     const scope = resolveAccountScope(accounts, accountPreference);
+    const accountScopeSignature = createHash('sha256').update(JSON.stringify(scope.metadata)).digest('hex');
     const rawTransactions = await transactionsForAccounts(scope.accounts, startDate, endDate, preferences);
     const converted = convertTransactionsForAnalysis(rawTransactions, preferences);
     const entries = normalizeTransactions(converted.transactions);
@@ -3426,8 +3427,9 @@ function monthsBefore(date: string, months: number): string {
             priorityReason = 'No hay un objetivo activo compatible con la divisa, el ámbito y una fecha proyectable; se ordena por ahorro mensual potencial sin atribuir impacto a una meta.';
           }
         } else if (actionState.budgetImprovements.goal === 'free_cash_flow') {
-          priorityValue = proposal.estimatedMonthlySavingsMinor;
-          priorityReason = 'Prioridad por liquidez: se ordena por el margen mensual hipotético que podría liberar el gasto histórico; los compromisos activos siguen siendo independientes.';
+          priorityTier = proposal.evidence.latestMonthExpenseMinor === null ? 0 : 1;
+          priorityValue = proposal.evidence.latestMonthExpenseMinor ?? proposal.estimatedMonthlySavingsMinor;
+          priorityReason = 'Prioridad por liquidez inmediata: se ordena por el gasto neto del último mes completo, además de mostrar el ahorro mensual potencial; los compromisos activos siguen siendo independientes.';
         } else {
           priorityReason = 'Prioridad por margen: se ordena por el ahorro mensual hipotético derivado del gasto observado, sin asumir cambios automáticos.';
         }
@@ -3446,6 +3448,9 @@ function monthsBefore(date: string, months: number): string {
       }
       if (scenario.startDate !== baseline.startDate || scenario.endDate !== baseline.endDate) {
         return { ...scenario, comparisonStatus: 'different_period' as const, comparison: null };
+      }
+      if (!scenario.accountScopeSignature || scenario.accountScopeSignature !== accountScopeSignature) {
+        return { ...scenario, comparisonStatus: 'different_scope' as const, comparison: null };
       }
       try {
         const comparison = simulateBudgetImprovement(baseline, corePreferences, scenario.reductions);
@@ -3470,7 +3475,7 @@ function monthsBefore(date: string, months: number): string {
       classification: storedPreferences.find((item) => item.categoryId === category.id)?.classification ?? 'unclassified',
     }));
     return {
-      asOfDate, currency: preferences.displayCurrency, accountScope: scope.metadata, baseline,
+      asOfDate, currency: preferences.displayCurrency, accountScope: scope.metadata, accountScopeSignature, baseline,
       categoryBreakdown, recurringCandidates, commitments: compatibleCommitments,
       proposals: prioritizedProposals, corePreferences, categoryChoices, savingsGoals, savingsGoalContextStatus, savingsGoalContextWarnings,
       goal: actionState.budgetImprovements.goal,
@@ -3586,7 +3591,7 @@ function monthsBefore(date: string, months: number): string {
       const simulation = simulateBudgetImprovement(context.baseline, context.corePreferences, parsed.reductions);
       const scenario = {
         id: randomUUID(), name: parsed.name, startDate: context.baseline.startDate, endDate: context.baseline.endDate,
-        currency: context.currency, reductions: parsed.reductions,
+        currency: context.currency, accountScopeSignature: context.accountScopeSignature, reductions: parsed.reductions,
         estimatedMonthlySavingsMinor: simulation.estimatedMonthlySavingsMinor,
         estimatedAnnualSavingsMinor: simulation.estimatedAnnualSavingsMinor, createdAt: new Date().toISOString(),
       };
