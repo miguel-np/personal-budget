@@ -1,29 +1,50 @@
 # Estado de implementación
 
-**Roadmap completo (P0–P3, 25-oct-2026):** stack de Actual, adaptador oficial, API, shell financiera, IA local, MCP, recuperación y mejoras P3 (recurrentes, sugerencias y previsiones) implementados y validados en vivo en el entorno objetivo Windows + WSL2. CI de `main` verde en Linux y Windows.
+**Baseline de producto (1-nov-2026):** están implementadas las capacidades principales de la shell local, finanzas, movimientos, presupuestos, informes, planificación, centro de inteligencia, IA local opcional, MCP de solo lectura y operación del runtime. Este inventario describe código disponible; no convierte automáticamente los criterios de aceptación operativa en aceptados. La validación automatizada, la aceptación local real y la disponibilidad de recuperación se registran por separado.
+
+## Consolidación — fase 1
+
+| Issue | Estado verificable | Bloqueo / siguiente criterio |
+|---|---|---|
+| #64 · Backup unificado | En implementación en la rama de consolidación: paquete cifrado versionado, manifiesto, volumen de Actual + whitelist de seis almacenes JSON propios, detección de API activa, staging y rollback | Revisión y CI de la PR; ejecución de ensayo integrado contra Actual fijado. No se declara resuelta hasta que ambos pasen |
+| #72 · Revisión financiera periódica | Implementación propuesta en PR #82 (actualmente draft) | La PR debe quedar limitada a #72, depender de #64 y pasar CI; revisar cálculos, privacidad y E2E antes de marcarla ready |
+| #31 · Aceptación operativa | Runtime diario, diagnóstico y pruebas automatizadas del ciclo de vida implementados | La aceptación manual de Windows + WSL2 con presupuesto sintético y persistencia de Actual sigue pendiente; CI Linux/Windows nativa no demuestra esa instalación |
 
 ## Centro de inteligencia financiera (issue #68)
 
-La implementación añade hallazgos versionados y verificables, comparaciones de igual duración, límites explícitos por divisa/ámbito, prioridades explicadas, revisiones persistentes, filtros de fechas/tipo, evidencia, métricas locales de utilidad y explicación cualitativa opcional con IA local. El cierre depende de que CI y E2E confirmen los criterios en la rama; la documentación no afirma una prueba manual de Windows + WSL2 por estos cambios.
+La implementación añade hallazgos versionados y verificables, comparaciones de igual duración, límites explícitos por divisa/ámbito, prioridades explicadas, revisiones persistentes, filtros de fechas/tipo, evidencia, métricas locales de utilidad y explicación cualitativa opcional con IA local. La aceptación de cada cambio depende de que CI y E2E confirmen los criterios en la rama; no se afirma una prueba manual de Windows + WSL2 por estos cambios.
 
 ## Aceptación P3 (25-oct-2026)
 
-- Detección de pagos recurrentes con señales deterministas en `finance-core` (`recurring.ts`): beneficiario, frecuencia, importe y fechas; candidatos explicados con avisos de falso positivo (reembolsos, fechas desplazadas, importes variables, nombres similares). Validado en vivo: candidato `supermercado` con cadencia mensual de 30 días.
-- Sugerencias de categoría por reglas sobre el historial local (`category-suggestions.ts`), sin aprendizaje implícito; confirmación con previsualización vía `POST /api/v1/insights/categorize` (preview no escribe; commit actualiza Actual a través del adaptador). Validado en vivo sobre un movimiento sintético.
-- Previsiones explicables (`forecast.ts`): escenarios de reducción por categoría o cambio de ingreso, mediana como base, separación recurrente/extraordinario, supuestos y avisos; determinismo bit a bit verificado en vivo.
-- UI: sección Planificación en la shell (candidatos, sugerencias con editar/aplicar/descartar y simulación con tabla mensual).
-- Ampliación de issue #37: objetivos de ahorro con progreso/proyección, compromisos manuales recurrentes, calendario/lista, CRUD local, guardas de divisa/ámbito y cálculo determinista en finance-core. La implementación y pruebas están en la rama de la PR; no se considera cerrada hasta que CI y revisión confirmen los criterios de aceptación.
+- Detección de pagos recurrentes con señales deterministas en finance-core (recurring.ts): beneficiario, frecuencia, importe y fechas; candidatos explicados con avisos de falsos positivos.
+- Sugerencias de categoría por reglas sobre el historial local (category-suggestions.ts), sin aprendizaje implícito; confirmación con previsualización vía POST /api/v1/insights/categorize.
+- Previsiones explicables (forecast.ts): escenarios por categoría o cambio de ingreso, mediana como base, separación recurrente/extraordinario, supuestos y avisos.
+- UI de planificación: candidatos, sugerencias con editar/aplicar/descartar y simulación.
+- Objetivos de ahorro y compromisos futuros: API/core/UI y pruebas sintéticas en la rama correspondiente; verificar PR y criterios de aceptación antes de considerar cerrada su ampliación.
+
+## Matriz de operación y recuperación
 
 | Área | Estado comprobable | Qué falta para cierre definitivo |
 |---|---|---|
-| Actual Compose | Imagen fijada, volumen persistente y puerto loopback; persistencia verificada tras recreate | Nada pendiente |
-| Adaptador oficial | Implementado sobre @actual-app/api, operaciones serializadas, tests simulados y aceptación live contra un presupuesto sintético real | Nada pendiente |
-| Shell financiera | Dashboard, movimientos, importación CSV, presupuestos e informes; ensayo manual WSL2 y render desde Windows | Nada pendiente |
-| Backup/restore | Scripts CLI, parada del contenedor, archivo fechado, checksum, retención y restore con copia previa; restore en instancia aislada verificado con inventario idéntico | Nada pendiente |
-| Ollama/chat | Opt-in, endpoint loopback, status, timeout, contexto agregado y UI; aceptación live con qwen3:8b, tool calling estructurado e inyección rechazada | Nada pendiente |
-| MCP | JSON-RPC sobre stdio, allowlist solo lectura, argumentos estrictos, límites, tests sintéticos e interop con el SDK oficial contra la API real | Comprobación opcional con un cliente de escritorio concreto |
-| P3 · Planificación | Recurrentes, sugerencias de categoría y previsiones; issue #37 amplía objetivos de ahorro y compromisos con API, core, UI y pruebas sintéticas en una PR separada | CI/revisión de la ampliación y aceptación de los criterios de issue #37 |
-| Seguridad y CI | Lint, typecheck, build, pruebas (93.45% stmts / 81.87% branches), auditorías y escaneo de secretos; CORS, loopback y logs saneados | Los escaneos no prueban ausencia de vulnerabilidades |
-| Windows + WSL2 | CI Windows nativa, ensayo manual WSL2 con dashboard operativo, ciclo de recuperación completo y Ollama de Windows en loopback vía mirrored networking | Nada pendiente |
+| Actual Compose | Imagen fijada, volumen persistente y puerto loopback; CI arranca el contenedor | Aceptación manual con presupuesto sintético en el entorno Windows + WSL2 objetivo |
+| Adaptador oficial | Implementado sobre @actual-app/api, serialización de operaciones y pruebas automatizadas; CI de aceptación sintética existente | Conservar el registro de aceptación del entorno instalado si se usa como gate manual |
+| Shell financiera | Dashboard, movimientos, importación CSV/OFX, presupuestos e informes | Repetir arranque y acceso desde navegador Windows dentro de la aceptación #31 |
+| Backup/restore | Scripts CLI con cifrado AES-GCM; la consolidación #64 añade Actual + estado propio inventariado y un ensayo integrado de restauración | CI de la rama de consolidación y, antes de depender de un backup personal, ensayo aislado con clave conservada por separado |
+| Ollama/chat | Opt-in, loopback, timeouts y contexto agregado; pruebas sintéticas/live opcionales | Validar en la máquina de uso cualquier modelo o endpoint configurado |
+| MCP | JSON-RPC sobre stdio, allowlist solo lectura, argumentos estrictos y tests sintéticos | Prueba opcional con un cliente de escritorio concreto |
+| Seguridad y CI | Lint, typecheck, build, tests, auditoría de dependencias, escaneo de secretos y CI Windows nativa | Los escaneos y runners no prueban ausencia total de vulnerabilidades ni sustituyen la aceptación manual WSL2 |
+| Windows + WSL2 (#31) | CI Windows nativa y smoke Linux automatizado | Pendiente ejecutar y registrar la matriz manual completa de la instalación objetivo |
 
-No cerrar las issues de aceptación manual por tener un workflow verde. No usar extractos ni presupuestos reales como fixtures de CI.
+## Evidencia y límites de #31
+
+La CI disponible ha cubierto dos ciclos de inicio/parada del runtime sintético, señales SIGINT/SIGTERM, liberación de puertos locales, limpieza del frontend si la API no arranca, pruebas de navegador, contenedor Actual aislado y aceptación de actualización/restauración sintética. Esto es evidencia automatizada reproducible, no evidencia de que la máquina del usuario haya ejecutado Windows + WSL2, ni de que el presupuesto local del usuario sobreviva a un reinicio.
+
+Para cerrar #31 falta registrar, en un checkout limpio de la distribución WSL2 usada:
+
+1. Versiones de Windows, distribución y versión WSL2, Node/npm, Docker Desktop/Engine, Compose y Actual.
+2. npm ci, npm run doctor, npm run start:local, acceso a la UI desde navegador Windows y estado correcto de API/Actual.
+3. Una prueba con un presupuesto exclusivamente sintético: inventario antes, reinicio de Actual/WSL2, inventario después y comparación de cuentas, categorías, movimientos, IDs, fechas e importes.
+4. Un error intencional no destructivo y su diagnóstico, parada con Ctrl+C, nuevo arranque y comprobación de que no quedan procesos/puertos huérfanos.
+5. Comandos ejecutados, resultado y logs saneados sin credenciales ni información financiera personal.
+
+No cerrar #31 por un workflow verde. No registrar ni subir extractos, bases de datos, copias de seguridad o logs con datos personales a Git/CI.
