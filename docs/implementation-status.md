@@ -1,86 +1,101 @@
 # Estado de implementación
 
-**Baseline de producto (1-nov-2026):** están implementadas las capacidades principales de la shell local, finanzas, movimientos, presupuestos, informes, planificación, centro de inteligencia, IA local opcional, MCP de solo lectura y operación del runtime. Este inventario describe código disponible; no convierte automáticamente los criterios de aceptación operativa en aceptados. La validación automatizada, la aceptación local real y la disponibilidad de recuperación se registran por separado.
+**Baseline: 1-nov-2026.** Las funcionalidades descritas como integradas están presentes en `main`. Se distingue la integración del código, la validación automatizada y la aceptación manual del entorno. La issue #84 está siendo implementada en una rama separada y no debe darse por integrada hasta que su PR esté mergeada y sus checks terminen correctamente.
+
+## Estado general
+
+| Área | Estado | Evidencia / límite |
+|---|---|---|
+| Núcleo financiero | Integrado | Actual como fuente de verdad; adapter y finance-core separados. |
+| Gestión diaria | Integrada | Dashboard, cuentas, movimientos, splits, transferencias, presupuestos, informes y edición. |
+| Importación | Integrada | CSV y OFX local con revisión; OFX SGML 1.02/1.03 y XML 2.x en los perfiles documentados. |
+| Multidivisa | Integrada | Divisas nativas, excepciones explícitas y tipos de cambio manuales fechados; no hay cotizaciones automáticas. |
+| Planificación | Integrada | Recurrentes candidatos, sugerencias híbridas, previsiones, metas, compromisos y planificador conversacional. |
+| Inteligencia | Integrada | Hallazgos, anomalías, revisiones, flujo de caja, propuestas y alertas locales. |
+| Exportación | Integrada | CSV, JSON, PDF imprimible y XLSX; exportación portable separada. |
+| Patrimonio y documentos | Integrado | Activos/pasivos externos, valoraciones manuales, justificantes privados y vínculos verificados. |
+| Backup/restore | Integrado | Actual + estado propio, manifiesto v2, nueve JSON y binarios documentales inventariados. |
+| IA/MCP | Integrados como capacidades opcionales | Ollama local y MCP de solo lectura; modelos/modelos runtime concretos requieren validación. |
+| Contratos neutrales | Integrados | #65 cerrada; suite de conformidad para proveedor de referencia y adaptador Actual. |
+| Búsqueda web #84 | En implementación en rama | Debe seguir separada del chat financiero; pendiente de revisión y CI antes de integrarse. |
 
 ## Consolidación — fase 1
 
-| Issue | Estado verificable | Bloqueo / siguiente criterio |
+| Issue | Estado verificable | Alcance integrado y límites |
 |---|---|---|
-| #64 · Backup unificado | **Cerrada e integrada** mediante PR #89 (d2c9911): backup cifrado/versionado, manifiesto, Actual + seis almacenes JSON propios y roundtrip sintético completo | Mantener la whitelist y el ensayo actualizados cuando se añadan almacenes persistentes. La aceptación manual de la instalación WSL2 sigue separada en #31 |
-| #72 · Revisión financiera periódica | **Cerrada e integrada** mediante PR #82 (commit `32caf07`): revisión semanal/mensual, decisiones metadata-only, identidad estable entre periodos, huellas de evidencia y compatibilidad v1 | Seis checks verdes en el SHA final: quality/cobertura, Windows, E2E, Actual smoke, Actual update/restore y Security; `periodic-reviews.json` está incluido en el backup unificado de #64 |
-| #31 · Aceptación operativa | **Cerrada el 1-nov-2026**: ensayo completo ejecutado y registrado en la distribución objetivo (ver «Evidencia y límites de #31») | Cualquier instalación nueva debe repetir la matriz manual; la CI Linux/Windows sigue sin sustituirla |
-| #28 · Paginación eficiente de movimientos | **Cerrada el 1-nov-2026** con evidencia registrada en la issue: segmentación por mes natural, límite de 100.000 movimientos presentados, selección acotada offset+limit con desempate por ID, benchmark con pico de heap muestreado durante la petición (PR #63 integrada) y recorrido completo de páginas sin omisiones ni duplicados | Evaluación de ActualQL, consistencia entre páginas y benchmark de mes denso/multi-cuenta documentados en docs/transactions-and-imports.md |
+| [#64 — Backup unificado](https://github.com/miguel-np/personal-budget/issues/64) | Cerrada, PR [#89](https://github.com/miguel-np/personal-budget/pull/89) | Backup cifrado/versionado de volumen Actual y estado propio. La extensión de fase 3 usa manifiesto v2 y documentos binarios. |
+| [#72 — Revisión periódica](https://github.com/miguel-np/personal-budget/issues/72) | Cerrada, PR [#82](https://github.com/miguel-np/personal-budget/pull/82) | Revisión semanal/mensual, comparables, evidencia, identidades estables y decisiones locales metadata-only. |
+| [#31 — Aceptación operativa](https://github.com/miguel-np/personal-budget/issues/31) | Cerrada el 1-nov-2026 | Ensayo manual completo en Ubuntu 24.04.5/WSL2 objetivo, navegador Windows, reinicio del contenedor y WSL2, inventario sintético idéntico, diagnóstico de fallo y parada limpia. Repetir al instalar en otra máquina. |
+| [#28 — Paginación y rendimiento](https://github.com/miguel-np/personal-budget/issues/28) | Cerrada el 1-nov-2026, PR [#63](https://github.com/miguel-np/personal-budget/pull/63) | Ventanas mensuales, límite de 100.000 movimientos presentados, heap acotado, orden estable, benchmark y recorrido estático completo. No existe cursor ni snapshot entre peticiones; cambios concurrentes pueden desplazar páginas. |
+| [#65 — Contratos neutrales](https://github.com/miguel-np/personal-budget/issues/65) | Cerrada, PR [#96](https://github.com/miguel-np/personal-budget/pull/96) | Contratos neutrales y errores de dominio en finance-core, eliminación de casts API→Actual, composición del SDK dentro del adaptador y suite de conformidad reutilizable. Las migraciones entre proveedores siguen siendo específicas. |
 
-## Centro de inteligencia financiera (issue #68)
+### Recuperación y persistencia actual
 
-La implementación añade hallazgos versionados y verificables, comparaciones de igual duración, límites explícitos por divisa/ámbito, prioridades explicadas, revisiones persistentes, filtros de fechas/tipo, evidencia, métricas locales de utilidad y explicación cualitativa opcional con IA local. La aceptación de cada cambio depende de que CI y E2E confirmen los criterios en la rama; no se afirma una prueba manual de Windows + WSL2 por estos cambios.
+El backup unificado se cifra con AES-256-GCM y mantiene la clave separada. El manifiesto v2 inventaría:
 
-## Aceptación P3 (25-oct-2026)
+1. Volumen persistente completo del servidor Actual.
+2. Nueve almacenes JSON propios: `app-preferences.json`, `account-scope-preferences.json`, `currency-preferences.json`, `financial-intelligence-state.json`, `financial-actions.json`, `planning-data.json`, `periodic-reviews.json`, `wealth-data.json` y `documents-index.json`.
+3. Binarios PDF/JPEG/PNG en el área documental privada, cada uno validado por nombre generado, tamaño, firma y SHA-256.
 
-- Detección de pagos recurrentes con señales deterministas en finance-core (recurring.ts): beneficiario, frecuencia, importe y fechas; candidatos explicados con avisos de falsos positivos.
-- Sugerencias de categoría por reglas sobre el historial local (category-suggestions.ts), sin aprendizaje implícito; confirmación con previsualización vía POST /api/v1/insights/categorize.
-- Previsiones explicables (forecast.ts): escenarios por categoría o cambio de ingreso, mediana como base, separación recurrente/extraordinario, supuestos y avisos.
-- UI de planificación: candidatos, sugerencias con editar/aplicar/descartar y simulación.
-- Objetivos de ahorro y compromisos futuros: API/core/UI y pruebas sintéticas en la rama correspondiente; verificar PR y criterios de aceptación antes de considerar cerrada su ampliación.
-- #65 · Endurecer contratos financieros independientes del proveedor: abierta (P3, preventiva). Auditoría de dependencias del SDK fuera del adaptador, contratos de dominio y suite de conformidad reutilizable pendientes; no bloquea #31 ni #28.
+El restore valida autenticidad, manifiesto, inventario y rutas antes de sustituir datos, y conserva el estado anterior para rollback. Las copias v1 siguen siendo válidas, pero no contienen los conjuntos patrimoniales/documentales nuevos; su restauración conserva esos conjuntos actuales en vez de borrarlos silenciosamente.
 
-## Matriz de operación y recuperación
+La CI valida roundtrip en una instancia Actual aislada con datos sintéticos. Antes de depender de una copia personal, conserva la clave por separado y ejecuta una restauración de ensayo en una instancia aislada.
 
-| Área | Estado comprobable | Qué falta para cierre definitivo |
+## Inteligencia financiera — fase 2
+
+Las issues #73, #83 y #74 se integraron mediante el commit `9164741` y PR [#93](https://github.com/miguel-np/personal-budget/pull/93).
+
+| Issue | Estado integrado | Límites |
 |---|---|---|
-| Actual Compose | Imagen fijada, volumen persistente y puerto loopback; CI arranca el contenedor | Aceptación manual con presupuesto sintético en el entorno Windows + WSL2 objetivo |
-| Adaptador oficial | Implementado sobre @actual-app/api, serialización de operaciones y pruebas automatizadas; CI de aceptación sintética existente | Conservar el registro de aceptación del entorno instalado si se usa como gate manual |
-| Shell financiera | Dashboard, movimientos, importación CSV/OFX, presupuestos e informes | Repetir arranque y acceso desde navegador Windows dentro de la aceptación #31 |
-| Backup/restore | Backup unificado cifrado AES-GCM con manifiesto v1, Actual + seis almacenes inventariados; roundtrip sintético integrado en CI mediante PR #89 | Mantener los nuevos almacenes en whitelist/tests. Antes de depender de un backup personal, realizar un ensayo aislado con clave conservada por separado |
-| Ollama/chat | Opt-in, loopback, timeouts y contexto agregado; pruebas sintéticas/live opcionales | Validar en la máquina de uso cualquier modelo o endpoint configurado |
-| MCP | JSON-RPC sobre stdio, allowlist solo lectura, argumentos estrictos y tests sintéticos | Prueba opcional con un cliente de escritorio concreto |
-| Seguridad y CI | Lint, typecheck, build, tests, auditoría de dependencias, escaneo de secretos y CI Windows nativa | Los escaneos y runners no prueban ausencia total de vulnerabilidades ni sustituyen la aceptación manual WSL2 |
-| Windows + WSL2 (#31) | CI Windows nativa y smoke Linux automatizado | ✅ Matriz manual completa ejecutada y registrada el 1-nov-2026 en la distribución objetivo, incluido el reinicio completo de WSL2 con inventario sintético idéntico |
+| [#73 — Flujo de caja](https://github.com/miguel-np/personal-budget/issues/73) | Proyección diaria de 7/30/90 días, movimientos futuros, compromisos, recurrencias confirmadas, hipótesis seleccionadas y reserva. | El saldo de apertura usa `balance_current` de Actual; no equivale necesariamente a saldo bancario disponible o liquidado. Saldo desconocido o sin conversión válida permanece `null`. |
+| [#83 — Propuestas presupuestarias](https://github.com/miguel-np/personal-budget/issues/83) | Línea base de periodos completos, categorías clasificadas por el usuario, propuestas y escenarios combinados reproducibles. | Solo categorías marcadas flexibles/revisables; cifras hipotéticas no son ahorro garantizado. No cambia asignaciones automáticamente ni exige IA. |
+| [#74 — Alertas locales](https://github.com/miguel-np/personal-budget/issues/74) | Umbrales de consumo/restante/exceso por categoría, deduplicación, silencio y aplazamiento. | Solo in-app, se recalculan al consultar; no hay push, email ni proceso residente. |
 
-## Evidencia y límites de #31
+El almacén `financial-actions.json` está en el backup unificado.
 
-La CI disponible ha cubierto dos ciclos de inicio/parada del runtime sintético, señales SIGINT/SIGTERM, liberación de puertos locales, limpieza del frontend si la API no arranca, pruebas de navegador, contenedor Actual aislado y aceptación de actualización/restauración sintética. Esto es evidencia automatizada reproducible, no evidencia de que la máquina del usuario haya ejecutado Windows + WSL2, ni de que el presupuesto local del usuario sobreviva a un reinicio.
+## Centro de inteligencia y planificación
 
-Para cerrar #31 falta registrar, en un checkout limpio de la distribución WSL2 usada:
+- [#68 — Centro de inteligencia](https://github.com/miguel-np/personal-budget/issues/68), PR [#78](https://github.com/miguel-np/personal-budget/pull/78): hallazgos con reglas, métricas y evidencia; explicación cualitativa local opcional.
+- [#69 — Anomalías](https://github.com/miguel-np/personal-budget/issues/69), PR [#80](https://github.com/miguel-np/personal-budget/pull/80): detector determinista; señala variaciones inusuales, no fraude.
+- [#70 — Planificador conversacional](https://github.com/miguel-np/personal-budget/issues/70), PR [#81](https://github.com/miguel-np/personal-budget/pull/81): extrae parámetros y simula; no escribe metas/compromisos.
+- [#71 — Clasificación híbrida](https://github.com/miguel-np/personal-budget/issues/71), PR [#79](https://github.com/miguel-np/personal-budget/pull/79): reglas primero, IA local opt-in, abstención ante ambigüedad y confirmación explícita.
+- [#75 — PDF/XLSX](https://github.com/miguel-np/personal-budget/issues/75), PR [#77](https://github.com/miguel-np/personal-budget/pull/77): exportación local con comprobación de integridad de páginas y anexos.
 
-1. Versiones de Windows, distribución y versión WSL2, Node/npm, Docker Desktop/Engine, Compose y Actual.
-2. npm ci, npm run doctor, npm run start:local, acceso a la UI desde navegador Windows y estado correcto de API/Actual.
-3. Una prueba con un presupuesto exclusivamente sintético: inventario antes, reinicio de Actual/WSL2, inventario después y comparación de cuentas, categorías, movimientos, IDs, fechas e importes.
-4. Un error intencional no destructivo y su diagnóstico, parada con Ctrl+C, nuevo arranque y comprobación de que no quedan procesos/puertos huérfanos.
-5. Comandos ejecutados, resultado y logs saneados sin credenciales ni información financiera personal.
+## Patrimonio y portabilidad — fase 3
 
-### Ensayo ejecutado el 1-nov-2026 en la distribución objetivo (WSL2)
+Las issues [#76](https://github.com/miguel-np/personal-budget/issues/76), [#86](https://github.com/miguel-np/personal-budget/issues/86) y [#88](https://github.com/miguel-np/personal-budget/issues/88) se integraron mediante [PR #94](https://github.com/miguel-np/personal-budget/pull/94).
 
-Ejecutado directamente en la distribución Ubuntu 24.04.5 del entorno Windows + WSL2 del usuario, en un checkout limpio de `main` (`660a878`) y con un contenedor Actual **aislado** (volumen `pb31-acceptance-actual-data`, loopback `127.0.0.1:5008`, bootstrap con password de aceptación) para no tocar la instancia real del usuario.
+- Registro manual de activos/pasivos externos y snapshots históricos con fecha, divisa y procedencia.
+- Clasificación explícita de cuentas de Actual como activo o pasivo.
+- Patrimonio neto con cobertura incompleta explícita ante valoraciones caducadas/desconocidas o falta de conversión.
+- Archivo documental privado de PDF/JPEG/PNG y metadata versionada.
+- Vínculos a movimientos comprobados contra ID, cuenta y fecha leídos de Actual.
+- Exportación portable seleccionable de datos locales y presupuestos accesibles; exportación humana no importable ni restaurable.
+- Binarios documentales incluidos en backup v2 solo mediante inventario explícito.
 
-| Punto | Resultado |
-|---|---|
-| Versiones | Windows 11 Home 10.0.26300 build 26300 · WSL 2.7.14.0 · kernel 6.18.33.2-microsoft-standard-WSL2 · Ubuntu 24.04.5 · Node v24.22.1 (nvm, `.nvmrc`) · npm 11.19.1 · Docker 29.9.2 · Compose v5.6.1 · `actualbudget/actual-server:26.10.0` |
-| Instalación limpia | `npm ci` correcto; `npm run doctor` → **0 errores**, 3 avisos explicados (Actual arrancado fuera de compose por aislamiento; API/frontend apagados antes del arranque) |
-| Presupuesto sintético | Sembrado con `scripts/actual-update-acceptance.ts seed`: 1 cuenta, 2 categorías, 3 movimientos; fixture de inventario (Sync ID, IDs, fechas, importes) |
-| Persistencia tras reinicio | `docker restart` del contenedor Actual → `verify` → `SYNTHETIC_INVENTORY_OK`: cuenta, categorías, IDs/fechas/importes y saldo derivado idénticos |
-| Arranque diario | `npm run start:local` → API 127.0.0.1:3000 y frontend 127.0.0.1:4173; `/health` 200, `/ready` configured, UI 200; `/api/v1/accounts` y `/api/v1/transactions` devuelven exactamente el inventario sintético |
-| Error intencional no destructivo | Contenedor aislado detenido → API 502 `UPSTREAM_FAILURE` saneado sin detalles internos; `doctor` avisa «Servidor Actual: no responde»; tras `docker start` la API vuelve a 200 con los mismos 3 movimientos |
-| Parada limpia | SIGINT → puertos 3000/4173 liberados, sin procesos huérfanos, SDK cerrado con gracia; segundo arranque limpio verificado (health/UI 200) |
+No se infieren rentabilidad, deducibilidad ni valoraciones de mercado; las valoraciones son manuales.
 
-Quedan dos pasos estrictamente manuales, no ejecutables desde dentro del propio WSL2:
+## Operación, seguridad y rendimiento
 
-1. **Confirmación visual** del navegador de Windows en http://127.0.0.1:4173 — ✅ completada el 1-nov-2026: la shell cargó en el navegador de Windows con las secciones completas y la cuenta sintética en «Todas las cuentas abiertas (1)».
-2. **Reinicio completo de WSL2** — ✅ completado el 1-nov-2026: `wsl --shutdown` desde Windows, reapertura de la distribución, `docker start` del contenedor aislado y `verify` → `SYNTHETIC_INVENTORY_OK` (cuenta, categorías, IDs/fechas/importes y saldo derivado idénticos tras el reinicio de la máquina WSL2).
+- **#31:** aceptación manual WSL2 completada. CI Linux/Windows no sustituye el ensayo de una instalación distinta.
+- **#28:** límite de 100.000 movimientos presentados por petición, ventanas de mes natural y selección acotada. Actual no ofrece cursor; offset no proporciona snapshot entre páginas.
+- **#92:** dependencia transitiva minimatch fijada a versión corregida; auditoría moderada falla la CI.
+- **#95:** lazy loading de paneles; el chunk inicial pasó de 551 kB a 282 kB (gzip: 149 kB a 85 kB).
+- CI cubre Linux, Windows, E2E de navegador, contenedor Actual, aceptación sintética de update/restore, lint, typecheck/build, cobertura, auditorías y escaneo de secretos.
 
-Con ambos pasos registrados, el ensayo de #31 queda completo en la distribución objetivo; la CI sigue sin sustituirlo y cualquier nueva aceptación sobre otra instalación debe repetir la matriz.
+## Búsqueda web controlada — issue #84
 
-No cerrar #31 por un workflow verde. No registrar ni subir extractos, bases de datos, copias de seguridad o logs con datos personales a Git/CI.
+**Estado en esta entrega:** implementación en rama `feat/issue-84-controlled-web-search`; no marcar como integrada hasta merge y CI verde.
 
+La arquitectura propuesta mantiene dos flujos separados:
+- El chat financiero recibe solo agregados backend y sigue sin herramientas.
+- La investigación web no consulta el repositorio financiero. Requiere consentimiento por petición, envía únicamente la consulta exacta aprobada a SearXNG y expone al modelo local una única herramienta `web_search`. Tras la búsqueda, los fragmentos se envían como contenido externo no confiable en una segunda inferencia sin herramientas.
 
-## Inteligencia financiera útil — fase 2 (integrada en `main`)
+El proveedor SearXNG puede ejecutarse en loopback o en un endpoint HTTPS configurado. La lista fiscal se restringe a dominios oficiales admitidos. Las fechas que el buscador devuelve no prueban por sí solas vigencia normativa: la UI conserva el enlace para revisar la fuente original y la respuesta debe reconocer falta de evidencia. Consulta [docs/web-search.md](web-search.md).
 
-**Estado de integración:** las funcionalidades de #73, #83 y #74 están integradas en `main` mediante el commit `9164741` (1-nov-2026) y la CI de Linux y Windows pasó sus criterios.
+## Issues abiertas posteriores
 
-| Issue | Implementación integrada | Nota de límites |
-|---|---|---|
-| #73 · Saldo estimado y flujo de caja | Motor diario determinista, horizontes 7/30/90, movimientos futuros de Actual, compromisos activos, reserva de ámbito, detección conservadora de duplicados y escenario efímero. Los estados de conciliación de movimientos se muestran solo cuando Actual los proporciona. | La semántica de `balance_current` sigue siendo saldo actual de Actual, no saldo bancario disponible. |
-| #83 · Propuestas de mejora | Línea base de periodos completos, clasificación de categorías elegida por el usuario, propuestas solo para flexibles/revisables, simulación combinada y decisiones/escenarios locales. | La primera versión no usa IA para crear propuestas ni aplica cambios a presupuestos. |
-| #74 · Alertas presupuestarias | Reglas por categoría para consumo/restante/exceso, deduplicación por regla-categoría-mes, silencio/aplazamiento y funcionamiento sin IA. | Solo avisos in-app. |
-
-El nuevo almacén `financial-actions.json` se añadió a la whitelist del backup unificado. Su presencia debe mantenerse sincronizada entre el esquema versionado, pruebas de roundtrip, `docs/backup-restore.md` y `scripts/backup-restore.ts`.
+- [#85 — Proveedores de IA intercambiables](https://github.com/miguel-np/personal-budget/issues/85): capa de adaptadores para Ollama, OpenAI y xAI; abierta.
+- [#87 — Espacio fiscal y calendario](https://github.com/miguel-np/personal-budget/issues/87): obligaciones configuradas explícitamente, por ejercicio y con fuentes; abierta.
+- [#66 — ADR sobre Actual](https://github.com/miguel-np/personal-budget/issues/66): evaluación comparativa condicionada por métricas; abierta, P3.
+- [#67 — Prototipo SQLite read-only](https://github.com/miguel-np/personal-budget/issues/67): solo si #66 lo justifica; abierta, P3.

@@ -1,0 +1,276 @@
+import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
+import { request as httpRequest, type RequestOptions } from 'node:http';
+import { request as httpsRequest } from 'node:https';
+
+export const OFFICIAL_SOURCE_DOMAINS = [
+  'agenciatributaria.gob.es',
+  'boe.es',
+  'hacienda.gob.es',
+  'seg-social.es',
+  'xunta.gal',
+  'dog.gal',
+  'cnmv.es',
+  'bde.es',
+] as const;
+
+export type OfficialSourceDomain = (typeof OFFICIAL_SOURCE_DOMAINS)[number];
+export interface WebSearchSource {
+  readonly id: string;
+  readonly title: string;
+  readonly url: string;
+  readonly domain: string;
+  readonly publishedAt: string | null;
+  readonly snippet: string;
+  readonly sourceKind: 'normativa' | 'criterio_administrativo' | 'organismo_oficial' | 'externa';
+}
+export interface WebSearchResponse {
+  readonly provider: 'SearXNG';
+  readonly searchedAt: string;
+  readonly sources: readonly WebSearchSource[];
+}
+export interface WebSearchConfig {
+  readonly baseURL: string;
+  readonly timeoutMs: number;
+  readonly maxResults: number;
+  readonly maxQueryChars: number;
+  readonly maxResponseBytes: number;
+}
+export class WebSearchUnavailableError extends Error {
+  public constructor() {
+    super('Web search provider is unavailable.');
+    this.name = 'WebSearchUnavailableError';
+  }
+}
+export class WebSearchResponseTooLargeError extends Error {
+  public constructor() {
+    super('Web search provider response exceeded its configured limit.');
+    this.name = 'WebSearchResponseTooLargeError';
+  }
+}
+
+const blockedIPv4Subnets: readonly [number, number][] = [
+  [0x00000000, 8], [0x0a000000, 8], [0x64400000, 10], [0x7f000000, 8],
+  [0xa9fe0000, 16], [0xac100000, 12], [0xc0000000, 24], [0xc0000200, 24],
+  [0xc0a80000, 16], [0xc6120000, 15], [0xc6336400, 24], [0xcb007100, 24],
+  [0xe0000000, 4], [0xf0000000, 4],
+];
+
+function ipv4ToNumber(address: string): number | null {
+  const parts = address.split('.');
+  if (parts.length !== 4) return null;
+  const octets = parts.map(Number);
+  if (octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return null;
+  return (((octets[0]! << 24) >>> 0) + (octets[1]! << 16) + (octets[2]! << 8) + octets[3]!) >>> 0;
+}
+function isBlockedIPv4(address: string): boolean {
+  const number = ipv4ToNumber(address);
+  if (number === null) return true;
+  return blockedIPv4Subnets.some(([network, prefix]) => {
+    const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
+    return (number & mask) === (network & mask);
+  });
+}
+function isLoopbackAddress(address: string, family: number): boolean {
+  if (family === 4) return address.startsWith('127.');
+  return address === '::1' || address.toLowerCase() === '0:0:0:0:0:0:0:1';
+}
+function isPublicAddress(address: string, family: number): boolean {
+  if (family === 4) return !isBlockedIPv4(address);
+  const normalized = address.toLowerCase();
+  if (normalized.startsWith('::ffff:')) {
+    const mapped = normalized.slice(7);
+    return isIP(mapped) === 4 && !isBlockedIPv4(mapped);
+  }
+  // Only globally-routable 2000::/3 IPv6 addresses are accepted. This excludes
+  // unspecified, loopback, unique-local, link-local, multicast and documentation ranges.
+  if (!/^[23]/.test(normalized)) return false;
+  if (normalized.startsWith('2001:db8:') || normalized.startsWith('2001:10:') || normalized.startsWith('2001:20:')) return false;
+  return true;
+}
+function hostWithoutBrackets(host: string): string {
+  return host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
+}
+function isLoopbackHost(hostname: string): boolean {
+  const host = hostWithoutBrackets(hostname.toLowerCase());
+  if (host === 'localhost') return true;
+  return isIP(host) === 4 ? host.startsWith('127.') : host === '::1';
+}
+function validateBaseURL(value: string): URL {
+  const url = new URL(value);
+  const hostname = hostWithoutBrackets(url.hostname);
+  if (url.username || url.password || url.search || url.hash || (url.pathname !== '/' && url.pathname !== '')) {
+    throw new Error('WEB_SEARCH_BASE_URL must be an origin without credentials, path, query or fragment.');
+  }
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && isLoopbackHost(hostname))) {
+    throw new Error('Web search must use HTTPS; plain HTTP is allowed only for an explicitly configured loopback SearXNG instance.');
+  }
+  if (isIP(hostname) !== 0 && !isLoopbackHost(hostname)) {
+    throw new Error('Web search cannot target a private or non-loopback IP address.');
+  }
+  if (hostname.endsWith('.local') || hostname.endsWith('.internal') || hostname === 'metadata.google.internal') {
+    throw new Error('Web search cannot target local or metadata hostnames.');
+  }
+  return url;
+}
+function matchesDomain(hostname: string, domain: string): boolean {
+  return hostname === domain || hostname.endsWith('.' + domain);
+}
+function cleanText(value: string, maximum: number): string {
+  return value.replace(/<[^>]*>/g, ' ').replace(/&(?:nbsp|amp|lt|gt|quot);/gi, ' ')
+    .replace(/[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F]/g, ' ')
+    .replace(/\\s+/g, ' ').trim().slice(0, maximum);
+}
+function publishedDate(value: unknown): string | null {
+  if (typeof value !== 'string' && typeof value !== 'number') return null;
+  const date = typeof value === 'number' ? new Date(value < 10_000_000_000 ? value * 1_000 : value) : new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+function sourceKind(hostname: string): WebSearchSource['sourceKind'] {
+  if (hostname === 'boe.es' || hostname.endsWith('.boe.es')) return 'normativa';
+  if (hostname.endsWith('.hacienda.gob.es') || hostname === 'hacienda.gob.es') return 'criterio_administrativo';
+  if (OFFICIAL_SOURCE_DOMAINS.some((domain) => matchesDomain(hostname, domain))) return 'organismo_oficial';
+  return 'externa';
+}
+function parseSource(value: unknown, index: number, allowedDomains: readonly string[]): WebSearchSource | null {
+  if (!value || typeof value !== 'object') return null;
+  const item = value as Record<string, unknown>;
+  if (typeof item.title !== 'string' || typeof item.url !== 'string') return null;
+  let url: URL;
+  try { url = new URL(item.url); } catch { return null; }
+  const hostname = hostWithoutBrackets(url.hostname).toLowerCase();
+  if (url.protocol !== 'https:' || url.username || url.password || url.port || hostname === 'localhost' ||
+    hostname.endsWith('.local') || hostname.endsWith('.internal') || isIP(hostname) !== 0) return null;
+  if (allowedDomains.length > 0 && !allowedDomains.some((domain) => matchesDomain(hostname, domain))) return null;
+  const title = cleanText(item.title, 180);
+  const snippet = cleanText(typeof item.content === 'string' ? item.content : '', 480);
+  if (!title || !snippet) return null;
+  return {
+    id: 'S' + String(index + 1),
+    title,
+    url: url.toString().slice(0, 2_048),
+    domain: hostname,
+    publishedAt: publishedDate(item.publishedDate),
+    snippet,
+    sourceKind: sourceKind(hostname),
+  };
+}
+
+export interface WebSearchProvider {
+  search(query: string, allowedDomains: readonly string[], callerSignal?: AbortSignal): Promise<WebSearchResponse>;
+}
+
+export class SearXNGSearchProvider implements WebSearchProvider {
+  private readonly baseURL: URL;
+  public constructor(private readonly config: WebSearchConfig) {
+    this.baseURL = validateBaseURL(config.baseURL);
+    if (!Number.isSafeInteger(config.timeoutMs) || config.timeoutMs < 1 || config.timeoutMs > 30_000) throw new Error('Invalid web search timeout.');
+    if (!Number.isSafeInteger(config.maxResults) || config.maxResults < 1 || config.maxResults > 8) throw new Error('Invalid web search result limit.');
+    if (!Number.isSafeInteger(config.maxQueryChars) || config.maxQueryChars < 20 || config.maxQueryChars > 500) throw new Error('Invalid web search query limit.');
+    if (!Number.isSafeInteger(config.maxResponseBytes) || config.maxResponseBytes < 8_192 || config.maxResponseBytes > 262_144) throw new Error('Invalid web search response limit.');
+  }
+
+  public async search(query: string, allowedDomains: readonly string[], callerSignal?: AbortSignal): Promise<WebSearchResponse> {
+    const safeQuery = cleanText(query, this.config.maxQueryChars);
+    if (safeQuery.length < 2 || safeQuery.length !== query.trim().length) throw new WebSearchUnavailableError();
+    if (allowedDomains.length > OFFICIAL_SOURCE_DOMAINS.length ||
+      allowedDomains.some((domain) => !OFFICIAL_SOURCE_DOMAINS.includes(domain as OfficialSourceDomain))) {
+      throw new WebSearchUnavailableError();
+    }
+    if (callerSignal?.aborted) throw new WebSearchUnavailableError();
+
+    const hostname = hostWithoutBrackets(this.baseURL.hostname);
+    let addresses: Array<{ readonly address: string; readonly family: 4 | 6 }> = [];
+    if (isIP(hostname) !== 0) {
+      const family = isIP(hostname);
+      if (!isLoopbackAddress(hostname, family) && !isPublicAddress(hostname, family)) throw new WebSearchUnavailableError();
+      addresses = [{ address: hostname, family: family as 4 | 6 }];
+    } else {
+      try { addresses = await lookup(hostname, { all: true, verbatim: true }); }
+      catch { throw new WebSearchUnavailableError(); }
+      if (addresses.length === 0) throw new WebSearchUnavailableError();
+      const localEndpoint = isLoopbackHost(hostname);
+      if (addresses.some((item) => localEndpoint ? !isLoopbackAddress(item.address, item.family) : !isPublicAddress(item.address, item.family))) {
+        throw new WebSearchUnavailableError();
+      }
+    }
+    const selectedAddress = addresses[0]!;
+    const pinnedLookup = ((_: string, __: unknown, callback: (error: NodeJS.ErrnoException | null, address: string, family: number) => void) => {
+      callback(null, selectedAddress.address, selectedAddress.family);
+    }) as NonNullable<RequestOptions['lookup']>;
+    const target = new URL('/search', this.baseURL);
+    target.searchParams.set('q', safeQuery);
+    target.searchParams.set('format', 'json');
+    target.searchParams.set('safesearch', '2');
+    target.searchParams.set('pageno', '1');
+    const signal = callerSignal
+      ? AbortSignal.any([callerSignal, AbortSignal.timeout(this.config.timeoutMs)])
+      : AbortSignal.timeout(this.config.timeoutMs);
+
+    const payload = await new Promise<Record<string, unknown>>((resolve, reject) => {
+      const requester = target.protocol === 'https:' ? httpsRequest : httpRequest;
+      const options: RequestOptions = {
+        protocol: target.protocol,
+        hostname: target.hostname,
+        port: target.port || undefined,
+        method: 'GET',
+        path: target.pathname + target.search,
+        headers: { Accept: 'application/json', 'User-Agent': 'PersonalBudget/0.1 local-web-research' },
+        maxHeaderSize: 8_192,
+        signal,
+        lookup: pinnedLookup,
+        ...(target.protocol === 'https:' && isIP(hostname) === 0 ? { servername: hostname } : {}),
+      };
+      const request = requester(options, (response) => {
+        const status = response.statusCode ?? 0;
+        if (status >= 300 && status < 400) {
+          response.destroy();
+          reject(new WebSearchUnavailableError());
+          return;
+        }
+        if (status !== 200) {
+          response.destroy();
+          reject(new WebSearchUnavailableError());
+          return;
+        }
+        const declaredLength = Number(response.headers['content-length']);
+        if (Number.isFinite(declaredLength) && declaredLength > this.config.maxResponseBytes) {
+          response.destroy();
+          reject(new WebSearchResponseTooLargeError());
+          return;
+        }
+        const chunks: Buffer[] = [];
+        let total = 0;
+        response.on('data', (chunk: Buffer | string) => {
+          const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          total += buffer.length;
+          if (total > this.config.maxResponseBytes) {
+            response.destroy(new WebSearchResponseTooLargeError());
+            return;
+          }
+          chunks.push(buffer);
+        });
+        response.on('error', (error: Error) => reject(error instanceof WebSearchResponseTooLargeError ? error : new WebSearchUnavailableError()));
+        response.on('end', () => {
+          try {
+            const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
+            if (!parsed || typeof parsed !== 'object') throw new Error('Invalid search payload.');
+            resolve(parsed as Record<string, unknown>);
+          } catch { reject(new WebSearchUnavailableError()); }
+        });
+      });
+      request.on('error', () => reject(new WebSearchUnavailableError()));
+      request.end();
+    });
+
+    const rawResults = Array.isArray(payload.results) ? payload.results : [];
+    const sources: WebSearchSource[] = [];
+    for (const item of rawResults) {
+      const parsed = parseSource(item, sources.length, allowedDomains);
+      if (!parsed) continue;
+      sources.push(parsed);
+      if (sources.length >= this.config.maxResults) break;
+    }
+    return { provider: 'SearXNG', searchedAt: new Date().toISOString(), sources };
+  }
+}

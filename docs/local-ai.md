@@ -1,38 +1,51 @@
 # IA local con Ollama
 
-La integración opcional usa la API de Ollama en loopback. Se mantiene desactivada por defecto: configura \`.env\` con \`AI_ENABLED=true\`, \`OLLAMA_MODEL\` con el nombre exacto de un modelo instalado y \`OLLAMA_BASE_URL=http://127.0.0.1:11434\`. \`OLLAMA_REQUEST_TIMEOUT_SECONDS\` admite de 1 a 180 segundos y \`AI_MAX_CONTEXT_CHARS\` limita el contexto agregado que se envía al modelo. La configuración remota se rechaza.
+La integración de Ollama es opcional y utiliza la API del runtime en loopback. Está desactivada por defecto. Configura en .env: AI_ENABLED=true, OLLAMA_MODEL con el nombre de un modelo instalado, OLLAMA_BASE_URL=http://127.0.0.1:11434, OLLAMA_REQUEST_TIMEOUT_SECONDS=120 y AI_MAX_CONTEXT_CHARS=4000.
 
-## Límites de seguridad
+La configuración rechaza endpoints remotos de Ollama. El modelo debe estar instalado antes de utilizar el asistente.
 
-- El estado del modelo está disponible en \`GET /api/v1/assistant/status\`; la API confirma disponibilidad y que el modelo esté instalado.
-- El chat acepta una pregunta limitada a 2.000 caracteres y fechas validadas; solo usa cálculos de \`finance-core\`.
-- Se envían al modelo agregados resumidos y totales de categorías, no las descripciones, notas, conceptos ni registros completos de movimientos.
-- Las cifras que presenta la interfaz proceden del backend; la narración se trata como explicación cualitativa, no como fuente de importes.
-- El asistente no tiene herramientas de escritura ni puede alterar Actual Budget. La variable \`AI_WRITE_OPERATIONS_ENABLED\` no habilita escrituras en esta versión.
-- Prompts y respuestas no se registran. Un timeout, un modelo ausente o un runtime caído produce un error saneado y no bloquea el resto de la aplicación.
-- Las descripciones bancarias son datos no confiables. La protección principal consiste en no enviarlas al modelo y no darle herramientas ni acceso al backend.
+## Asistente financiero
 
-No todas las combinaciones modelo/runtime están verificadas en vivo. La CI prueba comportamiento con respuestas sintéticas, sin descargar modelos ni acceder a internet. Para pruebas manuales, usa un presupuesto sintético y revisa la licencia y los requisitos hardware del modelo elegido.
+- Estado disponible en GET /api/v1/assistant/status.
+- El chat valida pregunta, periodo y ámbito antes de consultar Actual.
+- El backend calcula los agregados con finance-core y envía a Ollama un contexto compacto; no incluye descripciones, notas ni filas de movimientos.
+- Las cifras se presentan desde el backend. La respuesta del modelo es cualitativa.
+- El chat financiero no tiene tools, no navega, no puede leer ficheros/APIs, no dispone de permisos de escritura ni modifica Actual.
+- Prompts y respuestas no se registran. Timeout, modelo ausente o runtime caído no bloquean el resto de la aplicación.
 
-## Validación live registrada
+## Clasificación híbrida
 
-Fecha 25-oct-2026, WSL2 (kernel 6.18.33.2-microsoft-standard-WSL2) con Ollama de Windows expuesto en loopback mediante `networkingMode=mirrored` en `.wslconfig`.
+La clasificación opcional requiere AI_ENABLED=true, AI_CATEGORY_CLASSIFICATION_ENABLED=true y OLLAMA_MODEL con un modelo local instalado.
 
-- Modelo probado: **qwen3:8b** (8.2B, Q4_K_M, capacidades `completion`, `tools`, `thinking`). `npm run test:ollama:acceptance` pasa: disponibilidad detectada, generación real completada y narración devuelta sin cifras ni enlaces.
-- Compatibilidad de tool calling del runtime/modelo: qwen3:8b devuelve la llamada en el campo estructurado `tool_calls` con argumentos JSON válidos. El modo `thinking` consume tokens de generación: la aplicación usa `num_predict=768` para dejar margen a la respuesta; con 256 la narración se truncaba.
-- Otros modelos instalados en el entorno: qwen3:14b (misma familia, sin probar en vivo) y qwen2.5-coder:7b, que emite la llamada de herramienta como texto JSON en `content` en lugar del campo estructurado; usar un cliente que solo parse `tool_calls` lo descartaría.
-- Chat end-to-end contra datos sintéticos: resumen mensual, gasto por categoría y comparativa de periodos devuelven cifras del backend y narración cualitativa separada; una inyección de prompt pidiendo borrar gastos fue rechazada por el modelo (asistente de solo lectura) y la salida no contiene cifras, URLs ni descripciones de movimientos.
-- El fallo del runtime (Ollama caído) está cubierto por tests sintéticos: el chat devuelve 503 saneado y el resto de la aplicación sigue operativo. Los prompts y respuestas no se registran.
+La capa determinista actúa primero. Solo los casos sin evidencia suficiente pasan a la capa local; se envían referencias efímeras, catálogo de categorías permitido y, si se habilita, etiquetas normalizadas de beneficiarios. No se envían IDs reales de movimiento, cuentas, importes, fechas, notas ni filas históricas. Una salida inválida o incierta produce abstención y revisión manual.
 
-La IA no constituye asesoramiento financiero profesional. Revisa los indicadores deterministas antes de tomar decisiones.
+AI_CATEGORY_CLASSIFICATION_INCLUDE_PAYEE=false evita enviar etiquetas normalizadas al modelo y desactiva esa clasificación por IA.
 
+## Planificador conversacional
 
-## Extracción de intenciones del planificador de ahorro
+El planificador extrae intención a partir del texto escrito por la persona y un catálogo reducido de objetivos activos compatibles. No envía movimientos, cuentas, importes históricos ni saldos. El modelo no calcula proyecciones ni escribe objetivos/compromisos. El endpoint de previsualización siempre devuelve saved:false; los cambios persistentes se realizan en el flujo separado de Objetivos.
 
-El planificador usa el mismo cliente local y los mismos límites de concurrencia de Ollama. La petición de extracción contiene solo el texto escrito por el usuario, la fecha local del backend, la divisa de análisis y una lista acotada de objetivos activos compatibles (identificador y nombre para resolver referencias inequívocas). No incluye cuentas, movimientos, descripciones, categorías, notas, importes históricos ni saldos.
+## Búsqueda web controlada (#84)
 
-Ollama devuelve JSON conforme a un esquema estricto. Los importes se extraen como números en unidades principales de la divisa; la API valida rangos y precisión monetaria y realiza la conversión a unidades menores. El modelo no calcula proyecciones ni decide viabilidad. Fechas o importes ausentes, referencias ambiguas y divisas distintas provocan una pregunta aclaratoria o el rechazo seguro de la simulación.
+La investigación web es un segundo flujo independiente y no cambia el permiso del chat financiero. Requiere configurar WEB_SEARCH_ENABLED=true, un proveedor SearXNG y consentimiento explícito para cada consulta.
 
-La IA no dispone de endpoints de escritura. El único endpoint conversacional es `POST /api/v1/planning/conversation/preview` y siempre devuelve `saved: false`. La prueba de un gasto extraordinario usa un compromiso temporal en memoria que desaparece al terminar la petición. Los objetivos y compromisos guardados solo pueden cambiarse mediante los flujos separados de Objetivos.
+- El usuario escribe la consulta en el panel dedicado y confirma que autoriza su envío al proveedor externo.
+- El backend envía a Ollama la consulta exacta y define una única tool allowlist llamada web_search.
+- El modelo debe pedir exactamente esa búsqueda; la API rechaza una llamada ausente, adicional o con argumentos que modifiquen la consulta.
+- El backend ejecuta SearXNG y devuelve un conjunto acotado de fuentes. La segunda inferencia usa los fragmentos como datos externos no confiables y no recibe tools.
+- No se consulta el repositorio financiero ni se envía contexto financiero a Ollama en este flujo.
+- La UI muestra proveedor, fecha de búsqueda, clase/dominio de fuente y enlaces originales. No se guarda historial de navegación.
+- El modo fiscal exige jurisdicción, materia, ejercicio fiscal, año de presentación y fecha de referencia explícitos. No se deducen desde movimientos ni ubicación del dispositivo.
+- Los dominios oficiales admitidos incluyen AEAT, BOE, Hacienda, Seguridad Social, Xunta/DOG, CNMV y Banco de España. Un filtro de dominio restringe resultados, pero no certifica su vigencia o jerarquía jurídica.
 
-La aceptación opcional `PERSONAL_BUDGET_RUN_PLANNING_AI_ACCEPTANCE=1 OLLAMA_MODEL=<modelo-local> npm run test:planning-ai:acceptance` ejecuta una pequeña suite de prompts totalmente sintéticos y mide exactitud de campos y detección de aclaraciones. CI valida el contrato con respuestas sintéticas; no descarga ni presupone un modelo local.
+La compatibilidad depende del soporte de tool calling estructurado del modelo/runtime. La validación live registrada para qwen3:8b se refiere al entorno probado; no garantiza otros modelos. Ante incompatibilidad se devuelve WEB_SEARCH_TOOL_UNSUPPORTED y no se ejecuta la búsqueda.
+
+Consulta la guía de búsqueda web (web-search.md) para los límites, configuración del proveedor y lectura de resultados.
+
+## Configuración, validación y límites
+
+Las variables AI_ENABLED, OLLAMA_BASE_URL, OLLAMA_MODEL, OLLAMA_REQUEST_TIMEOUT_SECONDS y AI_MAX_CONTEXT_CHARS controlan la inferencia local. Las variables WEB_SEARCH_* configuran por separado el proveedor y sus límites.
+
+La CI utiliza respuestas sintéticas y no requiere descargar Ollama ni realizar búsquedas reales. Las pruebas live deben usar prompts sintéticos, un modelo instalado y fuentes no sensibles.
+
+La IA no constituye asesoramiento financiero, fiscal, jurídico ni profesional. Verifica los documentos originales y consulta a un profesional cuando dependa de circunstancias personales o de la vigencia normativa.

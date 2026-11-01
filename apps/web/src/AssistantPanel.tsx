@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { formatMoney as sharedFormatMoney } from './finance-format.js';
+import { WebResearchPanel } from './WebResearchPanel.js';
 
 interface Summary {
   currency: string; startDate: string; endDate: string; incomeMinor: number; expenseMinor: number;
@@ -88,6 +89,7 @@ export function AssistantPanel({ currency }: { currency: string }) {
         <article className="panel"><h3>Explicación local</h3><p>{answer.answer}</p><p className="section-footnote">Las cifras proceden de finance-core. La explicación del modelo es cualitativa y se muestra separada de los importes calculados.</p></article>
         <article className="panel"><h3>Gastos por categoría</h3>{answer.summary.expensesByCategory.length ? <div className="comparison-rows">{answer.summary.expensesByCategory.slice(0, 10).map((item) => <div className="comparison-row" key={item.categoryName}><div><span>{item.categoryName}</span><strong>{money(item.amountMinor, answer.summary.currency || currency)}</strong></div><div className="comparison-meta"><span>{item.transactionCount} movimientos</span></div></div>)}</div> : <p>No hay gastos categorizados para el periodo.</p>}</article>
       </> : null}
+      <WebResearchPanel />
     </section>
   );
 }

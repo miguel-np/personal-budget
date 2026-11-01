@@ -1,44 +1,56 @@
 # Índice de documentación
 
-Esta documentación describe el diseño objetivo de `personal-budget`, una aplicación local de finanzas personales con interfaz web y asistente de IA.
+Guías de implementación, operación, privacidad y arquitectura de `personal-budget`, una aplicación local-first de finanzas personales sobre Actual Budget.
 
 ## Empezar
 
 - [README y resumen del proyecto](../README.md)
 - [Estado de implementación](implementation-status.md)
-- [Instalación en Windows + WSL2](installation.md)
+- [Roadmap](roadmap.md)
+- [Instalación Windows + WSL2](installation.md)
 - [Guía de uso](usage.md)
 - [Configuración](configuration.md)
+- [Resolución de problemas](troubleshooting.md)
 
-## Diseño y funcionamiento
+## Finanzas y planificación
 
-- [Criterios y procedimiento de aceptación P2](p2-acceptance.md)
-- [Planificación: recurrentes, sugerencias y previsiones](planning.md)
-- [Contratos financieros independientes del proveedor](provider-contracts.md)
-- [Centro de inteligencia financiera](financial-intelligence.md)
-- [Objetivos de ahorro y compromisos futuros](planning-goals.md)
+- [Movimientos, importación y rendimiento de historiales](transactions-and-imports.md)
+- [Importación OFX local: perfiles, límites y seguridad](ofx-import.md)
+- [Ámbito global de cuentas](account-scope.md)
+- [Divisas, conversión y trazabilidad](multi-currency.md)
+- [Objetivos y compromisos futuros](planning-goals.md)
+- [Pagos recurrentes, sugerencias y previsiones](planning.md)
+- [Centro de inteligencia financiera y anomalías](financial-intelligence.md)
+- [Revisión financiera periódica](periodic-financial-review.md)
 - [Saldo estimado y flujo de caja](cash-flow.md)
 - [Propuestas de mejora presupuestaria](budget-improvements.md)
-- [Alertas presupuestarias](budget-alerts.md)
+- [Alertas presupuestarias locales](budget-alerts.md)
+- [Patrimonio externo, justificantes y portabilidad](wealth-and-evidence.md)
 
-- [Arquitectura](architecture.md)
-- [Registro de movimientos e importaciones](transactions-and-imports.md)
-- [Importación OFX local: perfiles, límites y seguridad](ofx-import.md)
-- [IA local y modelos](local-ai.md)
+## IA e integraciones
+
+- [IA local con Ollama y límites de contexto](local-ai.md)
+- [Búsqueda web controlada y fuentes oficiales](web-search.md)
 - [Herramientas MCP y permisos](mcp.md)
+- [Contratos financieros independientes del proveedor](provider-contracts.md)
 
-## Privacidad y operación
+## Exportación, privacidad y recuperación
 
+- [Exportación local PDF, XLSX, CSV y JSON](export-formats.md)
 - [Privacidad y flujo de datos](privacy.md)
 - [Seguridad](../SECURITY.md)
 - [Copias de seguridad y restauración](backup-restore.md)
-- [Operación local](operations.md)
-- [Resolución de problemas](troubleshooting.md)
+- [Operación local y actualizaciones](operations.md)
+- [Actualizaciones seguras](safe-updates.md)
 
-## Diseño de interfaz y calidad
+## Arquitectura, diseño y aceptación
 
+- [Arquitectura](architecture.md)
 - [Sistema de diseño](design-system.md)
+- [Criterios y aceptación P2](p2-acceptance.md)
 - [Pruebas E2E de navegador](browser-testing.md)
+- [Baseline de versiones](version-baseline.md)
+- [Compatibilidad de actualizaciones](update-compatibility.json)
 
 ## Desarrollo y gobernanza
 
@@ -48,16 +60,9 @@ Esta documentación describe el diseño objetivo de `personal-budget`, una aplic
 - [Soporte](../SUPPORT.md)
 - [Código de conducta](../CODE_OF_CONDUCT.md)
 - [Changelog](../CHANGELOG.md)
-- [Roadmap](roadmap.md)
 
 ## Decisiones de arquitectura
 
 - [ADR-0001: diseño local-first](decisions/0001-local-first.md)
 - [ADR-0002: Actual Budget como motor financiero](decisions/0002-actual-budget.md)
 - [ADR-0003: MCP con permisos limitados](decisions/0003-mcp-permissions.md)
-
-
-- [Divisas, conversión y trazabilidad](multi-currency.md)
-
-
-- [Ámbito global de cuentas](account-scope.md)

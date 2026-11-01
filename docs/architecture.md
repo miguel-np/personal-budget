@@ -2,80 +2,88 @@
 
 ## Resumen
 
-`personal-budget` está diseñado como una aplicación web local. El navegador presenta una única interfaz. El backend coordina los accesos a Actual Budget y Ollama; no se conecta el navegador directamente a la base de datos financiera ni al modelo.
+Personal Budget es una aplicación web local. El navegador se comunica con la API Fastify en loopback; el backend coordina el adaptador oficial de Actual, los cálculos deterministas, el estado propio y las inferencias locales. El navegador no accede directamente a la base de datos financiera, a Ollama ni al proveedor de búsqueda.
 
-```mermaid
+~~~mermaid
 flowchart TD
-  U[Browser: localhost] --> W[React + TypeScript]
-  W --> B[Backend local: Node.js + TypeScript]
-  B --> A[Adaptador @actual-app/api]
-  A --> AB[Servidor Actual Budget]
-  B --> O[Ollama: inferencia local opcional]
-  M[MCP stdio local independiente]
-  B --> P[Preferencias locales; sin copia financiera por defecto]
-```
+  U[Browser localhost] --> W[React + TypeScript]
+  W --> B[API local Fastify]
+  B --> A[Actual adapter]
+  A --> AB[Actual Budget]
+  B --> F[finance-core determinista]
+  B --> O[Ollama local opcional]
+  B --> S[SearXNG configurado · solo consentimiento]
+  S --> X[Motores upstream del buscador]
+  B --> P[Almacenes locales versionados]
+  M[MCP stdio · read-only] --> B
+~~~
 
 ## Componentes
 
 | Componente | Responsabilidad | Límite principal |
 |---|---|---|
-| Frontend | Dashboard, formularios, gráficos, chat y confirmaciones | No guarda credenciales ni llama directamente a Actual/Ollama |
-| Backend | Validación, permisos, cálculos agregados, límites y coordinación | Escucha en localhost por defecto |
-| Adaptador Actual | Inicializar `@actual-app/api`, abrir el presupuesto y ejecutar las operaciones aprobadas | Único componente que accede a las funciones de Actual |
-| Actual Budget | Fuente de verdad para cuentas, categorías, presupuestos y movimientos | No sustituir ni editar su almacenamiento interno directamente |
-| Capa de IA local | Prepara contexto agregado y solicita una explicación cualitativa | Una inferencia por petición; sin herramientas ni operaciones de escritura |
-| Ollama | Generación local de respuestas y llamadas a herramientas compatibles | La compatibilidad depende del modelo/runtime elegido |
-| MCP opcional | Expone herramientas revisadas a clientes MCP locales | Transporte stdio por defecto; no servidor público sin autenticación |
-| Preferencias de la app | Ajustes de interfaz y metadatos de revisión, planificación y acciones financieras | No duplicar movimientos ni almacenar historial financiero sin necesidad |
+| Frontend | Dashboard, formularios, gráficos, chat y confirmaciones | No guarda credenciales ni llama directamente a Actual/Ollama/SearXNG. |
+| Backend | Validación, ámbito, permisos, límites, cálculo coordinado y persistencia | Escucha en loopback por defecto. |
+| packages/finance-core | Contratos de dominio y cálculos financieros deterministas | No conoce SDK ni transporte del proveedor. |
+| services/actual-adapter | Inicializar @actual-app/api, abrir presupuesto y adaptar estructuras/errores | Único paquete runtime que importa el SDK. |
+| Actual Budget | Fuente de verdad de cuentas, categorías, presupuestos y movimientos | No se modifica SQLite ni archivos internos directamente. |
+| Estado propio | Preferencias, planificación, revisiones, alertas, patrimonio y metadata documental | No duplica movimientos; cada almacén se inventaría en backup. |
+| Asistente financiero | Explicación cualitativa de agregados calculados por backend | No recibe herramientas, filas de movimientos ni permisos de escritura. |
+| Investigación web | Buscar el texto explícito aprobado por el usuario y devolver fuentes acotadas | Una única herramienta backend; sin contexto financiero, navegación general ni fetch arbitrario de páginas. |
+| Ollama | Generación local y tool calling compatible cuando se habilita una herramienta concreta | Modelo/runtime compatible requerido; no se le da red directa. |
+| SearXNG | Adaptador de búsqueda configurado por el operador | Local loopback o remoto HTTPS; puede remitir la consulta a motores upstream. |
+| MCP | Herramientas revisadas para clientes locales | Transporte stdio, solo lectura. |
 
-## Flujo de datos
+## Fuente de verdad y dominio financiero
 
-1. El usuario crea o importa movimientos en Actual Budget o mediante las funciones explícitas de la aplicación.
-2. El backend consulta los datos a través del adaptador oficial de Node.js.
-3. Los agregados financieros se calculan con código determinista.
-4. Para preguntas en lenguaje natural, el backend valida el ámbito, calcula los agregados en código determinista y prepara un contexto JSON compacto.
-5. El backend realiza como máximo una inferencia local por petición. El modelo no recibe herramientas, no consulta movimientos y no ejecuta operaciones.
-6. La interfaz presenta los importes calculados por `finance-core` y muestra por separado la explicación cualitativa. MCP mantiene una interfaz read-only independiente del chat.
+Actual Budget conserva la fuente de verdad. services/api depende de BudgetRepository y de contratos neutrales declarados en finance-core. El adaptador traduce tipos y errores específicos de Actual; los scripts operativos son excepciones documentadas. La suite de conformidad permite probar otro proveedor sin sustituir automáticamente el libro de datos.
 
-## Fuente de verdad y duplicación
+Los cálculos se realizan con importes en unidades menores enteras. Las monedas distintas no se suman sin conversión local explícita y fechada; los datos desconocidos permanecen desconocidos, no se convierten en cero.
 
-Actual Budget es la fuente de verdad financiera prevista. No crear una segunda base de movimientos paralela salvo que exista una justificación clara. La app puede almacenar preferencias técnicas, filtros y metadatos de revisión/planificación por separado. El almacén `financial-actions.json` guarda reglas, categorías protegidas, decisiones y escenarios, no movimientos. Los almacenes persistentes propios deben inventariarse en `APP_STATE_FILE_NAMES` y en las pruebas de backup/restore.
+## Flujos de datos de IA
 
-## Reglas de cálculo
+### Chat financiero
 
-- Ingresos y gastos se agregan por fecha de transacción y divisa.
-- Ahorro del periodo = ingresos netos del periodo menos gastos netos del periodo, con reglas explícitas para reembolsos.
-- Tasa de ahorro = ahorro / ingresos × 100; si los ingresos son cero o negativos, mostrar «no aplicable» en lugar de dividir.
-- Los traspasos entre cuentas propias se excluyen de ingresos/gastos consolidados para evitar doble conteo, pero se muestran como movimientos de cuenta.
-- Un reembolso debe reducir la categoría de gasto correspondiente cuando pueda identificarse de forma fiable; si no, debe quedar visible para revisar.
-- No sumar distintas divisas sin un tipo de cambio explícito y fechado.
-- Los datos ausentes se muestran como desconocidos, no como cero.
-- Las previsiones deben etiquetarse como estimaciones e identificar los supuestos.
+1. API valida periodo, divisa y ámbito global de cuentas.
+2. Backend obtiene los movimientos mediante el adaptador.
+3. finance-core calcula los agregados.
+4. La API serializa un contexto compacto y limitado para Ollama local.
+5. El modelo devuelve una explicación cualitativa; la UI presenta los importes autoritativos por separado.
 
-## Límites de alcance inicial
+El chat no tiene herramientas. No puede consultar datos adicionales, navegar, escribir movimientos ni cambiar presupuestos. La disponibilidad de Ollama no condiciona las demás funciones financieras.
 
-- Sin conexión bancaria automática.
-- Sin asesoramiento de inversión, impuestos o crédito.
-- Sin acceso público remoto.
-- Sin acciones financieras externas ni ejecución de pagos.
-- Sin ejecución de código generado por el modelo.
-- Sin analítica ni telemetría de terceros por defecto.
+### Investigación web independiente (#84)
 
+1. La persona abre el panel de búsqueda, escribe la consulta y marca un consentimiento explícito para esa petición.
+2. El frontend envía solo la consulta autorizada, modo general/fiscal y, en modo fiscal, jurisdicción, materia, ejercicio fiscal, año de presentación y fecha de referencia.
+3. La API valida el consentimiento, longitud, dominios permitidos, límites de uso y configuración. No llama a repository ni consulta cuentas, movimientos, saldos, categorías u objetivos.
+4. Ollama recibe la consulta y una única definición fija de herramienta web_search. El backend exige que el modelo llame exactamente a esa herramienta una vez y que el argumento query coincida byte por byte con la consulta aprobada.
+5. El backend ejecuta el proveedor SearXNG configurado, valida su destino, limita tiempo y respuesta, rechaza redirecciones y filtra enlaces/resúmenes. Solo los resultados acotados se devuelven como contenido no confiable.
+6. Ollama realiza una segunda inferencia sin herramientas para sintetizar hallazgos y referencias [S1], [S2], etc. La UI presenta los enlaces originales para revisión humana.
 
-## Nuevas capacidades de inteligencia financiera
+El modelo no recibe red general, navegador, shell, filesystem, API interna, herramientas MCP arbitrarias ni acceso a la cuenta financiera. La API no descarga las páginas destino; los fragmentos son evidencia preliminar y no sustituyen la lectura del documento original.
 
-`finance-core` conserva los cálculos de flujo de caja, propuestas presupuestarias y reglas de alertas como funciones deterministas. La API resuelve el ámbito global, obtiene datos a través del adaptador oficial, aplica tasas locales y valida los metadatos persistentes. La interfaz no calcula importes autoritativos ni delega decisiones financieras al modelo. El saldo inicial de flujo de caja usa el saldo actual que expone Actual; no se denomina saldo bancario disponible cuando la fuente no proporciona esa semántica.
+## Límites de alcance
 
-## IA local: límites de contexto y recursos
+- No hay conexión bancaria automática.
+- No hay asesoramiento profesional fiscal, de inversión o crédito.
+- No se ejecutan pagos ni acciones externas a partir de resultados web.
+- No se ejecuta código generado por el modelo.
+- No hay navegación autónoma, scraping general ni JavaScript arbitrario.
+- No hay telemetría de terceros por defecto.
+- Los resultados web son externos y no confiables; la fecha del buscador no acredita por sí misma vigencia normativa.
 
-La IA es opcional y solo explica agregados que el backend ya calculó. El chat no expone herramientas ni delega consultas, escrituras o planificación al modelo. Los cálculos numéricos siguen siendo responsabilidad de `finance-core`.
+## Inteligencia financiera
 
-- La disponibilidad de Ollama se cachea durante 5 segundos; una inferencia fallida invalida el estado para detectar antes una caída o recuperación.
-- El contexto se compacta antes de serializarlo como JSON válido: se descartan categorías y avisos de menor prioridad antes de reducir datos. Nunca se corta la cadena JSON ya serializada.
-- La llamada usa `num_ctx=2048` y `num_predict=384`. Se reserva un presupuesto de hasta 1536 tokens estimados para entrada; la estimación utiliza caracteres por token como límite conservador, no sustituye el tokenizador específico del modelo. El límite `AI_MAX_CONTEXT_CHARS` (512–8000; valor por defecto 4000) también se respeta.
-- El cliente permite hasta 2 inferencias simultáneas y 4 solicitudes en espera. Al llenarse la cola responde con un error temporal explícito en lugar de crecer sin límite.
-- Solo se agrupan solicitudes concurrentes cuando coinciden la pregunta, el contexto agregado completo, el periodo, la divisa y la huella interna de cuentas. Los identificadores internos no se envían al modelo ni se registran.
-- Se propaga la cancelación del cliente a la inferencia cuando es posible, se aplica el timeout configurado y no hay reintentos automáticos.
-- La telemetría estructurada registra duración, espera en cola, estimación de entrada, tamaño del contexto, resultado y llamadas al modelo. No registra prompts, nombres de cuenta, categorías, movimientos ni importes.
+finance-core conserva los cálculos de flujo de caja, propuestas presupuestarias y reglas de alerta como funciones deterministas. La API resuelve el ámbito global, obtiene datos mediante el adaptador y aplica tasas locales. El saldo inicial de flujo de caja usa el saldo actual que Actual expone; no se denomina saldo bancario disponible si la fuente no proporciona esa semántica.
 
-Las pruebas de IA utilizan fixtures sintéticos y no requieren descargar ni ejecutar un modelo. Con Ollama desactivado, lento o no disponible, las funciones financieras restantes siguen operativas.
+## Recursos y límites de IA local
+
+- Disponibilidad de Ollama cacheada durante 5 segundos.
+- Contexto compacto y JSON válido, con presupuesto de caracteres/tokens estimados.
+- Hasta dos inferencias simultáneas y cuatro en cola por cliente.
+- Cancelación y timeout propagados; sin reintentos automáticos.
+- Métricas locales sin prompts, cuentas, categorías, movimientos ni importes.
+- El modo web utiliza la cola limitada de Ollama y una búsqueda por petición; el endpoint tiene un rate limit local y un límite de resultados/bytes.
+
+Con Ollama desactivado o no disponible, las funciones financieras deterministas continúan operativas. La búsqueda externa permanece deshabilitada salvo configuración explícita.
