@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 
 let readiness = 'configured';
@@ -23,6 +24,11 @@ let accountScope = { mode: 'all', accountIds: [] };
 const intelligenceReviews = new Map();
 const periodicReviews = [];
 let periodicReviewSequence = 1;
+const syntheticFingerprint = (label) => createHash('sha256').update(label).digest('hex').slice(0, 16);
+const periodicFindingFingerprint = syntheticFingerprint('periodic finding full fingerprint');
+const periodicFindingIdentity = syntheticFingerprint('periodic finding stable identity');
+const periodicFindingEvidence = syntheticFingerprint('periodic finding evidence');
+const syntheticAccountScopeFingerprint = syntheticFingerprint('synthetic account scope');
 const now = new Date();
 const iso = (date) => date.toISOString().slice(0, 10);
 const currentMonthStart = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-01';
@@ -495,14 +501,14 @@ const server = createServer(async (req, res) => {
       const endDate = scheduledEndDate > iso(now) ? iso(now) : scheduledEndDate;
       const findingId = 'fi-v1-pending-categorization-' + startDate + '-' + endDate + '-fixture';
       const previous = periodicReviews.find((item) => item.periodType === body.periodType && item.startDate === startDate && item.endDate === endDate && item.currency === currencyPreferences.displayCurrency);
-      const previousItem = previous?.items.find((item) => item.findingId === findingId && item.fingerprint === '0123456789abcdef');
+      const previousItem = previous?.items.find((item) => item.findingId === findingId && item.fingerprint === periodicFindingFingerprint);
       const previousStatus = previousItem?.status === 'reviewed' || (previousItem?.status === 'postponed' && previousItem.postponedUntil >= iso(now))
         ? previousItem.status : 'pending';
-      const identityKey = '0123456789abcdef';
-      const evidenceFingerprint = 'fedcba9876543210';
+      const identityKey = periodicFindingIdentity;
+      const evidenceFingerprint = periodicFindingEvidence;
       const item = {
         findingId, findingType: 'pending-categorization', identityKey, evidenceFingerprint,
-        fingerprint: '0123456789abcdef',
+        fingerprint: periodicFindingFingerprint,
         status: previousStatus, ...(previousStatus === 'postponed' ? { postponedUntil: previousItem.postponedUntil } : {}),
       };
       const run = {
@@ -512,7 +518,7 @@ const server = createServer(async (req, res) => {
         accountScope: {
           mode: accountScope.mode,
           label: accountScope.mode === 'all' ? 'Todas las cuentas abiertas (3)' : 'Ámbito seleccionado',
-          fingerprint: '0123456789abcdef',
+          fingerprint: syntheticAccountScopeFingerprint,
         },
         status: previousStatus === 'pending' ? 'in_progress' : 'completed',
         ...(previousStatus !== 'pending' ? { completedAt: now.toISOString() } : {}),
@@ -526,7 +532,7 @@ const server = createServer(async (req, res) => {
       const comparisonPeriod = { startDate: iso(priorStart), endDate: iso(priorEnd) };
       const previousSummary = summary(comparisonPeriod.startDate, comparisonPeriod.endDate);
       const finding = {
-        schemaVersion: 1, id: findingId, identityKey, evidenceFingerprint, fingerprint: '0123456789abcdef',
+        schemaVersion: 1, id: findingId, identityKey, evidenceFingerprint, fingerprint: periodicFindingFingerprint,
         type: 'pending-categorization', title: 'Hay movimientos pendientes de clasificar',
         explanation: 'Hay movimientos sintéticos sin categoría en el periodo. No se aplican categorías automáticamente.',
         period: { startDate, endDate },
@@ -583,7 +589,7 @@ const server = createServer(async (req, res) => {
       const findingId = 'fi-v1-pending-categorization-' + startDate + '-' + endDate + '-fixture';
       const review = intelligenceReviews.get(findingId) || { status: 'new' };
       const finding = {
-        schemaVersion: 1, id: findingId, fingerprint: '0123456789abcdef',
+        schemaVersion: 1, id: findingId, identityKey: periodicFindingIdentity, evidenceFingerprint: periodicFindingEvidence, fingerprint: periodicFindingFingerprint,
         type: 'pending-categorization', title: 'Hay movimientos pendientes de clasificar',
         explanation: 'Hay movimientos sintéticos sin categoría en el periodo. No se aplican categorías automáticamente.',
         period: { startDate, endDate },
