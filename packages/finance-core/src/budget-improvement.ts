@@ -3,6 +3,8 @@ export type BudgetImprovementGoal = 'increase_monthly_margin' | 'reduce_variable
 export interface BudgetImprovementObservation {
   readonly categoryId: string; readonly categoryName: string; readonly expenseMinor: number;
   readonly transactionCount: number; readonly monthsWithActivity: number;
+  readonly latestMonthExpenseMinor?: number; readonly priorMonthsAverageExpenseMinor?: number;
+  readonly budgetedMinor?: number | null; readonly budgetSpentMinor?: number | null;
 }
 export interface BudgetImprovementCategoryPreference { readonly categoryId: string; readonly classification: BudgetCategoryClassification; }
 export interface BudgetImprovementProposal {
@@ -50,9 +52,23 @@ export function buildBudgetImprovementProposals(
     safeMinor(observation.expenseMinor, 'observed category expense');
     if (!Number.isSafeInteger(observation.transactionCount) || observation.transactionCount < 0 ||
         !Number.isSafeInteger(observation.monthsWithActivity) || observation.monthsWithActivity < 0) throw new RangeError('Observation counts must be non-negative integers.');
-    if (observation.expenseMinor < 2_500 || observation.transactionCount < 3 || observation.monthsWithActivity < 2) continue;
+    if (observation.expenseMinor <= 0 || observation.transactionCount < 3 || observation.monthsWithActivity < 2) continue;
     const monthlyExpense = Math.round(observation.expenseMinor / baseline.periodMonths);
-    const suggestedReductionPercent = 5;
+    const budgetedMinor = observation.budgetedMinor ?? null;
+    const budgetSpentMinor = observation.budgetSpentMinor ?? null;
+    const latestMonthExpenseMinor = observation.latestMonthExpenseMinor ?? null;
+    const priorMonthsAverageExpenseMinor = observation.priorMonthsAverageExpenseMinor ?? null;
+    const hasBudgetOverrun = budgetedMinor !== null && budgetedMinor > 0 &&
+      budgetSpentMinor !== null && budgetSpentMinor > budgetedMinor;
+    const hasRecentIncrease = latestMonthExpenseMinor !== null && priorMonthsAverageExpenseMinor !== null &&
+      latestMonthExpenseMinor > priorMonthsAverageExpenseMinor && latestMonthExpenseMinor > 0;
+    if (!hasBudgetOverrun && !hasRecentIncrease) continue;
+    const suggestedReductionPercent = hasBudgetOverrun && budgetedMinor !== null && budgetSpentMinor !== null
+      ? Math.min(100, Math.ceil(((budgetSpentMinor - budgetedMinor) / budgetSpentMinor) * 100))
+      : latestMonthExpenseMinor !== null && priorMonthsAverageExpenseMinor !== null
+        ? Math.min(100, Math.ceil(((latestMonthExpenseMinor - priorMonthsAverageExpenseMinor) / latestMonthExpenseMinor) * 100))
+        : 0;
+    if (suggestedReductionPercent <= 0) continue;
     const monthlySavings = Math.round(monthlyExpense * suggestedReductionPercent / 100);
     const annualSavings = monthlySavings * 12;
     if (monthlySavings <= 0) continue;
@@ -63,23 +79,22 @@ export function buildBudgetImprovementProposals(
       categoryId: observation.categoryId, categoryName: observation.categoryName, kind: 'review_flexible_spend',
       suggestedReductionPercent, observedMonthlyExpenseMinor: monthlyExpense,
       estimatedMonthlySavingsMinor: monthlySavings, estimatedAnnualSavingsMinor: annualSavings, confidence,
-      explanation: classification === 'flexible'
-        ? (goal === 'reach_savings_goal'
-          ? 'Has marcado esta categoría como flexible. Una reducción hipotética del 5 % podría contribuir a tu objetivo de ahorro, sin modificar el presupuesto ni los movimientos.'
-          : goal === 'free_cash_flow'
-            ? 'Has marcado esta categoría como flexible. Una reducción hipotética del 5 % podría liberar margen de caja en los próximos periodos.'
-            : goal === 'reduce_variable_spending'
-              ? 'Has marcado esta categoría como flexible. Una reducción hipotética del 5 % permite evaluar una disminución del gasto observado.'
-              : 'Has marcado esta categoría como flexible. Una reducción hipotética del 5 % permitiría liberar parte del gasto observado sin modificar el presupuesto ni los movimientos.')
-        : (goal === 'reach_savings_goal'
-          ? 'Has marcado esta categoría como revisable. Compara si una reducción hipotética del 5 % contribuiría a tu objetivo de ahorro sin comprometer tus prioridades.'
-          : 'Has marcado esta categoría como revisable. Compara una reducción hipotética del 5 % antes de decidir si es compatible con tus prioridades.'),
+      explanation: (hasBudgetOverrun
+        ? 'El último presupuesto mensual observado se superó; el escenario estima volver al límite asignado.'
+        : 'El gasto del último mes completo superó la media de los meses anteriores; el escenario estima volver a ese nivel histórico.') +
+        ' Has marcado esta categoría como ' + classification + '. ' +
+        (goal === 'reach_savings_goal' ? 'Compara el impacto con tu objetivo de ahorro.'
+          : goal === 'free_cash_flow' ? 'Compara el margen de caja que podría liberar.'
+            : goal === 'reduce_variable_spending' ? 'Permite evaluar la tendencia del gasto variable.'
+              : 'Evalúa si el ajuste mejora tu margen mensual.'),
       evidence: {
         periodMonths: baseline.periodMonths, transactionCount: observation.transactionCount,
         observedExpenseMinor: observation.expenseMinor,
-        rule: 'Solo categorías marcadas por el usuario como flexibles o revisables; gasto neto observado >= 25 unidades menores y al menos 3 movimientos en 2 meses.',
+        rule: hasBudgetOverrun
+          ? 'Categoría marcada por el usuario como flexible/revisable y gasto del último mes superior al presupuesto positivo del mismo mes.'
+          : 'Categoría marcada por el usuario como flexible/revisable y gasto del último mes superior a la media de los meses de referencia previos.',
       },
-      assumptions: ['El ahorro propuesto es hipotético y se calcula sobre el gasto neto observado del periodo.', 'La reducción se mantiene constante durante doce meses; no es un ahorro garantizado.'],
+      assumptions: ['El porcentaje sugerido se deriva del exceso frente al presupuesto positivo o del aumento frente a la media de meses anteriores; el usuario puede editarlo antes de simular.', 'El ahorro mensual se calcula aplicando ese porcentaje al gasto mensual medio del periodo; la extensión anual mantiene el mismo supuesto y no es un ahorro garantizado.'],
       warnings: baseline.unconvertedTransactionCount > 0 ? ['Hay movimientos sin conversión válida; la propuesta puede no representar todo el gasto del ámbito.'] : [],
     });
   }
