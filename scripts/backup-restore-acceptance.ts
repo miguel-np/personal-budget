@@ -24,6 +24,7 @@ const files = [
   'app-preferences.json',
   'currency-preferences.json',
   'financial-intelligence-state.json',
+  'financial-actions.json',
   'periodic-reviews.json',
   'planning-data.json',
   'wealth-data.json',
@@ -142,7 +143,11 @@ async function seed(): Promise<void> {
     await writeFile(join(appDataDir, name), JSON.stringify(fixture[name], null, 2) + '\n', { mode: 0o600 });
     await chmod(join(appDataDir, name), 0o600).catch(() => undefined);
   }
-  process.stdout.write('Seeded six synthetic Personal Budget state files.\n');
+  const documentDirectory = join(appDataDir, 'documents');
+  await mkdir(documentDirectory, { recursive: true, mode: 0o700 });
+  await writeFile(join(documentDirectory, syntheticDocumentFileName), syntheticDocumentBytes, { flag: 'w', mode: 0o600 });
+  await chmod(join(documentDirectory, syntheticDocumentFileName), 0o600).catch(() => undefined);
+  process.stdout.write('Seeded nine synthetic Personal Budget state files and one local document.\\n');
 }
 
 async function verifyAppState(): Promise<void> {
@@ -167,7 +172,7 @@ async function verifyAppState(): Promise<void> {
   if (periodic.version !== 1 || !Array.isArray(periodic.reviews)) {
     throw new Error('Restored periodic review metadata does not match the versioned state contract.');
   }
-  process.stdout.write('Verified six restored Personal Budget state files using production readers.\n');
+  process.stdout.write('Verified nine restored Personal Budget state files, one wealth valuation and one PDF using production readers.\\n');
 }
 
 async function roundtrip(): Promise<void> {
