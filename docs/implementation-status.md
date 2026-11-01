@@ -1,6 +1,6 @@
 # Estado de implementación
 
-**Baseline: 1-nov-2026.** Las funcionalidades descritas como integradas están presentes en `main`. Se distingue la integración del código, la validación automatizada y la aceptación manual del entorno. La primera entrega de búsqueda web de #84 está integrada mediante PR [#97](https://github.com/miguel-np/personal-budget/pull/97), con CI Linux/Windows, E2E y aceptación Actual en verde. La segunda iteración documental está en revisión en [PR #98](https://github.com/miguel-np/personal-budget/pull/98) y todavía no forma parte de `main`; la issue sigue abierta.
+**Baseline: 1-nov-2026.** Las funcionalidades descritas como integradas están presentes en `main`. Se distingue la integración del código, la validación automatizada y la aceptación manual del entorno. Las dos iteraciones de búsqueda web de #84 están integradas en `main`: PR [#97](https://github.com/miguel-np/personal-budget/pull/97) aporta búsqueda controlada y PR [#98](https://github.com/miguel-np/personal-budget/pull/98) añade recuperación documental oficial y evidencia temporal BOE. CI Linux/Windows, E2E, aceptación Actual y Security están en verde sobre el commit integrado. La issue permanece abierta para aceptación con proveedores oficiales reales, PDF y corpus de discrepancias/efectos jurídicos.
 
 ## Estado general
 
@@ -17,7 +17,7 @@
 | Backup/restore | Integrado | Actual + estado propio, manifiesto v2, nueve JSON y binarios documentales inventariados. |
 | IA/MCP | Integrados como capacidades opcionales | Ollama local y MCP de solo lectura; modelos/modelos runtime concretos requieren validación. |
 | Contratos neutrales | Integrados | #65 cerrada; suite de conformidad para proveedor de referencia y adaptador Actual. |
-| Búsqueda web #84 | Primera entrega integrada (PR [#97](https://github.com/miguel-np/personal-budget/pull/97)); segunda iteración en PR [#98](https://github.com/miguel-np/personal-budget/pull/98), aún no integrada; issue abierta | La PR #98 añade recuperación acotada de HTML/texto oficial, API BOE de metadatos/relaciones, evaluación temporal fechada, clasificación DGT/TEAC y límites explícitos. Pendientes CI, aceptación real, PDF y corpus de contradicciones jurídicas; no equivale a un motor de vigencia legal. |
+| Búsqueda web #84 | Dos iteraciones integradas (PR [#97](https://github.com/miguel-np/personal-budget/pull/97) y [#98](https://github.com/miguel-np/personal-budget/pull/98)); issue abierta | Consentimiento por petición, búsqueda SearXNG aislada de datos financieros, recuperación HTTPS de hasta tres HTML/texto oficiales, metadatos/relaciones BOE para identificadores BOE-A, evaluación temporal fechada y clasificación separada de norma, DGT, TEAC y guías. CI Linux/Windows, E2E, Actual y Security en verde. Pendientes aceptación real de organismos, PDF y análisis de contradicciones, transitorias y vigencia por artículo; no es dictamen jurídico. |
 
 ## Consolidación — fase 1
 
@@ -85,13 +85,16 @@ No se infieren rentabilidad, deducibilidad ni valoraciones de mercado; las valor
 
 ## Búsqueda web controlada — issue #84
 
-**Estado en main:** primera entrega integrada mediante PR [#97](https://github.com/miguel-np/personal-budget/pull/97), con CI Linux/Windows, E2E, Actual update/restore y Security en verde. **Segunda iteración:** PR [#98](https://github.com/miguel-np/personal-budget/pull/98) propone recuperación documental acotada, metadatos temporales BOE y clasificación DGT/TEAC; no está integrada en `main` hasta superar revisión y CI. Issue #84 permanece abierta.
+**Estado en main:** primera y segunda iteración integradas mediante PR [#97](https://github.com/miguel-np/personal-budget/pull/97) y [#98](https://github.com/miguel-np/personal-budget/pull/98). La CI del commit final está en verde en Linux/Windows, E2E, Actual container smoke, Actual update/restore y Security. La issue #84 permanece abierta por aceptación real de proveedores/documentos, formatos PDF y análisis jurídico de discrepancias.
 
-La arquitectura propuesta mantiene dos flujos separados:
-- El chat financiero recibe solo agregados backend y sigue sin herramientas.
-- La investigación web no consulta el repositorio financiero. Requiere consentimiento por petición, envía únicamente la consulta exacta aprobada a SearXNG y expone al modelo local una única herramienta `web_search`. Tras la búsqueda, los fragmentos se envían como contenido externo no confiable en una segunda inferencia sin herramientas.
+El flujo mantiene dos rutas aisladas:
+- El chat financiero recibe agregados backend y no obtiene herramientas.
+- La investigación web no consulta el repositorio financiero. Requiere consentimiento por petición, envía la consulta exacta a SearXNG y expone una única herramienta `web_search`; la segunda inferencia recibe fuentes/extractos como contenido externo no confiable y no tiene herramientas.
+- Tras la búsqueda, el backend puede recuperar hasta tres documentos oficiales HTML/XHTML/texto de una allowlist HTTPS. No descarga resultados externos no oficiales, no sigue redirecciones y valida/pinea DNS público con límites de tamaño y tiempo.
+- Para identificadores BOE-A se consultan metadatos y relaciones de la API oficial de legislación consolidada, junto al texto HTML consolidado. Se muestran fechas, estados y relaciones contra la fecha de referencia suministrada.
+- DGT, TEAC, normas publicadas y guías AEAT/Ministerio se clasifican por separado; la clasificación no presupone carácter vinculante de cada criterio.
 
-El proveedor SearXNG puede ejecutarse en loopback o en un endpoint HTTPS configurado. La lista fiscal se restringe a dominios oficiales admitidos. Las fechas que el buscador devuelve no prueban por sí solas vigencia normativa: la UI conserva el enlace para revisar la fuente original y la respuesta debe reconocer falta de evidencia. Consulta [docs/web-search.md](web-search.md).
+**Límites:** el texto consolidado del BOE es informativo; marcas de estado no acreditan derogaciones tácitas, vigencia por artículo, reglas transitorias ni aplicación a circunstancias personales. PDF no se interpreta en esta iteración. Sin documento recuperado o evidencia temporal suficiente, el sistema debe declarar la limitación. Consulta [docs/web-search.md](web-search.md).
 
 ## Issues abiertas posteriores
 
