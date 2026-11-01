@@ -1,6 +1,6 @@
 import { isIsoDate, validatePeriod } from './date-range.js';
 
-export type CashFlowSource = 'actual_transaction' | 'manual_commitment' | 'scenario';
+export type CashFlowSource = 'actual_transaction' | 'manual_commitment' | 'confirmed_recurring' | 'recurring_candidate' | 'scenario';
 export interface CashFlowEvent {
   readonly id: string;
   readonly date: string;
@@ -27,7 +27,9 @@ export interface CashFlowTimelineDay {
   readonly actualPendingCount: number;
   readonly actualUnknownCount: number;
   readonly commitmentNetChangeMinor: number;
-  readonly scenarioNetChangeMinor: number;
+  readonly confirmedRecurringNetChangeMinor: number;
+  readonly recurringCandidateNetChangeMinor: number;
+  readonly scenarioNetChangeMinor;
   readonly totalInflowMinor: number;
   readonly totalOutflowMinor: number;
   readonly netChangeMinor: number;
@@ -89,6 +91,8 @@ export function projectCashFlow(input: CashFlowProjectionInput): CashFlowProject
   const sourceTotals: Record<CashFlowSource, { inflowMinor: number; outflowMinor: number; netChangeMinor: number; eventCount: number }> = {
     actual_transaction: { inflowMinor: 0, outflowMinor: 0, netChangeMinor: 0, eventCount: 0 },
     manual_commitment: { inflowMinor: 0, outflowMinor: 0, netChangeMinor: 0, eventCount: 0 },
+    confirmed_recurring: { inflowMinor: 0, outflowMinor: 0, netChangeMinor: 0, eventCount: 0 },
+    recurring_candidate: { inflowMinor: 0, outflowMinor: 0, netChangeMinor: 0, eventCount: 0 },
     scenario: { inflowMinor: 0, outflowMinor: 0, netChangeMinor: 0, eventCount: 0 },
   };
   for (const event of input.events) {
@@ -123,6 +127,8 @@ export function projectCashFlow(input: CashFlowProjectionInput): CashFlowProject
     let actualPendingCount = 0;
     let actualUnknownCount = 0;
     let commitmentNetChangeMinor = 0;
+    let confirmedRecurringNetChangeMinor = 0;
+    let recurringCandidateNetChangeMinor = 0;
     let scenarioNetChangeMinor = 0;
     let dayInflow = 0;
     let dayOutflow = 0;
@@ -136,9 +142,15 @@ export function projectCashFlow(input: CashFlowProjectionInput): CashFlowProject
         else actualUnknownCount += 1;
       }
       else if (event.source === 'manual_commitment') commitmentNetChangeMinor = addSafe(commitmentNetChangeMinor, event.amountMinor, 'commitment daily net');
+      else if (event.source === 'confirmed_recurring') confirmedRecurringNetChangeMinor = addSafe(confirmedRecurringNetChangeMinor, event.amountMinor, 'confirmed recurring daily net');
+      else if (event.source === 'recurring_candidate') recurringCandidateNetChangeMinor = addSafe(recurringCandidateNetChangeMinor, event.amountMinor, 'recurring candidate daily net');
       else scenarioNetChangeMinor = addSafe(scenarioNetChangeMinor, event.amountMinor, 'scenario daily net');
     }
-    const netChangeMinor = addSafe(addSafe(actualNetChangeMinor, commitmentNetChangeMinor, 'daily net'), scenarioNetChangeMinor, 'daily net');
+    const netChangeMinor = addSafe(
+      addSafe(addSafe(addSafe(actualNetChangeMinor, commitmentNetChangeMinor, 'daily net'), confirmedRecurringNetChangeMinor, 'daily net'), recurringCandidateNetChangeMinor, 'daily net'),
+      scenarioNetChangeMinor,
+      'daily net',
+    );
     cumulativeNet = addSafe(cumulativeNet, netChangeMinor, 'cumulative cash flow');
     totalInflowMinor = addSafe(totalInflowMinor, dayInflow, 'total inflows');
     totalOutflowMinor = addSafe(totalOutflowMinor, dayOutflow, 'total outflows');
@@ -149,7 +161,8 @@ export function projectCashFlow(input: CashFlowProjectionInput): CashFlowProject
       if (reserveMinor !== null && firstReserveBreachDate === null && runningBalance < reserveMinor) firstReserveBreachDate = date;
     }
     timeline.push({
-      date, actualNetChangeMinor, actualClearedCount, actualPendingCount, actualUnknownCount, commitmentNetChangeMinor, scenarioNetChangeMinor,
+      date, actualNetChangeMinor, actualClearedCount, actualPendingCount, actualUnknownCount, commitmentNetChangeMinor,
+      confirmedRecurringNetChangeMinor, recurringCandidateNetChangeMinor, scenarioNetChangeMinor,
       totalInflowMinor: dayInflow, totalOutflowMinor: dayOutflow, netChangeMinor,
       projectedBalanceMinor: runningBalance,
       belowReserve: runningBalance === null || reserveMinor === null ? null : runningBalance < reserveMinor,
@@ -159,6 +172,7 @@ export function projectCashFlow(input: CashFlowProjectionInput): CashFlowProject
   const warnings: string[] = [];
   if (input.openingBalanceMinor === null) warnings.push('El saldo inicial consolidado es desconocido porque al menos una cuenta del ámbito no proporciona un saldo o una conversión válida; no se calculan déficits ni saldo proyectado.');
   if (input.events.some((event) => event.source === 'scenario')) warnings.push('El escenario es hipotético y no se ha guardado ni aplicado a Actual Budget.');
+  if (input.events.some((event) => event.source === 'recurring_candidate')) warnings.push('Se han incluido candidatos recurrentes como hipótesis seleccionadas por el usuario; no son obligaciones confirmadas.');
   return {
     isEstimate: true, asOfDate: input.asOfDate, startDate: input.startDate, endDate: input.endDate,
     openingBalanceMinor: input.openingBalanceMinor, endingBalanceMinor: runningBalance,
@@ -168,8 +182,8 @@ export function projectCashFlow(input: CashFlowProjectionInput): CashFlowProject
     assumptions: [
       'El saldo inicial utiliza el saldo actual comunicado por Actual para todas las cuentas del ámbito y su conversión local fechada.',
       'Los movimientos futuros registrados en Actual se proyectan con su signo original; las transferencias entre cuentas del ámbito se compensan entre sí.',
-      'Los compromisos manuales activos se añaden como hipótesis separadas de los movimientos reales.',
-      'Los candidatos recurrentes no confirmados no se incluyen en el escenario base.',
+      'Los compromisos puntuales activos y las recurrencias confirmadas se proyectan en fuentes separadas de los movimientos reales.',
+      'Los candidatos recurrentes no confirmados se muestran por separado y solo se incorporan cuando el usuario los selecciona expresamente como hipótesis.',
       'No se presuponen movimientos, intereses, ingresos ni tipos de cambio futuros.',
     ],
     warnings,

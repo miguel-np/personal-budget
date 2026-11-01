@@ -288,6 +288,7 @@ const CashFlowRequestSchema = z.object({
     direction: z.enum(['income', 'expense']),
     label: z.string().trim().min(1).max(100),
   }).strict().optional(),
+  recurringCandidateIds: z.array(z.string().regex(/^rc_[a-f0-9]{24}$/)).max(50).default([]),
 }).strict();
 const BudgetImprovementPreferencesRequestSchema = z.object({
   goal: z.enum(['increase_monthly_margin', 'reduce_variable_spending', 'reach_savings_goal', 'free_cash_flow']),
@@ -3074,11 +3075,19 @@ function monthsBefore(date: string, months: number): string {
       const actualAmountKeys = new Set(ledgerEntries.filter((entry) => entry.date > asOfDate && entry.amountMinor !== 0).map((entry) =>
         [entry.date, Math.abs(entry.amountMinor), entry.amountMinor < 0 ? 'expense' : 'income'].join('|'),
       ));
-      const eligibleCommitments = planning.commitments.filter((item) =>
-        item.status === 'active' && item.currency === preferences.displayCurrency && planningScopeMatches(item.scope, accountPreference),
-      ).map(toPlanningCommitment);
+      const scopedActiveCommitments = planning.commitments.filter((item) =>
+        item.status === 'active' && planningScopeMatches(item.scope, accountPreference),
+      );
+      const unconvertedCommitmentTitles: string[] = [];
+      const eligibleCommitments = scopedActiveCommitments.flatMap((item) => {
+        if (item.currency === preferences.displayCurrency) return [toPlanningCommitment(item)];
+        const conversion = convertAmountMinor(item.amountMinor, item.currency, preferences.displayCurrency, asOfDate, preferences.exchangeRates);
+        if (conversion.amountMinor === null) { unconvertedCommitmentTitles.push(item.title); return []; }
+        return [{ ...toPlanningCommitment(item), amountMinor: conversion.amountMinor, currency: preferences.displayCurrency }];
+      });
       const manualOccurrences = expandCommitmentOccurrences(eligibleCommitments, asOfDate, endDate);
       const manualEvents: CashFlowEvent[] = [];
+      const confirmedRecurringEvents: CashFlowEvent[] = [];
       const duplicateCommitmentIds: string[] = [];
       const possibleDuplicateCommitments: string[] = [];
       for (const occurrence of manualOccurrences) {
@@ -3091,14 +3100,62 @@ function monthsBefore(date: string, months: number): string {
           continue;
         }
         if (actualAmountKeys.has(key)) possibleDuplicateCommitments.push(occurrence.title + ' · ' + occurrence.occurrenceDate);
-        manualEvents.push({
-          id: 'manual:' + occurrence.id + '@' + occurrence.occurrenceDate,
+        const isRecurring = occurrence.frequency !== 'once';
+        const event: CashFlowEvent = {
+          id: (isRecurring ? 'confirmed-recurring:' : 'manual:') + occurrence.id + '@' + occurrence.occurrenceDate,
           date: occurrence.occurrenceDate,
           amountMinor: signedAmount,
-          source: 'manual_commitment',
+          source: isRecurring ? 'confirmed_recurring' : 'manual_commitment',
           label: occurrence.title,
-        });
+        };
+        (isRecurring ? confirmedRecurringEvents : manualEvents).push(event);
       }
+      const recurringHistoryStartDate = addCivilDays(asOfDate, -800);
+      const recurringHistoryRaw = await transactionsForAccounts(scope.accounts, recurringHistoryStartDate, asOfDate, preferences);
+      const recurringHistoryConverted = convertTransactionsForAnalysis(recurringHistoryRaw, preferences);
+      const recurringHistoryCandidates = detectRecurringCandidates(recurringHistoryConverted.transactions, {
+        startDate: recurringHistoryStartDate, endDate: asOfDate, minOccurrences: 3, intervalWindowDays: [20, 400],
+      });
+      const recurringCandidateEvents: (CashFlowEvent & { candidateId: string })[] = [];
+      const recurringCandidates = recurringHistoryCandidates.map((candidate) => {
+        const normalizedPayee = normalizedActionLabel(candidate.payee);
+        const candidateId = 'rc_' + createHash('sha256').update(normalizedPayee + '|' + candidate.firstDate).digest('hex').slice(0, 24);
+        let nextDate = candidate.estimatedIntervalDays === null ? null : addCivilDays(candidate.lastDate, candidate.estimatedIntervalDays);
+        if (nextDate !== null) {
+          while (nextDate <= asOfDate) nextDate = addCivilDays(nextDate, candidate.estimatedIntervalDays!);
+          let date = nextDate;
+          let occurrenceIndex = 0;
+          while (date <= endDate && occurrenceIndex < 12) {
+            const amountMinor = candidate.meanAbsoluteAmountMinor;
+            const amountKey = [date, amountMinor, 'expense'].join('|');
+            const exactActualMatch = actualMatchKeys.has(amountKey + '|' + normalizedPayee);
+            const exactCommitmentMatch = [...manualEvents, ...confirmedRecurringEvents].some((event) =>
+              event.date === date && event.amountMinor === -amountMinor && normalizedActionLabel(event.label) === normalizedPayee,
+            );
+            if (!exactActualMatch && !exactCommitmentMatch) recurringCandidateEvents.push({
+              id: 'recurring-candidate:' + candidateId + ':' + date, candidateId, date,
+              amountMinor: -amountMinor, source: 'recurring_candidate', label: candidate.payee,
+            });
+            occurrenceIndex += 1;
+            date = addCivilDays(date, candidate.estimatedIntervalDays!);
+          }
+        }
+        return {
+          id: candidateId, payee: candidate.payee, occurrenceCount: candidate.occurrenceCount,
+          estimatedIntervalDays: candidate.estimatedIntervalDays, estimatedFrequency: candidate.estimatedFrequency,
+          meanAbsoluteAmountMinor: candidate.meanAbsoluteAmountMinor, amountDeviationPercent: candidate.amountDeviationPercent,
+          nextDate, upcomingEventsCount: recurringCandidateEvents.filter((event) => event.candidateId === candidateId).length,
+          signals: candidate.signals, warnings: candidate.warnings,
+        };
+      });
+      const requestedCandidateIds = new Set(parsed.recurringCandidateIds);
+      const knownCandidateIds = new Set(recurringCandidates.map((candidate) => candidate.id));
+      if ([...requestedCandidateIds].some((id) => !knownCandidateIds.has(id))) {
+        return reply.code(400).send({ error: { code: 'UNKNOWN_RECURRING_CANDIDATE', message: 'One or more selected recurring candidates are stale. Refresh the cash-flow projection before selecting them.' } });
+      }
+      const selectedRecurringCandidateEvents = recurringCandidateEvents
+        .filter((event) => requestedCandidateIds.has(event.candidateId))
+        .map(({ candidateId: _candidateId, ...event }) => event);
       const scenarioEvents: CashFlowEvent[] = parsed.scenario ? [{
         id: 'scenario:unsaved',
         date: parsed.scenario.date,
@@ -3112,7 +3169,7 @@ function monthsBefore(date: string, months: number): string {
         endDate,
         openingBalanceMinor: openingKnown ? openingBalanceMinor : null,
         reserveMinor: parsed.reserveMinor ?? null,
-        events: [...actualEvents, ...manualEvents, ...scenarioEvents],
+        events: [...actualEvents, ...manualEvents, ...confirmedRecurringEvents, ...selectedRecurringCandidateEvents, ...scenarioEvents],
       });
       const warnings = [
         ...projection.warnings,
@@ -3121,19 +3178,23 @@ function monthsBefore(date: string, months: number): string {
         ...(scope.accounts.length === 0 ? ['El ámbito no contiene cuentas; selecciona cuentas antes de estimar saldo.'] : []),
         ...(duplicateCommitmentIds.length > 0 ? [duplicateCommitmentIds.length + ' compromiso(s) manual(es) se han omitido porque coinciden exactamente con un movimiento futuro de Actual.'] : []),
         ...(possibleDuplicateCommitments.length > 0 ? ['Posibles duplicados no confirmados; se han conservado ambos elementos: ' + possibleDuplicateCommitments.join(', ') + '. Revisa la agenda antes de interpretar el saldo.'] : []),
+        ...(unconvertedCommitmentTitles.length > 0 ? [unconvertedCommitmentTitles.length + ' compromiso(s) activos no se han convertido a la divisa de análisis por falta de tasa local fechada: ' + unconvertedCommitmentTitles.join(', ') + '.'] : []),
+        ...recurringHistoryConverted.warnings,
       ];
       return {
         data: {
           asOfDate, endDate, currency: preferences.displayCurrency, accountScope: scope.metadata,
           openingBalanceMinor: projection.openingBalanceMinor,
           unknownOpeningAccounts,
-          actualEvents, manualEvents, scenarioEvents,
+          actualEvents, manualEvents, confirmedRecurringEvents, recurringCandidates, recurringCandidateEvents, scenarioEvents,
           duplicateCommitmentIds, possibleDuplicateCommitments,
           projection: { ...projection, warnings },
           notes: [
             'Saldo estimado a partir del campo balance_current de Actual; no equivale a saldo bancario disponible, saldo liquidado ni efectivo garantizado.',
             'Las transferencias se incluyen con su signo para proyectar el ámbito seleccionado; las dos patas se compensan si ambas cuentas están dentro del ámbito.',
-            'Los candidatos recurrentes no confirmados quedan excluidos de la proyección base.',
+            'Los candidatos recurrentes se detectan sobre hasta 800 días de historial convertido; solo se proyectan como hipótesis cuando se seleccionan expresamente.',
+            'Los compromisos en otra divisa se convierten con la tasa local conocida a la fecha de corte; cuando falta tasa, se excluyen y se advierten, sin tratarlos como cero.',
+            ...(parsed.recurringCandidateIds.length > 0 ? ['Se han incorporado como hipótesis los candidatos recurrentes seleccionados; no son obligaciones confirmadas.'] : []),
           ],
         },
       };
