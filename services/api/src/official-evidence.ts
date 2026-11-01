@@ -28,7 +28,9 @@ export type OfficialDocumentStatus = 'retrieved' | 'partial' | 'unavailable' | '
 export type BoeTemporalAssessment =
   | 'consolidation_pending_update'
   | 'annulled_by_reference_date'
+  | 'annulment_after_reference_date'
   | 'repealed_by_reference_date'
+  | 'derogation_after_reference_date'
   | 'not_effective_yet'
   | 'exhausted_date_unknown'
   | 'not_marked_derogated_or_exhausted'
@@ -181,10 +183,14 @@ export function assessBoeTemporalMetadata(metadata: Record<string, unknown>, ref
 
   if (consolidationStatus?.includes('desactualizado') || consolidationStatus?.includes('pendiente')) {
     assessment = 'consolidation_pending_update';
-  } else if (annulled === true && (!annulmentDate || annulmentDate <= referenceDate)) {
+  } else if (annulled === true && annulmentDate && annulmentDate <= referenceDate) {
     assessment = 'annulled_by_reference_date';
-  } else if (derogated === true && (!derogationDate || derogationDate <= referenceDate)) {
+  } else if (annulled === true && annulmentDate && annulmentDate > referenceDate) {
+    assessment = 'annulment_after_reference_date';
+  } else if (derogated === true && derogationDate && derogationDate <= referenceDate) {
     assessment = 'repealed_by_reference_date';
+  } else if (derogated === true && derogationDate && derogationDate > referenceDate) {
+    assessment = 'derogation_after_reference_date';
   } else if (effectiveDate && effectiveDate > referenceDate) {
     assessment = 'not_effective_yet';
   } else if (exhausted === true && !derogationDate) {
