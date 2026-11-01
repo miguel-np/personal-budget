@@ -23,7 +23,7 @@ El modo de uso diario fija y comprueba los puertos locales de la API y del front
 
 ## Arranque y parada
 
-La secuencia prevista es: iniciar Actual, confirmar el presupuesto, iniciar Ollama si se usa IA, iniciar backend/frontend y comprobar la pantalla de estado. Detén los procesos con sus comandos de desarrollo o Docker Compose. No borres volúmenes ni carpetas de datos para solucionar errores antes de realizar una copia.
+El orden de inicio es: Actual, confirmar el presupuesto, Ollama si se usa IA, y después backend/frontend. Antes de crear o restaurar un backup unificado, cierra Personal Budget con Ctrl+C para detener la API; el script falla antes de tocar datos si detecta el puerto local de la API activo. No borres volúmenes ni carpetas de datos para solucionar errores antes de realizar una copia.
 
 ## Actualizaciones
 
@@ -53,4 +53,4 @@ La interfaz compilada se abre en `http://127.0.0.1:4173` y la API en `http://127
 - La UI financiera básica sigue disponible cuando Ollama está desactivado; solo el asistente local queda no disponible.
 - Los tests E2E usan fixtures sintéticos aislados y no tocan el directorio `.local`, el presupuesto real ni backups.
 
-La actualización del servidor está automatizada de forma conservadora en [Actualizaciones seguras](safe-updates.md). Las versiones deben estar fijadas y la transición exacta debe estar validada; la restauración de datos requiere confirmación explícita.
+La actualización del servidor está automatizada de forma conservadora en [Actualizaciones seguras](safe-updates.md). Las versiones deben estar fijadas y la transición exacta debe estar validada; la restauración unificada de Actual + estado propio requiere confirmación explícita y se documenta en [Backup y restauración](backup-restore.md). La aceptación manual de Windows + WSL2 de issue #31 no se considera completada por los workflows de CI.
