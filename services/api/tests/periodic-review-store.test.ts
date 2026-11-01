@@ -52,12 +52,21 @@ describe('periodic review store', () => {
 
     const partlyHandled = await updatePeriodicReviewItem(directory, review.id, 'finding-a', 'reviewed');
     expect(partlyHandled?.status).toBe('in_progress');
-    expect(partlyHandled?.items[0]?.status).toBe('reviewed');
+    expect(partlyHandled?.items[0]).toMatchObject({
+      status: 'reviewed',
+      identityKey: '1111111111111111',
+      evidenceFingerprint: '2222222222222222',
+    });
 
     const completed = await updatePeriodicReviewItem(directory, review.id, 'finding-b', 'postponed', '2026-11-06');
     expect(completed?.status).toBe('completed');
     expect(completed?.completedAt).toBeTruthy();
-    expect(completed?.items[1]).toMatchObject({ status: 'postponed', postponedUntil: '2026-11-06' });
+    expect(completed?.items[1]).toMatchObject({
+      status: 'postponed',
+      postponedUntil: '2026-11-06',
+      identityKey: '3333333333333333',
+      evidenceFingerprint: '4444444444444444',
+    });
     expect(await updatePeriodicReviewItem(directory, review.id, 'missing', 'reviewed')).toBeNull();
     expect((await readPeriodicReviewState(directory)).reviews[0]?.status).toBe('completed');
   });
