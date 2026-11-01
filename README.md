@@ -2,7 +2,7 @@
 
 Aplicación local de finanzas personales con una única interfaz web para gastos, presupuestos, ahorro e informes. Un asistente con IA local será una ampliación opcional.
 
-> **Estado: roadmap P0–P3 completo (25-oct-2026).** La aplicación incluye shell web local, dashboard e informes comparativos, consultas paginadas de movimientos, registro manual, importación CSV/OFX local con previsualización y conciliación oficial de Actual, presupuestos por categoría, planificación P3 (pagos recurrentes, sugerencias de categoría, previsiones explicables, objetivos de ahorro y compromisos futuros), asistente local con Ollama, MCP de solo lectura y backup/restore verificados. La CI valida Linux y Windows. La aceptación manual de Windows + WSL2 y el ciclo completo de parada/reinicio deben confirmarse en el entorno objetivo; no se consideran demostrados únicamente por CI.
+> **Estado (1-nov-2026):** las capacidades principales de finanzas, planificación, inteligencia, informes y operación local están implementadas. La consolidación del backup de Actual + estado propio de Personal Budget está en revisión en la fase 1. La CI automatizada de Linux y Windows no sustituye la aceptación manual de Windows + WSL2 con un presupuesto sintético; el criterio operativo #31 continúa abierto hasta registrar esa prueba.
 
 ## Arquitectura
 
