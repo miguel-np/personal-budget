@@ -165,7 +165,7 @@ export function WebResearchPanel() {
         <span className="date-badge">{ready ? 'SearXNG configurado' : status ? 'Desactivado' : 'Comprobando'}</span>
       </div>
       <article className="panel assistant-panel">
-        <p>La búsqueda es independiente del análisis financiero. El proveedor externo recibe exclusivamente el texto exacto de la consulta que escribas aquí; nunca se adjuntan cuentas, movimientos, importes, categorías ni el contexto del asistente financiero.</p>
+        <p>La búsqueda es independiente del análisis financiero. SearXNG recibe exclusivamente el texto exacto de la consulta que escribas. Para resultados oficiales admitidos, el servidor puede consultar hasta tres enlaces del organismo y recuperar su contenido en modo lectura; esos organismos reciben la petición desde la IP del servidor. Nunca se adjuntan cuentas, movimientos, saldos, importes, categorías, objetivos, compromisos ni el contexto del asistente financiero.</p>
         {!ready ? <p className="section-footnote">Para habilitarla, configura <code>WEB_SEARCH_ENABLED=true</code>, un SearXNG accesible y Ollama local. La búsqueda permanece desactivada por defecto.</p> : null}
         <form onSubmit={submit}>
           <label className="field-label">Tipo de investigación
@@ -191,7 +191,7 @@ export function WebResearchPanel() {
           <p className="section-footnote">Dominios oficiales admitidos: {OFFICIAL_DOMAINS.join(', ')}. En modo general, deja el campo vacío para no filtrar por dominio. En modo fiscal, si lo dejas vacío, la búsqueda se limita a todos los dominios oficiales. El buscador SearXNG puede remitir la consulta a sus motores upstream según su configuración; la IP pública visible para esos motores será la del servidor SearXNG.</p>
           <label className="field-label inline-field">
             <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.currentTarget.checked)} />
-            Confirmo que autorizo enviar únicamente esta consulta al proveedor de búsqueda externo.
+            Autorizo enviar esta consulta a SearXNG y permitir la recuperación de documentos oficiales enlazados por el servidor.
           </label>
           <button className="button primary" type="submit" disabled={!ready || !consent || !taxContextComplete || busy || query.trim().length < 2}>
             {busy ? 'Buscando y contrastando…' : 'Buscar y sintetizar fuentes'}
