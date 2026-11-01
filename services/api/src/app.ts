@@ -78,6 +78,8 @@ const InsightsQuerySchema = z.object({
 const FinancialFindingContractSchema = z.object({
   schemaVersion: z.literal(1),
   id: z.string().min(1).max(200),
+  identityKey: z.string().regex(/^[0-9a-f]{16}$/),
+  evidenceFingerprint: z.string().regex(/^[0-9a-f]{16}$/),
   fingerprint: z.string().regex(/^[0-9a-f]{16}$/),
   type: z.enum(['expense-change', 'income-change', 'budget-overspend', 'pending-categorization', 'commitment-upcoming', 'recurring-candidate-upcoming', 'goal-at-risk', 'goal-progress', 'financial-anomaly']),
   title: z.string().min(1).max(200),
