@@ -87,6 +87,7 @@ describe('SearXNG web search provider', () => {
       response.end(JSON.stringify({ results: [
         { title: 'AEAT sede', url: 'https://sede.agenciatributaria.gob.es/Sede/irpf.html', content: 'Información oficial AEAT.' },
         { title: 'BOE www', url: 'https://www.boe.es/buscar/act.php?id=BOE-A-2025-1', content: 'Publicación oficial.' },
+        { title: 'Sede Seguridad Social', url: 'https://sede.seg-social.gob.es/wps/portal/sede', content: 'Sede oficial.' },
         { title: 'Subdominio no aprobado', url: 'https://arbitrary.boe.es/documento', content: 'No debe heredar confianza.' },
         { title: 'Fuente externa', url: 'https://example.org/article', content: 'Contexto externo.' },
       ] }));
@@ -94,7 +95,7 @@ describe('SearXNG web search provider', () => {
     const provider = new SearXNGSearchProvider(config(fixture.url));
     const general = await provider.search('consulta de prueba', []);
     expect(general.sources.map((source) => source.domain)).toEqual([
-      'sede.agenciatributaria.gob.es', 'www.boe.es', 'example.org',
+      'sede.agenciatributaria.gob.es', 'www.boe.es', 'sede.seg-social.gob.es', 'example.org',
     ]);
     expect(general.sources[0]).toMatchObject({
       institution: 'Agencia Estatal de Administración Tributaria (AEAT)',
@@ -106,6 +107,12 @@ describe('SearXNG web search provider', () => {
     });
     const filtered = await provider.search('consulta de prueba', ['boe.es']);
     expect(filtered.sources.map((source) => source.domain)).toEqual(['www.boe.es']);
+    const socialSecurity = await provider.search('consulta de prueba', ['seg-social.gob.es']);
+    expect(socialSecurity.sources[0]).toMatchObject({
+      domain: 'sede.seg-social.gob.es',
+      institution: 'Seguridad Social',
+      sourceAuthority: 'official_information',
+    });
   });
 
   it('does not retrieve documents from a non-allowlisted subdomain of an official namespace', async () => {
