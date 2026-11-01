@@ -1,6 +1,6 @@
 # Estado de implementación
 
-**Baseline: 1-nov-2026.** Las funcionalidades descritas como integradas están presentes en `main`. Se distingue la integración del código, la validación automatizada y la aceptación manual del entorno. La primera entrega de búsqueda web de #84 está integrada mediante PR [#97](https://github.com/miguel-np/personal-budget/pull/97), con CI Linux/Windows, E2E y aceptación Actual en verde; la issue permanece abierta para completar la recuperación y verificación de documentos oficiales.
+**Baseline: 1-nov-2026.** Las funcionalidades descritas como integradas están presentes en `main`. Se distingue la integración del código, la validación automatizada y la aceptación manual del entorno. La primera entrega de búsqueda web de #84 está integrada mediante PR [#97](https://github.com/miguel-np/personal-budget/pull/97), con CI Linux/Windows, E2E y aceptación Actual en verde. La segunda iteración documental está en revisión en [PR #98](https://github.com/miguel-np/personal-budget/pull/98) y todavía no forma parte de `main`; la issue sigue abierta.
 
 ## Estado general
 
@@ -17,7 +17,7 @@
 | Backup/restore | Integrado | Actual + estado propio, manifiesto v2, nueve JSON y binarios documentales inventariados. |
 | IA/MCP | Integrados como capacidades opcionales | Ollama local y MCP de solo lectura; modelos/modelos runtime concretos requieren validación. |
 | Contratos neutrales | Integrados | #65 cerrada; suite de conformidad para proveedor de referencia y adaptador Actual. |
-| Búsqueda web #84 | Primera entrega integrada (PR [#97](https://github.com/miguel-np/personal-budget/pull/97)); issue abierta | Consentimiento por petición, búsqueda SearXNG acotada, dominios oficiales, una herramienta fija y sin contexto financiero. Pendiente lectura/verificación de documentos completos, jerarquía/vigencia y corpus de discrepancias. |
+| Búsqueda web #84 | Primera entrega integrada (PR [#97](https://github.com/miguel-np/personal-budget/pull/97)); segunda iteración en PR [#98](https://github.com/miguel-np/personal-budget/pull/98), aún no integrada; issue abierta | La PR #98 añade recuperación acotada de HTML/texto oficial, API BOE de metadatos/relaciones, evaluación temporal fechada, clasificación DGT/TEAC y límites explícitos. Pendientes CI, aceptación real, PDF y corpus de contradicciones jurídicas; no equivale a un motor de vigencia legal. |
 
 ## Consolidación — fase 1
 
@@ -85,7 +85,7 @@ No se infieren rentabilidad, deducibilidad ni valoraciones de mercado; las valor
 
 ## Búsqueda web controlada — issue #84
 
-**Estado en main:** primera entrega integrada mediante PR [#97](https://github.com/miguel-np/personal-budget/pull/97). Checks Linux/Windows, E2E, Actual update/restore y Security completados en verde. La issue #84 continúa abierta para los criterios de verificación documental completa.
+**Estado en main:** primera entrega integrada mediante PR [#97](https://github.com/miguel-np/personal-budget/pull/97), con CI Linux/Windows, E2E, Actual update/restore y Security en verde. **Segunda iteración:** PR [#98](https://github.com/miguel-np/personal-budget/pull/98) propone recuperación documental acotada, metadatos temporales BOE y clasificación DGT/TEAC; no está integrada en `main` hasta superar revisión y CI. Issue #84 permanece abierta.
 
 La arquitectura propuesta mantiene dos flujos separados:
 - El chat financiero recibe solo agregados backend y sigue sin herramientas.

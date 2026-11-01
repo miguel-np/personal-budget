@@ -8,6 +8,7 @@ import type { AppConfig } from './config.js';
 import { LocalAiBusyError, LocalAiCancelledError, LocalAiClient, LocalAiContextBudgetError, LocalAiToolCallUnsupportedError, LocalAiUnavailableError } from './local-ai.js';
 import type { AssistantContext, PlanningIntentDraft, WebResearchRequest } from './local-ai.js';
 import { OFFICIAL_SOURCE_DOMAINS, SearXNGSearchProvider, WebSearchResponseTooLargeError, WebSearchUnavailableError } from './web-search.js';
+import type { WebSearchProvider } from './web-search.js';
 import { CurrencyPreferencesSchema, defaultCurrencyPreferences, readCurrencyPreferences, writeCurrencyPreferences } from './currency-preferences.js';
 import type { CurrencyPreferences } from './currency-preferences.js';
 import { AccountScopeError, AccountScopePreferenceSchema, defaultAccountScope, readAccountScope, resolveAccountScope, writeAccountScope } from './account-scope.js';
@@ -430,6 +431,8 @@ export interface AppDependencies {
   readonly repository: BudgetRepository;
   readonly config: AppConfig;
   readonly logger?: FastifyServerOptions['logger'];
+  /** Test seam; production defaults to the configured SearXNG provider. */
+  readonly webSearchProvider?: WebSearchProvider;
 }
 
 function isWithinMaximumPeriod(startDate: string, endDate: string): boolean {
@@ -516,7 +519,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     app.log.info({ component: 'local-ai', ...metric }, 'Local AI request metrics.');
   });
 
-  const webSearchProvider = new SearXNGSearchProvider({
+  const webSearchProvider = dependencies.webSearchProvider ?? new SearXNGSearchProvider({
     baseURL: config.webSearchBaseURL,
     timeoutMs: config.webSearchTimeoutMs,
     maxResults: config.webSearchMaxResults,

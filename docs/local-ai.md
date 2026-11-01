@@ -34,7 +34,7 @@ La investigación web es un segundo flujo independiente y no cambia el permiso d
 - El modelo debe pedir exactamente esa búsqueda; la API rechaza una llamada ausente, adicional o con argumentos que modifiquen la consulta.
 - El backend ejecuta SearXNG y devuelve un conjunto acotado de fuentes. La segunda inferencia usa los fragmentos como datos externos no confiables y no recibe tools.
 - No se consulta el repositorio financiero ni se envía contexto financiero a Ollama en este flujo.
-- La UI muestra proveedor, fecha de búsqueda, clase/dominio de fuente y enlaces originales. No se guarda historial de navegación.
+- La UI muestra proveedor, fecha de búsqueda, clase/dominio de fuente, enlaces originales y estado de recuperación documental. La segunda iteración recupera hasta tres documentos oficiales HTML/texto y, para normas BOE-A, metadatos/relaciones de la API de legislación consolidada; los extractos acotados se incorporan a la síntesis sin herramientas. DGT y TEAC se clasifican como tipos de criterio distintos de la norma publicada. Las limitaciones temporales BOE se muestran al usuario y no se presentan como validación jurídica. No se guarda historial de navegación ni se persisten documentos.
 - El modo fiscal exige jurisdicción, materia, ejercicio fiscal, año de presentación y fecha de referencia explícitos. No se deducen desde movimientos ni ubicación del dispositivo.
 - Los dominios oficiales admitidos incluyen AEAT, BOE, Hacienda, Seguridad Social, Xunta/DOG, CNMV y Banco de España. Un filtro de dominio restringe resultados, pero no certifica su vigencia o jerarquía jurídica.
 

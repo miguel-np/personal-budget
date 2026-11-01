@@ -330,7 +330,21 @@ test('controlled web research requires per-query consent and shows official sour
         sources: [{
           id: 'S1', title: 'Disposición publicada en el BOE', url: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2025-1',
           domain: 'www.boe.es', institution: 'Boletín Oficial del Estado (BOE)', publishedAt: '2025-03-01T00:00:00.000Z', modifiedAt: null,
-          snippet: 'Fragmento sintético de una disposición oficial.', sourceKind: 'normativa',
+          snippet: 'Fragmento sintético de una disposición oficial.', sourceKind: 'normativa', sourceAuthority: 'legislation',
+          document: {
+            status: 'retrieved', documentType: 'boe_consolidated_legislation',
+            retrievedAt: '2026-11-01T12:01:00.000Z', contentType: 'text/html',
+            excerpt: 'Artículo 1. Texto oficial recuperado del BOE.',
+            textLength: 1280,
+            temporal: {
+              assessment: 'not_marked_derogated_or_exhausted', referenceDate: '2026-11-01',
+              publicationDate: '2025-03-01', effectiveDate: '2025-04-01',
+              derogationDate: null, annulmentDate: null, lastRegistryUpdate: '2026-10-30',
+              derogated: false, annulled: false, exhausted: false,
+              consolidationStatus: 'Finalizado', relatedNorms: ['BOE-A-2024-123 — MODIFICA'],
+            },
+            limitations: ['El texto consolidado del BOE es informativo y no acredita derogaciones tácitas.'],
+          },
         }],
       } }),
     });
@@ -348,10 +362,13 @@ test('controlled web research requires per-query consent and shows official sour
   await form.getByLabel('Ejercicio fiscal').fill('2025');
   await form.getByLabel('Año de presentación').fill('2026');
   await form.getByLabel('Fecha de referencia / vigencia').fill('2026-11-01');
-  await form.getByRole('checkbox', { name: /Confirmo que autorizo enviar únicamente esta consulta/ }).check();
+  await form.getByRole('checkbox', { name: /Autorizo enviar esta consulta a SearXNG y permitir la recuperación de documentos oficiales enlazados por el servidor/ }).check();
   await form.getByRole('button', { name: 'Buscar y sintetizar fuentes' }).click();
 
   await expect(form.getByText('El BOE publica la disposición indicada [S1]. La fecha de búsqueda no acredita por sí sola su vigencia.')).toBeVisible();
+  await expect(form.getByText('Texto oficial recuperado', { exact: true })).toBeVisible();
+  await expect(form.getByText('Artículo 1. Texto oficial recuperado del BOE.')).toBeVisible();
+  await expect(form.getByText('Sin marca BOE de derogación/anulación/agotamiento en la ficha consultada')).toBeVisible();
   await expect(form.getByRole('link', { name: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2025-1' })).toHaveAttribute('rel', 'noopener noreferrer');
   expect(approvedPayload).toMatchObject({
     consent: true, query: 'BOE IRPF ejercicio 2025', mode: 'tax',
@@ -359,7 +376,7 @@ test('controlled web research requires per-query consent and shows official sour
   });
   expect(JSON.stringify(approvedPayload)).not.toContain('synthetic-account');
   expect(JSON.stringify(approvedPayload)).not.toContain('Supermercado sintético');
-  await expect(form.getByRole('checkbox', { name: /Confirmo que autorizo enviar únicamente esta consulta/ })).not.toBeChecked();
+  await expect(form.getByRole('checkbox', { name: /Autorizo enviar esta consulta a SearXNG y permitir la recuperación de documentos oficiales enlazados por el servidor/ })).not.toBeChecked();
   await expect(form.getByRole('button', { name: 'Buscar y sintetizar fuentes' })).toBeDisabled();
 });
 

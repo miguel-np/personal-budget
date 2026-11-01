@@ -30,7 +30,7 @@ El proveedor por defecto es una instancia SearXNG configurada por el operador:
 
 La consulta puede ser visible para SearXNG y para sus motores upstream. Estos servicios pueden observar la IP pública de salida del servidor SearXNG y los términos buscados. El usuario debe revisar la configuración de esos proveedores antes de habilitar la función. Los enlaces de los resultados abren el sitio original cuando el usuario lo decide; la API no descarga páginas arbitrarias.
 
-En el modo fiscal, la búsqueda se limita a una lista de dominios oficiales permitidos (AEAT, BOE, Hacienda, Seguridad Social, Xunta/DOG, CNMV y Banco de España, según dominios configurados). La lista reduce resultados fuera de esos dominios, pero no certifica que cada fragmento sea completo ni que una norma siga vigente.
+En el modo fiscal, la búsqueda se limita a una lista de dominios oficiales permitidos (AEAT, BOE, Hacienda, Seguridad Social, Xunta/DOG, CNMV y Banco de España, según dominios configurados). La lista reduce resultados fuera de esos dominios. Los documentos HTML/texto admitidos se recuperan y extraen en memoria; las referencias BOE-A consultan además metadatos y relaciones de la API oficial de legislación consolidada. La aplicación no persiste consultas, documentos ni extractos. El texto consolidado BOE es informativo y las marcas de estado no certifican vigencia aplicable, derogaciones tácitas, reglas transitorias ni circunstancias individuales. PDF y otros formatos no admitidos no se interpretan.
 
 ### Otras conexiones externas
 

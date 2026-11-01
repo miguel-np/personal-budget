@@ -2,17 +2,10 @@ import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { request as httpRequest, type RequestOptions } from 'node:http';
 import { request as httpsRequest } from 'node:https';
+import { OFFICIAL_SOURCE_DOMAINS, retrieveOfficialDocument } from './official-evidence.js';
+import type { OfficialDocumentEvidence } from './official-evidence.js';
 
-export const OFFICIAL_SOURCE_DOMAINS = [
-  'agenciatributaria.gob.es',
-  'boe.es',
-  'hacienda.gob.es',
-  'seg-social.es',
-  'xunta.gal',
-  'dog.gal',
-  'cnmv.es',
-  'bde.es',
-] as const;
+export { OFFICIAL_SOURCE_DOMAINS } from './official-evidence.js';
 
 export type OfficialSourceDomain = (typeof OFFICIAL_SOURCE_DOMAINS)[number];
 export interface WebSearchSource {
@@ -25,6 +18,8 @@ export interface WebSearchSource {
   readonly modifiedAt: string | null;
   readonly snippet: string;
   readonly sourceKind: 'normativa' | 'criterio_administrativo' | 'organismo_oficial' | 'externa';
+  readonly sourceAuthority: 'legislation' | 'dgt_criteria' | 'teac_criteria' | 'tax_administration' | 'tax_agency_guidance' | 'official_information' | 'external';
+  readonly document?: OfficialDocumentEvidence;
 }
 export interface WebSearchResponse {
   readonly provider: 'SearXNG';
@@ -129,6 +124,9 @@ function publishedDate(value: unknown): string | null {
   return Number.isFinite(date.getTime()) ? date.toISOString() : null;
 }
 function institutionLabel(hostname: string): string {
+  if (matchesDomain(hostname, 'petete.tributos.hacienda.gob.es')) return 'Dirección General de Tributos (DGT)';
+  if (matchesDomain(hostname, 'serviciostelematicosext.hacienda.gob.es') || matchesDomain(hostname, 'sede.tea.hacienda.gob.es')) return 'Tribunal Económico-Administrativo Central (TEAC)';
+  if (matchesDomain(hostname, 'lex.gal')) return 'Lex.gal · legislación consolidada de Galicia';
   if (matchesDomain(hostname, 'agenciatributaria.gob.es')) return 'Agencia Estatal de Administración Tributaria (AEAT)';
   if (matchesDomain(hostname, 'boe.es')) return 'Boletín Oficial del Estado (BOE)';
   if (matchesDomain(hostname, 'hacienda.gob.es')) return 'Ministerio de Hacienda';
@@ -137,6 +135,15 @@ function institutionLabel(hostname: string): string {
   if (matchesDomain(hostname, 'cnmv.es')) return 'Comisión Nacional del Mercado de Valores (CNMV)';
   if (matchesDomain(hostname, 'bde.es')) return 'Banco de España';
   return hostname;
+}
+function sourceAuthority(hostname: string): WebSearchSource['sourceAuthority'] {
+  if (matchesDomain(hostname, 'boe.es') || matchesDomain(hostname, 'dog.gal')) return 'legislation';
+  if (matchesDomain(hostname, 'petete.tributos.hacienda.gob.es')) return 'dgt_criteria';
+  if (matchesDomain(hostname, 'serviciostelematicosext.hacienda.gob.es') || matchesDomain(hostname, 'sede.tea.hacienda.gob.es')) return 'teac_criteria';
+  if (matchesDomain(hostname, 'hacienda.gob.es')) return 'tax_administration';
+  if (matchesDomain(hostname, 'agenciatributaria.gob.es')) return 'tax_agency_guidance';
+  if (OFFICIAL_SOURCE_DOMAINS.some((domain) => matchesDomain(hostname, domain))) return 'official_information';
+  return 'external';
 }
 function sourceKind(hostname: string): WebSearchSource['sourceKind'] {
   if (matchesDomain(hostname, 'boe.es') || matchesDomain(hostname, 'dog.gal')) return 'normativa';
@@ -167,11 +174,13 @@ function parseSource(value: unknown, index: number, allowedDomains: readonly str
     modifiedAt: publishedDate(item.modifiedDate ?? item.updatedDate ?? item.lastUpdated),
     snippet,
     sourceKind: sourceKind(hostname),
+    sourceAuthority: sourceAuthority(hostname),
   };
 }
 
 export interface WebSearchProvider {
   search(query: string, allowedDomains: readonly string[], callerSignal?: AbortSignal): Promise<WebSearchResponse>;
+  retrieveOfficialDocuments?(search: WebSearchResponse, query: string, referenceDate: string, callerSignal?: AbortSignal): Promise<WebSearchResponse>;
 }
 
 export class SearXNGSearchProvider implements WebSearchProvider {
@@ -182,6 +191,28 @@ export class SearXNGSearchProvider implements WebSearchProvider {
     if (!Number.isSafeInteger(config.maxResults) || config.maxResults < 1 || config.maxResults > 8) throw new Error('Invalid web search result limit.');
     if (!Number.isSafeInteger(config.maxQueryChars) || config.maxQueryChars < 20 || config.maxQueryChars > 500) throw new Error('Invalid web search query limit.');
     if (!Number.isSafeInteger(config.maxResponseBytes) || config.maxResponseBytes < 8_192 || config.maxResponseBytes > 262_144) throw new Error('Invalid web search response limit.');
+  }
+
+  public async retrieveOfficialDocuments(
+    search: WebSearchResponse,
+    query: string,
+    referenceDate: string,
+    callerSignal?: AbortSignal,
+  ): Promise<WebSearchResponse> {
+    if (callerSignal?.aborted) throw new WebSearchUnavailableError();
+    const candidates = search.sources.filter((source) => source.sourceAuthority !== 'external').slice(0, 3);
+    const evidence = await Promise.all(candidates.map(async (source) => ({
+      id: source.id,
+      document: await retrieveOfficialDocument(source, query, referenceDate, this.config.timeoutMs, callerSignal),
+    })));
+    const byId = new Map(evidence.map((item) => [item.id, item.document]));
+    return {
+      ...search,
+      sources: search.sources.map((source) => {
+        const document = byId.get(source.id);
+        return document ? { ...source, document } : source;
+      }),
+    };
   }
 
   public async search(query: string, allowedDomains: readonly string[], callerSignal?: AbortSignal): Promise<WebSearchResponse> {

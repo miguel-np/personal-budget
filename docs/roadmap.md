@@ -44,7 +44,7 @@
 
 ## Siguiente etapa
 
-- [ ] [#84 — Búsqueda web controlada desde el asistente local](https://github.com/miguel-np/personal-budget/issues/84): primera entrega integrada mediante PR [#97](https://github.com/miguel-np/personal-budget/pull/97): consentimiento por petición, consulta exacta, herramienta única backend, SearXNG configurable, dominios oficiales, trazabilidad de fuente y síntesis local separada del contexto financiero. La issue sigue abierta para recuperación del texto oficial completo, verificación de vigencia/jerarquía y pruebas de discrepancias normativas.
+- [ ] [#84 — Búsqueda web controlada desde el asistente local](https://github.com/miguel-np/personal-budget/issues/84): primera entrega integrada por PR [#97](https://github.com/miguel-np/personal-budget/pull/97). La segunda iteración está propuesta en [PR #98](https://github.com/miguel-np/personal-budget/pull/98): recuperación HTTPS acotada de documentos oficiales, metadatos/relaciones BOE, fechas de vigencia y clasificación separada DGT/TEAC/AEAT. Sigue pendiente validar CI, aceptación manual con proveedores oficiales, PDF y pruebas reales de contradicción normativa; la issue permanece abierta.
 - [ ] [#85 — Proveedores de IA intercambiables](https://github.com/miguel-np/personal-budget/issues/85): Ollama, OpenAI y xAI detrás de adaptadores independientes. Debe seguir siendo opcional y respetar privacidad/capacidades de cada modelo.
 - [ ] [#87 — Espacio fiscal y calendario de obligaciones](https://github.com/miguel-np/personal-budget/issues/87): ejercicios, perfil explícito, tareas y vencimientos basados en fuentes vigentes. No inferir obligaciones a partir de movimientos o ubicación aproximada.
 
