@@ -32,6 +32,11 @@ export interface FindingEvidence {
 export interface FinancialFinding {
   readonly schemaVersion: 1;
   readonly id: string;
+  /** Stable across comparable periods for the same rule/entity/account scope. */
+  readonly identityKey: string;
+  /** Evidence-only fingerprint for comparing the same finding across periods. */
+  readonly evidenceFingerprint: string;
+  /** Period-specific fingerprint used to reuse a decision only for unchanged evidence in the same period. */
   readonly fingerprint: string;
   readonly type: FindingType;
   readonly title: string;
@@ -54,7 +59,7 @@ export interface FinancialFinding {
 
 export type FinancialFindingDraft = Omit<
   FinancialFinding,
-  'schemaVersion' | 'id' | 'fingerprint' | 'reviewStatus' | 'snoozedUntil'
+  'schemaVersion' | 'id' | 'identityKey' | 'evidenceFingerprint' | 'fingerprint' | 'reviewStatus' | 'snoozedUntil'
 > & { readonly entityKey: string };
 
 export interface FindingComparisonContext {
@@ -89,15 +94,14 @@ export function createFinancialFinding(draft: FinancialFindingDraft): FinancialF
   if (!/^[A-Z]{3}$/.test(draft.currency)) throw new RangeError('Finding currency must be a three-letter uppercase code.');
   if (!Number.isFinite(Date.parse(draft.calculatedAt))) throw new RangeError('Finding calculatedAt must be an ISO timestamp.');
   const { entityKey, ...finding } = draft;
-  const identity = [
+  const scopedIdentity = [
     finding.type,
-    finding.period.startDate,
-    finding.period.endDate,
     finding.accountScope.mode,
     [...finding.accountScope.accountIds].sort().join(','),
     entityKey,
   ].join('|');
-  const id = 'fi-v1-' + finding.type + '-' + finding.period.startDate + '-' + finding.period.endDate + '-' + stableHash(identity);
+  const identityKey = stableHash(scopedIdentity);
+  const id = 'fi-v1-' + finding.type + '-' + finding.period.startDate + '-' + finding.period.endDate + '-' + identityKey;
   const fingerprintSource = JSON.stringify({
     type: finding.type,
     period: finding.period,
@@ -110,10 +114,32 @@ export function createFinancialFinding(draft: FinancialFindingDraft): FinancialF
     priority: finding.priority,
     limitations: finding.limitations,
   });
+  // Metrics can contain the previous comparison window's dates. Those dates are
+  // context, not evidence, so omit only date-boundary keys from cross-period evidence.
+  const comparableMetrics = Object.fromEntries(
+    Object.entries(finding.metrics).filter(([key]) =>
+      !/^(?:startDate|endDate|previousStartDate|previousEndDate|periodStartDate|periodEndDate)$/i.test(key)),
+  );
+  const evidenceFingerprintSource = JSON.stringify({
+    type: finding.type,
+    accountScope: {
+      mode: finding.accountScope.mode,
+      accountIds: [...finding.accountScope.accountIds].sort(),
+    },
+    currency: finding.currency,
+    metrics: comparableMetrics,
+    evidence: finding.evidence,
+    confidence: finding.confidence,
+    impactMinor: finding.impactMinor,
+    priority: finding.priority,
+    limitations: finding.limitations,
+  });
   return {
     ...finding,
     schemaVersion: 1,
     id,
+    identityKey,
+    evidenceFingerprint: stableHash(evidenceFingerprintSource),
     fingerprint: stableHash(fingerprintSource),
     reviewStatus: 'new',
   };
