@@ -10,6 +10,7 @@ import { SettingsCenter, type AppPreferences } from './SettingsCenter.js';
 import { AccountsPanel } from './AccountsPanel.js';
 import { DashboardSignals } from './DashboardSignals.js';
 import { FinancialIntelligencePanel } from './FinancialIntelligencePanel.js';
+import { PeriodicReviewPanel } from './PeriodicReviewPanel.js';
 import { formatAccountBalance, formatCivilDate, formatMoney as sharedFormatMoney, setFinanceLocale } from './finance-format.js';
 
 type ConnectionState = 'checking' | 'connected' | 'unconfigured' | 'error';
@@ -135,6 +136,7 @@ const NAV_ITEMS = [
   { href: '/budgets', label: 'Presupuestos', icon: '◷' },
   { href: '/planning', label: 'Planificación', icon: '◎' },
   { href: '/intelligence', label: 'Inteligencia financiera', icon: '◈' },
+  { href: '/review', label: 'Revisión financiera', icon: '✓' },
   { href: '/goals', label: 'Objetivos', icon: '↗' },
   { href: '/assistant', label: 'Asistente', icon: '✧' },
   { href: '/settings', label: 'Configuración', icon: '⚙' },
@@ -850,6 +852,7 @@ export function App() {
             {route === '/assistant' && <AssistantPanel currency={currency} />}
             {route === '/planning' && <PlanningPanel currency={currency} />}
             {route === '/intelligence' && <FinancialIntelligencePanel key={period.startDate + ':' + period.endDate} startDate={period.startDate} endDate={period.endDate} refreshKey={refreshKey} onNavigate={(target) => navigateTo(target)} />}
+            {route === '/review' && <PeriodicReviewPanel onNavigate={(target) => navigateTo(target)} />}
             {route === '/goals' && <GoalsPanel currency={currency} />}
 
             {route === '/settings' && (

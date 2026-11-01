@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -340,6 +340,355 @@ describe('local API', () => {
     const expectedState = await app.inject({ method: 'GET', url: '/api/v1/intelligence/findings?startDate=2026-09-01&endDate=2026-09-30&referenceWindows=3&minimumAbsoluteChangeMinor=2500&minimumRelativeChangePercent=20&enabledAnomalyKinds=possible-duplicate' });
     expect(expectedState.json().data.findings.find((item: { id: string }) => item.id === anomalyFindings[0].id).reviewStatus).toBe('expected');
     expect(expectedState.json().data.qualityMetrics.expectedCount).toBe(1);
+  });
+
+  it('generates and persists a guided periodic review without AI or financial mutations', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'periodic-review-api-'));
+    temporaryDirectories.push(directory);
+    const reviewTimeZone = 'Europe/Madrid';
+    const madridDateParts = new Intl.DateTimeFormat('en-US', {
+      timeZone: reviewTimeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(new Date());
+    const today = ['year', 'month', 'day'].map((type) =>
+      madridDateParts.find((part) => part.type === type)?.value ?? '',
+    ).join('-');
+    const syntheticTransactions: readonly BudgetTransaction[] = [
+      { id: 'review-uncategorized', account: 'account-1', currencyCode: 'EUR', date: today, amount: -5_000 },
+    ];
+    const listTransactions = vi.fn(async (_accountId: string, startDate: string, endDate: string) =>
+      syntheticTransactions.filter((transaction) => transaction.date >= startDate && transaction.date <= endDate));
+    const repository = createRepository({ listTransactions });
+    const app = await createTestApp(repository, { ...config, actualDataDir: directory });
+
+    const emptyHistory = await app.inject({ method: 'GET', url: '/api/v1/reviews/periodic' });
+    expect(emptyHistory.statusCode).toBe(200);
+    expect(emptyHistory.json().data).toEqual({ version: 1, reviews: [] });
+
+    const invalidFuture = await app.inject({
+      method: 'POST',
+      url: '/api/v1/reviews/periodic',
+      payload: { periodType: 'weekly', anchorDate: '9999-01-01' },
+    });
+    expect(invalidFuture.statusCode).toBe(400);
+    const invalidTimeZone = await app.inject({
+      method: 'POST',
+      url: '/api/v1/reviews/periodic',
+      payload: { periodType: 'weekly', anchorDate: today, timeZone: 'Not/A-Time-Zone' },
+    });
+    expect(invalidTimeZone.statusCode).toBe(400);
+
+    const generated = await app.inject({
+      method: 'POST',
+      url: '/api/v1/reviews/periodic',
+      payload: { periodType: 'monthly', anchorDate: today, timeZone: reviewTimeZone },
+    });
+    expect(generated.statusCode).toBe(201);
+    const data = generated.json().data;
+    expect(data.schemaVersion).toBe(1);
+    expect(data.asOfDate).toBe(today);
+    expect(data.timeZone).toBe(reviewTimeZone);
+    expect(data.summary).toMatchObject({ currency: 'EUR', incomeMinor: 0, expenseMinor: 5_000, savingsMinor: -5_000, savingsRatePercent: null });
+    expect(data.budgetAssessment).toMatchObject({ available: false, overBudgetCategoryCount: 0 });
+    expect(data.budgetAssessment.reason).toBeTruthy();
+    expect(data.goalAssessment).toMatchObject({ evaluatedGoalCount: 0, onTrackCount: 0, atRiskCount: 0, projections: [] });
+    expect(data.period.startDate).toBe(today.slice(0, 7) + '-01');
+    expect(data.period.endDate).toBe(today);
+    const previousMonthLastDay = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1, 0));
+    const previousMonthStart = previousMonthLastDay.toISOString().slice(0, 7) + '-01';
+    const previousMonthEndDay = Math.min(Number(today.slice(8, 10)), previousMonthLastDay.getUTCDate());
+    const previousMonthEnd = previousMonthStart.slice(0, 8) + String(previousMonthEndDay).padStart(2, '0');
+    expect(data.comparison.period).toEqual({ startDate: previousMonthStart, endDate: previousMonthEnd });
+    expect(data.warnings.some((warning: string) => warning.includes('incompleto'))).toBe(
+      today !== new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)), 0)).toISOString().slice(0, 10),
+    );
+    const item = data.run.items.find((candidate: { findingType: string }) => candidate.findingType === 'pending-categorization');
+    expect(item).toMatchObject({ status: 'pending', fingerprint: expect.stringMatching(/^[0-9a-f]{16}$/) });
+
+    const postponedUntilDate = new Date(today + 'T00:00:00.000Z');
+    postponedUntilDate.setUTCDate(postponedUntilDate.getUTCDate() + 7);
+    const postponedUntil = postponedUntilDate.toISOString().slice(0, 10);
+    const postponed = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/reviews/periodic/' + data.run.id + '/items',
+      payload: { findingId: item.findingId, status: 'postponed', postponedUntil, timeZone: reviewTimeZone },
+    });
+    expect(postponed.statusCode).toBe(200);
+    expect(postponed.json().data.items[0]).toMatchObject({ status: 'postponed', postponedUntil });
+
+    const regenerated = await app.inject({
+      method: 'POST',
+      url: '/api/v1/reviews/periodic',
+      payload: { periodType: 'monthly', anchorDate: today, timeZone: reviewTimeZone },
+    });
+    expect(regenerated.statusCode).toBe(201);
+    expect(regenerated.json().data.run.items.find((candidate: { findingId: string }) => candidate.findingId === item.findingId))
+      .toMatchObject({ status: 'postponed', postponedUntil });
+
+    const history = await app.inject({ method: 'GET', url: '/api/v1/reviews/periodic' });
+    expect(history.statusCode).toBe(200);
+    expect(history.json().data.reviews).toHaveLength(2);
+    expect(repository.listTransactions).toHaveBeenCalled();
+    expect(listTransactions.mock.calls.every(([, start, end]) => start <= end)).toBe(true);
+  });
+
+  it('returns expired postponed decisions to pending when the same period is regenerated', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'periodic-review-expired-postpone-api-'));
+    temporaryDirectories.push(directory);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-01T10:00:00.000Z'));
+    try {
+      const reviewTimeZone = 'Europe/Madrid';
+      const syntheticTransactions: readonly BudgetTransaction[] = [
+        { id: 'expired-postpone-uncategorized', account: 'account-1', currencyCode: 'EUR', date: '2026-10-10', amount: -5_000 },
+      ];
+      const repository = createRepository({
+        listTransactions: vi.fn(async (_accountId: string, startDate: string, endDate: string) =>
+          syntheticTransactions.filter((transaction) => transaction.date >= startDate && transaction.date <= endDate)),
+      });
+      const app = await createTestApp(repository, { ...config, actualDataDir: directory, aiEnabled: false });
+      const initial = await app.inject({
+        method: 'POST',
+        url: '/api/v1/reviews/periodic',
+        payload: { periodType: 'monthly', anchorDate: '2026-10-15', timeZone: reviewTimeZone },
+      });
+      expect(initial.statusCode).toBe(201);
+      expect(initial.json().data.period).toMatchObject({ startDate: '2026-10-01', endDate: '2026-10-31', complete: true });
+      const item = initial.json().data.run.items.find((candidate: { findingType: string }) => candidate.findingType === 'pending-categorization');
+      expect(item).toBeTruthy();
+
+      const postponed = await app.inject({
+        method: 'PATCH',
+        url: '/api/v1/reviews/periodic/' + initial.json().data.run.id + '/items',
+        payload: {
+          findingId: item.findingId,
+          status: 'postponed',
+          postponedUntil: '2026-11-08',
+          timeZone: reviewTimeZone,
+        },
+      });
+      expect(postponed.statusCode).toBe(200);
+
+      // The October period remains closed and has the same full evidence fingerprint;
+      // only the postponement expiry has moved into the past.
+      vi.setSystemTime(new Date('2026-11-10T10:00:00.000Z'));
+      const regenerated = await app.inject({
+        method: 'POST',
+        url: '/api/v1/reviews/periodic',
+        payload: { periodType: 'monthly', anchorDate: '2026-10-15', timeZone: reviewTimeZone },
+      });
+      expect(regenerated.statusCode).toBe(201);
+      const regeneratedItem = regenerated.json().data.run.items.find((candidate: { findingId: string }) => candidate.findingId === item.findingId);
+      expect(regeneratedItem).toMatchObject({ status: 'pending' });
+      expect(regeneratedItem.postponedUntil).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('validates postponed review dates in the submitted IANA time zone', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'periodic-review-time-zone-api-'));
+    temporaryDirectories.push(directory);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-02T01:30:00.000Z'));
+    try {
+      const syntheticTransactions: readonly BudgetTransaction[] = [
+        { id: 'review-local-boundary', account: 'account-1', currencyCode: 'EUR', date: '2026-11-01', amount: -5_000 },
+      ];
+      const listTransactions = vi.fn(async (_accountId: string, startDate: string, endDate: string) =>
+        syntheticTransactions.filter((transaction) => transaction.date >= startDate && transaction.date <= endDate));
+      const repository = createRepository({ listTransactions });
+      const app = await createTestApp(repository, { ...config, actualDataDir: directory, aiEnabled: false });
+      const generated = await app.inject({
+        method: 'POST',
+        url: '/api/v1/reviews/periodic',
+        payload: { periodType: 'weekly', anchorDate: '2026-11-01', timeZone: 'America/Los_Angeles' },
+      });
+      expect(generated.statusCode).toBe(201);
+      expect(generated.json().data.asOfDate).toBe('2026-11-01');
+      const item = generated.json().data.run.items.find((candidate: { findingType: string }) => candidate.findingType === 'pending-categorization');
+      expect(item).toBeTruthy();
+
+      // At this instant UTC is already Nov 2, while the browser's LA civil date is still Nov 1.
+      // Expiring on the browser's current day is valid and must use the same calendar as generation.
+      const postponed = await app.inject({
+        method: 'PATCH',
+        url: '/api/v1/reviews/periodic/' + generated.json().data.run.id + '/items',
+        payload: {
+          findingId: item.findingId,
+          status: 'postponed',
+          postponedUntil: '2026-11-01',
+          timeZone: 'America/Los_Angeles',
+        },
+      });
+      expect(postponed.statusCode).toBe(200);
+      expect(postponed.json().data.items[0]).toMatchObject({ status: 'postponed', postponedUntil: '2026-11-01' });
+
+      const invalidTimeZone = await app.inject({
+        method: 'PATCH',
+        url: '/api/v1/reviews/periodic/' + generated.json().data.run.id + '/items',
+        payload: {
+          findingId: item.findingId,
+          status: 'reviewed',
+          timeZone: 'Not/A-Time-Zone',
+        },
+      });
+      expect(invalidTimeZone.statusCode).toBe(400);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('compares repeated findings by stable identity and stores only metadata', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'periodic-review-comparison-api-'));
+    temporaryDirectories.push(directory);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-01T09:30:00.000Z'));
+    try {
+      let syntheticTransactions: readonly BudgetTransaction[] = [
+        { id: 'previous-uncategorized', account: 'account-1', currencyCode: 'EUR', date: '2026-10-10', amount: -1_000 },
+        { id: 'current-uncategorized', account: 'account-1', currencyCode: 'EUR', date: '2026-11-01', amount: -2_500 },
+      ];
+      const repository = createRepository({
+        listTransactions: vi.fn(async (_accountId: string, startDate: string, endDate: string) =>
+          syntheticTransactions.filter((transaction) => transaction.date >= startDate && transaction.date <= endDate)),
+      });
+      const app = await createTestApp(repository, { ...config, actualDataDir: directory, aiEnabled: false });
+
+      const previous = await app.inject({
+        method: 'POST',
+        url: '/api/v1/reviews/periodic',
+        payload: { periodType: 'monthly', anchorDate: '2026-10-15', timeZone: 'Europe/Madrid' },
+      });
+      expect(previous.statusCode).toBe(201);
+      expect(previous.json().data.period).toMatchObject({ startDate: '2026-10-01', endDate: '2026-10-31', complete: true });
+      expect(previous.json().data.run.items).toHaveLength(1);
+      expect(previous.json().data.run.items[0]).toMatchObject({
+        identityKey: expect.stringMatching(/^[0-9a-f]{16}$/),
+        evidenceFingerprint: expect.stringMatching(/^[0-9a-f]{16}$/),
+      });
+      expect(previous.json().data.comparisonToPreviousReview).toBeNull();
+
+      const current = await app.inject({
+        method: 'POST',
+        url: '/api/v1/reviews/periodic',
+        payload: { periodType: 'monthly', anchorDate: '2026-11-01', timeZone: 'Europe/Madrid' },
+      });
+      expect(current.statusCode).toBe(201);
+      expect(current.json().data.run.items).toHaveLength(1);
+      expect(current.json().data.run.items[0].findingId).not.toBe(previous.json().data.run.items[0].findingId);
+      expect(current.json().data.run.items[0].identityKey).toBe(previous.json().data.run.items[0].identityKey);
+      expect(current.json().data.comparisonToPreviousReview).toMatchObject({
+        previousReview: { startDate: '2026-10-01', endDate: '2026-10-31' },
+        newFindingCount: 0,
+        repeatedFindingCount: 1,
+        changedEvidenceCount: 1,
+        noLongerPresentCount: 0,
+      });
+
+      // When the current period no longer contains the same kind of finding, the earlier
+      // comparable review must report it as no longer present rather than as a new item.
+      syntheticTransactions = [];
+      const cleared = await app.inject({
+        method: 'POST',
+        url: '/api/v1/reviews/periodic',
+        payload: { periodType: 'monthly', anchorDate: '2026-11-01', timeZone: 'Europe/Madrid' },
+      });
+      expect(cleared.statusCode).toBe(201);
+      expect(cleared.json().data.run.items).toHaveLength(0);
+      expect(cleared.json().data.comparisonToPreviousReview).toMatchObject({
+        newFindingCount: 0,
+        repeatedFindingCount: 0,
+        changedEvidenceCount: 0,
+        noLongerPresentCount: 1,
+      });
+
+      const state = await readFile(join(directory, 'periodic-reviews.json'), 'utf8');
+      expect(state).not.toContain('incomeMinor');
+      expect(state).not.toContain('expenseMinor');
+      expect(state).not.toContain('amountMinor');
+      expect(state).not.toContain('previous-uncategorized');
+      expect(state).not.toContain('current-uncategorized');
+      expect(state).not.toContain('account-1');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps an empty zero-income review explicit and deterministic with no findings', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'periodic-review-empty-api-'));
+    temporaryDirectories.push(directory);
+    const today = new Date().toISOString().slice(0, 10);
+    const listTransactions = vi.fn(async () => [] as readonly BudgetTransaction[]);
+    const repository = createRepository({ listTransactions });
+    const app = await createTestApp(repository, { ...config, actualDataDir: directory, aiEnabled: false });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/reviews/periodic',
+      payload: { periodType: 'weekly', anchorDate: today },
+    });
+    expect(response.statusCode).toBe(201);
+    expect(response.json().data.summary).toMatchObject({
+      incomeMinor: 0, expenseMinor: 0, savingsMinor: 0, savingsRatePercent: null,
+      transactionCount: 0, unconvertedTransactionCount: 0,
+    });
+    expect(response.json().data.findings).toEqual([]);
+    expect(response.json().data.run).toMatchObject({ periodType: 'weekly', status: 'completed', items: [] });
+    const monday = new Date(today + 'T00:00:00.000Z');
+    monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
+    expect(response.json().data.period.startDate).toBe(monday.toISOString().slice(0, 10));
+    const previousMonday = new Date(monday);
+    previousMonday.setUTCDate(previousMonday.getUTCDate() - 7);
+    const previousWeekEnd = new Date(previousMonday);
+    previousWeekEnd.setUTCDate(previousWeekEnd.getUTCDate() + ((new Date(today + 'T00:00:00.000Z').getUTCDay() + 6) % 7));
+    expect(response.json().data.comparison.period).toEqual({
+      startDate: previousMonday.toISOString().slice(0, 10),
+      endDate: previousWeekEnd.toISOString().slice(0, 10),
+    });
+    expect(response.json().data.budgetAssessment).toMatchObject({ available: false });
+    expect(response.json().data.goalAssessment).toMatchObject({ evaluatedGoalCount: 0, projections: [] });
+    expect(response.json().data.warnings.some((warning: string) => warning.includes('Cumplimiento presupuestario no evaluable'))).toBe(true);
+    expect(response.json().data.capabilities).toMatchObject({ aiEnabled: false, deterministicReportAvailable: true });
+  });
+
+  it('keeps missing exchange rates explicit across multiple accounts and does not require Ollama', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'periodic-review-multicurrency-api-'));
+    temporaryDirectories.push(directory);
+    const today = new Date().toISOString().slice(0, 10);
+    const gbpAccount: BudgetAccount = {
+      id: 'account-gbp', name: 'Cuenta GBP', currencyCode: 'GBP',
+      closed: false, offBudget: false, currentBalanceMinor: 0,
+    };
+    const historicalTransactions: readonly BudgetTransaction[] = [
+      { id: 'review-eur-expense', account: 'account-1', currencyCode: 'EUR', date: today, amount: -1_000, category: 'food' },
+      { id: 'review-gbp-expense', account: 'account-gbp', currencyCode: 'GBP', date: today, amount: -2_000, category: 'food' },
+    ];
+    const listTransactions = vi.fn(async (accountId: string, startDate: string, endDate: string) =>
+      historicalTransactions.filter((transaction) => transaction.account === accountId && transaction.date >= startDate && transaction.date <= endDate));
+    const repository = createRepository({
+      listAccounts: vi.fn(async () => [...accounts, gbpAccount]),
+      listTransactions,
+    });
+    const app = await createTestApp(repository, {
+      ...config, actualDataDir: directory, aiEnabled: true,
+      ollamaBaseURL: 'http://127.0.0.1:1', ollamaModel: 'unavailable-synthetic-model',
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/reviews/periodic',
+      payload: { periodType: 'monthly', anchorDate: today },
+    });
+    expect(response.statusCode).toBe(201);
+    expect(response.json().data).toMatchObject({
+      currency: 'EUR',
+      accountScope: { mode: 'all' },
+      summary: { expenseMinor: 1_000, unconvertedTransactionCount: 1 },
+      capabilities: { aiEnabled: true, deterministicReportAvailable: true },
+    });
+    expect(response.json().data.warnings.some((warning: string) => /conversión|GBP/i.test(warning))).toBe(true);
+    const ids = response.json().data.run.items.map((item: { findingId: string }) => item.findingId);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(listTransactions).toHaveBeenCalledWith('account-1', expect.any(String), expect.any(String));
+    expect(listTransactions).toHaveBeenCalledWith('account-gbp', expect.any(String), expect.any(String));
   });
 
   it('explains a verified deterministic finding through local Ollama and rejects an unknown finding', async () => {

@@ -117,15 +117,30 @@ describe('financial intelligence findings', () => {
       period: { startDate: '2026-10-01', endDate: '2026-10-31' },
       accountScope: scope, currency: 'EUR', confidence: 'observed' as const,
       priority: 'low' as const, priorityReason: 'Rule', impactMinor: 1,
-      metrics: { count: 1 }, evidence: [{ label: 'Count', value: 1, source: 'test', rule: 'test' }],
+      metrics: { count: 1, previousStartDate: '2026-09-01', previousEndDate: '2026-09-30' },
+      evidence: [{ label: 'Count', value: 1, source: 'test', rule: 'test' }],
       limitations: [], calculatedAt, navigationTarget: '/movements' as const,
     };
     const first = createFinancialFinding(draft);
     const repeated = createFinancialFinding({ ...draft, calculatedAt: '2026-10-30T12:00:00.000Z' });
+    const nextPeriod = createFinancialFinding({
+      ...draft,
+      period: { startDate: '2026-11-01', endDate: '2026-11-30' },
+      metrics: { count: 1, previousStartDate: '2026-10-01', previousEndDate: '2026-10-31' },
+      calculatedAt: '2026-11-30T12:00:00.000Z',
+    });
     const changed = createFinancialFinding({ ...draft, impactMinor: 2, metrics: { count: 2 } });
     const changedCurrency = createFinancialFinding({ ...draft, currency: 'USD' });
     expect(first.id).toBe(repeated.id);
+    expect(first.identityKey).toBe(repeated.identityKey);
     expect(first.fingerprint).toBe(repeated.fingerprint);
+    expect(first.evidenceFingerprint).toBe(repeated.evidenceFingerprint);
+    expect(nextPeriod.id).not.toBe(first.id);
+    expect(nextPeriod.identityKey).toBe(first.identityKey);
+    expect(nextPeriod.fingerprint).not.toBe(first.fingerprint);
+    expect(nextPeriod.evidenceFingerprint).toBe(first.evidenceFingerprint);
+    expect(first.identityKey).toBe(nextPeriod.identityKey);
+    expect(first.evidenceFingerprint).not.toBe(changed.evidenceFingerprint);
     expect(first.fingerprint).not.toBe(changed.fingerprint);
     expect(first.fingerprint).not.toBe(changedCurrency.fingerprint);
     expect(() => createFinancialFinding({ ...draft, currency: 'eur' })).toThrow(RangeError);
