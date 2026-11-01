@@ -3404,7 +3404,7 @@ function monthsBefore(date: string, months: number): string {
           const latest = proposal.evidence.latestMonthExpenseMinor ?? 0;
           const previous = proposal.evidence.priorMonthsAverageExpenseMinor ?? 0;
           const increase = Math.max(0, latest - previous);
-          priorityTier = proposal.evidence.signal === 'recent_increase' && increase > 0 ? 1 : 0;
+          priorityTier = increase > 0 ? 1 : 0;
           priorityValue = increase;
           priorityReason = priorityTier
             ? 'Prioridad por tendencia: el último mes completo superó la media de referencia. Revisa primero esta variación antes de fijar un recorte.'
