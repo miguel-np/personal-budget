@@ -434,7 +434,7 @@ describe('local API', () => {
   it('validates postponed review dates in the submitted IANA time zone', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'periodic-review-time-zone-api-'));
     temporaryDirectories.push(directory);
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-11-02T01:30:00.000Z'));
     try {
       const syntheticTransactions: readonly BudgetTransaction[] = [
@@ -487,7 +487,7 @@ describe('local API', () => {
   it('compares repeated findings by stable identity and stores only metadata', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'periodic-review-comparison-api-'));
     temporaryDirectories.push(directory);
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-11-01T09:30:00.000Z'));
     try {
       let syntheticTransactions: readonly BudgetTransaction[] = [
