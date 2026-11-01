@@ -18,6 +18,9 @@ La suite levanta y detiene sus servidores automáticamente. Chromium se instala 
 ## Cobertura
 
 - Dashboard y periodo; navegación entre secciones, filtros y paginación.
+- Flujo de caja 7/30/90, separación de movimientos/compromisos/escenarios y simulación no persistente.
+- Propuestas de mejora: clasificación explícita, simulación combinada y guardado local de escenario sin escrituras financieras.
+- Alertas de presupuesto: creación/edición de regla, exceso relativo, deduplicación, aplazamiento y ausencia de escrituras.
 - Informes y presupuestos con datos sintéticos.
 - Importación CSV mediante previsualización, confirmación explícita y comprobación de escritura sintética.
 - Sugerencias de categoría: previsualizar, cancelar, confirmar y descartar.
