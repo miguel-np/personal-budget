@@ -9,6 +9,7 @@
 | #64 · Backup unificado | **Cerrada e integrada** mediante PR #89 (d2c9911): backup cifrado/versionado, manifiesto, Actual + seis almacenes JSON propios y roundtrip sintético completo | Mantener la whitelist y el ensayo actualizados cuando se añadan almacenes persistentes. La aceptación manual de la instalación WSL2 sigue separada en #31 |
 | #72 · Revisión financiera periódica | **Cerrada e integrada** mediante PR #82 (commit `32caf07`): revisión semanal/mensual, decisiones metadata-only, identidad estable entre periodos, huellas de evidencia y compatibilidad v1 | Seis checks verdes en el SHA final: quality/cobertura, Windows, E2E, Actual smoke, Actual update/restore y Security; `periodic-reviews.json` está incluido en el backup unificado de #64 |
 | #31 · Aceptación operativa | Runtime diario, diagnóstico y pruebas automatizadas del ciclo de vida implementados; la dependencia de recuperación #64 está satisfecha | Sigue pendiente ejecutar y registrar la aceptación manual en Windows + WSL2 con presupuesto sintético. CI Linux/Windows nativa no demuestra esa instalación |
+| #28 · Paginación eficiente de movimientos | Segmentación por mes natural, límite de 100.000 movimientos presentados, selección acotada offset+limit con desempate por ID, benchmark con pico de heap muestreado durante la petición (PR #63 integrada) y recorrido completo de páginas sin omisiones ni duplicados | Evaluación de ActualQL, consistencia entre páginas y benchmark de mes denso/multi-cuenta documentados en docs/transactions-and-imports.md; la evidencia se registra en la issue para el cierre |
 
 ## Centro de inteligencia financiera (issue #68)
 
@@ -21,6 +22,7 @@ La implementación añade hallazgos versionados y verificables, comparaciones de
 - Previsiones explicables (forecast.ts): escenarios por categoría o cambio de ingreso, mediana como base, separación recurrente/extraordinario, supuestos y avisos.
 - UI de planificación: candidatos, sugerencias con editar/aplicar/descartar y simulación.
 - Objetivos de ahorro y compromisos futuros: API/core/UI y pruebas sintéticas en la rama correspondiente; verificar PR y criterios de aceptación antes de considerar cerrada su ampliación.
+- #65 · Endurecer contratos financieros independientes del proveedor: abierta (P3, preventiva). Auditoría de dependencias del SDK fuera del adaptador, contratos de dominio y suite de conformidad reutilizable pendientes; no bloquea #31 ni #28.
 
 ## Matriz de operación y recuperación
 
@@ -50,14 +52,14 @@ Para cerrar #31 falta registrar, en un checkout limpio de la distribución WSL2 
 No cerrar #31 por un workflow verde. No registrar ni subir extractos, bases de datos, copias de seguridad o logs con datos personales a Git/CI.
 
 
-## Inteligencia financiera útil — fase 2 (rama de implementación)
+## Inteligencia financiera útil — fase 2 (integrada en `main`)
 
-**Estado de integración:** las funcionalidades están implementadas en la rama `feat/phase-2-financial-intelligence`; no deben considerarse cerradas ni disponibles en `main` hasta que las PRs pasen CI, revisión y se integren.
+**Estado de integración:** las funcionalidades de #73, #83 y #74 están integradas en `main` mediante el commit `9164741` (1-nov-2026) y la CI de Linux y Windows pasó sus criterios.
 
-| Issue | Implementación en la rama | Criterio pendiente antes de cierre |
+| Issue | Implementación integrada | Nota de límites |
 |---|---|---|
-| #73 · Saldo estimado y flujo de caja | Motor diario determinista, horizontes 7/30/90, movimientos futuros de Actual, compromisos activos, reserva de ámbito, detección conservadora de duplicados y escenario efímero. Los estados de conciliación de movimientos se muestran solo cuando Actual los proporciona. | CI/API/E2E, verificación de transferencias/splits y aceptación visual; la semántica de `balance_current` sigue siendo saldo actual de Actual, no saldo bancario disponible. |
-| #83 · Propuestas de mejora | Línea base de periodos completos, clasificación de categorías elegida por el usuario, propuestas solo para flexibles/revisables, simulación combinada y decisiones/escenarios locales. | CI, pruebas con historial suficiente, falsos positivos/limitaciones y aceptación UX. La primera versión no usa IA para crear propuestas ni aplica cambios a presupuestos. |
-| #74 · Alertas presupuestarias | Reglas por categoría para consumo/restante/exceso, deduplicación por regla-categoría-mes, silencio/aplazamiento y funcionamiento sin IA. | CI/API/E2E para umbrales, cambios de mes, reinicio y estados cero/sin asignación/desconocido. Solo avisos in-app. |
+| #73 · Saldo estimado y flujo de caja | Motor diario determinista, horizontes 7/30/90, movimientos futuros de Actual, compromisos activos, reserva de ámbito, detección conservadora de duplicados y escenario efímero. Los estados de conciliación de movimientos se muestran solo cuando Actual los proporciona. | La semántica de `balance_current` sigue siendo saldo actual de Actual, no saldo bancario disponible. |
+| #83 · Propuestas de mejora | Línea base de periodos completos, clasificación de categorías elegida por el usuario, propuestas solo para flexibles/revisables, simulación combinada y decisiones/escenarios locales. | La primera versión no usa IA para crear propuestas ni aplica cambios a presupuestos. |
+| #74 · Alertas presupuestarias | Reglas por categoría para consumo/restante/exceso, deduplicación por regla-categoría-mes, silencio/aplazamiento y funcionamiento sin IA. | Solo avisos in-app. |
 
-El nuevo almacén `financial-actions.json` se añade a la whitelist del backup unificado. Su presencia debe mantenerse sincronizada entre el esquema versionado, pruebas de roundtrip, `docs/backup-restore.md` y `scripts/backup-restore.ts`. No se marca ninguna de estas issues como cerrada mientras las PRs no estén integradas.
+El nuevo almacén `financial-actions.json` se añadió a la whitelist del backup unificado. Su presencia debe mantenerse sincronizada entre el esquema versionado, pruebas de roundtrip, `docs/backup-restore.md` y `scripts/backup-restore.ts`.

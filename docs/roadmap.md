@@ -57,12 +57,17 @@ La seguridad y privacidad se comprueban en cada fase. Las pruebas usan datos sin
 - [ ] [#31 — Aceptación operativa Windows + WSL2](https://github.com/miguel-np/personal-budget/issues/31): runtime, diagnóstico y CI automática cubiertos; la dependencia de recuperación #64 está resuelta. Sigue pendiente ejecutar y registrar el ensayo manual en la distribución WSL2 objetivo con un presupuesto exclusivamente sintético.
 
 
-## Fase 2 — Inteligencia financiera útil (1-nov-2026)
+## Fase 2 — Inteligencia financiera útil (integrada el 1-nov-2026)
 
-La implementación de #73, #83 y #74 está en curso en la rama `feat/phase-2-financial-intelligence`. Los tres entregables se mantienen separados para revisión y aceptación. No se consideran integrados ni cerrados hasta que sus PRs tengan CI satisfactoria y se fusionen en `main`.
+La implementación de #73, #83 y #74 se integró en `main` mediante el commit `9164741`, con CI verde en Linux y Windows; las tres issues quedaron cerradas con la integración.
 
-- [ ] [#73 — Saldo disponible estimado y flujo de caja](https://github.com/miguel-np/personal-budget/issues/73): proyección diaria 7/30/90 días, fuentes separadas, saldo desconocido explícito, reserva y escenarios efímeros.
-- [ ] [#83 — Propuestas personalizadas de mejora presupuestaria](https://github.com/miguel-np/personal-budget/issues/83): diagnóstico de periodos completos, prioridades elegidas por la persona, propuestas/simulaciones deterministas y escenarios locales.
-- [ ] [#74 — Alertas presupuestarias locales configurables](https://github.com/miguel-np/personal-budget/issues/74): umbrales por categoría, deduplicación, silencio/aplazamiento y panel in-app.
+- [x] [#73 — Saldo disponible estimado y flujo de caja](https://github.com/miguel-np/personal-budget/issues/73): proyección diaria 7/30/90 días, fuentes separadas, saldo desconocido explícito, reserva y escenarios efímeros.
+- [x] [#83 — Propuestas personalizadas de mejora presupuestaria](https://github.com/miguel-np/personal-budget/issues/83): diagnóstico de periodos completos, prioridades elegidas por la persona, propuestas/simulaciones deterministas y escenarios locales.
+- [x] [#74 — Alertas presupuestarias locales configurables](https://github.com/miguel-np/personal-budget/issues/74): umbrales por categoría, deduplicación, silencio/aplazamiento y panel in-app.
 
 El almacén adicional `financial-actions.json` forma parte de la whitelist del backup cifrado unificado. El saldo de apertura usa el dato que Actual expone como saldo actual de cuenta; no se presenta como dinero bancario disponible cuando el origen no proporciona esa semántica. Los candidatos recurrentes no confirmados no se suman al flujo base. Las categorías esenciales/protegidas no reciben propuestas de recorte.
+
+## Consolidación — paginación y endurecimiento (1-nov-2026)
+
+- [ ] [#28 — Paginación y filtrado eficiente de movimientos](https://github.com/miguel-np/personal-budget/issues/28): ventanas mensuales, límite de 100.000 presentados, selección acotada offset+limit con desempate por ID y pico de heap muestreado durante la petición (PR #63 integrada). Benchmark con mes denso y multi-cuenta, recorrido completo de páginas sin omisiones/duplicados, evaluación de ActualQL y efectos de cambios concurrentes documentados en docs/transactions-and-imports.md; pendiente registrar la evidencia en la issue.
+- [ ] [#65 — Endurecer los contratos financieros independientes del proveedor](https://github.com/miguel-np/personal-budget/issues/65): preventiva P3. Auditoría de referencias al SDK fuera del adaptador, contratos de dominio obligatorios/opcionales y suite de conformidad reutilizable pendientes.

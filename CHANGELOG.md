@@ -16,4 +16,6 @@
 - Añadido lockfile npm inicial por CI.
 - Pendiente: validar resultados de CI, probar adaptador contra Actual local y completar funciones del producto en P1.
 
-- Preparada en la rama de Fase 2 una proyección de flujo de caja local (con estados de conciliación disponibles), propuestas/simulaciones presupuestarias que respetan categorías protegidas y alertas in-app configurables. El nuevo almacén `financial-actions.json` se incorpora al backup cifrado unificado. Pendiente de CI, revisión e integración.
+- Integrada en `main` (commit `9164741`) la fase 2 de inteligencia financiera: proyección de flujo de caja local con estados de conciliación disponibles, propuestas/simulaciones presupuestarias que respetan categorías protegidas y alertas in-app configurables (#73, #83, #74). El almacén `financial-actions.json` forma parte del backup cifrado unificado.
+
+- Ampliado el benchmark de paginación de movimientos (#28): datasets de mes denso y multi-cuenta, pico de heap muestreado durante la petición con máximo entre repeticiones y recorrido completo de páginas sin omisiones ni duplicados con fechas/importes idénticos, splits y filtros. La evaluación de ActualQL y los efectos de cambios concurrentes entre páginas quedan documentados en docs/transactions-and-imports.md.
