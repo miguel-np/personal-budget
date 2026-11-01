@@ -49,6 +49,25 @@ Para cerrar #31 falta registrar, en un checkout limpio de la distribución WSL2 
 4. Un error intencional no destructivo y su diagnóstico, parada con Ctrl+C, nuevo arranque y comprobación de que no quedan procesos/puertos huérfanos.
 5. Comandos ejecutados, resultado y logs saneados sin credenciales ni información financiera personal.
 
+### Ensayo ejecutado el 1-nov-2026 en la distribución objetivo (WSL2)
+
+Ejecutado directamente en la distribución Ubuntu 24.04.5 del entorno Windows + WSL2 del usuario, en un checkout limpio de `main` (`660a878`) y con un contenedor Actual **aislado** (volumen `pb31-acceptance-actual-data`, loopback `127.0.0.1:5008`, bootstrap con password de aceptación) para no tocar la instancia real del usuario.
+
+| Punto | Resultado |
+|---|---|
+| Versiones | Windows 11 Home 10.0.26300 build 26300 · WSL 2.7.14.0 · kernel 6.18.33.2-microsoft-standard-WSL2 · Ubuntu 24.04.5 · Node v24.22.1 (nvm, `.nvmrc`) · npm 11.19.1 · Docker 29.9.2 · Compose v5.6.1 · `actualbudget/actual-server:26.10.0` |
+| Instalación limpia | `npm ci` correcto; `npm run doctor` → **0 errores**, 3 avisos explicados (Actual arrancado fuera de compose por aislamiento; API/frontend apagados antes del arranque) |
+| Presupuesto sintético | Sembrado con `scripts/actual-update-acceptance.ts seed`: 1 cuenta, 2 categorías, 3 movimientos; fixture de inventario (Sync ID, IDs, fechas, importes) |
+| Persistencia tras reinicio | `docker restart` del contenedor Actual → `verify` → `SYNTHETIC_INVENTORY_OK`: cuenta, categorías, IDs/fechas/importes y saldo derivado idénticos |
+| Arranque diario | `npm run start:local` → API 127.0.0.1:3000 y frontend 127.0.0.1:4173; `/health` 200, `/ready` configured, UI 200; `/api/v1/accounts` y `/api/v1/transactions` devuelven exactamente el inventario sintético |
+| Error intencional no destructivo | Contenedor aislado detenido → API 502 `UPSTREAM_FAILURE` saneado sin detalles internos; `doctor` avisa «Servidor Actual: no responde»; tras `docker start` la API vuelve a 200 con los mismos 3 movimientos |
+| Parada limpia | SIGINT → puertos 3000/4173 liberados, sin procesos huérfanos, SDK cerrado con gracia; segundo arranque limpio verificado (health/UI 200) |
+
+Quedan dos pasos estrictamente manuales, no ejecutables desde dentro del propio WSL2:
+
+1. **Confirmación visual** del navegador de Windows en http://127.0.0.1:4173 (el ensayo abrió el navegador y verificó el HTTP por loopback; la persona confirma la interfaz).
+2. **Reinicio completo de WSL2** (`wsl --shutdown` y reapertura de la distribución) repitiendo el inventario antes/después; el reinicio del motor de persistencia de Actual ya quedó cubierto con el `docker restart` del punto anterior.
+
 No cerrar #31 por un workflow verde. No registrar ni subir extractos, bases de datos, copias de seguridad o logs con datos personales a Git/CI.
 
 
