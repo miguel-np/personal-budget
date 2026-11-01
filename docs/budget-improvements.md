@@ -18,7 +18,9 @@ Cada categoría puede marcarse como:
 
 No se deduce flexibilidad por el nombre de una categoría. Solo las categorías que la persona marque expresamente como flexibles o revisables pueden originar propuestas de reducción. Las categorías esenciales/protegidas y las no clasificadas quedan fuera de esas propuestas y simulaciones.
 
-La prioridad elegida puede ser aumentar el margen mensual, reducir gasto variable, alcanzar una meta de ahorro o liberar flujo de caja. Se aplica al regenerar explicaciones de propuestas, pero no altera los importes calculados. Cuando se elige alcanzar una meta, la API reutiliza la proyección determinista de los objetivos ya guardados en Planificación. Muestra aportación necesaria, aportación actual, saldo proyectado, capacidad de caja y advertencias por divisa/ámbito; no crea una segunda fuente de objetivos ni modifica las metas al aceptar propuestas.
+La prioridad elegida puede ser aumentar el margen mensual, reducir gasto variable, alcanzar una meta de ahorro o liberar flujo de caja. Afecta de forma determinista a la ordenación y al motivo de prioridad, no a los importes observados ni al porcentaje sugerido: aumentar margen/liberar caja ordena por margen mensual potencial; reducir gasto variable antepone señales de aumento reciente cuantificado; alcanzar una meta ordena por cuánto podría cubrir cada propuesta de la brecha de aportación mensual del objetivo activo compatible más exigente. Si no hay objetivo compatible, la API lo indica y no atribuye impacto a una meta. Los importes de ordenación y los impactos se presentan con la divisa de análisis.
+
+Cuando se elige alcanzar una meta, la API reutiliza las proyecciones deterministas de los objetivos ya guardados en Planificación. Para cada propuesta muestra cuánto de la brecha de aportación podría cubrirse, suponiendo que todo el ahorro hipotético se destine al objetivo. En una simulación combinada vuelve a proyectar cada objetivo activo compatible con la aportación actual más el ahorro mensual del escenario y los mismos compromisos activos, mostrando saldo/progreso/fecha estimados antes y después. Es un supuesto comparativo, no una reserva ni una transferencia real: no crea una segunda fuente de objetivos ni modifica las metas o aportaciones guardadas.
 
 ## Propuestas de la primera versión
 
@@ -30,7 +32,9 @@ Cada propuesta aporta categoría, explicación, señal de origen (`budget_overru
 
 El usuario puede seleccionar propuestas, editar el porcentaje de reducción y simular combinaciones. Cada categoría puede aparecer una sola vez por escenario para impedir el doble conteo. El motor rechaza categorías no marcadas como flexibles/revisables o con historial insuficiente.
 
-Guardar un escenario conserva solo nombre, periodo, divisa, porcentajes y resultados de la simulación. Aceptar, rechazar o posponer una propuesta conserva una decisión local. Estas acciones son metadatos: no cambian movimientos, asignaciones, objetivos ni compromisos de Actual. La primera versión no aplica automáticamente cambios de presupuesto; por tanto, no ejecuta escrituras financieras ni necesita una previsualización de escritura.
+Guardar un escenario conserva solo nombre, periodo, divisa, porcentajes y resultados de la simulación. La lectura posterior vuelve a calcular su impacto contra la línea base vigente solo cuando coinciden exactamente periodo, divisa y preferencias de categorías. Si ha cambiado la ventana o ya no se pueden reproducir las categorías, la UI conserva el resultado histórico y lo marca como no comparable; no mezcla cifras de periodos distintos. La pantalla compara ahorro neto mensual observado, propuestas individuales, combinaciones simuladas y escenarios guardados reproducibles.
+
+Aceptar, rechazar o posponer una propuesta conserva una decisión local. Estas acciones son metadatos: no cambian movimientos, asignaciones, objetivos ni compromisos de Actual. La primera versión no aplica automáticamente cambios de presupuesto; por tanto, no ejecuta escrituras financieras ni necesita una previsualización de escritura.
 
 ## IA y privacidad
 
