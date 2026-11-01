@@ -2927,7 +2927,8 @@ describe('phase 2 financial utility APIs', () => {
     }));
     const goalImpact = simulation.json().data.goalImpacts[0];
     expect(goalImpact.scenarioMonthlyContributionMinor).toBeGreaterThan(goalImpact.baselineMonthlyContributionMinor);
-    expect(goalImpact.scenarioProjectedBalanceMinor).toBeGreaterThanOrEqual(goalImpact.baselineProjectedBalanceMinor);
+    expect(goalImpact.estimatedMonthlySavingsAllocatedMinor).toBe(simulation.json().data.simulation.estimatedMonthlySavingsMinor);
+    expect(goalImpact.scenarioProjectedBalanceMinor).toBeGreaterThan(goalImpact.baselineProjectedBalanceMinor);
     expect(simulation.json().data.comparison).toMatchObject({
       referenceStartDate: '2026-08-01', referenceEndDate: '2026-10-31',
       improvementMonthlyMinor: simulation.json().data.simulation.estimatedMonthlySavingsMinor,
