@@ -13,7 +13,8 @@ const metricLabels: Record<Metric, string> = {
   overspend_minor: 'Exceso sobre presupuesto',
 };
 function factor(currency: string): number {
-  return 10 ** new Intl.NumberFormat('es-ES', { style: 'currency', currency }).resolvedOptions().maximumFractionDigits;
+  const digits = new Intl.NumberFormat('es-ES', { style: 'currency', currency }).resolvedOptions().maximumFractionDigits ?? 2;
+  return 10 ** digits;
 }
 function thresholdLabel(rule: Rule, currency: string): string {
   return rule.metric === 'percent_used' ? rule.threshold + ' %' : formatMoney(rule.threshold, currency);
@@ -147,7 +148,7 @@ export function BudgetAlertsPanel({ month, currency }: { month: string; currency
               <div className="comparison-row" key={alert.eventId}>
                 <div><strong>{alert.categoryName}</strong><span>{alert.message}</span></div>
                 <div className="comparison-meta">
-                  <span>Observado: {displayObserved(alert)} · Umbral: {thresholdLabel({ categoryId: alert.categoryId, metric: alert.metric, threshold: alert.threshold, enabled: true }, alert.currency)}</span>
+                  <span>Observado: {displayObserved(alert)} · Umbral: {thresholdLabel({ id: alert.ruleId, categoryId: alert.categoryId, metric: alert.metric, threshold: alert.threshold, enabled: true }, alert.currency)}</span>
                   <div className="button-row">
                     <button className="button small" type="button" disabled={busy} onClick={() => void decide(alert, 'snoozed')}>Posponer 7 días</button>
                     <button className="button small" type="button" disabled={busy} onClick={() => void decide(alert, 'dismissed')}>Silenciar periodo</button>

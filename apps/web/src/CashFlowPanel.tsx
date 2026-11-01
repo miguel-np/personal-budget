@@ -26,7 +26,7 @@ interface CashFlowResponse {
 }
 interface ApiPayload<T> { data?: T; error?: { message?: string } }
 function minorFactor(currency: string): number {
-  const digits = new Intl.NumberFormat('es-ES', { style: 'currency', currency }).resolvedOptions().maximumFractionDigits;
+  const digits = new Intl.NumberFormat('es-ES', { style: 'currency', currency }).resolvedOptions().maximumFractionDigits ?? 2;
   return 10 ** digits;
 }
 function parseMajor(value: string, currency: string): number | null {
