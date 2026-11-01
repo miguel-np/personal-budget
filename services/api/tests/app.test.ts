@@ -2577,6 +2577,60 @@ describe('phase 2 financial utility APIs', () => {
     expect(planning.json().data.commitments.some((item: { title: string }) => item.title === 'Compra hipotética')).toBe(false);
   });
 
+  it('separates confirmed recurring commitments from optional recurring-candidate scenarios', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'personal-budget-recurring-cash-flow-'));
+    temporaryDirectories.push(directory);
+    const asOfDate = todayInProcessTimeZone();
+    const recurringTransactions: BudgetTransaction[] = [-90, -60, -30].map((days, index) => ({
+      id: 'streaming-history-' + index,
+      account: 'account-1',
+      currencyCode: 'EUR',
+      date: plusDays(asOfDate, days),
+      amount: -1_200,
+      category: 'food',
+      payee_name: 'Streaming service',
+    }));
+    const repository = createRepository({
+      listTransactions: vi.fn(async () => [...transactions, ...recurringTransactions]),
+    });
+    const app = await createTestApp(repository, { ...config, actualDataDir: directory });
+    const commitment = await app.inject({
+      method: 'POST', url: '/api/v1/planning/commitments',
+      payload: {
+        title: 'Alquiler confirmado', amountMinor: 80_000, date: plusDays(asOfDate, 10),
+        direction: 'expense', frequency: 'monthly',
+      },
+    });
+    expect(commitment.statusCode).toBe(201);
+
+    const base = await app.inject({
+      method: 'POST', url: '/api/v1/cash-flow/project', payload: { horizonDays: 90 },
+    });
+    expect(base.statusCode).toBe(200);
+    const baseData = base.json().data;
+    expect(baseData.confirmedRecurringEvents.length).toBeGreaterThan(0);
+    expect(baseData.confirmedRecurringEvents.every((event: { source: string }) => event.source === 'confirmed_recurring')).toBe(true);
+    const candidate = baseData.recurringCandidates.find((item: { payee: string }) => item.payee === 'Streaming service');
+    expect(candidate).toBeDefined();
+    expect(candidate.upcomingEventsCount).toBeGreaterThan(0);
+    expect(baseData.recurringCandidateEvents.some((event: { candidateId: string }) => event.candidateId === candidate.id)).toBe(true);
+    expect(baseData.projection.sourceTotals.recurring_candidate.eventCount).toBe(0);
+
+    const selected = await app.inject({
+      method: 'POST', url: '/api/v1/cash-flow/project',
+      payload: { horizonDays: 90, recurringCandidateIds: [candidate.id] },
+    });
+    expect(selected.statusCode).toBe(200);
+    expect(selected.json().data.projection.sourceTotals.recurring_candidate.eventCount).toBe(candidate.upcomingEventsCount);
+    expect(selected.json().data.projection.sourceTotals.confirmed_recurring.eventCount).toBe(baseData.confirmedRecurringEvents.length);
+
+    const staleCandidate = await app.inject({
+      method: 'POST', url: '/api/v1/cash-flow/project',
+      payload: { horizonDays: 90, recurringCandidateIds: ['rc_000000000000000000000000'] },
+    });
+    expect(staleCandidate.statusCode).toBe(400);
+  });
+
   it('keeps projected balances and deficit dates unknown if any selected account balance is unavailable', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'personal-budget-cash-flow-'));
     temporaryDirectories.push(directory);
@@ -2643,7 +2697,7 @@ describe('phase 2 financial utility APIs', () => {
     const initial = await app.inject({ method: 'GET', url: '/api/v1/budget-alerts?month=' + alertMonth });
     expect(initial.statusCode).toBe(200);
     expect(initial.json().data.alerts).toEqual([]);
-    expect(initial.json().data.evaluatedAt).toMatch(/^\\d{4}-\\d{2}-\\d{2}T/);
+    expect(initial.json().data.evaluatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 
     const saved = await app.inject({
       method: 'PUT', url: '/api/v1/budget-alerts/rules',
