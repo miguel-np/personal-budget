@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { formatMoney } from './finance-format.js';
 
-type Metric = 'percent_used' | 'remaining_minor' | 'overspend_minor';
+type Metric = 'percent_used' | 'remaining_minor' | 'overspend_minor' | 'overspend_percent';
 interface Rule { id: string; categoryId: string; metric: Metric; threshold: number; enabled: boolean; }
 interface Category { categoryId: string; categoryName: string; budgetedMinor: number | null; spentMinor: number | null; state: 'budgeted' | 'zero' | 'unbudgeted' | 'unknown'; hidden?: boolean; }
 interface Alert { eventId: string; ruleId: string; categoryId: string; categoryName: string; metric: Metric; threshold: number; observedValue: number; month: string; message: string; status: 'active'; currency: string; }
@@ -10,17 +10,18 @@ interface ApiPayload<T> { data?: T; error?: { message?: string } }
 const metricLabels: Record<Metric, string> = {
   percent_used: 'Porcentaje consumido',
   remaining_minor: 'Importe restante o inferior',
-  overspend_minor: 'Exceso sobre presupuesto',
+  overspend_minor: 'Exceso absoluto sobre presupuesto',
+  overspend_percent: 'Exceso relativo sobre presupuesto',
 };
 function factor(currency: string): number {
   const digits = new Intl.NumberFormat('es-ES', { style: 'currency', currency }).resolvedOptions().maximumFractionDigits ?? 2;
   return 10 ** digits;
 }
 function thresholdLabel(rule: Rule, currency: string): string {
-  return rule.metric === 'percent_used' ? rule.threshold + ' %' : formatMoney(rule.threshold, currency);
+  return rule.metric === 'percent_used' || rule.metric === 'overspend_percent' ? rule.threshold + ' %' : formatMoney(rule.threshold, currency);
 }
 function displayObserved(alert: Alert): string {
-  return alert.metric === 'percent_used' ? alert.observedValue + ' %' : formatMoney(alert.observedValue, alert.currency);
+  return alert.metric === 'percent_used' || alert.metric === 'overspend_percent' ? alert.observedValue + ' %' : formatMoney(alert.observedValue, alert.currency);
 }
 function dateAfter(days: number): string {
   const date = new Date(); date.setDate(date.getDate() + days);
@@ -32,6 +33,7 @@ export function BudgetAlertsPanel({ month, currency }: { month: string; currency
   const [categoryId, setCategoryId] = useState('');
   const [metric, setMetric] = useState<Metric>('percent_used');
   const [threshold, setThreshold] = useState('80');
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -54,14 +56,22 @@ export function BudgetAlertsPanel({ month, currency }: { month: string; currency
     const raw = Number(threshold);
     if (!Number.isFinite(raw) || raw < 0) { setError('Introduce un umbral válido.'); return; }
     const activeCurrency = data?.currency ?? currency;
-    const thresholdValue = metric === 'percent_used' ? Math.round(raw) : Math.round(raw * factor(activeCurrency));
-    if (metric === 'percent_used' && (thresholdValue < 1 || thresholdValue > 500)) { setError('El porcentaje debe estar entre 1 % y 500 %.'); return; }
+    const percentageMetric = metric === 'percent_used' || metric === 'overspend_percent';
+    const thresholdValue = percentageMetric ? Math.round(raw) : Math.round(raw * factor(activeCurrency));
+    if (percentageMetric && (thresholdValue < 1 || thresholdValue > 500)) { setError('El porcentaje debe estar entre 1 % y 500 %.'); return; }
     if (metric === 'overspend_minor' && thresholdValue < 1) { setError('El umbral de exceso debe ser mayor que cero.'); return; }
     if (!Number.isSafeInteger(thresholdValue)) { setError('El umbral supera el rango permitido.'); return; }
-    if (rules.some((rule) => rule.categoryId === categoryId && rule.metric === metric)) {
+    if (rules.some((rule) => rule.id !== editingRuleId && rule.categoryId === categoryId && rule.metric === metric)) {
       setError('Ya existe una regla para esa categoría y métrica.'); return;
     }
-    setRules((current) => [...current, { id: crypto.randomUUID(), categoryId, metric, threshold: thresholdValue, enabled: true }]);
+    if (editingRuleId) {
+      setRules((current) => current.map((rule) => rule.id === editingRuleId
+        ? { ...rule, id: crypto.randomUUID(), categoryId, metric, threshold: thresholdValue }
+        : rule));
+      setEditingRuleId(null);
+    } else {
+      setRules((current) => [...current, { id: crypto.randomUUID(), categoryId, metric, threshold: thresholdValue, enabled: true }]);
+    }
     setError('');
   }
 
@@ -115,7 +125,15 @@ export function BudgetAlertsPanel({ month, currency }: { month: string; currency
                   <div><strong>{category?.categoryName ?? rule.categoryId}</strong><span>{metricLabels[rule.metric]} · {thresholdLabel(rule, data.currency)}</span></div>
                   <div className="comparison-meta">
                     <label className="field-label compact-label"><input type="checkbox" checked={rule.enabled} onChange={(event) => setRules((current) => current.map((item) => item.id === rule.id ? { ...item, enabled: event.currentTarget.checked } : item))} /> Regla activa</label>
-                    <button className="button small" type="button" disabled={busy} onClick={() => setRules((current) => current.filter((item) => item.id !== rule.id))}>Eliminar</button>
+                    <button className="button small" type="button" disabled={busy} onClick={() => {
+                      setEditingRuleId(rule.id); setCategoryId(rule.categoryId); setMetric(rule.metric);
+                      setThreshold(rule.metric === 'percent_used' || rule.metric === 'overspend_percent' ? String(rule.threshold) : String(rule.threshold / factor(data.currency)));
+                      setError('');
+                    }}>Editar</button>
+                    <button className="button small" type="button" disabled={busy} onClick={() => {
+                      setRules((current) => current.filter((item) => item.id !== rule.id));
+                      if (editingRuleId === rule.id) setEditingRuleId(null);
+                    }}>Eliminar</button>
                   </div>
                 </div>
               );
@@ -132,12 +150,13 @@ export function BudgetAlertsPanel({ month, currency }: { month: string; currency
                   {Object.entries(metricLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
                 </select>
               </label>
-              <label className="field-label">Umbral {metric === 'percent_used' ? '(%)' : '(' + currency + ')'}
-                <input type="number" min="0" step={metric === 'percent_used' ? '1' : '0.01'} value={threshold} onChange={(event) => setThreshold(event.currentTarget.value)} />
+              <label className="field-label">Umbral {metric === 'percent_used' || metric === 'overspend_percent' ? '(%)' : '(' + (data.currency ?? currency) + ')'}
+                <input type="number" min="0" step={metric === 'percent_used' || metric === 'overspend_percent' ? '1' : '0.01'} value={threshold} onChange={(event) => setThreshold(event.currentTarget.value)} />
               </label>
             </div>
             <div className="button-row">
-              <button className="button secondary" type="button" disabled={busy} onClick={addRule}>Añadir regla</button>
+              <button className="button secondary" type="button" disabled={busy} onClick={addRule}>{editingRuleId ? 'Actualizar regla' : 'Añadir regla'}</button>
+              {editingRuleId ? <button className="button small" type="button" disabled={busy} onClick={() => setEditingRuleId(null)}>Cancelar edición</button> : null}
               <button className="button primary" type="button" disabled={busy} onClick={() => void saveRules()}>{busy ? 'Guardando…' : 'Guardar reglas'}</button>
             </div>
           </div>

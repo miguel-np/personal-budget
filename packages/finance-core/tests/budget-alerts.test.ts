@@ -17,6 +17,16 @@ describe('budget alert evaluation', () => {
     expect(alerts).toHaveLength(2);
     expect(alerts.map((alert) => alert.observedValue)).toEqual([90, 2_000]);
   });
+  it('detects relative overspend only when the assigned budget is positive', () => {
+    const alerts = evaluateBudgetAlertRules([
+      { id: 'relative', categoryId: 'food', metric: 'overspend_percent', threshold: 10, enabled: true },
+      { id: 'zero', categoryId: 'zero', metric: 'overspend_percent', threshold: 1, enabled: true },
+    ], categories, '2026-11');
+    expect(alerts).toHaveLength(0);
+    const overBudget = [{ ...categories[0]!, spentMinor: 24_000 }];
+    const crossed = evaluateBudgetAlertRules([{ id: 'relative', categoryId: 'food', metric: 'overspend_percent', threshold: 10, enabled: true }], overBudget, '2026-11');
+    expect(crossed[0]).toMatchObject({ observedValue: 20, metric: 'overspend_percent' });
+  });
   it('supports explicit zero allocations for overspend but skips missing/hidden budgets', () => {
     const alerts = evaluateBudgetAlertRules([
       { id: 'zero', categoryId: 'zero', metric: 'overspend_minor', threshold: 1_000, enabled: true },
@@ -30,6 +40,7 @@ describe('budget alert evaluation', () => {
     expect(evaluateBudgetAlertRules([{ id: 'x', categoryId: 'food', metric: 'percent_used', threshold: 100, enabled: false }], categories, '2026-11')).toEqual([]);
     expect(() => evaluateBudgetAlertRules([{ id: 'x', categoryId: 'food', metric: 'percent_used', threshold: -1, enabled: true }], categories, '2026-11')).toThrow(/threshold/);
     expect(() => evaluateBudgetAlertRules([{ id: 'high', categoryId: 'food', metric: 'percent_used', threshold: 501, enabled: true }], categories, '2026-11')).toThrow(/between 1 and 500/);
+    expect(() => evaluateBudgetAlertRules([{ id: 'high-relative', categoryId: 'food', metric: 'overspend_percent', threshold: 501, enabled: true }], categories, '2026-11')).toThrow(/between 1 and 500/);
     expect(() => evaluateBudgetAlertRules([{ id: 'zero', categoryId: 'food', metric: 'overspend_minor', threshold: 0, enabled: true }], categories, '2026-11')).toThrow(/greater than zero/);
     expect(() => evaluateBudgetAlertRules([], categories, '2026-13')).toThrow(/YYYY-MM/);
   });

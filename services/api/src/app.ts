@@ -294,7 +294,10 @@ const BudgetImprovementPreferencesRequestSchema = z.object({
   categories: z.array(z.object({
     categoryId: z.string().trim().min(1).max(128),
     classification: z.enum(['unclassified', 'essential', 'protected', 'flexible', 'reviewable']),
-  }).strict()).max(500),
+  }).strict().superRefine((rule, context) => {
+    if ((rule.metric === 'percent_used' || rule.metric === 'overspend_percent') && (rule.threshold < 1 || rule.threshold > 500)) context.addIssue({ code: 'custom', path: ['threshold'], message: 'Percentage threshold must be between 1 and 500.' });
+    if (rule.metric === 'overspend_minor' && rule.threshold < 1) context.addIssue({ code: 'custom', path: ['threshold'], message: 'Overspend threshold must be greater than zero.' });
+  })).max(500),
 }).strict().superRefine((value, context) => {
   const ids = new Set<string>();
   value.categories.forEach((item, index) => {
@@ -326,10 +329,17 @@ const BudgetAlertRulesRequestSchema = z.object({
   rules: z.array(z.object({
     id: z.string().uuid().optional(),
     categoryId: z.string().trim().min(1).max(128),
-    metric: z.enum(['percent_used', 'remaining_minor', 'overspend_minor']),
+    metric: z.enum(['percent_used', 'remaining_minor', 'overspend_minor', 'overspend_percent']),
     threshold: SafeMinorAmountSchema.nonnegative().max(1_000_000_000_000),
     enabled: z.boolean().default(true),
-  }).strict()).max(500),
+  }).strict().superRefine((rule, context) => {
+    if ((rule.metric === 'percent_used' || rule.metric === 'overspend_percent') && (rule.threshold < 1 || rule.threshold > 500)) {
+      context.addIssue({ code: 'custom', path: ['threshold'], message: 'Percentage threshold must be between 1 and 500.' });
+    }
+    if (rule.metric === 'overspend_minor' && rule.threshold < 1) {
+      context.addIssue({ code: 'custom', path: ['threshold'], message: 'Overspend threshold must be greater than zero.' });
+    }
+  })).max(500),
 }).strict().superRefine((value, context) => {
   const keys = new Set<string>();
   value.rules.forEach((rule, index) => {

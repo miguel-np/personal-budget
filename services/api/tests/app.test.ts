@@ -2632,9 +2632,9 @@ describe('phase 2 financial utility APIs', () => {
         month,
         categoryGroups: [{
           id: 'spend', name: 'Gastos', is_income: false,
-          categories: [{ id: 'food', name: 'Alimentación', budgeted: 100_000, spent: -95_000, balance: 5_000 }],
+          categories: [{ id: 'food', name: 'Alimentación', budgeted: 100_000, spent: -120_000, balance: -20_000 }],
         }],
-        totalBudgeted: 100_000, totalSpent: -95_000, totalBalance: 5_000,
+        totalBudgeted: 100_000, totalSpent: -120_000, totalBalance: -20_000,
       })),
       getBudgetAllocations: vi.fn(async () => [{ categoryId: 'food', amountMinor: 100_000 }]),
     }) as BudgetRepository;
@@ -2646,15 +2646,19 @@ describe('phase 2 financial utility APIs', () => {
 
     const saved = await app.inject({
       method: 'PUT', url: '/api/v1/budget-alerts/rules',
-      payload: { rules: [{ categoryId: 'food', metric: 'percent_used', threshold: 90, enabled: true }] },
+      payload: { rules: [
+        { categoryId: 'food', metric: 'percent_used', threshold: 90, enabled: true },
+        { categoryId: 'food', metric: 'overspend_percent', threshold: 10, enabled: true },
+      ] },
     });
     expect(saved.statusCode).toBe(200);
     const active = await app.inject({ method: 'GET', url: '/api/v1/budget-alerts?month=' + alertMonth });
     expect(active.statusCode).toBe(200);
-    expect(active.json().data.alerts).toHaveLength(1);
-    expect(active.json().data.alerts[0].observedValue).toBe(95);
+    expect(active.json().data.alerts).toHaveLength(2);
+    expect(active.json().data.alerts.find((item: { metric: string }) => item.metric === 'percent_used')?.observedValue).toBe(120);
+    expect(active.json().data.alerts.find((item: { metric: string }) => item.metric === 'overspend_percent')?.observedValue).toBe(20);
 
-    const event = active.json().data.alerts[0];
+    const event = active.json().data.alerts.find((item: { metric: string }) => item.metric === 'percent_used');
     const dismissed = await app.inject({
       method: 'PATCH', url: '/api/v1/budget-alerts/events/' + event.eventId,
       payload: { ruleId: event.ruleId, categoryId: event.categoryId, month: event.month, status: 'dismissed' },
@@ -2662,7 +2666,8 @@ describe('phase 2 financial utility APIs', () => {
     expect(dismissed.statusCode).toBe(200);
     const after = await app.inject({ method: 'GET', url: '/api/v1/budget-alerts?month=' + alertMonth });
     expect(after.statusCode).toBe(200);
-    expect(after.json().data.alerts).toEqual([]);
+    expect(after.json().data.alerts).toHaveLength(1);
+    expect(after.json().data.alerts[0].metric).toBe('overspend_percent');
 
     const invalidRule = await app.inject({
       method: 'PUT', url: '/api/v1/budget-alerts/rules',

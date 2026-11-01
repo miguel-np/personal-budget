@@ -8,7 +8,7 @@ const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const BudgetAlertRuleSchema = z.object({
   id: z.string().uuid(),
   categoryId: z.string().trim().min(1).max(128),
-  metric: z.enum(['percent_used', 'remaining_minor', 'overspend_minor']),
+  metric: z.enum(['percent_used', 'remaining_minor', 'overspend_minor', 'overspend_percent']),
   threshold: safeNonNegative.max(1_000_000_000_000),
   enabled: z.boolean(),
 }).strict();

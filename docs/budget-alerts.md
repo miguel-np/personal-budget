@@ -11,6 +11,7 @@ Cada regla se asocia a una categoría de gasto, periodo mensual y métrica:
 | Métrica | Umbral | Activación |
 |---|---|---|
 | Porcentaje consumido | 1–500 % | Gasto / asignación explícita × 100 alcanza o supera el umbral. |
+| Exceso relativo sobre presupuesto | 1–500 % | (Gasto − asignación) / asignación × 100 alcanza o supera el umbral; solo cuando la asignación es positiva. |
 | Importe restante | Importe en unidades menores, >= 0 | Asignación menos gasto es igual o inferior al umbral. |
 | Exceso sobre presupuesto | Importe en unidades menores, > 0 | Gasto supera la asignación al menos en el umbral. |
 
@@ -18,13 +19,13 @@ Las reglas usan la misma respuesta presupuestaria de Actual que la pantalla de P
 
 ## Datos ausentes y casos límite
 
-La API distingue asignación positiva, asignación explícita cero, categoría sin asignación y dato desconocido cuando la versión del adaptador proporciona filas de asignación explícitas. Las reglas de porcentaje no dividen por cero. Una asignación cero puede producir una alerta de exceso si hay gasto y la regla de exceso tiene un umbral positivo. Categorías sin asignación explícita, desconocidas u ocultas se omiten; no se inventa presupuesto cero.
+La API distingue asignación positiva, asignación explícita cero, categoría sin asignación y dato desconocido cuando la versión del adaptador proporciona filas de asignación explícitas. Las reglas de porcentaje no dividen por cero. Una asignación cero puede producir una alerta de exceso absoluto si hay gasto y la regla de exceso tiene un umbral positivo. La desviación relativa no se calcula con presupuesto cero, para evitar dividir por cero. Categorías sin asignación explícita, desconocidas u ocultas se omiten; no se inventa presupuesto cero.
 
 ## Deduplicación y decisiones
 
 La identidad del evento se deriva de regla + categoría + mes. Reconsultar Presupuestos no crea avisos duplicados para el mismo cruce. El usuario puede silenciar el aviso para ese periodo o posponerlo (7 días en la UI; la API limita el aplazamiento a 90 días). El aviso vuelve a mostrarse al expirar el aplazamiento, salvo que se silencie. Un periodo nuevo tiene una identidad nueva.
 
-Eliminar o reemplazar reglas retira las decisiones de eventos vinculadas a reglas que dejan de existir. Las reglas desactivadas no disparan alertas.
+Las reglas se pueden crear, editar, activar/desactivar y eliminar. Al editar una regla se genera una nueva identidad; las decisiones de la regla anterior no se heredan a un umbral distinto. Eliminar o reemplazar reglas retira las decisiones de eventos vinculadas a reglas que dejan de existir. Las reglas desactivadas no disparan alertas.
 
 ## API y almacenamiento
 
