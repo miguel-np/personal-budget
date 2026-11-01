@@ -2905,6 +2905,53 @@ describe('phase 2 financial utility APIs', () => {
     expect(response.json().data.proposals.some((proposal: { categoryId: string }) => proposal.categoryId === 'protected-spend')).toBe(false);
   });
 
+  it('links budget improvement analysis to saved savings goals in the same currency and account scope', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'personal-budget-improvement-goal-context-'));
+    temporaryDirectories.push(directory);
+    const today = todayInProcessTimeZone();
+    const targetDate = plusDays(today, 180);
+    const app = await createTestApp(createRepository(), { ...config, actualDataDir: directory });
+    const goal = await app.inject({
+      method: 'POST', url: '/api/v1/planning/goals',
+      payload: {
+        name: 'Fondo de emergencia', targetAmountMinor: 500_000,
+        initialAmountMinor: 100_000, monthlyContributionMinor: 20_000, targetDate,
+      },
+    });
+    expect(goal.statusCode).toBe(201);
+    const savedGoal = goal.json().data;
+    const preferences = await app.inject({
+      method: 'PUT', url: '/api/v1/budget-improvements/preferences',
+      payload: { goal: 'reach_savings_goal', categories: [{ categoryId: 'food', classification: 'flexible' }] },
+    });
+    expect(preferences.statusCode).toBe(200);
+    const response = await app.inject({ method: 'GET', url: '/api/v1/budget-improvements?periodMonths=6' });
+    expect(response.statusCode).toBe(200);
+    const context = response.json().data;
+    expect(context.savingsGoalContextStatus).toBe('ready');
+    expect(context.savingsGoals).toContainEqual(expect.objectContaining({
+      id: savedGoal.id, name: 'Fondo de emergencia', targetAmountMinor: 500_000,
+      monthlyContributionMinor: 20_000, currency: 'EUR', scopeMatches: true, currencyMatches: true,
+      projection: expect.objectContaining({
+        requiredMonthlyContributionMinor: expect.any(Number),
+        projectedBalanceMinor: expect.any(Number),
+        projectedProgressPercent: expect.any(Number),
+      }),
+    }));
+
+    const reviewScope = await app.inject({
+      method: 'PUT', url: '/api/v1/preferences/accounts',
+      payload: { mode: 'selected', accountIds: ['account-1'] },
+    });
+    expect(reviewScope.statusCode).toBe(200);
+    const scoped = await app.inject({ method: 'GET', url: '/api/v1/budget-improvements?periodMonths=6' });
+    expect(scoped.statusCode).toBe(200);
+    expect(scoped.json().data.savingsGoals.find((item: { id: string }) => item.id === savedGoal.id)).toMatchObject({
+      scopeMatches: false, projection: null,
+    });
+    expect(scoped.json().data.savingsGoalContextStatus).toBe('review_required');
+  });
+
   it('evaluates budget rules once per month and supports dismissing the event', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'personal-budget-alerts-'));
     temporaryDirectories.push(directory);

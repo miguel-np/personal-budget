@@ -920,6 +920,7 @@ test('budget improvement preferences, proposals, combined simulation and saved s
     }] : [],
     categoryChoices: [{ categoryId: 'flex', categoryName: 'Gasto flexible sintético', classification }],
     goal: 'increase_monthly_margin', decisions: [], scenarios: savedScenarios, warnings: [],
+    savingsGoals: [], savingsGoalContextStatus: 'not_configured', savingsGoalContextWarnings: [],
   });
 
   await page.route('**/api/v1/budget-improvements**', async (route) => {

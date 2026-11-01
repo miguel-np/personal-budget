@@ -26,10 +26,23 @@ interface Scenario {
   estimatedMonthlySavingsMinor: number; estimatedAnnualSavingsMinor: number; createdAt: string;
 }
 interface Decision { proposalId: string; status: 'accepted' | 'rejected' | 'postponed'; updatedAt: string; }
+interface SavingsGoalProjection {
+  requiredMonthlyContributionMinor: number | null; progressPercent: number; projectedProgressPercent: number;
+  projectedBalanceMinor: number; achievableUnderCashFlow: boolean; estimatedCompletionDate: string | null;
+  maximumAchievableBalanceMinor: number; months: number; warnings: readonly string[];
+}
+interface SavingsGoalContext {
+  id: string; name: string; targetDate: string; targetAmountMinor: number; initialAmountMinor: number;
+  monthlyContributionMinor: number; currency: string; status: 'active' | 'paused';
+  scopeMatches: boolean; currencyMatches: boolean; projection: SavingsGoalProjection | null; warnings: readonly string[];
+}
 interface Analysis {
   asOfDate: string; currency: string; baseline: Baseline; proposals: readonly Proposal[];
   categoryChoices: readonly CategoryChoice[]; goal: Goal; decisions: readonly Decision[];
   scenarios: readonly Scenario[]; warnings: readonly string[];
+  savingsGoals: readonly SavingsGoalContext[];
+  savingsGoalContextStatus: 'ready' | 'review_required' | 'not_configured';
+  savingsGoalContextWarnings: readonly string[];
 }
 interface Simulation {
   estimatedMonthlySavingsMinor: number; estimatedAnnualSavingsMinor: number;
@@ -179,6 +192,33 @@ export function BudgetImprovementPanel({ currency }: { currency: string }) {
             <article className={'stat-card ' + (analysis.baseline.monthlySavingsMinor < 0 ? 'negative' : 'positive')}><p>Ahorro neto mensual observado</p><strong>{formatMoney(analysis.baseline.monthlySavingsMinor, currency)}</strong></article>
           </div>
           <p className="section-footnote">Periodo {analysis.baseline.startDate} — {analysis.baseline.endDate} · {analysis.baseline.transactionCount} movimientos · tasa de ahorro {analysis.baseline.savingsRatePercent === null ? 'no calculable' : analysis.baseline.savingsRatePercent.toFixed(1) + ' %'} · {analysis.baseline.unconvertedTransactionCount} movimientos sin conversión válida.</p>
+          {goal === 'reach_savings_goal' ? (
+            <div className="suggestion-block">
+              <h4>Objetivos de ahorro vinculados</h4>
+              <p className="section-footnote">La proyección reutiliza los objetivos y compromisos guardados en Planificación, en la misma divisa y ámbito de cuentas. Los recortes propuestos siguen siendo hipótesis independientes; no se aplican automáticamente a tu objetivo.</p>
+              {analysis.savingsGoalContextStatus === 'not_configured' ? <p className="muted-copy">No hay objetivos guardados. Crea uno en Objetivos para comparar el ahorro hipotético con una meta y una fecha concretas.</p> : null}
+              {analysis.savingsGoalContextStatus === 'review_required' ? <p className="form-alert warning" role="note">Hay objetivos guardados, pero ninguno coincide con el ámbito, la divisa o una fecha utilizable. Revísalos en Objetivos antes de usarlos en la simulación.</p> : null}
+              {analysis.savingsGoals.map((savedGoal) => (
+                <div className="comparison-row" key={savedGoal.id}>
+                  <div>
+                    <strong>{savedGoal.name}</strong>
+                    <span>Meta: {formatMoney(savedGoal.targetAmountMinor, savedGoal.currency)} · fecha objetivo {savedGoal.targetDate}</span>
+                    <span>Aportación mensual planificada: {formatMoney(savedGoal.monthlyContributionMinor, savedGoal.currency)}</span>
+                  </div>
+                  <div className="comparison-meta">
+                    {savedGoal.projection ? <>
+                      <span>Necesaria para alcanzar la meta: {savedGoal.projection.requiredMonthlyContributionMinor === null ? 'No calculable con el plazo restante' : formatMoney(savedGoal.projection.requiredMonthlyContributionMinor, savedGoal.currency) + ' / mes'}.</span>
+                      <span>Saldo proyectado con el plan actual: {formatMoney(savedGoal.projection.projectedBalanceMinor, savedGoal.currency)} ({savedGoal.projection.projectedProgressPercent.toFixed(1)} % del objetivo).</span>
+                      <span>Capacidad de caja máxima observada: {savedGoal.projection.achievableUnderCashFlow ? 'compatible con el flujo estimado' : 'insuficiente según el flujo estimado'}.</span>
+                      <span>{savedGoal.projection.estimatedCompletionDate ? 'Fecha estimada de consecución: ' + savedGoal.projection.estimatedCompletionDate : 'No se estima una fecha de consecución con la aportación actual.'}</span>
+                    </> : <span className="warning-text">Sin proyección para la divisa, ámbito, estado o fecha actuales.</span>}
+                    {savedGoal.warnings.map((warning) => <span className="warning-text" key={warning}>{warning}</span>)}
+                  </div>
+                </div>
+              ))}
+              {analysis.savingsGoalContextWarnings.map((warning) => <p className="form-alert warning" role="note" key={warning}>{warning}</p>)}
+            </div>
+          ) : null}
           <div className="suggestion-block">
             <h4>Clasificación de prioridades</h4>
             <p className="section-footnote">La clasificación es una decisión tuya. Solo Flexible y Revisable pueden generar propuestas de reducción.</p>

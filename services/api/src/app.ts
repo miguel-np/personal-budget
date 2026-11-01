@@ -3339,6 +3339,37 @@ function monthsBefore(date: string, months: number): string {
       .filter((item) => item.classification !== 'unclassified')
       .map((item) => ({ categoryId: item.categoryId, classification: item.classification as BudgetCategoryClassification }));
     const proposals = buildBudgetImprovementProposals(baseline, corePreferences, actionState.budgetImprovements.goal);
+    const compatibleCommitments = planningData.commitments.filter((item) =>
+      item.status === 'active' && item.currency === preferences.displayCurrency && planningScopeMatches(item.scope, accountPreference),
+    ).map(toPlanningCommitment);
+    const savingsGoals = planningData.goals.map((goal) => {
+      const scopeMatches = planningScopeMatches(goal.scope, accountPreference);
+      const currencyMatches = goal.currency === preferences.displayCurrency;
+      const goalWarnings: string[] = [];
+      if (!scopeMatches) goalWarnings.push('El ámbito guardado del objetivo ha cambiado; revísalo desde Objetivos antes de usarlo para esta simulación.');
+      if (!currencyMatches) goalWarnings.push('La divisa guardada del objetivo no coincide con la divisa de análisis; no se convierten importes automáticamente.');
+      if (goal.targetDate <= asOfDate) goalWarnings.push('La fecha objetivo ya ha pasado; actualiza el objetivo para proyectarlo.');
+      const projection = goal.status === 'active' && scopeMatches && currencyMatches && goal.targetDate > asOfDate
+        ? projectSavingsGoal({
+            asOfDate, targetDate: goal.targetDate, targetAmountMinor: goal.targetAmountMinor,
+            initialAmountMinor: goal.initialAmountMinor, monthlyContributionMinor: goal.monthlyContributionMinor,
+            currency: preferences.displayCurrency,
+            monthlyIncomeMinor: goal.monthlyIncomeMinor ?? baseline.monthlyIncomeMinor,
+            monthlyExpenseMinor: goal.monthlyExpenseMinor ?? baseline.monthlyExpenseMinor,
+            commitments: compatibleCommitments,
+          })
+        : null;
+      return {
+        id: goal.id, name: goal.name, targetDate: goal.targetDate,
+        targetAmountMinor: goal.targetAmountMinor, initialAmountMinor: goal.initialAmountMinor,
+        monthlyContributionMinor: goal.monthlyContributionMinor, currency: goal.currency,
+        status: goal.status, scopeMatches, currencyMatches, projection, warnings: goalWarnings,
+      };
+    });
+    const savingsGoalContextStatus = savingsGoals.some((goal) => goal.projection !== null)
+      ? 'ready'
+      : savingsGoals.length > 0 ? 'review_required' : 'not_configured';
+    const savingsGoalContextWarnings = savingsGoals.flatMap((goal) => goal.warnings.map((warning) => goal.name + ': ' + warning));
     const categoryChoices = categories.filter((category) => !category.isIncome).map((category) => ({
       categoryId: category.id,
       categoryName: category.name,
@@ -3347,7 +3378,7 @@ function monthsBefore(date: string, months: number): string {
     return {
       asOfDate, currency: preferences.displayCurrency, accountScope: scope.metadata, baseline,
       categoryBreakdown, recurringCandidates, commitments: activeCommitments,
-      proposals, corePreferences, categoryChoices,
+      proposals, corePreferences, categoryChoices, savingsGoals, savingsGoalContextStatus, savingsGoalContextWarnings,
       goal: actionState.budgetImprovements.goal,
       decisions: actionState.budgetImprovements.decisions,
       scenarios: actionState.budgetImprovements.scenarios,
