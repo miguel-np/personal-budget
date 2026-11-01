@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import Fastify, { LogController, type FastifyInstance, type FastifyReply, type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import helmet from '@fastify/helmet';
-import { buildFinancialAnomalyFindings, buildPeriodChangeFindings, buildUncategorizedFinding, calculateSummary, convertAmountMinor, createFinancialFinding, detectRecurringCandidates, estimatePlanningCashFlow, expandCommitmentOccurrences, isIsoDate, normalizeCurrencyCode, normalizeTransactions, projectSavings, projectSavingsGoal, sortFinancialFindings, suggestCategories, validatePeriod } from '@personal-budget/finance-core';
-import type { BudgetRepository, BudgetTransaction, CategorySuggestion as CoreCategorySuggestion, FinancialFinding, FindingPriority, ForecastScenario, PlanningCommitment, TransactionCategoryBatchChange, TransactionStructureUpdate } from '@personal-budget/finance-core';
+import { buildFinancialAnomalyFindings, buildPeriodChangeFindings, buildUncategorizedFinding, buildBudgetImprovementProposals, calculateSummary, convertAmountMinor, createFinancialFinding, detectRecurringCandidates, estimatePlanningCashFlow, evaluateBudgetAlertRules, expandCommitmentOccurrences, isIsoDate, normalizeCurrencyCode, normalizeTransactions, projectCashFlow, projectSavings, projectSavingsGoal, simulateBudgetImprovement, sortFinancialFindings, suggestCategories, validatePeriod } from '@personal-budget/finance-core';
+import type { BudgetAlertCategory, BudgetAlertRule, BudgetImprovementCategoryPreference, CashFlowEvent, BudgetCategoryClassification, BudgetRepository, BudgetTransaction, CategorySuggestion as CoreCategorySuggestion, FinancialFinding, FindingPriority, ForecastScenario, PlanningCommitment, TransactionCategoryBatchChange, TransactionStructureUpdate } from '@personal-budget/finance-core';
 import { ActualAdapterError } from '@personal-budget/actual-adapter';
 import type { ActualBudgetMonthRecord, ActualImportRecord, ActualImportResult } from '@personal-budget/actual-adapter';
 import { z, ZodError } from 'zod';
@@ -18,6 +18,7 @@ import { PlanningCommitmentInputSchema, PlanningGoalInputSchema, readPlanningDat
 import type { StoredPlanningCommitment } from './planning-store.js';
 import { effectiveFindingReview, readFindingReviewState, updateFindingReviewState } from './intelligence-store.js';
 import { createPeriodicReview, readPeriodicReviewState, updatePeriodicReviewItem } from './periodic-review-store.js';
+import { readFinancialActionState, updateFinancialActionState } from './financial-actions-store.js';
 
 
 const TransactionQuerySchema = z.object({
@@ -278,6 +279,75 @@ const PlanningIntentDraftSchema = z.object({
   clarificationQuestion: z.string().trim().min(1).max(240).nullable(),
 }).strict();
 
+const CashFlowRequestSchema = z.object({
+  horizonDays: z.union([z.literal(7), z.literal(30), z.literal(90)]).default(30),
+  reserveMinor: SafeMinorAmountSchema.nonnegative().optional(),
+  scenario: z.object({
+    date: z.string().refine(isIsoDate),
+    amountMinor: SafeMinorAmountSchema.positive(),
+    direction: z.enum(['income', 'expense']),
+    label: z.string().trim().min(1).max(100),
+  }).strict().optional(),
+}).strict();
+const BudgetImprovementPreferencesRequestSchema = z.object({
+  goal: z.enum(['increase_monthly_margin', 'reduce_variable_spending', 'reach_savings_goal', 'free_cash_flow']),
+  categories: z.array(z.object({
+    categoryId: z.string().trim().min(1).max(128),
+    classification: z.enum(['unclassified', 'essential', 'protected', 'flexible', 'reviewable']),
+  }).strict()).max(500),
+}).strict().superRefine((value, context) => {
+  const ids = new Set<string>();
+  value.categories.forEach((item, index) => {
+    if (ids.has(item.categoryId)) context.addIssue({ code: 'custom', path: ['categories', index, 'categoryId'], message: 'Category preferences must be unique.' });
+    ids.add(item.categoryId);
+  });
+});
+const BudgetImprovementSimulationRequestSchema = z.object({
+  periodMonths: z.union([z.literal(3), z.literal(6), z.literal(12)]).default(6),
+  reductions: z.array(z.object({
+    categoryId: z.string().trim().min(1).max(128),
+    reductionPercent: z.number().int().min(1).max(100),
+  }).strict()).max(100),
+}).strict().superRefine((value, context) => {
+  const ids = new Set<string>();
+  value.reductions.forEach((item, index) => {
+    if (ids.has(item.categoryId)) context.addIssue({ code: 'custom', path: ['reductions', index, 'categoryId'], message: 'A category can only appear once in a combined scenario.' });
+    ids.add(item.categoryId);
+  });
+});
+const BudgetImprovementScenarioRequestSchema = BudgetImprovementSimulationRequestSchema.extend({
+  name: z.string().trim().min(1).max(80),
+}).strict();
+const BudgetImprovementDecisionRequestSchema = z.object({
+  proposalId: z.string().trim().min(1).max(256),
+  status: z.enum(['accepted', 'rejected', 'postponed']),
+}).strict();
+const BudgetAlertRulesRequestSchema = z.object({
+  rules: z.array(z.object({
+    id: z.string().uuid().optional(),
+    categoryId: z.string().trim().min(1).max(128),
+    metric: z.enum(['percent_used', 'remaining_minor', 'overspend_minor']),
+    threshold: SafeMinorAmountSchema.nonnegative().max(1_000_000_000_000),
+    enabled: z.boolean().default(true),
+  }).strict()).max(500),
+}).strict().superRefine((value, context) => {
+  const keys = new Set<string>();
+  value.rules.forEach((rule, index) => {
+    const key = rule.categoryId + ':' + rule.metric;
+    if (keys.has(key)) context.addIssue({ code: 'custom', path: ['rules', index], message: 'Only one active rule per category and metric is supported.' });
+    keys.add(key);
+  });
+});
+const BudgetAlertEventDecisionSchema = z.object({
+  ruleId: z.string().uuid(),
+  categoryId: z.string().trim().min(1).max(128),
+  month: PlanningMonthSchema,
+  status: z.enum(['dismissed', 'snoozed']),
+  snoozedUntil: z.string().refine(isIsoDate).optional(),
+}).strict().superRefine((value, context) => {
+  if (value.status === 'snoozed' && !value.snoozedUntil) context.addIssue({ code: 'custom', path: ['snoozedUntil'], message: 'Choose an expiry date when postponing an alert.' });
+  if (value.status === 'dismissed' && value.snoozedUntil) context.addIssue({ code: 'custom', path: ['snoozedUntil'], message: 'Dismissed alerts cannot include a snooze expiry.' });
+});
 const DeletePlanningDataRequestSchema = z.object({ confirmation: z.literal('DELETE_PLANNING_DATA') }).strict();
 const AssistantRequestSchema = z.object({
   question: z.string().trim().min(1).max(2_000),
@@ -2935,6 +3005,445 @@ function monthsBefore(date: string, months: number): string {
     } finally {
       request.raw.removeListener('aborted', abortRequest);
       reply.raw.removeListener('close', abortResponse);
+    }
+  });
+
+  function addCivilDays(date: string, days: number): string {
+    const value = new Date(date + 'T00:00:00.000Z');
+    value.setUTCDate(value.getUTCDate() + days);
+    return value.toISOString().slice(0, 10);
+  }
+
+  function normalizedActionLabel(value: string): string {
+    return value.normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '').toLocaleLowerCase('es').replace(/[^a-z0-9]+/g, ' ').trim();
+  }
+
+  app.post('/api/v1/cash-flow/project', async (request, reply) => {
+    try {
+      const parsed = CashFlowRequestSchema.parse(request.body);
+      const asOfDate = civilDateInTimeZone(config.timeZone);
+      const endDate = addCivilDays(asOfDate, parsed.horizonDays);
+      const [accounts, categories, preferences, accountPreference, planning] = await Promise.all([
+        repository.listAccounts(), repository.listCategories(), currencyPreferences(), accountScopePreference(),
+        readPlanningData(config.actualDataDir),
+      ]);
+      const scope = resolveAccountScope(accounts, accountPreference);
+      const unknownOpeningAccounts: { id: string; name: string }[] = [];
+      let openingBalanceMinor = 0;
+      let openingKnown = scope.accounts.length > 0;
+      for (const account of scope.accounts) {
+        const nativeCurrency = accountNativeCurrency(account, preferences);
+        if (account.currentBalanceMinor === null || nativeCurrency === null) {
+          openingKnown = false;
+          unknownOpeningAccounts.push({ id: account.id, name: account.name });
+          continue;
+        }
+        const conversion = convertAmountMinor(account.currentBalanceMinor, nativeCurrency, preferences.displayCurrency, asOfDate, preferences.exchangeRates);
+        if (conversion.amountMinor === null) {
+          openingKnown = false;
+          unknownOpeningAccounts.push({ id: account.id, name: account.name });
+          continue;
+        }
+        openingBalanceMinor += conversion.amountMinor;
+        if (!Number.isSafeInteger(openingBalanceMinor)) throw new RangeError('The consolidated opening balance exceeds the supported integer range.');
+      }
+      const rawFutureTransactions = await transactionsForAccounts(scope.accounts, asOfDate, endDate, preferences);
+      const convertedFuture = convertTransactionsForAnalysis(rawFutureTransactions, preferences);
+      const ledgerEntries = normalizeTransactions(convertedFuture.transactions);
+      const actualEvents: CashFlowEvent[] = ledgerEntries
+        .filter((entry) => entry.date > asOfDate && entry.amountMinor !== 0)
+        .map((entry) => ({
+          id: 'actual:' + entry.id,
+          date: entry.date,
+          amountMinor: entry.amountMinor,
+          source: 'actual_transaction',
+          label: entry.payeeLabel ?? 'Movimiento registrado en Actual',
+        }));
+      const actualMatchKeys = new Set(ledgerEntries.filter((entry) => entry.date > asOfDate && entry.amountMinor !== 0).map((entry) =>
+        [entry.date, Math.abs(entry.amountMinor), entry.amountMinor < 0 ? 'expense' : 'income'].join('|') + '|' + normalizedActionLabel(entry.payeeLabel ?? ''),
+      ));
+      const actualAmountKeys = new Set(ledgerEntries.filter((entry) => entry.date > asOfDate && entry.amountMinor !== 0).map((entry) =>
+        [entry.date, Math.abs(entry.amountMinor), entry.amountMinor < 0 ? 'expense' : 'income'].join('|'),
+      ));
+      const eligibleCommitments = planning.commitments.filter((item) =>
+        item.status === 'active' && item.currency === preferences.displayCurrency && planningScopeMatches(item.scope, accountPreference),
+      ).map(toPlanningCommitment);
+      const manualOccurrences = expandCommitmentOccurrences(eligibleCommitments, asOfDate, endDate);
+      const manualEvents: CashFlowEvent[] = [];
+      const duplicateCommitmentIds: string[] = [];
+      const possibleDuplicateCommitments: string[] = [];
+      for (const occurrence of manualOccurrences) {
+        if (occurrence.occurrenceDate <= asOfDate) continue;
+        const signedAmount = occurrence.direction === 'expense' ? -occurrence.amountMinor : occurrence.amountMinor;
+        const key = [occurrence.occurrenceDate, occurrence.amountMinor, occurrence.direction].join('|');
+        const label = normalizedActionLabel(occurrence.title);
+        if (actualMatchKeys.has(key + '|' + label)) {
+          duplicateCommitmentIds.push(occurrence.id + '@' + occurrence.occurrenceDate);
+          continue;
+        }
+        if (actualAmountKeys.has(key)) possibleDuplicateCommitments.push(occurrence.title + ' · ' + occurrence.occurrenceDate);
+        manualEvents.push({
+          id: 'manual:' + occurrence.id + '@' + occurrence.occurrenceDate,
+          date: occurrence.occurrenceDate,
+          amountMinor: signedAmount,
+          source: 'manual_commitment',
+          label: occurrence.title,
+        });
+      }
+      const scenarioEvents: CashFlowEvent[] = parsed.scenario ? [{
+        id: 'scenario:unsaved',
+        date: parsed.scenario.date,
+        amountMinor: parsed.scenario.direction === 'expense' ? -parsed.scenario.amountMinor : parsed.scenario.amountMinor,
+        source: 'scenario',
+        label: parsed.scenario.label,
+      }] : [];
+      const projection = projectCashFlow({
+        asOfDate,
+        startDate: asOfDate,
+        endDate,
+        openingBalanceMinor: openingKnown ? openingBalanceMinor : null,
+        reserveMinor: parsed.reserveMinor ?? null,
+        events: [...actualEvents, ...manualEvents, ...scenarioEvents],
+      });
+      const warnings = [
+        ...projection.warnings,
+        ...convertedFuture.warnings,
+        ...(unknownOpeningAccounts.length > 0 ? ['Saldo no disponible o sin conversión para: ' + unknownOpeningAccounts.map((account) => account.name).join(', ') + '.'] : []),
+        ...(scope.accounts.length === 0 ? ['El ámbito no contiene cuentas; selecciona cuentas antes de estimar saldo.'] : []),
+        ...(duplicateCommitmentIds.length > 0 ? [duplicateCommitmentIds.length + ' compromiso(s) manual(es) se han omitido porque coinciden exactamente con un movimiento futuro de Actual.'] : []),
+        ...(possibleDuplicateCommitments.length > 0 ? ['Posibles duplicados no confirmados; se han conservado ambos elementos: ' + possibleDuplicateCommitments.join(', ') + '. Revisa la agenda antes de interpretar el saldo.'] : []),
+      ];
+      return {
+        data: {
+          asOfDate, endDate, currency: preferences.displayCurrency, accountScope: scope.metadata,
+          openingBalanceMinor: projection.openingBalanceMinor,
+          unknownOpeningAccounts,
+          actualEvents, manualEvents, scenarioEvents,
+          duplicateCommitmentIds, possibleDuplicateCommitments,
+          projection: { ...projection, warnings },
+          notes: [
+            'Saldo estimado a partir del campo balance_current de Actual; no equivale a saldo bancario disponible, saldo liquidado ni efectivo garantizado.',
+            'Las transferencias se incluyen con su signo para proyectar el ámbito seleccionado; las dos patas se compensan si ambas cuentas están dentro del ámbito.',
+            'Los candidatos recurrentes no confirmados quedan excluidos de la proyección base.',
+          ],
+        },
+      };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  async function loadBudgetImprovementContext(periodMonths: 3 | 6 | 12) {
+    const asOfDate = civilDateInTimeZone(config.timeZone);
+    const endMonth = shiftPlanningMonth(asOfDate.slice(0, 7), -1);
+    const startMonth = shiftPlanningMonth(endMonth, -(periodMonths - 1));
+    const startDate = startMonth + '-01';
+    const endDate = planningMonthPeriod(endMonth).endDate;
+    const [accounts, categories, preferences, accountPreference, actionState] = await Promise.all([
+      repository.listAccounts(), repository.listCategories(), currencyPreferences(), accountScopePreference(),
+      readFinancialActionState(config.actualDataDir),
+    ]);
+    const scope = resolveAccountScope(accounts, accountPreference);
+    const rawTransactions = await transactionsForAccounts(scope.accounts, startDate, endDate, preferences);
+    const converted = convertTransactionsForAnalysis(rawTransactions, preferences);
+    const entries = normalizeTransactions(converted.transactions);
+    const summary = calculateSummary(entries, categories, {
+      startDate, endDate, currency: preferences.displayCurrency, exchangeRates: preferences.exchangeRates,
+    });
+    const monthsByCategory = new Map<string, Set<string>>();
+    for (const entry of entries) {
+      if (entry.isTransfer || entry.amountMinor >= 0 || !entry.categoryId) continue;
+      const months = monthsByCategory.get(entry.categoryId) ?? new Set<string>();
+      months.add(entry.date.slice(0, 7));
+      monthsByCategory.set(entry.categoryId, months);
+    }
+    const observations = summary.expensesByCategory
+      .filter((item) => item.categoryId !== null && item.amountMinor > 0)
+      .map((item) => ({
+        categoryId: item.categoryId as string,
+        categoryName: item.categoryName,
+        expenseMinor: item.amountMinor,
+        transactionCount: item.transactionCount,
+        monthsWithActivity: monthsByCategory.get(item.categoryId as string)?.size ?? 0,
+      }));
+    const rawEntryCount = normalizeTransactions(rawTransactions).length;
+    const unconvertedTransactionCount = Math.max(0, rawEntryCount - entries.length);
+    const baseline = {
+      currency: preferences.displayCurrency, startDate, endDate, periodMonths,
+      monthlyIncomeMinor: Math.round(summary.incomeMinor / periodMonths),
+      monthlyExpenseMinor: Math.round(summary.expenseMinor / periodMonths),
+      monthlySavingsMinor: Math.round(summary.savingsMinor / periodMonths),
+      savingsRatePercent: summary.savingsRatePercent,
+      transactionCount: summary.transactionCount,
+      unconvertedTransactionCount,
+      observations,
+    };
+    const storedPreferences = actionState.budgetImprovements.categories;
+    const corePreferences: BudgetImprovementCategoryPreference[] = storedPreferences
+      .filter((item) => item.classification !== 'unclassified')
+      .map((item) => ({ categoryId: item.categoryId, classification: item.classification as BudgetCategoryClassification }));
+    const proposals = buildBudgetImprovementProposals(baseline, corePreferences);
+    const categoryChoices = categories.filter((category) => !category.isIncome).map((category) => ({
+      categoryId: category.id,
+      categoryName: category.name,
+      classification: storedPreferences.find((item) => item.categoryId === category.id)?.classification ?? 'unclassified',
+    }));
+    return {
+      asOfDate, currency: preferences.displayCurrency, accountScope: scope.metadata, baseline,
+      proposals, corePreferences, categoryChoices,
+      goal: actionState.budgetImprovements.goal,
+      decisions: actionState.budgetImprovements.decisions,
+      scenarios: actionState.budgetImprovements.scenarios,
+      warnings: [...summary.warnings, ...converted.warnings, 'Se usan ' + periodMonths + ' meses naturales completos, hasta ' + endDate + '; el mes en curso se excluye para evitar extrapolar un periodo parcial.'],
+    };
+  }
+
+  app.get('/api/v1/budget-improvements', async (request, reply) => {
+    try {
+      const query = z.object({ periodMonths: z.coerce.number().int().pipe(z.union([z.literal(3), z.literal(6), z.literal(12)])).default(6) }).strict().parse(request.query);
+      const context = await loadBudgetImprovementContext(query.periodMonths);
+      return { data: context };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.put('/api/v1/budget-improvements/preferences', async (request, reply) => {
+    try {
+      const parsed = BudgetImprovementPreferencesRequestSchema.parse(request.body);
+      const categories = await repository.listCategories();
+      const validIds = new Set(categories.filter((category) => !category.isIncome).map((category) => category.id));
+      if (parsed.categories.some((item) => !validIds.has(item.categoryId))) {
+        return reply.code(400).send({ error: { code: 'INVALID_CATEGORY', message: 'Choose only expense categories from the configured Actual budget.' } });
+      }
+      const saved = await updateFinancialActionState(config.actualDataDir, (current) => ({
+        state: {
+          ...current,
+          budgetImprovements: { ...current.budgetImprovements, goal: parsed.goal, categories: parsed.categories },
+        },
+        result: parsed,
+      }));
+      return { data: saved };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.post('/api/v1/budget-improvements/simulate', async (request, reply) => {
+    try {
+      const parsed = BudgetImprovementSimulationRequestSchema.parse(request.body);
+      const context = await loadBudgetImprovementContext(parsed.periodMonths);
+      const simulation = simulateBudgetImprovement(context.baseline, context.corePreferences, parsed.reductions);
+      return { data: { baseline: context.baseline, simulation, accountScope: context.accountScope, warnings: context.warnings } };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.post('/api/v1/budget-improvements/scenarios', async (request, reply) => {
+    try {
+      const parsed = BudgetImprovementScenarioRequestSchema.parse(request.body);
+      const context = await loadBudgetImprovementContext(parsed.periodMonths);
+      const simulation = simulateBudgetImprovement(context.baseline, context.corePreferences, parsed.reductions);
+      const scenario = {
+        id: randomUUID(), name: parsed.name, startDate: context.baseline.startDate, endDate: context.baseline.endDate,
+        currency: context.currency, reductions: parsed.reductions,
+        estimatedMonthlySavingsMinor: simulation.estimatedMonthlySavingsMinor,
+        estimatedAnnualSavingsMinor: simulation.estimatedAnnualSavingsMinor, createdAt: new Date().toISOString(),
+      };
+      const saved = await updateFinancialActionState(config.actualDataDir, (current) => ({
+        state: {
+          ...current,
+          budgetImprovements: { ...current.budgetImprovements, scenarios: [scenario, ...current.budgetImprovements.scenarios].slice(0, 100) },
+        },
+        result: scenario,
+      }));
+      return reply.code(201).send({ data: saved });
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.patch('/api/v1/budget-improvements/decisions', async (request, reply) => {
+    try {
+      const parsed = BudgetImprovementDecisionRequestSchema.parse(request.body);
+      const context = await loadBudgetImprovementContext(6);
+      if (!context.proposals.some((proposal) => proposal.id === parsed.proposalId)) {
+        return reply.code(409).send({ error: { code: 'STALE_PROPOSAL', message: 'The proposal no longer matches the current evidence. Refresh the analysis before recording a decision.' } });
+      }
+      const decision = { proposalId: parsed.proposalId, status: parsed.status, updatedAt: new Date().toISOString() };
+      const saved = await updateFinancialActionState(config.actualDataDir, (current) => ({
+        state: {
+          ...current,
+          budgetImprovements: {
+            ...current.budgetImprovements,
+            decisions: [decision, ...current.budgetImprovements.decisions.filter((item) => item.proposalId !== parsed.proposalId)].slice(0, 2_000),
+          },
+        },
+        result: decision,
+      }));
+      return { data: saved };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.delete('/api/v1/budget-improvements/scenarios/:id', async (request, reply) => {
+    try {
+      const params = z.object({ id: z.string().uuid() }).strict().parse(request.params);
+      const deleted = await updateFinancialActionState(config.actualDataDir, (current) => ({
+        state: {
+          ...current,
+          budgetImprovements: {
+            ...current.budgetImprovements,
+            scenarios: current.budgetImprovements.scenarios.filter((scenario) => scenario.id !== params.id),
+          },
+        },
+        result: current.budgetImprovements.scenarios.some((scenario) => scenario.id === params.id),
+      }));
+      return { data: { deleted } };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.get('/api/v1/budget-alerts', async (request, reply) => {
+    try {
+      const query = z.object({ month: PlanningMonthSchema.optional() }).strict().parse(request.query);
+      const asOfDate = civilDateInTimeZone(config.timeZone);
+      const month = query.month ?? asOfDate.slice(0, 7);
+      const budgetRepository = repository as BudgetRepository & {
+        getBudgetMonth?: (value: string) => Promise<ActualBudgetMonthRecord>;
+        getBudgetAllocations?: (value: string) => Promise<readonly { readonly categoryId: string; readonly amountMinor: number }[]>;
+      };
+      if (typeof budgetRepository.getBudgetMonth !== 'function') {
+        return reply.code(503).send({ error: { code: 'BUDGET_QUERY_NOT_SUPPORTED', message: 'The configured local adapter does not support budget queries.' } });
+      }
+      const allocationSourceAvailable = typeof budgetRepository.getBudgetAllocations === 'function';
+      const [budget, categories, allocations, actionState] = await Promise.all([
+        budgetRepository.getBudgetMonth(month), repository.listCategories(),
+        allocationSourceAvailable ? budgetRepository.getBudgetAllocations!(month) : Promise.resolve(null),
+        readFinancialActionState(config.actualDataDir),
+      ]);
+      const categoriesById = new Map(categories.map((category) => [category.id, category]));
+      const allocationsByCategory = new Map((allocations ?? []).map((allocation) => [allocation.categoryId, allocation.amountMinor]));
+      const budgetCategories: BudgetAlertCategory[] = budget.categoryGroups.flatMap((group) =>
+        (group.categories ?? []).map((category) => {
+          const metadata = categoriesById.get(category.id);
+          const explicitAllocation = allocationsByCategory.get(category.id);
+          const budgetedMinor = allocationSourceAvailable
+            ? (explicitAllocation ?? 0)
+            : category.budgeted === undefined || category.budgeted === null ? null : category.budgeted;
+          const state: BudgetAlertCategory['state'] = allocationSourceAvailable
+            ? explicitAllocation === undefined ? 'unbudgeted' : explicitAllocation === 0 ? 'zero' : 'budgeted'
+            : category.budgeted === undefined ? 'unbudgeted' : category.budgeted === null ? 'unknown' : category.budgeted === 0 ? 'zero' : 'budgeted';
+          return {
+            categoryId: category.id,
+            categoryName: metadata?.name ?? category.name,
+            budgetedMinor,
+            spentMinor: category.spent === undefined || category.spent === null ? null : Math.abs(category.spent),
+            availableMinor: category.balance ?? null,
+            state,
+            hidden: category.hidden ?? group.hidden ?? false,
+          };
+        }),
+      ).filter((item) => !item.hidden);
+      const rules = actionState.budgetAlerts.rules;
+      const crossingAlerts = evaluateBudgetAlertRules(rules, budgetCategories, month);
+      const alerts = crossingAlerts.flatMap((alert) => {
+        const eventId = createHash('sha256').update([alert.ruleId, alert.categoryId, month].join('|')).digest('hex').slice(0, 32);
+        const decision = actionState.budgetAlerts.events.find((event) => event.id === eventId);
+        if (decision?.status === 'dismissed') return [];
+        if (decision?.status === 'snoozed' && decision.snoozedUntil && decision.snoozedUntil >= asOfDate) return [];
+        return [{ ...alert, eventId, status: 'active' as const, currency: config.budgetCurrency }];
+      });
+      return {
+        data: {
+          month, currency: config.budgetCurrency, rules, alerts,
+          categories: budgetCategories.filter((item) => !item.hidden),
+          warnings: [
+            ...(allocationSourceAvailable ? [] : ['El adaptador no distingue de forma fiable una asignación explícita de cero de una asignación ausente; las reglas omiten esos estados desconocidos.']),
+            ...(budgetCategories.some((item) => item.state === 'unbudgeted' || item.state === 'unknown') ? ['Las categorías sin presupuesto explícito o con importe desconocido no generan alertas de consumo.'] : []),
+          ],
+        },
+      };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.put('/api/v1/budget-alerts/rules', async (request, reply) => {
+    try {
+      const parsed = BudgetAlertRulesRequestSchema.parse(request.body);
+      const categories = await repository.listCategories();
+      const expenseIds = new Set(categories.filter((category) => !category.isIncome).map((category) => category.id));
+      if (parsed.rules.some((rule) => !expenseIds.has(rule.categoryId))) {
+        return reply.code(400).send({ error: { code: 'INVALID_CATEGORY', message: 'Alert rules must target existing expense categories.' } });
+      }
+      const rules: BudgetAlertRule[] = parsed.rules.map((rule) => ({
+        id: rule.id ?? randomUUID(), categoryId: rule.categoryId, metric: rule.metric,
+        threshold: rule.threshold, enabled: rule.enabled,
+      }));
+      const saved = await updateFinancialActionState(config.actualDataDir, (current) => ({
+        state: {
+          ...current,
+          budgetAlerts: {
+            rules,
+            events: current.budgetAlerts.events.filter((event) => rules.some((rule) => rule.id === event.ruleId)),
+          },
+        },
+        result: rules,
+      }));
+      return { data: saved };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    }
+  });
+
+  app.patch('/api/v1/budget-alerts/events/:eventId', async (request, reply) => {
+    try {
+      const params = z.object({ eventId: z.string().regex(/^[a-f0-9]{32}$/) }).strict().parse(request.params);
+      const parsed = BudgetAlertEventDecisionSchema.parse(request.body);
+      const expectedId = createHash('sha256').update([parsed.ruleId, parsed.categoryId, parsed.month].join('|')).digest('hex').slice(0, 32);
+      if (expectedId !== params.eventId) return reply.code(400).send({ error: { code: 'INVALID_ALERT_EVENT', message: 'Alert event identity does not match its rule, category and period.' } });
+      const today = civilDateInTimeZone(config.timeZone);
+      if (parsed.status === 'snoozed' && (!parsed.snoozedUntil || parsed.snoozedUntil <= today || parsed.snoozedUntil > addCivilDays(today, 90))) {
+        return reply.code(400).send({ error: { code: 'INVALID_SNOOZE', message: 'Snooze expiry must be between tomorrow and 90 days from today.' } });
+      }
+      const saved = await updateFinancialActionState(config.actualDataDir, (current) => {
+        if (!current.budgetAlerts.rules.some((rule) => rule.id === parsed.ruleId)) {
+          throw new Error('The alert rule no longer exists.');
+        }
+        const event = {
+          id: params.eventId, ruleId: parsed.ruleId, categoryId: parsed.categoryId,
+          month: parsed.month, status: parsed.status,
+          ...(parsed.snoozedUntil === undefined ? {} : { snoozedUntil: parsed.snoozedUntil }),
+          updatedAt: new Date().toISOString(),
+        };
+        return {
+          state: {
+            ...current,
+            budgetAlerts: {
+              ...current.budgetAlerts,
+              events: [event, ...current.budgetAlerts.events.filter((item) => item.id !== params.eventId)].slice(0, 2_000),
+            },
+          },
+          result: event,
+        };
+      });
+      return { data: saved };
+    } catch (error) {
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
     }
   });
 
