@@ -104,15 +104,20 @@ describe('wealth, local evidence and portable export contracts', () => {
     expect(summary.json().data.netWorthMinor).toBe(105_000);
     expect(summary.json().data.actual.assetsMinor).toBe(100_000);
     expect(summary.json().data.external.assetsMinor).toBe(5_000);
+    const staleAsset = await app.inject({
+      method: 'POST', url: '/api/v1/wealth/assets',
+      payload: { name: 'Inmueble sin valoración reciente', kind: 'real_estate', currency: 'EUR', includeInNetWorth: true },
+    });
+    const staleAssetId = staleAsset.json().data.id as string;
     const old = await app.inject({
-      method: 'POST', url: '/api/v1/wealth/assets/' + assetId + '/valuations',
+      method: 'POST', url: '/api/v1/wealth/assets/' + staleAssetId + '/valuations',
       payload: { valuedAt: '2025-01-01', amountMinor: 1_000, currency: 'EUR', source: 'manual' },
     });
     expect(old.statusCode).toBe(201);
     const stale = await app.inject({ method: 'GET', url: '/api/v1/wealth/summary' });
     expect(stale.json().data.status).toBe('incomplete');
     expect(stale.json().data.netWorthMinor).toBeNull();
-    expect(stale.json().data.coverage.staleAssetIds).toContain(assetId);
+    expect(stale.json().data.coverage.staleAssetIds).toContain(staleAssetId);
   });
 
   it('stores supported files privately, verifies signatures and links only real Actual movements', async () => {
