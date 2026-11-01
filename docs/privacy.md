@@ -1,43 +1,57 @@
 # Privacidad y flujo de datos
 
-## Objetivo
+## Principios
 
-La aplicación está diseñada para uso local y privado. Los datos de movimientos deben permanecer en Actual Budget en tu equipo/servidor local; el asistente debe operar con el mínimo contexto necesario para responder cada pregunta.
+Personal Budget está diseñado para uso local-first. Actual Budget conserva la fuente de verdad de cuentas, categorías, presupuestos y movimientos. Los almacenes de Personal Budget contienen preferencias, planificación, revisiones, patrimonio y metadata documental; no duplican el libro de movimientos.
 
-## Qué datos procesa
+La aplicación no configura sincronización bancaria automática ni pide credenciales de acceso al banco. Los datos reales no deben aparecer en fixtures, capturas, logs, issues ni pruebas automatizadas.
 
-- Transacciones, fechas, importes, divisas, descripciones y categorías del presupuesto.
-- Nombres de cuentas, categorías y presupuestos existentes en Actual.
-- Preguntas que el usuario escribe en el chat.
-- Resultados agregados generados por herramientas financieras.
-- Configuración del modelo y preferencias de interfaz.
+## Datos que se procesan localmente
 
-Los datos reales no deben utilizarse en fixtures, capturas, logs ni pruebas automatizadas.
+- Transacciones, fechas, importes, divisas, descripciones, categorías y cuentas mediante el adaptador oficial de Actual.
+- Agregados deterministas generados en backend/finance-core.
+- Preferencias de ámbito/divisa, objetivos, compromisos, revisiones, alertas y decisiones.
+- Valoraciones manuales y metadata/binarios documentales privados.
+- Preguntas y respuestas de asistentes locales, sin persistencia de conversaciones por defecto.
 
-## Qué se envía fuera del equipo
+## Qué sale del equipo
 
-La arquitectura objetivo no requiere enviar transacciones ni prompts a una API de IA en la nube. Sin embargo, el software puede establecer conexiones externas para descargar instaladores, dependencias, imágenes de contenedor, actualizaciones y modelos. Si se configura una URL de inferencia remota o un modelo de nube a través de Ollama, los datos enviados a esa API dejarían de estar limitados al equipo.
+La aplicación financiera no envía movimientos ni agregados a servicios de búsqueda o a APIs de IA en la nube. Ollama debe permanecer en loopback (127.0.0.1:11434) para mantener la inferencia local. Configurar otro runtime alojado o remoto puede cambiar esa frontera de privacidad.
 
-Por ello:
+### Búsqueda web explícita (#84)
 
-- Utiliza la API local de Ollama (`127.0.0.1:11434`), no un endpoint alojado.
-- No habilites sincronización bancaria automática en la configuración inicial.
-- No incluyas analítica o telemetría de terceros.
-- Revisa las llamadas de red y dependencias antes de publicar una versión.
-- Para una garantía más fuerte, usa firewall con política de salida restringida después de instalar dependencias y modelos.
+La investigación web es un flujo independiente y desactivado por defecto (WEB_SEARCH_ENABLED=false). Para cada búsqueda, el usuario debe marcar el consentimiento en la interfaz. El backend envía al proveedor configurado únicamente el texto exacto de la consulta aprobada.
 
-## Historial del chat
+No se adjuntan conversaciones, preguntas del chat financiero, movimientos, cuentas, importes, categorías, objetivos, compromisos ni agregados. La síntesis se realiza con Ollama local a partir de resultados de búsqueda acotados. Las respuestas y consultas no se guardan como historial y los logs no registran la consulta ni los fragmentos.
 
-El valor por defecto propuesto es no persistir conversaciones. Si se añade historial local, debe ser opcional, indicar qué se guarda y permitir borrarlo. El sistema no debe guardar automáticamente todos los datos financieros devueltos por herramientas en cada mensaje.
+El proveedor por defecto es una instancia SearXNG configurada por el operador:
+- **SearXNG local:** puede ejecutarse en loopback. Aunque se autohospede, SearXNG puede remitir la consulta a motores upstream según sus preferencias, configuración y motores habilitados.
+- **SearXNG remoto:** solo se admite mediante HTTPS. El operador debe revisar la política del servicio y las condiciones de sus motores upstream.
 
-## Logs
+La consulta puede ser visible para SearXNG y para sus motores upstream. Estos servicios pueden observar la IP pública de salida del servidor SearXNG y los términos buscados. El usuario debe revisar la configuración de esos proveedores antes de habilitar la función. Los enlaces de los resultados abren el sitio original cuando el usuario lo decide; la API no descarga páginas arbitrarias.
 
-Los logs operativos deben limitarse a estado de servicio, duración, código de error y un identificador no sensible. No registrar textos completos de transacciones, saldos, mensajes de usuario, resultados de herramientas, tokens ni contraseñas.
+En el modo fiscal, la búsqueda se limita a una lista de dominios oficiales permitidos (AEAT, BOE, Hacienda, Seguridad Social, Xunta/DOG, CNMV y Banco de España, según dominios configurados). La lista reduce resultados fuera de esos dominios, pero no certifica que cada fragmento sea completo ni que una norma siga vigente.
 
-## Centro de inteligencia financiera
+### Otras conexiones externas
 
-El centro calcula hallazgos en la API local. El estado de revisión almacena solo ID, huella y metadatos de estado; no conserva importes, descripciones ni movimientos. El panel calcula la tasa de descarte localmente a partir de revisiones explícitas, sin enviarla fuera del dispositivo. La explicación con IA es explícita y opcional: envía una síntesis agregada y reglas/limitaciones a Ollama local; no se envían filas de transacciones ni notas. Si Ollama está desactivado o no disponible, el análisis determinista continúa. El archivo financial-intelligence-state.json está en el directorio local de datos de la API y no forma parte del backup cifrado del volumen de Actual Budget; consérvalo por separado si deseas preservar las revisiones.
+El software puede establecer conexiones para descargar dependencias, imágenes de contenedor, actualizaciones y modelos. Revisa los endpoints y motores upstream que configures. Una garantía más fuerte requiere firewall con política de salida restringida después de instalar dependencias y modelos.
+
+## Asistente financiero y privacidad
+
+El chat financiero calcula agregados en el backend y envía a Ollama local solo el contexto mínimo previsto. No envía descripciones, notas ni filas completas de movimientos. Sus cálculos numéricos permanecen en finance-core y el modelo no tiene herramientas ni permisos de escritura.
+
+El flujo de búsqueda web no reutiliza este contexto financiero. Son endpoints y contratos separados.
+
+## Historial y logs
+
+No se persisten conversaciones ni historial de navegación por defecto. Los logs operativos excluyen textos completos de movimientos, saldos, mensajes de usuario, consultas, resultados, tokens y contraseñas. La telemetría local de inferencia registra únicamente métricas no sensibles (duración, espera, resultado y presupuesto de contexto).
+
+## Backup y datos locales
+
+El backup cifrado unificado contiene el volumen de Actual, nueve almacenes JSON propios y los binarios documentales inventariados. Incluye financial-intelligence-state.json y periodic-reviews.json; la whitelist completa está en la guía de backup y restauración. La clave AES se conserva separada del archivo cifrado.
+
+La exportación portable es diferente: es una instantánea legible seleccionable, no un backup restaurable. No contiene secretos ni claves.
 
 ## Límites
 
-«Local» no equivale a «cifrado automáticamente». Los archivos locales pueden ser leídos por otros procesos o usuarios con acceso al mismo sistema. Protege la cuenta del sistema operativo, cifra el disco y cifra las copias de seguridad. Revisa también las políticas y la configuración de Docker Desktop, Windows, WSL y el proveedor de modelos.
+«Local» no equivale a «cifrado automáticamente». Los ficheros locales pueden ser leídos por otros procesos o usuarios con acceso al sistema. Protege la cuenta del sistema operativo y el disco, conserva la clave de backup en un lugar seguro y revisa las políticas de Docker Desktop, Windows, WSL y los proveedores de modelos/búsqueda.

@@ -312,6 +312,57 @@ test('Actual not configured is actionable and the financial UI works without Oll
   await expect(page.getByText('El asistente no está disponible')).toBeVisible();
 });
 
+test('controlled web research requires per-query consent and shows official source links', async ({ page }) => {
+  let approvedPayload: Record<string, unknown> | null = null;
+  await page.route('**/api/v1/assistant/web-search/status', async (route) => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify({ enabled: true, provider: 'SearXNG', explicitConsentRequired: true, toolCallingRequired: true, maximumResults: 5 }),
+  }));
+  await page.route('**/api/v1/assistant/web-search', async (route) => {
+    approvedPayload = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ data: {
+        answer: 'El BOE publica la disposición indicada [S1]. La fecha de búsqueda no acredita por sí sola su vigencia.',
+        provider: 'SearXNG', searchedAt: '2026-11-01T12:00:00.000Z', mode: 'tax',
+        taxContext: { jurisdiction: 'España', matter: 'IRPF', taxYear: '2025', filingYear: '2026', referenceDate: '2026-11-01' },
+        sourceCount: 1,
+        sources: [{
+          id: 'S1', title: 'Disposición publicada en el BOE', url: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2025-1',
+          domain: 'www.boe.es', institution: 'Boletín Oficial del Estado (BOE)', publishedAt: '2025-03-01T00:00:00.000Z', modifiedAt: null,
+          snippet: 'Fragmento sintético de una disposición oficial.', sourceKind: 'normativa',
+        }],
+      } }),
+    });
+  });
+
+  await page.goto('/assistant');
+  await expect(page.getByRole('heading', { name: 'Asistente financiero' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Buscar y contrastar fuentes' })).toBeVisible();
+  const form = page.locator('section[aria-labelledby="web-research-heading"]');
+  await expect(form.getByRole('button', { name: 'Buscar y sintetizar fuentes' })).toBeDisabled();
+  await form.getByLabel('Consulta exacta que se enviará').fill('BOE IRPF ejercicio 2025');
+  await form.getByLabel('Tipo de investigación').selectOption('tax');
+  await form.getByLabel('Jurisdicción (no se infiere)').fill('España');
+  await form.getByLabel('Impuesto o trámite').fill('IRPF');
+  await form.getByLabel('Ejercicio fiscal').fill('2025');
+  await form.getByLabel('Año de presentación').fill('2026');
+  await form.getByLabel('Fecha de referencia / vigencia').fill('2026-11-01');
+  await form.getByRole('checkbox', { name: /Confirmo que autorizo enviar únicamente esta consulta/ }).check();
+  await form.getByRole('button', { name: 'Buscar y sintetizar fuentes' }).click();
+
+  await expect(form.getByText('El BOE publica la disposición indicada [S1]. La fecha de búsqueda no acredita por sí sola su vigencia.')).toBeVisible();
+  await expect(form.getByRole('link', { name: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2025-1' })).toHaveAttribute('rel', 'noopener noreferrer');
+  expect(approvedPayload).toMatchObject({
+    consent: true, query: 'BOE IRPF ejercicio 2025', mode: 'tax',
+    jurisdiction: 'España', matter: 'IRPF', taxYear: '2025', filingYear: '2026', referenceDate: '2026-11-01',
+  });
+  expect(JSON.stringify(approvedPayload)).not.toContain('synthetic-account');
+  expect(JSON.stringify(approvedPayload)).not.toContain('Supermercado sintético');
+  await expect(form.getByRole('checkbox', { name: /Confirmo que autorizo enviar únicamente esta consulta/ })).not.toBeChecked();
+  await expect(form.getByRole('button', { name: 'Buscar y sintetizar fuentes' })).toBeDisabled();
+});
+
 test('global account scope persists and narrows the movements view', async ({ page, request }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Cuentas incluidas' })).toBeVisible();

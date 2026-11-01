@@ -49,6 +49,29 @@ describe('loadConfig', () => {
     const config = loadConfig({ OLLAMA_MODEL: '' });
     expect(config.ollamaModel).toBeUndefined();
   });
+  it('keeps web search disabled by default and validates its bounded provider settings', () => {
+    expect(loadConfig({})).toMatchObject({
+      webSearchEnabled: false,
+      webSearchBaseURL: 'http://127.0.0.1:8080',
+      webSearchTimeoutMs: 8_000,
+      webSearchMaxResults: 5,
+      webSearchMaxQueryChars: 300,
+      webSearchMaxResponseBytes: 131_072,
+    });
+    expect(loadConfig({
+      WEB_SEARCH_ENABLED: 'true',
+      WEB_SEARCH_BASE_URL: 'https://search.example.org',
+      WEB_SEARCH_TIMEOUT_SECONDS: '12',
+      WEB_SEARCH_MAX_RESULTS: '8',
+    })).toMatchObject({ webSearchEnabled: true, webSearchTimeoutMs: 12_000, webSearchMaxResults: 8 });
+    expect(() => loadConfig({ WEB_SEARCH_ENABLED: 'yes' })).toThrow();
+    expect(() => loadConfig({ WEB_SEARCH_BASE_URL: 'http://search.example.org' })).toThrow();
+    expect(() => loadConfig({ WEB_SEARCH_BASE_URL: 'http://169.254.169.254' })).toThrow();
+    expect(() => loadConfig({ WEB_SEARCH_TIMEOUT_SECONDS: '31' })).toThrow();
+    expect(() => loadConfig({ WEB_SEARCH_MAX_RESULTS: '9' })).toThrow();
+    expect(() => loadConfig({ WEB_SEARCH_MAX_QUERY_CHARS: '10' })).toThrow();
+  });
+
   it('rejects remote Actual server URLs', () => {
     expect(() => loadConfig({ ACTUAL_SERVER_URL: 'https://actual.example.com' })).toThrow();
   });

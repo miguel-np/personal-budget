@@ -5,8 +5,9 @@ import { buildFinancialAnomalyFindings, buildPeriodChangeFindings, buildUncatego
 import type { BudgetAlertCategory, BudgetAlertRule, BudgetImprovementCategoryPreference, CashFlowEvent, BudgetCategoryClassification, BudgetRepository, BudgetTransaction, CategorySuggestion as CoreCategorySuggestion, FinancialFinding, FindingPriority, ForecastScenario, ImportRecord, PlanningCommitment, TransactionStructureUpdate } from '@personal-budget/finance-core';
 import { z, ZodError } from 'zod';
 import type { AppConfig } from './config.js';
-import { LocalAiBusyError, LocalAiCancelledError, LocalAiClient, LocalAiContextBudgetError, LocalAiUnavailableError } from './local-ai.js';
-import type { AssistantContext, PlanningIntentDraft } from './local-ai.js';
+import { LocalAiBusyError, LocalAiCancelledError, LocalAiClient, LocalAiContextBudgetError, LocalAiToolCallUnsupportedError, LocalAiUnavailableError } from './local-ai.js';
+import type { AssistantContext, PlanningIntentDraft, WebResearchRequest } from './local-ai.js';
+import { OFFICIAL_SOURCE_DOMAINS, SearXNGSearchProvider, WebSearchResponseTooLargeError, WebSearchUnavailableError } from './web-search.js';
 import { CurrencyPreferencesSchema, defaultCurrencyPreferences, readCurrencyPreferences, writeCurrencyPreferences } from './currency-preferences.js';
 import type { CurrencyPreferences } from './currency-preferences.js';
 import { AccountScopeError, AccountScopePreferenceSchema, defaultAccountScope, readAccountScope, resolveAccountScope, writeAccountScope } from './account-scope.js';
@@ -370,6 +371,27 @@ const AssistantRequestSchema = z.object({
     context.addIssue({ code: 'custom', message: 'Both previous period dates must be supplied together.' });
   }
 });
+const WebResearchRequestSchema = z.object({
+  consent: z.literal(true),
+  query: z.string().trim().min(2).max(500),
+  mode: z.enum(['general', 'tax']).default('general'),
+  domains: z.array(z.enum(OFFICIAL_SOURCE_DOMAINS)).max(OFFICIAL_SOURCE_DOMAINS.length).default([]),
+  jurisdiction: z.string().trim().min(1).max(120).optional(),
+  matter: z.string().trim().min(1).max(120).optional(),
+  taxYear: z.string().regex(/^\d{4}$/).optional(),
+  filingYear: z.string().regex(/^\d{4}$/).optional(),
+  referenceDate: z.string().refine(isIsoDate, 'referenceDate must be a valid YYYY-MM-DD date.').optional(),
+}).strict().superRefine((value, context) => {
+  if (new Set(value.domains).size !== value.domains.length) {
+    context.addIssue({ code: 'custom', path: ['domains'], message: 'Official source domains must be unique.' });
+  }
+  if (value.mode === 'tax') {
+    for (const field of ['jurisdiction', 'matter', 'taxYear', 'filingYear', 'referenceDate'] as const) {
+      if (!value[field]) context.addIssue({ code: 'custom', path: [field], message: 'Tax research requires an explicit jurisdiction, subject, tax year, filing year and reference date.' });
+    }
+  }
+});
+
 const MAX_REPORT_DAYS = 366 * 5;
 const MAX_TRANSACTION_SCAN = 100_000;
 
@@ -494,6 +516,22 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     app.log.info({ component: 'local-ai', ...metric }, 'Local AI request metrics.');
   });
 
+  const webSearchProvider = new SearXNGSearchProvider({
+    baseURL: config.webSearchBaseURL,
+    timeoutMs: config.webSearchTimeoutMs,
+    maxResults: config.webSearchMaxResults,
+    maxQueryChars: config.webSearchMaxQueryChars,
+    maxResponseBytes: config.webSearchMaxResponseBytes,
+  });
+  const webSearchRequestTimes: number[] = [];
+  const allowWebSearchRequest = (): boolean => {
+    const now = Date.now();
+    while (webSearchRequestTimes.length > 0 && webSearchRequestTimes[0]! <= now - 60_000) webSearchRequestTimes.shift();
+    if (webSearchRequestTimes.length >= 6) return false;
+    webSearchRequestTimes.push(now);
+    return true;
+  };
+
   await app.register(helmet, {
     contentSecurityPolicy: false,
     crossOriginResourcePolicy: { policy: 'same-origin' },
@@ -611,6 +649,13 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   }
 
   app.get('/api/v1/assistant/status', async () => localAi.status());
+  app.get('/api/v1/assistant/web-search/status', async () => ({
+    enabled: config.aiEnabled && config.webSearchEnabled,
+    provider: 'SearXNG',
+    explicitConsentRequired: true,
+    toolCallingRequired: true,
+    maximumResults: config.webSearchMaxResults,
+  }));
 
   app.post('/api/v1/assistant/chat', async (request, reply) => {
     const requestAbort = new AbortController();
@@ -685,6 +730,93 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       }
       if (error instanceof LocalAiUnavailableError) {
         return reply.code(503).send({ error: { code: 'AI_UNAVAILABLE', message: 'Ollama no ha podido completar la explicación local.' } });
+      }
+      const normalized = sanitizedErrorResponse(error);
+      return reply.code(normalized.statusCode).send(normalized.body);
+    } finally {
+      request.raw.removeListener('aborted', abortRequest);
+      reply.raw.removeListener('close', abortResponse);
+    }
+  });
+
+  app.post('/api/v1/assistant/web-search', async (request, reply) => {
+    const requestAbort = new AbortController();
+    const abortRequest = () => requestAbort.abort();
+    const abortResponse = () => { if (!reply.raw.writableEnded) requestAbort.abort(); };
+    request.raw.once('aborted', abortRequest);
+    reply.raw.once('close', abortResponse);
+    try {
+      const query = WebResearchRequestSchema.parse(request.body);
+      if (!config.aiEnabled) {
+        return reply.code(503).send({ error: { code: 'AI_DISABLED', message: 'Activa Ollama local para sintetizar los resultados; las funciones financieras siguen disponibles.' } });
+      }
+      if (!config.webSearchEnabled) {
+        return reply.code(503).send({ error: { code: 'WEB_SEARCH_DISABLED', message: 'La búsqueda externa está desactivada. Habilítala expresamente en la configuración y confirma cada consulta.' } });
+      }
+      if (query.query.length > config.webSearchMaxQueryChars) {
+        return reply.code(400).send({ error: { code: 'WEB_SEARCH_QUERY_TOO_LONG', message: 'La consulta supera el límite configurado.' } });
+      }
+      if (!allowWebSearchRequest()) {
+        return reply.code(429).header('retry-after', '60').send({ error: { code: 'WEB_SEARCH_RATE_LIMIT', message: 'Se ha alcanzado el límite local de búsquedas. Inténtalo más tarde.' } });
+      }
+      const domains: readonly string[] = query.mode === 'tax'
+        ? (query.domains.length > 0 ? query.domains : OFFICIAL_SOURCE_DOMAINS)
+        : query.domains;
+      const requestForModel: WebResearchRequest = {
+        query: query.query,
+        mode: query.mode,
+        ...(query.mode === 'tax' ? {
+          jurisdiction: query.jurisdiction!,
+          matter: query.matter!,
+          taxYear: query.taxYear!,
+          filingYear: query.filingYear!,
+          referenceDate: query.referenceDate!,
+        } : {}),
+      };
+      const researched = await localAi.researchWithWebSearch(
+        requestForModel, webSearchProvider, domains, requestAbort.signal,
+      );
+      return { data: {
+        answer: researched.answer,
+        provider: researched.search.provider,
+        searchedAt: researched.search.searchedAt,
+        mode: query.mode,
+        ...(query.mode === 'tax' ? {
+          taxContext: {
+            jurisdiction: query.jurisdiction,
+            matter: query.matter,
+            taxYear: query.taxYear,
+            filingYear: query.filingYear,
+            referenceDate: query.referenceDate,
+          },
+        } : {}),
+        sources: researched.search.sources,
+        sourceCount: researched.search.sources.length,
+      } };
+    } catch (error) {
+      if (error instanceof LocalAiCancelledError) {
+        if (request.raw.aborted || reply.raw.destroyed) return;
+        return reply.code(499).send({ error: { code: 'AI_CANCELLED', message: 'La investigación local se ha cancelado.' } });
+      }
+      if (error instanceof LocalAiBusyError) {
+        return reply.code(503).header('retry-after', '1').send({
+          error: { code: 'AI_BUSY', message: 'Ollama está ocupado; vuelve a intentarlo en unos segundos.' },
+        });
+      }
+      if (error instanceof LocalAiContextBudgetError) {
+        return reply.code(413).send({ error: { code: 'AI_CONTEXT_TOO_LARGE', message: 'La consulta o sus fuentes superan el límite local permitido.' } });
+      }
+      if (error instanceof LocalAiToolCallUnsupportedError) {
+        return reply.code(422).send({ error: { code: 'WEB_SEARCH_TOOL_UNSUPPORTED', message: 'El modelo local no ha solicitado correctamente la herramienta web_search. Selecciona un modelo compatible con tool calling y vuelve a intentarlo.' } });
+      }
+      if (error instanceof WebSearchResponseTooLargeError) {
+        return reply.code(502).send({ error: { code: 'WEB_SEARCH_RESPONSE_TOO_LARGE', message: 'El proveedor devolvió una respuesta superior al límite permitido.' } });
+      }
+      if (error instanceof WebSearchUnavailableError) {
+        return reply.code(503).send({ error: { code: 'WEB_SEARCH_UNAVAILABLE', message: 'SearXNG no está disponible o devolvió una respuesta no válida. El asistente financiero local sigue funcionando.' } });
+      }
+      if (error instanceof LocalAiUnavailableError) {
+        return reply.code(503).send({ error: { code: 'AI_UNAVAILABLE', message: 'Ollama no ha podido completar la investigación local.' } });
       }
       const normalized = sanitizedErrorResponse(error);
       return reply.code(normalized.statusCode).send(normalized.body);

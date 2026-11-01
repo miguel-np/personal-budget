@@ -38,6 +38,8 @@ const config: AppConfig = {
   environment: 'test', host: '127.0.0.1', port: 3000, logLevel: 'silent',
   actualServerURL: 'http://127.0.0.1:5006', actualDataDir: './.local/actual-api',
   ollamaBaseURL: 'http://127.0.0.1:11434', aiEnabled: false, aiCategoryClassificationEnabled: false, aiCategoryClassificationIncludePayee: true, ollamaTimeoutMs: 120_000, aiMaxContextChars: 4_000,
+  webSearchEnabled: false, webSearchBaseURL: 'http://127.0.0.1:8080', webSearchTimeoutMs: 8_000,
+  webSearchMaxResults: 5, webSearchMaxQueryChars: 300, webSearchMaxResponseBytes: 131_072,
   budgetCurrency: 'EUR', allowedOrigins: ['http://127.0.0.1:5173', 'http://localhost:5173'],
 };
 const openApps: Array<{ close: () => Promise<void> }> = [];
@@ -110,6 +112,191 @@ describe('local API', () => {
     expect(status.json()).toMatchObject({ enabled: false, status: 'disabled' });
     expect(chat.statusCode).toBe(503);
     expect(chat.json().error.code).toBe('AI_DISABLED');
+  });
+
+  it('keeps web search disabled by default and requires explicit consent', async () => {
+    const app = await createTestApp(createRepository(), { ...config, aiEnabled: true });
+    const status = await app.inject({ method: 'GET', url: '/api/v1/assistant/web-search/status' });
+    const disabled = await app.inject({
+      method: 'POST', url: '/api/v1/assistant/web-search',
+      payload: { consent: true, query: 'BOE IRPF', mode: 'general', domains: [] },
+    });
+    const noConsent = await app.inject({
+      method: 'POST', url: '/api/v1/assistant/web-search',
+      payload: { query: 'BOE IRPF', mode: 'general', domains: [] },
+    });
+    expect(status.json()).toMatchObject({ enabled: false, provider: 'SearXNG', explicitConsentRequired: true });
+    expect(disabled.statusCode).toBe(503);
+    expect(disabled.json().error.code).toBe('WEB_SEARCH_DISABLED');
+    expect(noConsent.statusCode).toBe(400);
+  });
+
+  it('requires explicit fiscal context and rejects domains outside the official allowlist', async () => {
+    const app = await createTestApp();
+    const incompleteTax = await app.inject({
+      method: 'POST', url: '/api/v1/assistant/web-search',
+      payload: { consent: true, query: 'IRPF', mode: 'tax' },
+    });
+    const unapprovedDomain = await app.inject({
+      method: 'POST', url: '/api/v1/assistant/web-search',
+      payload: { consent: true, query: 'IRPF', mode: 'general', domains: ['example.com'] },
+    });
+    const duplicateDomains = await app.inject({
+      method: 'POST', url: '/api/v1/assistant/web-search',
+      payload: { consent: true, query: 'IRPF', mode: 'general', domains: ['boe.es', 'boe.es'] },
+    });
+    expect(incompleteTax.statusCode).toBe(400);
+    expect(unapprovedDomain.statusCode).toBe(400);
+    expect(duplicateDomains.statusCode).toBe(400);
+  });
+
+  it('applies a bounded per-process rate limit before Ollama or the external search provider is invoked', async () => {
+    const app = await createTestApp(createRepository(), {
+      ...config, aiEnabled: true, webSearchEnabled: true,
+    });
+    const payload = { consent: true, query: 'consulta de prueba', mode: 'general', domains: [] };
+    for (let index = 0; index < 6; index += 1) {
+      const response = await app.inject({ method: 'POST', url: '/api/v1/assistant/web-search', payload });
+      expect(response.statusCode).toBe(503);
+      expect(response.json().error.code).toBe('AI_UNAVAILABLE');
+    }
+    const limited = await app.inject({ method: 'POST', url: '/api/v1/assistant/web-search', payload });
+    expect(limited.statusCode).toBe(429);
+    expect(limited.json().error.code).toBe('WEB_SEARCH_RATE_LIMIT');
+    expect(limited.headers['retry-after']).toBe('60');
+  });
+
+  it('uses only the approved query for web search and never reads financial context', async () => {
+    let chatCall = 0;
+    const modelRequests: Array<Record<string, unknown>> = [];
+    const ollama = createServer((request, response) => {
+      response.setHeader('content-type', 'application/json');
+      if (request.url === '/api/tags') {
+        response.writeHead(200);
+        response.end(JSON.stringify({ models: [{ name: 'synthetic-model' }] }));
+        return;
+      }
+      if (request.url !== '/api/chat') {
+        response.writeHead(404); response.end('{}'); return;
+      }
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => {
+        modelRequests.push(JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>);
+        chatCall += 1;
+        response.writeHead(200);
+        response.end(JSON.stringify(chatCall === 1 ? {
+          message: { role: 'assistant', content: '', tool_calls: [{
+            function: { name: 'web_search', arguments: { query: 'normativa IRPF ejercicio 2025' } },
+          }] },
+        } : { message: { role: 'assistant', content: 'La fuente oficial publica la norma aplicable [S1].' } }));
+      });
+    });
+    const search = createServer((request, response) => {
+      response.setHeader('content-type', 'application/json');
+      const url = new URL(request.url ?? '/', 'http://127.0.0.1');
+      response.writeHead(200);
+      response.end(JSON.stringify({ results: [{
+        title: 'Disposición publicada en BOE',
+        url: 'https://www.boe.es/buscar/act.php?id=BOE-A-2025-1',
+        content: 'Texto normativo oficial. Fecha de publicación indicada por la fuente.',
+        publishedDate: '2025-03-01',
+      }] }));
+      expect(url.searchParams.get('q')).toBe('normativa IRPF ejercicio 2025');
+    });
+    const listen = (server: ReturnType<typeof createServer>) => new Promise<void>((resolve, reject) => {
+      server.once('error', reject); server.listen(0, '127.0.0.1', resolve);
+    });
+    const address = (server: ReturnType<typeof createServer>) => {
+      const value = server.address();
+      if (!value || typeof value === 'string') throw new Error('Expected a local test server address.');
+      return 'http://127.0.0.1:' + (value as AddressInfo).port;
+    };
+    await Promise.all([listen(ollama), listen(search)]);
+    const repository = createRepository();
+    const app = await createTestApp(repository, {
+      ...config,
+      aiEnabled: true,
+      ollamaBaseURL: address(ollama),
+      ollamaModel: 'synthetic-model',
+      webSearchEnabled: true,
+      webSearchBaseURL: address(search),
+    });
+    try {
+      const response = await app.inject({
+        method: 'POST', url: '/api/v1/assistant/web-search',
+        payload: {
+          consent: true, query: 'normativa IRPF ejercicio 2025', mode: 'tax', domains: ['boe.es'],
+          jurisdiction: 'España', matter: 'IRPF', taxYear: '2025', filingYear: '2026', referenceDate: '2026-11-01',
+        },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json().data).toMatchObject({
+        answer: 'La fuente oficial publica la norma aplicable [S1].',
+        provider: 'SearXNG', mode: 'tax',
+        taxContext: { jurisdiction: 'España', matter: 'IRPF', taxYear: '2025', filingYear: '2026', referenceDate: '2026-11-01' },
+        sourceCount: 1,
+      });
+      expect(repository.listAccounts).not.toHaveBeenCalled();
+      expect(repository.listTransactions).not.toHaveBeenCalled();
+      expect(JSON.stringify(modelRequests[0])).not.toContain('account-1');
+      expect(JSON.stringify(modelRequests[0])).not.toContain('Alimentación');
+      expect(JSON.stringify(modelRequests[0])).not.toContain('200000');
+      expect(modelRequests[0]?.tools).toBeDefined();
+      expect(modelRequests[1]?.tools).toBeUndefined();
+      const secondMessages = modelRequests[1]?.messages as Array<{ role: string; content: string }>;
+      expect(secondMessages.some((message) => message.role === 'tool' && message.content.includes('www.boe.es'))).toBe(true);
+    } finally {
+      await Promise.all([
+        new Promise<void>((resolve, reject) => ollama.close((error) => error ? reject(error) : resolve())),
+        new Promise<void>((resolve, reject) => search.close((error) => error ? reject(error) : resolve())),
+      ]);
+    }
+  });
+
+  it('rejects a model search query different from the exact text approved by the user', async () => {
+    let searchCalls = 0;
+    let chatCall = 0;
+    const ollama = createServer((request, response) => {
+      response.setHeader('content-type', 'application/json');
+      if (request.url === '/api/tags') {
+        response.writeHead(200); response.end(JSON.stringify({ models: [{ name: 'synthetic-model' }] })); return;
+      }
+      chatCall += 1;
+      response.writeHead(200);
+      response.end(JSON.stringify({ message: { role: 'assistant', content: '', tool_calls: [{
+        function: { name: 'web_search', arguments: { query: 'consulta ampliada con datos inventados' } },
+      }] } }));
+    });
+    const search = createServer((_request, response) => { searchCalls += 1; response.writeHead(200); response.end(JSON.stringify({ results: [] })); });
+    const listen = (server: ReturnType<typeof createServer>) => new Promise<void>((resolve, reject) => {
+      server.once('error', reject); server.listen(0, '127.0.0.1', resolve);
+    });
+    const address = (server: ReturnType<typeof createServer>) => {
+      const value = server.address();
+      if (!value || typeof value === 'string') throw new Error('Expected a local test server address.');
+      return 'http://127.0.0.1:' + (value as AddressInfo).port;
+    };
+    await Promise.all([listen(ollama), listen(search)]);
+    const app = await createTestApp(createRepository(), {
+      ...config, aiEnabled: true, ollamaBaseURL: address(ollama), ollamaModel: 'synthetic-model',
+      webSearchEnabled: true, webSearchBaseURL: address(search),
+    });
+    try {
+      const response = await app.inject({
+        method: 'POST', url: '/api/v1/assistant/web-search',
+        payload: { consent: true, query: 'consulta aprobada', mode: 'general', domains: [] },
+      });
+      expect(chatCall).toBe(1);
+      expect(response.statusCode).toBe(422);
+      expect(response.json().error.code).toBe('WEB_SEARCH_TOOL_UNSUPPORTED');
+      expect(searchCalls).toBe(0);
+    } finally {
+      await Promise.all([
+        new Promise<void>((resolve, reject) => ollama.close((error) => error ? reject(error) : resolve())),
+        new Promise<void>((resolve, reject) => search.close((error) => error ? reject(error) : resolve())),
+      ]);
+    }
   });
 
   it('validates assistant period and bounds without fetching finance data', async () => {
