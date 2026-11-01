@@ -684,7 +684,7 @@ export function GoalsPanel({ currency }: { currency: string }) {
           <details className="panel planning-data-management">
             <summary>Datos locales, ámbito y copias de seguridad</summary>
             <p>Los objetivos y compromisos se guardan en <code>planning-data.json</code> en el directorio de datos de la API, con escritura atómica y permisos restrictivos. El archivo está separado de las cuentas y los movimientos de Actual Budget.</p>
-            <p>La copia cifrada existente de Actual solo incluye el directorio de datos del servidor de Actual; no incluye este archivo de planificación. Exporta o conserva este archivo por un procedimiento local seguro si necesitas respaldar estos datos. Puedes borrarlo desde esta pantalla; el borrado no afecta a movimientos ni a backups de Actual.</p>
+            <p>El backup cifrado unificado incluye planning-data.json junto con el estado local inventariado, las valoraciones patrimoniales, el índice documental y los justificantes binarios. La exportación portable es un snapshot legible, no restaurable; usa npm run backup:actual y conserva su clave separada para recuperar el conjunto completo. Puedes borrar los datos de planificación desde esta pantalla; ese borrado no afecta a movimientos ni a otras áreas.</p>
             {data.notes.map((note) => <p key={note}>{note}</p>)}
           </details>
         </>
