@@ -61,7 +61,7 @@ El chat no tiene herramientas. No puede consultar datos adicionales, navegar, es
 5. El backend ejecuta el proveedor SearXNG configurado, valida su destino, limita tiempo y respuesta, rechaza redirecciones y filtra enlaces/resúmenes. Solo los resultados acotados se devuelven como contenido no confiable.
 6. Ollama realiza una segunda inferencia sin herramientas para sintetizar hallazgos y referencias [S1], [S2], etc. La UI presenta los enlaces originales para revisión humana.
 
-El modelo no recibe red general, navegador, shell, filesystem, API interna, herramientas MCP arbitrarias ni acceso a la cuenta financiera. La API no descarga las páginas destino; los fragmentos son evidencia preliminar y no sustituyen la lectura del documento original.
+El modelo no recibe red general, navegador, shell, filesystem, API interna, herramientas MCP arbitrarias ni acceso a la cuenta financiera. Tras la búsqueda, el backend puede recuperar hasta tres documentos oficiales desde una allowlist cerrada de hosts HTTPS: valida DNS público, fija la IP resuelta, rechaza redirects, limita tiempo/tamaño y no envía cookies ni credenciales. Para normas BOE-A consulta metadatos y relaciones de legislación consolidada; para HTML/texto oficial extrae un fragmento en memoria. La recuperación no se ejecuta en hosts externos no oficiales y no persiste documentos ni extractos. El modelo recibe solo evidencia acotada y sigue sin herramientas en la segunda inferencia. El texto consolidado BOE es informativo y no resuelve derogaciones tácitas, reglas transitorias ni aplicación concreta.
 
 ## Límites de alcance
 
