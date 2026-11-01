@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { LocalAiBusyError, LocalAiCancelledError, LocalAiClient, LocalAiContextBudgetError, LocalAiToolCallUnsupportedError, LocalAiUnavailableError } from '../src/local-ai.js';
 import type { AssistantContext, WebResearchRequest } from '../src/local-ai.js';
-import type { SearXNGSearchProvider } from '../src/web-search.js';
+import type { SearXNGSearchProvider, WebSearchProvider } from '../src/web-search.js';
 
 const config = { enabled: true, baseURL: 'http://127.0.0.1:11434', model: 'synthetic-model', timeoutMs: 1_000, maxContextChars: 2_000 };
 const context: AssistantContext = {
