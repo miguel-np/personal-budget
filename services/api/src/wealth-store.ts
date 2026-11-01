@@ -64,7 +64,7 @@ export const ExternalAssetSchema = z.object({
     ids.add(valuation.id);
     if (valuation.currency !== asset.currency) context.addIssue({ code: 'custom', path: ['valuations', index, 'currency'], message: 'A valuation must use the asset currency.' });
   }
-}).refine((asset) => asset.kind.endsWith('_liability') || asset.kind === 'loan' || asset.kind === 'mortgage' || asset.kind !== 'other_liability', 'Invalid wealth kind.');
+});
 export type ExternalAsset = z.infer<typeof ExternalAssetSchema>;
 
 export const WealthDataSchema = z.object({
@@ -81,6 +81,12 @@ export const WealthDataSchema = z.object({
   data.assets.forEach((asset, index) => {
     if (assetIds.has(asset.id)) context.addIssue({ code: 'custom', path: ['assets', index, 'id'], message: 'Asset IDs must be unique.' });
     assetIds.add(asset.id);
+  });
+  const linkedAccountIds = new Set<string>();
+  data.assets.forEach((asset, index) => {
+    if (!asset.actualAccountId) return;
+    if (linkedAccountIds.has(asset.actualAccountId)) context.addIssue({ code: 'custom', path: ['assets', index, 'actualAccountId'], message: 'An Actual account may only be linked to one external asset record.' });
+    linkedAccountIds.add(asset.actualAccountId);
   });
   const accountIds = new Set<string>();
   data.accountClassifications.forEach((entry, index) => {
