@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
-import { SearXNGSearchProvider, WebSearchResponseTooLargeError } from '../src/web-search.js';
+import { OFFICIAL_SOURCE_HOSTS, SearXNGSearchProvider, WebSearchResponseTooLargeError } from '../src/web-search.js';
 import { assessBoeTemporalMetadata, extractOfficialHtmlText, retrieveOfficialDocument } from '../src/official-evidence.js';
 import type { OfficialDocumentFetcher } from '../src/official-evidence.js';
 
@@ -74,22 +74,70 @@ describe('SearXNG web search provider', () => {
     });
   });
 
+  it('only trusts exact official hosts and keeps domain filters as namespace selectors', async () => {
+    expect(OFFICIAL_SOURCE_HOSTS).toContain('sede.agenciatributaria.gob.es');
+    expect(OFFICIAL_SOURCE_HOSTS).toContain('www.boe.es');
+    expect(OFFICIAL_SOURCE_HOSTS).not.toContain('arbitrary.boe.es');
+
+    const fixture = await serve((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ results: [
+        { title: 'AEAT sede', url: 'https://sede.agenciatributaria.gob.es/Sede/irpf.html', content: 'Información oficial AEAT.' },
+        { title: 'BOE www', url: 'https://www.boe.es/buscar/act.php?id=BOE-A-2025-1', content: 'Publicación oficial.' },
+        { title: 'Subdominio no aprobado', url: 'https://arbitrary.boe.es/documento', content: 'No debe heredar confianza.' },
+        { title: 'Fuente externa', url: 'https://example.org/article', content: 'Contexto externo.' },
+      ] }));
+    });
+    const provider = new SearXNGSearchProvider(config(fixture.url));
+    const general = await provider.search('consulta de prueba', []);
+    expect(general.sources.map((source) => source.domain)).toEqual([
+      'sede.agenciatributaria.gob.es', 'www.boe.es', 'example.org',
+    ]);
+    expect(general.sources[0]).toMatchObject({
+      institution: 'Agencia Estatal de Administración Tributaria (AEAT)',
+      sourceAuthority: 'tax_agency_guidance',
+    });
+    expect(general.sources[1]).toMatchObject({
+      institution: 'Boletín Oficial del Estado (BOE)',
+      sourceAuthority: 'legislation',
+    });
+    const filtered = await provider.search('consulta de prueba', ['boe.es']);
+    expect(filtered.sources.map((source) => source.domain)).toEqual(['www.boe.es']);
+  });
+
+  it('does not retrieve documents from a non-allowlisted subdomain of an official namespace', async () => {
+    const fetcher: OfficialDocumentFetcher = async () => {
+      throw new Error('The custom fetcher must not be invoked for an unapproved host.');
+    };
+    const source = {
+      id: 'S1', title: 'Subdominio desconocido', url: 'https://arbitrary.boe.es/documento',
+      domain: 'arbitrary.boe.es', institution: 'BOE', publishedAt: null, modifiedAt: null, snippet: 'Snippet',
+      sourceKind: 'normativa' as const, sourceAuthority: 'legislation' as const,
+    };
+    const result = await retrieveOfficialDocument(source, 'consulta', '2026-11-01', 1_000, undefined, fetcher);
+    expect(result.status).toBe('unsupported');
+  });
+
   it('classifies DGT and TEAC sources distinctly from legislation and generic guidance', async () => {
     const fixture = await serve((_request, response) => {
       response.writeHead(200, { 'content-type': 'application/json' });
       response.end(JSON.stringify({ results: [
         { title: 'Consulta vinculante', url: 'https://petete.tributos.hacienda.gob.es/consultas/', content: 'Criterio DGT.' },
+        { title: 'Sede DGT', url: 'https://sede.tributos.hacienda.gob.es/consulta/', content: 'Sede electrónica DGT.' },
         { title: 'Resolución TEAC', url: 'https://serviciostelematicosext.hacienda.gob.es/TEAC/DYCTEA/', content: 'Criterio TEAC.' },
       ] }));
     });
     const provider = new SearXNGSearchProvider(config(fixture.url));
     const result = await provider.search('criterio tributario', [
-      'petete.tributos.hacienda.gob.es', 'serviciostelematicosext.hacienda.gob.es',
+      'petete.tributos.hacienda.gob.es', 'serviciostelematicosext.hacienda.gob.es', 'hacienda.gob.es',
     ]);
     expect(result.sources[0]).toMatchObject({
       institution: 'Dirección General de Tributos (DGT)', sourceAuthority: 'dgt_criteria',
     });
     expect(result.sources[1]).toMatchObject({
+      institution: 'Dirección General de Tributos (DGT)', sourceAuthority: 'dgt_criteria',
+    });
+    expect(result.sources[2]).toMatchObject({
       institution: 'Tribunal Económico-Administrativo Central (TEAC)', sourceAuthority: 'teac_criteria',
     });
   });
