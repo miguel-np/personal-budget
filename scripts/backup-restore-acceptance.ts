@@ -4,6 +4,11 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { chmod, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readAccountScope } from '../services/api/src/account-scope.js';
+import { readAppPreferences } from '../services/api/src/app-preferences.js';
+import { readCurrencyPreferences } from '../services/api/src/currency-preferences.js';
+import { readFindingReviewState } from '../services/api/src/intelligence-store.js';
+import { readPlanningData } from '../services/api/src/planning-store.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const envFile = resolve(root, '.env');
