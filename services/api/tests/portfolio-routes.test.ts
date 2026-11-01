@@ -130,7 +130,7 @@ describe('wealth, local evidence and portable export contracts', () => {
     const document = upload.json().data;
     expect(document.sha256).toBe(createHash('sha256').update(bytes).digest('hex'));
     const documentFile = join(directory, 'documents', document.fileName);
-    expect((await stat(documentFile')).mode & 0o777).toBe(0o600);
+    expect((await stat(documentFile)).mode & 0o777).toBe(0o600);
     expect((await readFile(documentFile)).equals(bytes)).toBe(true);
     const link = await app.inject({
       method: 'PUT', url: '/api/v1/documents/' + document.id + '/links',
