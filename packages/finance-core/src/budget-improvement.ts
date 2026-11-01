@@ -13,7 +13,17 @@ export interface BudgetImprovementProposal {
   readonly observedMonthlyExpenseMinor: number; readonly estimatedMonthlySavingsMinor: number;
   readonly estimatedAnnualSavingsMinor: number; readonly confidence: 'medium' | 'high';
   readonly explanation: string;
-  readonly evidence: { readonly periodMonths: number; readonly transactionCount: number; readonly observedExpenseMinor: number; readonly rule: string };
+  readonly evidence: {
+    readonly signal: 'budget_overrun' | 'recent_increase';
+    readonly periodMonths: number;
+    readonly transactionCount: number;
+    readonly observedExpenseMinor: number;
+    readonly budgetedMinor: number | null;
+    readonly budgetSpentMinor: number | null;
+    readonly latestMonthExpenseMinor: number | null;
+    readonly priorMonthsAverageExpenseMinor: number | null;
+    readonly rule: string;
+  };
   readonly assumptions: readonly string[]; readonly warnings: readonly string[];
 }
 export interface BudgetImprovementBaseline {
@@ -80,21 +90,27 @@ export function buildBudgetImprovementProposals(
       suggestedReductionPercent, observedMonthlyExpenseMinor: monthlyExpense,
       estimatedMonthlySavingsMinor: monthlySavings, estimatedAnnualSavingsMinor: annualSavings, confidence,
       explanation: (hasBudgetOverrun
-        ? 'El último presupuesto mensual observado se superó; el escenario estima volver al límite asignado.'
-        : 'El gasto del último mes completo superó la media de los meses anteriores; el escenario estima volver a ese nivel histórico.') +
+        ? 'El gasto del último mes completo superó la asignación presupuestaria. El porcentaje sugerido cuantifica ese exceso; el ahorro estimado se calcula aplicándolo al gasto mensual medio del periodo.'
+        : 'El gasto del último mes completo superó la media de los meses anteriores. El porcentaje sugerido cuantifica el aumento; el ahorro estimado se calcula aplicándolo al gasto mensual medio del periodo.') +
         ' Has marcado esta categoría como ' + classification + '. ' +
         (goal === 'reach_savings_goal' ? 'Compara el impacto con tu objetivo de ahorro.'
           : goal === 'free_cash_flow' ? 'Compara el margen de caja que podría liberar.'
             : goal === 'reduce_variable_spending' ? 'Permite evaluar la tendencia del gasto variable.'
               : 'Evalúa si el ajuste mejora tu margen mensual.'),
       evidence: {
+        signal: hasBudgetOverrun ? 'budget_overrun' : 'recent_increase',
         periodMonths: baseline.periodMonths, transactionCount: observation.transactionCount,
         observedExpenseMinor: observation.expenseMinor,
+        budgetedMinor, budgetSpentMinor, latestMonthExpenseMinor, priorMonthsAverageExpenseMinor,
         rule: hasBudgetOverrun
           ? 'Categoría marcada por el usuario como flexible/revisable y gasto del último mes superior al presupuesto positivo del mismo mes.'
           : 'Categoría marcada por el usuario como flexible/revisable y gasto del último mes superior a la media de los meses de referencia previos.',
       },
-      assumptions: ['El porcentaje sugerido se deriva del exceso frente al presupuesto positivo o del aumento frente a la media de meses anteriores; el usuario puede editarlo antes de simular.', 'El ahorro mensual se calcula aplicando ese porcentaje al gasto mensual medio del periodo; la extensión anual mantiene el mismo supuesto y no es un ahorro garantizado.'],
+      assumptions: [
+        'El porcentaje sugerido se deriva del exceso frente al presupuesto positivo del último mes completo o del aumento frente a la media de los meses anteriores; el usuario puede editarlo antes de simular.',
+        'El ahorro mensual aplica ese porcentaje al gasto mensual medio de todo el periodo. No equivale necesariamente al exceso presupuestario observado ni garantiza volver exactamente al importe asignado.',
+        'La extensión anual mantiene el mismo supuesto durante doce meses; no es un ahorro observado ni garantizado.',
+      ],
       warnings: baseline.unconvertedTransactionCount > 0 ? ['Hay movimientos sin conversión válida; la propuesta puede no representar todo el gasto del ámbito.'] : [],
     });
   }

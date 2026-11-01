@@ -22,9 +22,9 @@ La prioridad elegida puede ser aumentar el margen mensual, reducir gasto variabl
 
 ## Propuestas de la primera versión
 
-La versión inicial genera una propuesta conservadora de revisión del gasto cuando la categoría cumple los mínimos de evidencia: al menos tres movimientos, actividad en dos meses y al menos 2.500 unidades menores de gasto neto en el periodo. La reducción sugerida inicial es del 5 % del gasto mensual medio observado. La confianza es una etiqueta cualitativa basada en longitud/cobertura del historial, no una probabilidad.
+Una propuesta solo se genera cuando existe una señal verificable en el último mes completo: exceso frente a una asignación presupuestaria positiva o aumento frente a la media de los meses anteriores. Además, requiere al menos tres movimientos, actividad en dos meses y clasificación explícita como flexible/revisable. El porcentaje sugerido se deriva de la señal observada, no de un porcentaje universal. La confianza es una etiqueta cualitativa basada en longitud y cobertura del historial, no una probabilidad.
 
-Cada propuesta aporta categoría, explicación, periodo, número de movimientos, importe observado, regla desencadenante, ahorro mensual/anual hipotético, confianza, supuestos y advertencias. Los importes de ahorro son escenarios: no son ahorro observado ni garantizado. Los movimientos no convertidos se advierten.
+Cada propuesta aporta categoría, explicación, señal de origen (`budget_overrun` o `recent_increase`), importes observados que sustentan la señal, periodo, número de movimientos, regla desencadenante, ahorro mensual/anual hipotético, confianza, supuestos y advertencias. Cuando la señal es un exceso presupuestario, el porcentaje cuantifica ese exceso del último mes; el ahorro se calcula aplicándolo al gasto mensual medio del periodo. Por eso el ahorro hipotético no equivale necesariamente al exceso ni garantiza volver exactamente al presupuesto asignado. Los importes de ahorro son escenarios: no son ahorro observado ni garantizado. Los movimientos no convertidos se advierten.
 
 ## Simulación y guardado
 

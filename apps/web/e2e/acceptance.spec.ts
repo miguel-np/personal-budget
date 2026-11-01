@@ -816,28 +816,33 @@ test('settings persist theme and regional formatting and reset only local prefer
 
 
 test('cash-flow projection separates actual movements, commitments and unsaved scenarios', async ({ page, request }) => {
-  const submittedBodies: { horizonDays: number; reserveMinor?: number; scenario?: { date: string; amountMinor: number; direction: 'income' | 'expense'; label: string } }[] = [];
+  const submittedBodies: { horizonDays: number; reserveMinor?: number; recurringCandidateIds?: string[]; scenario?: { date: string; amountMinor: number; direction: 'income' | 'expense'; label: string } }[] = [];
   await page.route('**/api/v1/cash-flow/project', async (route) => {
-    const body = route.request().postDataJSON() as { horizonDays: number; reserveMinor?: number; scenario?: { date: string; amountMinor: number; direction: 'income' | 'expense'; label: string } };
+    const body = route.request().postDataJSON() as { horizonDays: number; reserveMinor?: number; recurringCandidateIds?: string[]; scenario?: { date: string; amountMinor: number; direction: 'income' | 'expense'; label: string } };
     submittedBodies.push(body);
     const hasScenario = Boolean(body.scenario);
     const scenarioMinor = hasScenario ? (body.scenario.direction === 'expense' ? -body.scenario.amountMinor : body.scenario.amountMinor) : 0;
+    const selectedRecurring = body.recurringCandidateIds?.includes('rc_aaaaaaaaaaaaaaaaaaaaaaaa') ?? false;
+    const recurringMinor = selectedRecurring ? -2_000 : 0;
     const projection = {
       isEstimate: true, asOfDate: '2026-11-01', startDate: '2026-11-01', endDate: '2026-11-30',
-      openingBalanceMinor: 200_000, endingBalanceMinor: 138_000 + scenarioMinor,
-      minimumProjectedBalanceMinor: 138_000 + scenarioMinor, minimumBalanceDate: '2026-11-05',
+      openingBalanceMinor: 200_000, endingBalanceMinor: 138_000 + scenarioMinor + recurringMinor,
+      minimumProjectedBalanceMinor: 138_000 + scenarioMinor + recurringMinor, minimumBalanceDate: '2026-11-05',
       firstDeficitDate: null, reserveMinor: body.reserveMinor ?? null, firstReserveBreachDate: null,
       totalInflowMinor: 0, totalOutflowMinor: 62_000 + Math.abs(scenarioMinor), netChangeMinor: -62_000 + scenarioMinor,
       timeline: [{
         date: '2026-11-05', actualNetChangeMinor: -12_000, actualClearedCount: 0, actualPendingCount: 1, actualUnknownCount: 0,
-        commitmentNetChangeMinor: -50_000, scenarioNetChangeMinor: scenarioMinor,
-        totalInflowMinor: 0, totalOutflowMinor: 62_000 + Math.abs(scenarioMinor),
-        netChangeMinor: -62_000 + scenarioMinor, projectedBalanceMinor: 138_000 + scenarioMinor,
+        commitmentNetChangeMinor: -50_000, confirmedRecurringNetChangeMinor: 0,
+        recurringCandidateNetChangeMinor: recurringMinor, scenarioNetChangeMinor: scenarioMinor,
+        totalInflowMinor: 0, totalOutflowMinor: 62_000 + Math.abs(scenarioMinor) + Math.abs(recurringMinor),
+        netChangeMinor: -62_000 + scenarioMinor + recurringMinor, projectedBalanceMinor: 138_000 + scenarioMinor + recurringMinor,
         belowReserve: null, eventIds: ['actual:internet', 'manual:rent'],
       }],
       sourceTotals: {
         actual_transaction: { inflowMinor: 0, outflowMinor: 12_000, netChangeMinor: -12_000, eventCount: 1 },
         manual_commitment: { inflowMinor: 0, outflowMinor: 50_000, netChangeMinor: -50_000, eventCount: 1 },
+        confirmed_recurring: { inflowMinor: 0, outflowMinor: 0, netChangeMinor: 0, eventCount: 0 },
+        recurring_candidate: { inflowMinor: 0, outflowMinor: Math.abs(recurringMinor), netChangeMinor: recurringMinor, eventCount: selectedRecurring ? 1 : 0 },
         scenario: { inflowMinor: 0, outflowMinor: Math.abs(scenarioMinor), netChangeMinor: scenarioMinor, eventCount: hasScenario ? 1 : 0 },
       },
       assumptions: ['Proyección sintética para E2E.'], warnings: [],
@@ -849,6 +854,14 @@ test('cash-flow projection separates actual movements, commitments and unsaved s
         unknownOpeningAccounts: [],
         actualEvents: [{ id: 'actual:internet', date: '2026-11-05', amountMinor: -12_000, source: 'actual_transaction', label: 'Internet', clearedStatus: 'pending' }],
         manualEvents: [{ id: 'manual:rent', date: '2026-11-05', amountMinor: -50_000, source: 'manual_commitment', label: 'Alquiler' }],
+        confirmedRecurringEvents: [],
+        recurringCandidates: [{
+          id: 'rc_aaaaaaaaaaaaaaaaaaaaaaaa', payee: 'Suscripción sintética', occurrenceCount: 4,
+          estimatedIntervalDays: 30, estimatedFrequency: 'mensual', meanAbsoluteAmountMinor: 2_000,
+          amountDeviationPercent: 0, nextDate: '2026-11-15', upcomingEventsCount: 1,
+          signals: ['Cuatro cargos mensuales.'], warnings: ['Candidato estadístico, no confirmado.'],
+        }],
+        recurringCandidateEvents: [{ id: 'candidate:subscription', candidateId: 'rc_aaaaaaaaaaaaaaaaaaaaaaaa', date: '2026-11-15', amountMinor: -2_000, source: 'recurring_candidate', label: 'Suscripción sintética' }],
         scenarioEvents: hasScenario ? [{ id: 'scenario:unsaved', date: body.scenario.date, amountMinor: scenarioMinor, source: 'scenario', label: body.scenario.label }] : [],
         duplicateCommitmentIds: [], possibleDuplicateCommitments: [],
         projection,
@@ -866,14 +879,21 @@ test('cash-flow projection separates actual movements, commitments and unsaved s
   await expect(page.getByText('Proyección determinista')).toBeVisible();
 
   const cashPanel = page.locator('article.planning-panel').filter({ has: page.getByRole('heading', { name: 'Saldo estimado y flujo de caja' }) });
+  await expect(cashPanel.getByText('Suscripción sintética')).toBeVisible();
+  await cashPanel.getByRole('checkbox').check();
+  await cashPanel.getByRole('button', { name: 'Recalcular con las recurrencias seleccionadas' }).click();
+  await expect(cashPanel.getByRole('status')).toContainText('hipótesis seleccionadas');
+  await expect(cashPanel.getByText('Candidato hipotético')).toBeVisible();
   await cashPanel.getByLabel('Fecha', { exact: true }).fill('2026-11-05');
   await cashPanel.getByLabel('Importe (EUR)', { exact: true }).fill('12.50');
   await cashPanel.getByLabel('Descripción', { exact: true }).fill('Compra hipotética');
   await cashPanel.getByRole('button', { name: 'Simular sin guardar' }).click();
   await expect(cashPanel.getByRole('status')).toContainText('No se ha guardado ni modificado Actual Budget');
-  expect(submittedBodies).toHaveLength(2);
+  expect(submittedBodies).toHaveLength(3);
   expect(submittedBodies[0]).not.toHaveProperty('scenario');
-  expect(submittedBodies[1].scenario).toMatchObject({ date: '2026-11-05', amountMinor: 1_250, direction: 'expense', label: 'Compra hipotética' });
+  expect(submittedBodies[1].recurringCandidateIds).toEqual(['rc_aaaaaaaaaaaaaaaaaaaaaaaa']);
+  expect(submittedBodies[2].recurringCandidateIds).toEqual(['rc_aaaaaaaaaaaaaaaaaaaaaaaa']);
+  expect(submittedBodies[2].scenario).toMatchObject({ date: '2026-11-05', amountMinor: 1_250, direction: 'expense', label: 'Compra hipotética' });
 
   const state = await (await request.get(fixtureApi + '/__test__/state')).json();
   expect(state.transactionWrites).toBe(0);

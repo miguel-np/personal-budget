@@ -55,4 +55,4 @@ Cuerpo estricto: `horizonDays` (7/30/90), `reserveMinor` opcional, `scenario` op
 
 ## Privacidad y validación
 
-El cálculo es local y determinista. No usa Ollama y no escribe en Actual. Las pruebas sintéticas cubren balances desconocidos, entradas/salidas, reserva, déficit, límites de horizonte y la separación entre recurrencias confirmadas/candidatas. Las pruebas API cubren duplicados exactos, conversiones/omisiones por divisa incompatible, selección explícita de candidatos y escenarios no persistentes.
+El cálculo es local y determinista. No usa Ollama y no escribe en Actual. Las pruebas sintéticas cubren balances desconocidos, entradas/salidas externas, transferencias, reserva, déficit, límites de horizonte, rendimiento y separación entre recurrencias confirmadas/candidatas. Las pruebas API cubren splits, compromiso anual, conversión de compromisos, ausencia de tasa, transferencias con ámbito completo/seleccionado, candidatos recurrentes y escenarios no persistentes.

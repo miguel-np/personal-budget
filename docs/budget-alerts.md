@@ -23,7 +23,7 @@ La API distingue asignación positiva, asignación explícita cero, categoría s
 
 ## Deduplicación y decisiones
 
-La identidad del evento se deriva de regla + categoría + mes. Reconsultar Presupuestos no crea avisos duplicados para el mismo cruce. El usuario puede silenciar el aviso para ese periodo o posponerlo (7 días en la UI; la API limita el aplazamiento a 90 días). El aviso vuelve a mostrarse al expirar el aplazamiento, salvo que se silencie. Un periodo nuevo tiene una identidad nueva.
+La identidad del evento se deriva de regla + categoría + mes. Reconsultar Presupuestos no crea avisos duplicados para el mismo cruce. El usuario puede silenciar el aviso para ese periodo o posponerlo (7 días en la UI; la API limita el aplazamiento a 90 días). El estado de reglas y decisiones se guarda localmente y sobrevive al reinicio de la API. El aviso vuelve a mostrarse al expirar el aplazamiento, salvo que se silencie. Un periodo nuevo tiene una identidad nueva y genera su propio aviso si sigue cruzándose el umbral.
 
 Las reglas se pueden crear, editar, activar/desactivar y eliminar. Al editar una regla se genera una nueva identidad; las decisiones de la regla anterior no se heredan a un umbral distinto. Eliminar o reemplazar reglas retira las decisiones de eventos vinculadas a reglas que dejan de existir. Las reglas desactivadas no disparan alertas.
 

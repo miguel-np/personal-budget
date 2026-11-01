@@ -8,7 +8,11 @@ interface Proposal {
   id: string; categoryId: string; categoryName: string; suggestedReductionPercent: number;
   observedMonthlyExpenseMinor: number; estimatedMonthlySavingsMinor: number; estimatedAnnualSavingsMinor: number;
   confidence: 'medium' | 'high'; explanation: string;
-  evidence: { periodMonths: number; transactionCount: number; observedExpenseMinor: number; rule: string };
+  evidence: {
+    signal: 'budget_overrun' | 'recent_increase'; periodMonths: number; transactionCount: number;
+    observedExpenseMinor: number; budgetedMinor: number | null; budgetSpentMinor: number | null;
+    latestMonthExpenseMinor: number | null; priorMonthsAverageExpenseMinor: number | null; rule: string;
+  };
   assumptions: readonly string[]; warnings: readonly string[];
 }
 interface Baseline {
@@ -199,8 +203,10 @@ export function BudgetImprovementPanel({ currency }: { currency: string }) {
                 <div><strong>{proposal.categoryName}</strong><span>Gasto observado medio: {formatMoney(proposal.observedMonthlyExpenseMinor, currency)} / mes</span></div>
                 <div className="comparison-meta">
                   <p>{proposal.explanation}</p>
+                  <span>Señal: {proposal.evidence.signal === 'budget_overrun' ? 'exceso frente al presupuesto del último mes completo' : 'aumento frente a la media histórica'}.</span>
                   <span>{proposal.evidence.transactionCount} movimientos en {proposal.evidence.periodMonths} meses · confianza {proposal.confidence === 'high' ? 'alta' : 'media'}</span>
-                  <span>Ahorro hipotético al 5 %: {formatMoney(proposal.estimatedMonthlySavingsMinor, currency)} / mes · {formatMoney(proposal.estimatedAnnualSavingsMinor, currency)} / año.</span>
+                  <span>Ahorro hipotético sugerido al {proposal.suggestedReductionPercent} %: {formatMoney(proposal.estimatedMonthlySavingsMinor, currency)} / mes · {formatMoney(proposal.estimatedAnnualSavingsMinor, currency)} / año.</span>
+                  <span>{proposal.evidence.rule}</span>
                   <label className="field-label compact-label"><input type="checkbox" checked={Boolean(selected[proposal.id])} onChange={(event) => setSelected((current) => ({ ...current, [proposal.id]: event.currentTarget.checked }))} /> Incluir en el escenario</label>
                   <label className="field-label compact-label">Reducción hipotética (%)
                     <input type="number" min={1} max={100} step={1} value={percentages[proposal.id] ?? proposal.suggestedReductionPercent} onChange={(event) => setPercentages((current) => ({ ...current, [proposal.id]: Number(event.currentTarget.value) }))} />
