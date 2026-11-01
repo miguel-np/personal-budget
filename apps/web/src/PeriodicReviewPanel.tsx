@@ -361,7 +361,7 @@ export function PeriodicReviewPanel({ onNavigate }: { onNavigate: (target: Navig
                 <div className="detail-line"><span>Hallazgos repetidos</span><strong>{payload.comparisonToPreviousReview.repeatedFindingCount}</strong></div>
                 <div className="detail-line"><span>Hallazgos con evidencia cambiada</span><strong>{payload.comparisonToPreviousReview.changedEvidenceCount}</strong></div>
                 <div className="detail-line"><span>Ya no aparecen</span><strong>{payload.comparisonToPreviousReview.noLongerPresentCount}</strong></div>
-              </> : <p className="setting-hint">Todavía no existe una revisión anterior del mismo tipo, divisa y conjunto de cuentas.</p>}
+              </> : <p className="setting-hint">No existe una revisión anterior comparable, o el historial anterior no guardaba la identidad necesaria para una comparación demostrable.</p>}
             </article>
           </div>
 
