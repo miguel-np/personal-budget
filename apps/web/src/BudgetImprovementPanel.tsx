@@ -14,6 +14,11 @@ interface Proposal {
     latestMonthExpenseMinor: number | null; priorMonthsAverageExpenseMinor: number | null; rule: string;
   };
   assumptions: readonly string[]; warnings: readonly string[];
+  priorityRank: number; priorityReason: string;
+  goalImpact: {
+    goalId: string; goalName: string; monthlyContributionGapMinor: number;
+    estimatedGapCoveredMinor: number; estimatedGapRemainingMinor: number;
+  } | null;
 }
 interface Baseline {
   currency: string; startDate: string; endDate: string; periodMonths: number;
@@ -24,6 +29,12 @@ interface Scenario {
   id: string; name: string; currency: string; startDate: string; endDate: string;
   reductions: readonly { categoryId: string; reductionPercent: number }[];
   estimatedMonthlySavingsMinor: number; estimatedAnnualSavingsMinor: number; createdAt: string;
+  comparisonStatus?: 'comparable' | 'different_currency' | 'different_period' | 'preferences_changed';
+  comparison?: {
+    baselineMonthlySavingsMinor: number; estimatedMonthlySavingsMinor: number;
+    projectedMonthlySavingsMinor: number; estimatedAnnualSavingsMinor: number;
+    projectedAnnualSavingsMinor: number; assumptions: readonly string[]; warnings: readonly string[];
+  } | null;
 }
 interface Decision { proposalId: string; status: 'accepted' | 'rejected' | 'postponed'; updatedAt: string; }
 interface SavingsGoalProjection {
@@ -44,11 +55,24 @@ interface Analysis {
   savingsGoalContextStatus: 'ready' | 'review_required' | 'not_configured';
   savingsGoalContextWarnings: readonly string[];
 }
+interface GoalImpact {
+  goalId: string; goalName: string; targetDate: string; currency: string;
+  baselineMonthlyContributionMinor: number; scenarioMonthlyContributionMinor: number;
+  estimatedMonthlySavingsAllocatedMinor: number; requiredMonthlyContributionMinor: number | null;
+  monthlyContributionGapBeforeMinor: number | null; monthlyContributionGapAfterMinor: number | null;
+  baselineProjectedBalanceMinor: number; scenarioProjectedBalanceMinor: number; projectedBalanceIncreaseMinor: number;
+  baselineProjectedProgressPercent: number; scenarioProjectedProgressPercent: number;
+  baselineEstimatedCompletionDate: string | null; scenarioEstimatedCompletionDate: string | null;
+  baselineAchievableUnderCashFlow: boolean; scenarioAchievableUnderCashFlow: boolean;
+  assumptions: readonly string[]; warnings: readonly string[];
+}
 interface Simulation {
   estimatedMonthlySavingsMinor: number; estimatedAnnualSavingsMinor: number;
   projectedMonthlySavingsMinor: number; projectedAnnualSavingsMinor: number;
   selectedCategories: readonly { categoryId: string; categoryName: string; reductionPercent: number; monthlySavingsMinor: number }[];
   assumptions: readonly string[]; warnings: readonly string[];
+  goalImpacts: readonly GoalImpact[];
+  comparison: { baselineMonthlySavingsMinor: number; scenarioMonthlySavingsMinor: number; improvementMonthlyMinor: number; referenceStartDate: string; referenceEndDate: string };
 }
 interface ApiPayload<T> { data?: T; error?: { message?: string } }
 const classificationLabels: Record<Classification, string> = {
@@ -116,9 +140,13 @@ export function BudgetImprovementPanel({ currency }: { currency: string }) {
         method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ periodMonths, reductions }),
       });
-      const payload = await response.json() as ApiPayload<{ simulation: Simulation }>;
+      const payload = await response.json() as ApiPayload<{ simulation: Omit<Simulation, 'goalImpacts' | 'comparison'>; goalImpacts: readonly GoalImpact[]; comparison: Simulation['comparison'] }>;
       if (!response.ok || !payload.data) throw new Error(payload.error?.message ?? 'No se pudo simular la combinación.');
-      setSimulation(payload.data.simulation);
+      setSimulation({
+        ...payload.data.simulation,
+        goalImpacts: payload.data.goalImpacts,
+        comparison: payload.data.comparison,
+      });
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'No se pudo simular la combinación.'); }
     finally { setBusy(false); }
   }
@@ -243,6 +271,9 @@ export function BudgetImprovementPanel({ currency }: { currency: string }) {
                 <div><strong>{proposal.categoryName}</strong><span>Gasto observado medio: {formatMoney(proposal.observedMonthlyExpenseMinor, currency)} / mes</span></div>
                 <div className="comparison-meta">
                   <p>{proposal.explanation}</p>
+                  <span>Prioridad #{proposal.priorityRank}: {proposal.priorityReason}</span>
+                  {proposal.goalImpact ? <span>Impacto potencial en «{proposal.goalImpact.goalName}»: cubriría {formatMoney(proposal.goalImpact.estimatedGapCoveredMinor, currency)} de una brecha de aportación de {formatMoney(proposal.goalImpact.monthlyContributionGapMinor, currency)} al mes; brecha restante {formatMoney(proposal.goalImpact.estimatedGapRemainingMinor, currency)}. Supone destinar todo el ahorro a esa meta.</span> : null}
+                  <span>Ahorro neto mensual hipotético tras adoptar solo esta propuesta: {formatMoney(analysis.baseline.monthlySavingsMinor + proposal.estimatedMonthlySavingsMinor, currency)} frente a {formatMoney(analysis.baseline.monthlySavingsMinor, currency)} de base.</span>
                   <span>Señal: {proposal.evidence.signal === 'budget_overrun' ? 'exceso frente al presupuesto del último mes completo' : 'aumento frente a la media histórica'}.</span>
                   <span>{proposal.evidence.transactionCount} movimientos en {proposal.evidence.periodMonths} meses · confianza {proposal.confidence === 'high' ? 'alta' : 'media'}</span>
                   <span>Ahorro hipotético sugerido al {proposal.suggestedReductionPercent} %: {formatMoney(proposal.estimatedMonthlySavingsMinor, currency)} / mes · {formatMoney(proposal.estimatedAnnualSavingsMinor, currency)} / año.</span>
@@ -273,6 +304,27 @@ export function BudgetImprovementPanel({ currency }: { currency: string }) {
                   <article className="stat-card"><p>Ahorro adicional estimado / año</p><strong>{formatMoney(simulation.estimatedAnnualSavingsMinor, currency)}</strong></article>
                   <article className="stat-card"><p>Nuevo ahorro mensual estimado</p><strong>{formatMoney(simulation.projectedMonthlySavingsMinor, currency)}</strong></article>
                 </div>
+                <p className="section-footnote">Comparación del escenario · periodo {simulation.comparison.referenceStartDate} — {simulation.comparison.referenceEndDate}: ahorro neto mensual observado {formatMoney(simulation.comparison.baselineMonthlySavingsMinor, currency)} → {formatMoney(simulation.comparison.scenarioMonthlySavingsMinor, currency)}; mejora hipotética {formatMoney(simulation.comparison.improvementMonthlyMinor, currency)}.</p>
+                {goal === 'reach_savings_goal' ? (
+                  <div className="suggestion-block">
+                    <h4>Impacto simulado en objetivos compatibles</h4>
+                    <p className="section-footnote">Se recalcula cada objetivo con la aportación actual más el ahorro íntegro de este escenario. No cambia el objetivo ni reserva automáticamente ese dinero.</p>
+                    {simulation.goalImpacts.length === 0 ? <p className="muted-copy">No hay objetivos activos compatibles con la divisa, el ámbito y el plazo actuales.</p> : null}
+                    {simulation.goalImpacts.map((impact) => (
+                      <div className="comparison-row" key={impact.goalId}>
+                        <div><strong>{impact.goalName}</strong><span>Meta {impact.targetDate} · aportación mensual {formatMoney(impact.baselineMonthlyContributionMinor, currency)} → {formatMoney(impact.scenarioMonthlyContributionMinor, currency)}</span></div>
+                        <div className="comparison-meta">
+                          <span>Saldo proyectado {formatMoney(impact.baselineProjectedBalanceMinor, currency)} → {formatMoney(impact.scenarioProjectedBalanceMinor, currency)} (+{formatMoney(impact.projectedBalanceIncreaseMinor, currency)}).</span>
+                          <span>Progreso {impact.baselineProjectedProgressPercent.toFixed(1)} % → {impact.scenarioProjectedProgressPercent.toFixed(1)} %.</span>
+                          <span>Brecha de aportación mensual {impact.monthlyContributionGapBeforeMinor === null ? 'no calculable' : formatMoney(impact.monthlyContributionGapBeforeMinor, currency)} → {impact.monthlyContributionGapAfterMinor === null ? 'no calculable' : formatMoney(impact.monthlyContributionGapAfterMinor, currency)}.</span>
+                          <span>{impact.baselineAchievableUnderCashFlow ? 'La meta era alcanzable con el plan base.' : 'La meta no era alcanzable con el plan base.'} {impact.scenarioAchievableUnderCashFlow ? 'El escenario la hace alcanzable según estos supuestos.' : 'El escenario no la hace alcanzable dentro del horizonte.'}</span>
+                          {impact.scenarioEstimatedCompletionDate ? <span>Fecha estimada con escenario: {impact.scenarioEstimatedCompletionDate}.</span> : <span>No se estima una fecha de consecución con este escenario.</span>}
+                          {impact.warnings.map((warning) => <span className="warning-text" key={warning}>{warning}</span>)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
                 {simulation.assumptions.map((assumption) => <p className="section-footnote" key={assumption}>{assumption}</p>)}
                 <label className="field-label">Nombre del escenario<input value={scenarioName} onChange={(event) => setScenarioName(event.currentTarget.value)} maxLength={80} /></label>
                 <button className="button secondary" type="button" disabled={busy} onClick={() => void saveScenario()}>Guardar escenario local</button>
@@ -286,7 +338,15 @@ export function BudgetImprovementPanel({ currency }: { currency: string }) {
                 <div className="comparison-row" key={scenario.id}>
                   <div><strong>{scenario.name}</strong><span>{scenario.startDate} — {scenario.endDate}</span></div>
                   <div className="comparison-meta">
-                    <span>{formatMoney(scenario.estimatedMonthlySavingsMinor, currency)} / mes · {formatMoney(scenario.estimatedAnnualSavingsMinor, currency)} / año</span>
+                    {scenario.comparisonStatus === 'comparable' && scenario.comparison ? <>
+                      <span>Comparación sobre la misma base ({scenario.startDate} — {scenario.endDate}): ahorro neto mensual {formatMoney(scenario.comparison.baselineMonthlySavingsMinor, currency)} → {formatMoney(scenario.comparison.projectedMonthlySavingsMinor, currency)}.</span>
+                      <span>Mejora estimada {formatMoney(scenario.comparison.estimatedMonthlySavingsMinor, currency)} / mes · {formatMoney(scenario.comparison.estimatedAnnualSavingsMinor, currency)} / año.</span>
+                      {scenario.comparison.assumptions.map((assumption) => <span className="section-footnote" key={assumption}>{assumption}</span>)}
+                      {scenario.comparison.warnings.map((warning) => <span className="warning-text" key={warning}>{warning}</span>)}
+                    </> : <>
+                      <span>Resultado guardado al crear: {formatMoney(scenario.estimatedMonthlySavingsMinor, currency)} / mes · {formatMoney(scenario.estimatedAnnualSavingsMinor, currency)} / año.</span>
+                      <span>{scenario.comparisonStatus === 'different_currency' ? 'No comparable: la divisa ha cambiado.' : scenario.comparisonStatus === 'different_period' ? 'No comparable: el periodo de referencia ha cambiado.' : 'No comparable: las preferencias o la evidencia ya no permiten reproducir esta alternativa.'}</span>
+                    </>}
                     <button className="button small" type="button" disabled={busy} onClick={() => void deleteScenario(scenario.id)}>Eliminar escenario</button>
                   </div>
                 </div>
