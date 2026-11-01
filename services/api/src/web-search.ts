@@ -2,10 +2,10 @@ import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { request as httpRequest, type RequestOptions } from 'node:http';
 import { request as httpsRequest } from 'node:https';
-import { OFFICIAL_SOURCE_DOMAINS, retrieveOfficialDocument } from './official-evidence.js';
+import { OFFICIAL_SOURCE_DOMAINS, isOfficialSourceHost, retrieveOfficialDocument } from './official-evidence.js';
 import type { OfficialDocumentEvidence } from './official-evidence.js';
 
-export { OFFICIAL_SOURCE_DOMAINS } from './official-evidence.js';
+export { OFFICIAL_SOURCE_DOMAINS, OFFICIAL_SOURCE_HOSTS } from './official-evidence.js';
 
 export type OfficialSourceDomain = (typeof OFFICIAL_SOURCE_DOMAINS)[number];
 export interface WebSearchSource {
@@ -124,7 +124,7 @@ function publishedDate(value: unknown): string | null {
   return Number.isFinite(date.getTime()) ? date.toISOString() : null;
 }
 function institutionLabel(hostname: string): string {
-  if (matchesDomain(hostname, 'petete.tributos.hacienda.gob.es')) return 'Dirección General de Tributos (DGT)';
+  if (hostname === 'sede.tributos.hacienda.gob.es' || matchesDomain(hostname, 'petete.tributos.hacienda.gob.es')) return 'Dirección General de Tributos (DGT)';
   if (matchesDomain(hostname, 'serviciostelematicosext.hacienda.gob.es') || matchesDomain(hostname, 'sede.tea.hacienda.gob.es')) return 'Tribunal Económico-Administrativo Central (TEAC)';
   if (matchesDomain(hostname, 'lex.gal')) return 'Lex.gal · legislación consolidada de Galicia';
   if (matchesDomain(hostname, 'agenciatributaria.gob.es')) return 'Agencia Estatal de Administración Tributaria (AEAT)';
@@ -138,7 +138,7 @@ function institutionLabel(hostname: string): string {
 }
 function sourceAuthority(hostname: string): WebSearchSource['sourceAuthority'] {
   if (matchesDomain(hostname, 'boe.es') || matchesDomain(hostname, 'dog.gal')) return 'legislation';
-  if (matchesDomain(hostname, 'petete.tributos.hacienda.gob.es')) return 'dgt_criteria';
+  if (hostname === 'sede.tributos.hacienda.gob.es' || matchesDomain(hostname, 'petete.tributos.hacienda.gob.es')) return 'dgt_criteria';
   if (matchesDomain(hostname, 'serviciostelematicosext.hacienda.gob.es') || matchesDomain(hostname, 'sede.tea.hacienda.gob.es')) return 'teac_criteria';
   if (matchesDomain(hostname, 'hacienda.gob.es')) return 'tax_administration';
   if (matchesDomain(hostname, 'agenciatributaria.gob.es')) return 'tax_agency_guidance';
@@ -160,7 +160,12 @@ function parseSource(value: unknown, index: number, allowedDomains: readonly str
   const hostname = hostWithoutBrackets(url.hostname).toLowerCase();
   if (url.protocol !== 'https:' || url.username || url.password || url.port || hostname === 'localhost' ||
     hostname.endsWith('.local') || hostname.endsWith('.internal') || isIP(hostname) !== 0) return null;
-  if (allowedDomains.length > 0 && !allowedDomains.some((domain) => matchesDomain(hostname, domain))) return null;
+  const belongsToOfficialNamespace = OFFICIAL_SOURCE_DOMAINS.some((domain) => matchesDomain(hostname, domain));
+  const exactOfficialHost = isOfficialSourceHost(hostname);
+  // Known institutional namespaces are not trusted wholesale: a lookalike,
+  // abandoned or unrelated subdomain must not inherit the institution label.
+  if (belongsToOfficialNamespace && !exactOfficialHost) return null;
+  if (allowedDomains.length > 0 && (!exactOfficialHost || !allowedDomains.some((domain) => matchesDomain(hostname, domain)))) return null;
   const title = cleanText(item.title, 180);
   const snippet = cleanText(typeof item.content === 'string' ? item.content : '', 480);
   if (!title || !snippet) return null;
