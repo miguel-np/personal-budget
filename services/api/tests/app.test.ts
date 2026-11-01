@@ -2509,7 +2509,7 @@ describe('local API', () => {
 
 describe('phase 2 financial utility APIs', () => {
   function todayInProcessTimeZone(): string {
-    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const timeZone = 'UTC';
     const parts = new Intl.DateTimeFormat('en-US', {
       timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
     }).formatToParts(new Date());

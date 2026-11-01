@@ -3021,27 +3021,28 @@ function monthsBefore(date: string, months: number): string {
   app.post('/api/v1/cash-flow/project', async (request, reply) => {
     try {
       const parsed = CashFlowRequestSchema.parse(request.body);
-      const asOfDate = civilDateInTimeZone(config.timeZone);
+      const asOfDate = civilDateInTimeZone('UTC');
       const endDate = addCivilDays(asOfDate, parsed.horizonDays);
-      const [accounts, categories, preferences, accountPreference, planning] = await Promise.all([
-        repository.listAccounts(), repository.listCategories(), currencyPreferences(), accountScopePreference(),
-        readPlanningData(config.actualDataDir),
+      const [accounts, preferences, accountPreference, planning] = await Promise.all([
+        repository.listAccounts(), currencyPreferences(), accountScopePreference(), readPlanningData(config.actualDataDir),
       ]);
       const scope = resolveAccountScope(accounts, accountPreference);
       const unknownOpeningAccounts: { id: string; name: string }[] = [];
       let openingBalanceMinor = 0;
       let openingKnown = scope.accounts.length > 0;
-      for (const account of scope.accounts) {
-        const nativeCurrency = accountNativeCurrency(account, preferences);
-        if (account.currentBalanceMinor === null || nativeCurrency === null) {
+      const originalAccountsById = new Map(accounts.map((account) => [account.id, account]));
+      for (const scopedAccount of scope.accounts) {
+        const account = originalAccountsById.get(scopedAccount.id);
+        const nativeCurrency = account ? accountNativeCurrency(account, preferences) : null;
+        if (!account || account.currentBalanceMinor === null || nativeCurrency === null) {
           openingKnown = false;
-          unknownOpeningAccounts.push({ id: account.id, name: account.name });
+          unknownOpeningAccounts.push({ id: scopedAccount.id, name: scopedAccount.name });
           continue;
         }
         const conversion = convertAmountMinor(account.currentBalanceMinor, nativeCurrency, preferences.displayCurrency, asOfDate, preferences.exchangeRates);
         if (conversion.amountMinor === null) {
           openingKnown = false;
-          unknownOpeningAccounts.push({ id: account.id, name: account.name });
+          unknownOpeningAccounts.push({ id: scopedAccount.id, name: scopedAccount.name });
           continue;
         }
         openingBalanceMinor += conversion.amountMinor;
@@ -3136,7 +3137,7 @@ function monthsBefore(date: string, months: number): string {
   });
 
   async function loadBudgetImprovementContext(periodMonths: 3 | 6 | 12) {
-    const asOfDate = civilDateInTimeZone(config.timeZone);
+    const asOfDate = civilDateInTimeZone('UTC');
     const endMonth = shiftPlanningMonth(asOfDate.slice(0, 7), -1);
     const startMonth = shiftPlanningMonth(endMonth, -(periodMonths - 1));
     const startDate = startMonth + '-01';
@@ -3318,7 +3319,7 @@ function monthsBefore(date: string, months: number): string {
   app.get('/api/v1/budget-alerts', async (request, reply) => {
     try {
       const query = z.object({ month: PlanningMonthSchema.optional() }).strict().parse(request.query);
-      const asOfDate = civilDateInTimeZone(config.timeZone);
+      const asOfDate = civilDateInTimeZone('UTC');
       const month = query.month ?? asOfDate.slice(0, 7);
       const budgetRepository = repository as BudgetRepository & {
         getBudgetMonth?: (value: string) => Promise<ActualBudgetMonthRecord>;
@@ -3416,7 +3417,7 @@ function monthsBefore(date: string, months: number): string {
       const parsed = BudgetAlertEventDecisionSchema.parse(request.body);
       const expectedId = createHash('sha256').update([parsed.ruleId, parsed.categoryId, parsed.month].join('|')).digest('hex').slice(0, 32);
       if (expectedId !== params.eventId) return reply.code(400).send({ error: { code: 'INVALID_ALERT_EVENT', message: 'Alert event identity does not match its rule, category and period.' } });
-      const today = civilDateInTimeZone(config.timeZone);
+      const today = civilDateInTimeZone('UTC');
       if (parsed.status === 'snoozed' && (!parsed.snoozedUntil || parsed.snoozedUntil <= today || parsed.snoozedUntil > addCivilDays(today, 90))) {
         return reply.code(400).send({ error: { code: 'INVALID_SNOOZE', message: 'Snooze expiry must be between tomorrow and 90 days from today.' } });
       }
