@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { chmod, lstat, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { z } from 'zod';
 

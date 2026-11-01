@@ -99,7 +99,7 @@ export function validateBackupManifest(value: unknown): asserts value is BackupM
       }
       const file = entry as Record<string, unknown>;
       if (Object.keys(file).sort().join('|') !== 'fileName|sha256|sizeBytes' ||
-          typeof file.fileName !== 'string' || !/^[0-9a-f-]{36}\\.(?:pdf|jpg|png)$/.test(file.fileName) ||
+          typeof file.fileName !== 'string' || !/^[0-9a-f-]{36}\.(?:pdf|jpg|png)$/.test(file.fileName) ||
           seenDocuments.has(file.fileName) ||
           typeof file.sizeBytes !== 'number' || !Number.isSafeInteger(file.sizeBytes) || file.sizeBytes < 8 || file.sizeBytes > 10 * 1024 * 1024 ||
           typeof file.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(file.sha256)) {

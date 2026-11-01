@@ -190,7 +190,7 @@ export function WealthDocumentsPanel({ accounts, currency }: { accounts: readonl
     try {
       const parsed = Number(valuationAmount.replace(',', '.'));
       if (!Number.isFinite(parsed) || parsed < 0) throw new Error('Introduce un importe no negativo.');
-      const fraction = new Intl.NumberFormat('en-US', { style: 'currency', currency: asset.currency }).resolvedOptions().maximumFractionDigits;
+      const fraction = new Intl.NumberFormat('en-US', { style: 'currency', currency: asset.currency }).resolvedOptions().maximumFractionDigits ?? 2;
       const amountMinor = Math.round(parsed * (10 ** fraction));
       if (!Number.isSafeInteger(amountMinor)) throw new Error('El importe supera el rango admitido.');
       await mutate('/api/v1/wealth/assets/' + asset.id + '/valuations', 'POST', {

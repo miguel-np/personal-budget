@@ -15,7 +15,7 @@ const LinkSchema = z.object({
   accountId: z.string().trim().min(1).max(128),
   transactionDate: isoDate,
 }).strict();
-const DocumentInputSchema = z.object({
+export const DocumentInputSchema = z.object({
   displayName: z.string().trim().min(1).max(200),
   documentDate: isoDate.optional(),
   issuer: z.string().trim().max(200).optional(),

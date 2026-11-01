@@ -60,7 +60,6 @@ const LinkListSchema = z.array(z.object({
 }).strict()).max(100);
 const ExportDatasetSchema = z.enum(['planning', 'preferences', 'financial-actions', 'periodic-reviews', 'wealth', 'documents', 'budgets']);
 
-type Classification = 'asset' | 'liability';
 interface Dependencies { readonly config: AppConfig; readonly repository: BudgetRepository; }
 function error(reply: FastifyReply, status: number, code: string, message: string) {
   return reply.code(status).send({ error: { code, message } });
@@ -245,9 +244,10 @@ export async function registerPortfolioRoutes(app: FastifyInstance, dependencies
       ]);
       const displayCurrency = preferences.displayCurrency;
       const resolvedScope = resolveAccountScope(accounts, scopePreference);
+      const scopedAccountIds = new Set(resolvedScope.accounts.map((account) => account.id));
       const todayDate = today();
       const accountClassifications = new Map(wealth.accountClassifications.map((item) => [item.accountId, item.classification]));
-      const includedAccounts = resolvedScope.accounts.filter((account) => wealth.settings.includeOffBudgetAccounts || !account.offBudget);
+      const includedAccounts = accounts.filter((account) => scopedAccountIds.has(account.id) && (wealth.settings.includeOffBudgetAccounts || !account.offBudget));
       const warnings: string[] = [];
       const externalItems = wealth.assets.filter((item) => item.status === 'active');
       let complete = includedAccounts.length > 0 || externalItems.some((item) => item.includeInNetWorth && !item.actualAccountId);
@@ -458,7 +458,7 @@ export async function registerPortfolioRoutes(app: FastifyInstance, dependencies
           add(dataset, 1, 'personal-budget-manual-valuations', value, value.assets.length + value.accountClassifications.length);
         } else if (dataset === 'budgets') {
           const months = query.budgetMonths?.split(',').map((item) => item.trim()).filter(Boolean) ?? [today().slice(0, 7)];
-          const requestedMonths = [...new Set(z.array(z.string().regex(/^\\d{4}-(0[1-9]|1[0-2])$/)).min(1).max(12).parse(months))];
+          const requestedMonths = [...new Set(z.array(z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/)).min(1).max(12).parse(months))];
           const budgetRepository = repository as BudgetRepository & {
             getBudgetMonth?: (month: string) => Promise<{ readonly month: string; readonly totalBudgeted?: number | null; readonly totalSpent?: number | null; readonly totalBalance?: number | null; readonly totalIncome?: number | null; readonly incomeAvailable?: number | null; readonly toBudget?: number | null; readonly categoryGroups: readonly { readonly id: string; readonly name: string; readonly is_income?: boolean; readonly hidden?: boolean; readonly categories?: readonly { readonly id: string; readonly name: string; readonly budgeted?: number | null; readonly spent?: number | null; readonly balance?: number | null; readonly hidden?: boolean; readonly carryover?: boolean | null }[] }[] }>;
             getBudgetAllocations?: (month: string) => Promise<readonly { readonly categoryId: string; readonly amountMinor: number }[]>;
