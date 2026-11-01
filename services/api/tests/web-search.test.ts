@@ -174,9 +174,79 @@ describe('official document evidence and temporal metadata', () => {
     expect(result.lastRegistryUpdate).toBe('2026-10-30');
   });
 
+  it('covers the remaining dated BOE temporal outcomes and keeps relations bounded', () => {
+    const futureEffective = assessBoeTemporalMetadata({
+      fecha_vigencia: '20271231',
+      estatus_derogacion: 'N',
+      estatus_anulacion: 'N',
+      vigencia_agotada: 'N',
+    }, '2026-11-01');
+    expect(futureEffective.assessment).toBe('not_effective_yet');
+
+    const priorAnnulment = assessBoeTemporalMetadata({
+      fecha_vigencia: '20200101',
+      fecha_anulacion: '20251231',
+      estatus_anulacion: 'S',
+    }, '2026-11-01');
+    expect(priorAnnulment.assessment).toBe('annulled_by_reference_date');
+
+    const futureAnnulment = assessBoeTemporalMetadata({
+      fecha_vigencia: '20200101',
+      fecha_anulacion: '20271231',
+      estatus_anulacion: 'Y',
+    }, '2026-11-01');
+    expect(futureAnnulment.assessment).toBe('annulment_after_reference_date');
+
+    const exhausted = assessBoeTemporalMetadata({
+      vigencia_agotada: 'TRUE',
+      estatus_derogacion: 'N',
+    }, '2026-11-01');
+    expect(exhausted.assessment).toBe('exhausted_date_unknown');
+
+    const explicitNoFlags = assessBoeTemporalMetadata({
+      fecha_vigencia: { texto: '2020-01-01' },
+      fecha_publicacion: '2020-01-02',
+      fecha_actualizacion: '20261030T123456Z',
+      estado_consolidacion: { texto: 'Finalizado' },
+      estatus_derogacion: 'NO',
+      estatus_anulacion: 'FALSE',
+      vigencia_agotada: '0',
+    }, '2026-11-01', Array.from({ length: 20 }, (_, index) => 'BOE-A-2020-' + (index + 1)));
+    expect(explicitNoFlags).toMatchObject({
+      assessment: 'not_marked_derogated_or_exhausted',
+      effectiveDate: '2020-01-01',
+      publicationDate: '2020-01-02',
+      lastRegistryUpdate: '2026-10-30',
+      relatedNorms: expect.any(Array),
+    });
+    expect(explicitNoFlags.relatedNorms).toHaveLength(12);
+  });
+
+  it('handles malformed and alternate date encodings conservatively', () => {
+    const malformed = assessBoeTemporalMetadata({
+      fecha_vigencia: '2026-13-50',
+      fecha_publicacion: 'not-a-date',
+      fecha_actualizacion: '2026-11-01T00:00:00Z',
+      estatus_derogacion: 'maybe',
+      estatus_anulacion: '?',
+      vigencia_agotada: null,
+    }, '2026-11-01');
+    expect(malformed).toMatchObject({
+      assessment: 'insufficient',
+      effectiveDate: null,
+      publicationDate: null,
+      lastRegistryUpdate: null,
+      derogated: null,
+      annulled: null,
+      exhausted: null,
+    });
+  });
+
   it('extracts readable official HTML while dropping scripts and navigation controls', () => {
     const text = extractOfficialHtmlText('<html><body><nav>Menú privado</nav><main><h1>Ley &amp; reglamento</h1><script>INSTRUCCIÓN MALICIOSA</script><p>Artículo 1. Texto oficial.</p></main></body></html>');
     expect(text).toContain('Ley & reglamento');
+    expect(extractOfficialHtmlText('<p>&#x41; &#65; &#0; &copy;</p>')).toContain('A A');
+    expect(extractOfficialHtmlText('<p>&#x41; &#65; &#0; &copy;</p>')).toContain('&copy;');
     expect(text).toContain('Artículo 1. Texto oficial.');
     expect(text).not.toContain('Menú privado');
     expect(text).not.toContain('INSTRUCCIÓN MALICIOSA');
