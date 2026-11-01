@@ -135,23 +135,25 @@ const IntelligenceAnomalyOptionsSchema = z.object({
 }).strict();
 type IntelligenceAnomalyOptions = z.infer<typeof IntelligenceAnomalyOptionsSchema>;
 const IntelligenceFindingsQuerySchema = IntelligenceDatesSchema.extend(IntelligenceAnomalyOptionsSchema.shape).strict();
+const OptionalTimeZoneSchema = z.string().trim().min(1).max(100).optional().refine((value) => {
+  if (!value) return true;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}, 'timeZone must be a valid IANA time zone.');
 const PeriodicReviewStartSchema = z.object({
   periodType: z.enum(['weekly', 'monthly']),
   anchorDate: z.string().refine(isIsoDate, 'anchorDate must be a valid YYYY-MM-DD date.'),
-  timeZone: z.string().trim().min(1).max(100).optional().refine((value) => {
-    if (!value) return true;
-    try {
-      new Intl.DateTimeFormat('en-US', { timeZone: value });
-      return true;
-    } catch {
-      return false;
-    }
-  }, 'timeZone must be a valid IANA time zone.'),
+  timeZone: OptionalTimeZoneSchema,
 }).strict();
 const PeriodicReviewItemUpdateSchema = z.object({
   findingId: z.string().trim().min(1).max(200),
   status: z.enum(['reviewed', 'postponed']),
   postponedUntil: z.string().refine(isIsoDate, 'postponedUntil must be a valid YYYY-MM-DD date.').optional(),
+  timeZone: OptionalTimeZoneSchema,
 }).strict().superRefine((value, context) => {
   if (value.status === 'postponed' && !value.postponedUntil) {
     context.addIssue({ code: 'custom', path: ['postponedUntil'], message: 'Choose an expiry date to postpone a review item.' });
@@ -369,6 +371,19 @@ function majorToMinor(amount: number, currency: string, label: string): number {
 function assertPeriod(startDate: string, endDate: string): void {
   validatePeriod({ startDate, endDate });
   if (!isWithinMaximumPeriod(startDate, endDate)) throw new RangeError('The requested period cannot exceed five years.');
+}
+
+/** Returns a civil YYYY-MM-DD date in the same IANA zone used by the browser review. */
+function civilDateInTimeZone(timeZone: string, instant: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(instant);
+  const part = (type: 'year' | 'month' | 'day') => parts.find((entry) => entry.type === type)?.value;
+  const year = part('year');
+  const month = part('month');
+  const day = part('day');
+  if (!year || !month || !day) throw new RangeError('Could not determine the current civil date in the selected time zone.');
+  return year + '-' + month + '-' + day;
 }
 
 export async function buildApp(dependencies: AppDependencies): Promise<FastifyInstance> {
@@ -2243,15 +2258,7 @@ function monthsBefore(date: string, months: number): string {
     try {
       const parsed = PeriodicReviewStartSchema.parse(request.body);
       const timeZone = parsed.timeZone ?? 'UTC';
-      const dateParts = new Intl.DateTimeFormat('en-US', {
-        timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
-      }).formatToParts(new Date());
-      const datePart = (type: 'year' | 'month' | 'day') => dateParts.find((part) => part.type === type)?.value;
-      const year = datePart('year');
-      const month = datePart('month');
-      const day = datePart('day');
-      if (!year || !month || !day) throw new Error('Could not determine the review date in the selected time zone.');
-      const asOfDate = year + '-' + month + '-' + day;
+      const asOfDate = civilDateInTimeZone(timeZone);
       const period = periodicReviewPeriod(parsed.periodType, parsed.anchorDate, asOfDate);
       const result = await generateIntelligenceData(period.startDate, period.endDate, undefined, asOfDate);
       const durationDays = Math.floor((Date.parse(period.endDate + 'T00:00:00.000Z') -
@@ -2456,7 +2463,7 @@ function monthsBefore(date: string, months: number): string {
     try {
       const params = z.object({ reviewId: z.string().uuid() }).strict().parse(request.params);
       const parsed = PeriodicReviewItemUpdateSchema.parse(request.body);
-      const today = new Date().toISOString().slice(0, 10);
+      const today = civilDateInTimeZone(parsed.timeZone ?? 'UTC');
       if (parsed.status === 'postponed') {
         if (!parsed.postponedUntil || parsed.postponedUntil < today ||
             parsed.postponedUntil > addIntelligenceDays(today, 90)) {
