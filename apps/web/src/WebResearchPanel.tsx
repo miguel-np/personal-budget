@@ -77,7 +77,11 @@ function sourceAuthorityLabel(authority: SearchSource['sourceAuthority']): strin
   };
   return labels[authority];
 }
-function documentStatusLabel(status: NonNullable<SearchSource['document']>['status']): string {
+function documentStatusLabel(
+  status: NonNullable<SearchSource['document']>['status'],
+  authority: SearchSource['sourceAuthority'],
+): string {
+  if (status === 'retrieved' && authority === 'legal_consolidation') return 'Texto consolidado informativo recuperado';
   if (status === 'retrieved') return 'Texto oficial recuperado';
   if (status === 'partial') return 'Recuperación parcial';
   if (status === 'unsupported') return 'Formato no compatible';
@@ -242,7 +246,7 @@ export function WebResearchPanel() {
               <p className="section-footnote">Clasificación de autoridad: {sourceAuthorityLabel(source.sourceAuthority)}</p>
               <p>{source.snippet}</p>
               {source.document ? <div className="source-document-evidence">
-                <p className="section-footnote"><strong>{documentStatusLabel(source.document.status)}</strong>
+                <p className="section-footnote"><strong>{documentStatusLabel(source.document.status, source.sourceAuthority)}</strong>
                   {source.document.retrievedAt ? ' · Recuperado: ' + formatDate(source.document.retrievedAt) : ''}
                   {source.document.textLength > 0 ? ' · Texto de origen: ' + source.document.textLength.toLocaleString('es-ES') + ' caracteres' : ''}
                 </p>
