@@ -32,11 +32,19 @@ export const legalTaxCorpus = [
         "locator": "Article 12(1), tax period",
         "excerpt": "El período impositivo será el año natural.",
         "capturedAt": "2026-11-02"
+      },
+      {
+        "documentId": "AEAT-IRPF-2023-PRESENTATION-DEADLINE",
+        "sourceUrl": "https://sede.agenciatributaria.gob.es/Sede/ayuda/manuales-videos-folletos/manuales-ayuda-presentacion/irpf-2023/3-cuestiones-generales/3_3-declaracion-irpf/3_3_2-plazo-presentacion-declaraciones.html",
+        "version": "AEAT-IRPF-2023-deadline-guidance",
+        "locator": "Section 3.3.2, filing period",
+        "excerpt": "El plazo de presentación será el comprendido entre los días 3 de abril y 1 de julio de 2024.",
+        "capturedAt": "2026-11-02"
       }
     ],
     dates: { publicationDate: '2006-11-29', effectiveDate: '2007-01-01', eventDate: '2023-12-31', referenceDate: '2024-06-30' },
-    documents: [{ id: 'BOE-A-2006-20764', authority: 'official_publication', url: 'https://www.boe.es/eli/es/l/2006/11/28/35', locator: 'Ley 35/2006; temporal scope and filing year' }, { id: 'BOE-A-2006-20764-consolidated', authority: 'informative_consolidation', url: 'https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764&p=20231231&tn=1', locator: 'Consolidated text; informational disclaimer' }],
-    expected: { citationIds: ["BOE-A-2006-20764"], outcome: 'separate_tax_and_filing_years', taxYear: 2023, filingYear: 2024, doNotInfer: ['residency', 'regional_deductions', 'taxable_income', 'filing_obligation'] },
+    documents: [{ id: 'BOE-A-2006-20764', authority: 'official_publication', url: 'https://www.boe.es/eli/es/l/2006/11/28/35', locator: 'Ley 35/2006; tax period under Article 12(1)' }, { id: 'AEAT-IRPF-2023-PRESENTATION-DEADLINE', authority: 'administrative_guide', url: 'https://sede.agenciatributaria.gob.es/Sede/ayuda/manuales-videos-folletos/manuales-ayuda-presentacion/irpf-2023/3-cuestiones-generales/3_3-declaracion-irpf/3_3_2-plazo-presentacion-declaraciones.html', locator: 'AEAT Model 100 for IRPF 2023, section 3.3.2; presentation period in 2024' }, { id: 'BOE-A-2006-20764-consolidated', authority: 'informative_consolidation', url: 'https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764&p=20231231&tn=1', locator: 'Consolidated text; informational disclaimer' }],
+    expected: { citationIds: ["BOE-A-2006-20764","AEAT-IRPF-2023-PRESENTATION-DEADLINE"], outcome: 'separate_tax_and_filing_years', taxYear: 2023, filingYear: 2024, doNotInfer: ['residency', 'regional_deductions', 'taxable_income', 'filing_obligation'] },
     tags: ['year-separation', 'source-hierarchy'], reviewStatus: 'pending'
   },
   {
@@ -75,11 +83,19 @@ export const legalTaxCorpus = [
         "locator": "Article 12(1), tax period",
         "excerpt": "El período impositivo será el año natural.",
         "capturedAt": "2026-11-02"
+      },
+      {
+        "documentId": "AEAT-IRPF-2024-PRESENTATION-DEADLINE",
+        "sourceUrl": "https://sede.agenciatributaria.gob.es/Sede/ayuda/manuales-videos-folletos/manuales-ayuda-presentacion/irpf-2024/3-cuestiones-generales/3_3-declaracion-irpf/3_3_2-plazo-presentacion-declaraciones.html",
+        "version": "AEAT-IRPF-2024-deadline-guidance",
+        "locator": "Section 3.3.2, filing period",
+        "excerpt": "El plazo de presentación será el comprendido entre los días 2 de abril y 30 de junio de 2025.",
+        "capturedAt": "2026-11-02"
       }
     ],
     dates: { publicationDate: '2006-11-29', effectiveDate: '2007-01-01', eventDate: '2024-12-31', referenceDate: '2025-06-30' },
-    documents: [{ id: 'BOE-A-2006-20764', authority: 'official_publication', url: 'https://www.boe.es/eli/es/l/2006/11/28/35', locator: 'Ley 35/2006, original official publication' }, { id: 'BOE-A-2006-20764-consolidated', authority: 'informative_consolidation', url: 'https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764&p=20241231&tn=1', locator: 'Consolidated text frozen at 31/12/2024; informational only' }, { id: 'AEAT-IRPF-2024-MODEL100', authority: 'administrative_guide', url: 'https://sede.agenciatributaria.gob.es/Sede/Ayuda/24Presentacion/100.html', locator: 'Modelo 100 IRPF 2024; informational publication; campaign for filing in 2025' }],
-    expected: { citationIds: ["BOE-A-2006-20764","BOE-A-2006-20764-consolidated","AEAT-IRPF-2024-MODEL100"], outcome: 'separate_tax_and_filing_years', taxYear: 2024, filingYear: 2025, administrativeGuideIsNotStatute: true, doNotInfer: ['autonomousCommunity', 'deductions', 'taxableIncome'] },
+    documents: [{ id: 'BOE-A-2006-20764', authority: 'official_publication', url: 'https://www.boe.es/eli/es/l/2006/11/28/35', locator: 'Ley 35/2006, original official publication' }, { id: 'BOE-A-2006-20764-consolidated', authority: 'informative_consolidation', url: 'https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764&p=20241231&tn=1', locator: 'Consolidated text frozen at 31/12/2024; informational only' }, { id: 'AEAT-IRPF-2024-MODEL100', authority: 'administrative_guide', url: 'https://sede.agenciatributaria.gob.es/Sede/Ayuda/24Presentacion/100.html', locator: 'Modelo 100 IRPF 2024; informational publication' }, { id: 'AEAT-IRPF-2024-PRESENTATION-DEADLINE', authority: 'administrative_guide', url: 'https://sede.agenciatributaria.gob.es/Sede/ayuda/manuales-videos-folletos/manuales-ayuda-presentacion/irpf-2024/3-cuestiones-generales/3_3-declaracion-irpf/3_3_2-plazo-presentacion-declaraciones.html', locator: 'AEAT Model 100 for IRPF 2024, section 3.3.2; presentation period in 2025' }],
+    expected: { citationIds: ["BOE-A-2006-20764","BOE-A-2006-20764-consolidated","AEAT-IRPF-2024-MODEL100","AEAT-IRPF-2024-PRESENTATION-DEADLINE"], outcome: 'separate_tax_and_filing_years', taxYear: 2024, filingYear: 2025, administrativeGuideIsNotStatute: true, doNotInfer: ['autonomousCommunity', 'deductions', 'taxableIncome'] },
     tags: ['year-separation', 'administrative-guidance'], reviewStatus: 'pending'
   },
   {
@@ -98,6 +114,12 @@ export const legalTaxCorpus = [
         "version": "official-original-publication",
         "locator": "Disposición final séptima, letras b) y c)",
         "excerpt": "tendrán efectos para los períodos impositivos que se inicien a partir de 1 de enero de 2021.",
+        "recordedFacts": [
+          "The law's general entry into force is 2021-07-11, the day after BOE publication.",
+          "Final provision 7(a) delays the specified provisions until three months have elapsed since entry into force.",
+          "Final provision 7(b) gives specified tax-period amendments effects for tax periods beginning on or after 2021-01-01.",
+          "Final provision 7(c) gives the specified provision effects from 2022-01-01."
+        ],
         "capturedAt": "2026-11-02"
       }
     ],
@@ -244,6 +266,18 @@ export const legalTaxCorpus = [
           "Entry into force: 2016-10-02"
         ],
         "capturedAt": "2026-11-02"
+      },
+      {
+        "documentId": "BOE-A-2022-4972",
+        "sourceUrl": "https://www.boe.es/eli/es/rdl/2022/03/29/6",
+        "version": "official-original-publication",
+        "locator": "Final provision 21; new Article 32(5) of Ley 39/2015",
+        "excerpt": "la Administración podrá acordar la ampliación general de plazos de los procedimientos administrativos.",
+        "recordedFacts": [
+          "BOE publication: 2022-03-30",
+          "The amending provision adds paragraph 5 to Article 32, effective from 2022-03-31."
+        ],
+        "capturedAt": "2026-11-02"
       }
     ],
     dates: { publicationDate: '2022-03-30', effectiveDate: '2022-03-31', eventDate: '2022-03-31', referenceDate: '2022-03-31' },
@@ -267,6 +301,12 @@ export const legalTaxCorpus = [
         "version": "consolidated-text-as-of-2025-12-31",
         "locator": "Article 2, modification of the regional IRPF deductions",
         "excerpt": "el 10 % de las cantidades satisfechas a los terceros, con un límite máximo de 600 euros.",
+        "recordedFacts": [
+          "The provision title requires taxpayers to be at least 65 years old, with disability of at least 65%, and need help from third parties.",
+          "The tax base minus personal and family minimums must not exceed 22,000 EUR for individual taxation or 31,000 EUR for joint taxation.",
+          "The need for third-party help must be evidenced.",
+          "The taxpayer must not be a user of public or concerted residential facilities in Galicia."
+        ],
         "capturedAt": "2026-11-02"
       },
       {
@@ -283,7 +323,7 @@ export const legalTaxCorpus = [
     ],
     dates: { publicationDate: '2024-12-31', effectiveDate: '2025-01-01', eventDate: '2025-12-31', referenceDate: '2026-06-30' },
     documents: [{ id: 'BOE-A-2025-2145', authority: 'official_publication', url: 'https://www.boe.es/eli/es-ga/l/2024/12/27/5', locator: 'Ley 5/2024, original official publication' }, { id: 'BOE-A-2025-2145-consolidated', authority: 'informative_consolidation', url: 'https://www.boe.es/buscar/act.php?id=BOE-A-2025-2145&p=20251231&tn=1', locator: 'Consolidated snapshot selected as of 31/12/2025; informational only' }],
-    expected: { citationIds: ["BOE-A-2025-2145","BOE-A-2025-2145-consolidated"], outcome: 'regional_rule_candidate_requires_eligibility_facts', jurisdiction: 'GA', effectiveFrom: '2025-01-01', doNotInfer: ['disability', 'age', 'income_threshold', 'third_party_care', 'residency'] },
+    expected: { citationIds: ["BOE-A-2025-2145","BOE-A-2025-2145-consolidated"], outcome: 'regional_rule_candidate_requires_eligibility_facts', jurisdiction: 'GA', effectiveFrom: '2025-01-01', candidateRule: { deductionRatePercent: 10, maximumEUR: 600, minimumAge: 65, minimumDisabilityPercent: 65, taxableBaseMinusPersonalFamilyMinimumMaxEUR: { individual: 22000, joint: 31000 }, requiresProofOfThirdPartyCare: true, excludesPublicOrConcertedResidenceInGalicia: true }, doNotInfer: ['disability', 'age', 'income_threshold', 'third_party_care', 'residency'] },
     tags: ['regional-jurisdiction', 'effective-date'], reviewStatus: 'pending'
   },
   {
