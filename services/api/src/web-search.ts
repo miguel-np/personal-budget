@@ -125,8 +125,9 @@ function publishedDate(value: unknown): string | null {
 }
 function isDogPublication(url: URL): boolean {
   const hostname = url.hostname.toLowerCase();
-  return ['xunta.gal', 'www.xunta.gal'].includes(hostname) &&
-    /^\/(?:es\/)?diario-oficial-galicia(?:\/|$)/i.test(url.pathname);
+  return hostname === 'dog.gal' ||
+    (['xunta.gal', 'www.xunta.gal'].includes(hostname) &&
+      /^\/(?:es\/)?diario-oficial-galicia(?:\/|$)/i.test(url.pathname));
 }
 function institutionLabel(url: URL): string {
   const hostname = url.hostname.toLowerCase();
