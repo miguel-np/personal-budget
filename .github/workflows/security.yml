@@ -24,6 +24,10 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
       - name: Audit locked dependencies
         run: npm run audit && npm run audit:production
       - name: Scan Git history and working tree for leaked secrets
