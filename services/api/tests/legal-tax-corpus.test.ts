@@ -3,10 +3,11 @@ import { legalTaxCorpus } from './fixtures/legal-tax-corpus.js';
 
 describe('legal/tax regression corpus (#108)', () => {
   it('contains at least twelve stable cases across state and autonomous-community jurisdiction and multiple tax years', () => {
-    expect(legalTaxCorpus.length).toBeGreaterThanOrEqual(12);
+    expect(legalTaxCorpus.length).toBeGreaterThanOrEqual(13);
     expect(new Set(legalTaxCorpus.map((item) => item.id)).size).toBe(legalTaxCorpus.length);
     expect(legalTaxCorpus.some((item) => item.jurisdiction.state === 'ES')).toBe(true);
     expect(legalTaxCorpus.some((item) => item.jurisdiction.autonomousCommunity === 'GA')).toBe(true);
+    expect(legalTaxCorpus.some((item) => item.jurisdiction.autonomousCommunity === 'MD' && item.jurisdiction.municipality === 'Madrid')).toBe(true);
     expect(new Set(legalTaxCorpus.map((item) => item.taxYear).filter((year) => typeof year === 'number')).size).toBeGreaterThanOrEqual(3);
   });
 
@@ -49,7 +50,11 @@ describe('legal/tax regression corpus (#108)', () => {
   it('pins each cited expected result to a declared source and a dated evidence snapshot', () => {
     for (const item of legalTaxCorpus) {
       const documentIds = item.documents.map((document) => document.id);
-      for (const citationId of item.expected.citationIds) expect(documentIds).toContain(citationId);
+      const snapshotIds = item.evidenceSnapshots.map((snapshot) => snapshot.documentId);
+      for (const citationId of item.expected.citationIds) {
+        expect(documentIds).toContain(citationId);
+        expect(snapshotIds).toContain(citationId);
+      }
 
       if (item.documents.length === 0) {
         expect(item.expected.outcome).toMatch(/^abstain/);
