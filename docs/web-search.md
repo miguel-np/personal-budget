@@ -24,7 +24,7 @@ SearXNG local no implica que los términos permanezcan en el equipo: la instanci
 
 `SearXNGSearchProvider` implementa `WebSearchProvider` y usa su API JSON. Se permiten HTTP solo para loopback configurado; los endpoints remotos requieren HTTPS. No se permiten credenciales, query, fragment ni path en el origin.
 
-El proveedor limita consulta, respuesta, timeout, resultados y tasa; valida todas las respuestas DNS contra rangos especiales/no globales de IANA, fija una IP pública para la petición y rechaza redirects. Las URLs de resultados deben ser HTTPS, sin credenciales, puertos no estándar ni direcciones IP directas. Los dominios se filtran antes de mostrar los resultados.
+El proveedor limita consulta, respuesta, timeout, resultados y tasa; valida todas las respuestas DNS contra rangos especiales/no globales de IANA ([IPv4](https://www.iana.org/assignments/iana-ipv4-special-registry), [IPv6](https://www.iana.org/assignments/iana-ipv6-special-registry)), fija una IP pública para la petición y rechaza redirects. Las URLs de resultados deben ser HTTPS, sin credenciales, puertos no estándar ni direcciones IP directas. Los dominios se filtran antes de mostrar los resultados.
 
 ### Recuperación de documentos oficiales
 
