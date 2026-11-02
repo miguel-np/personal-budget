@@ -48,6 +48,7 @@ export const OFFICIAL_SOURCE_HOSTS = [
   'sede.xunta.gal',
   'facenda.xunta.gal',
   'lex.gal',
+  'www.lex.gal',
   'cnmv.es',
   'www.cnmv.es',
   'bde.es',
@@ -346,7 +347,6 @@ function temporalLimitations(assessment: BoeTemporalAssessment): string[] {
     'El texto consolidado del BOE es informativo y carece de valor jurídico; para fines jurídicos debe consultarse la publicación oficial.',
     'El análisis del BOE recoge modificaciones y derogaciones expresas, no acredita por sí solo derogaciones tácitas ni la aplicación a hechos concretos.',
     'La vigencia de una norma no resuelve por sí sola el régimen transitorio, la vigencia de cada artículo ni la normativa autonómica/local aplicable.',
-    'El texto HTML recuperado corresponde a la consolidación más reciente disponible; esta operación no reconstruye la redacción de cada artículo en eventDate. No atribuyas esta versión a un periodo anterior sin consultar el historial de versiones del bloque y la publicación oficial original.',
     'El texto HTML recuperado corresponde a la consolidación más reciente disponible; esta operación no reconstruye la redacción de cada artículo en eventDate. No atribuyas esta versión a un periodo anterior sin consultar el historial de versiones del bloque y la publicación oficial original.',
   ];
   if (assessment === 'consolidation_pending_update') limitations.push('El BOE marca la consolidación como desactualizada o pendiente; puede faltar incorporar una modificación ya publicada.');

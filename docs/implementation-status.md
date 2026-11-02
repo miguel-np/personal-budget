@@ -85,17 +85,30 @@ No se infieren rentabilidad, deducibilidad ni valoraciones de mercado; las valor
 
 ## Búsqueda web controlada — issue #84
 
-**Estado en main:** primera y segunda iteración integradas mediante PR [#97](https://github.com/miguel-np/personal-budget/pull/97) y [#98](https://github.com/miguel-np/personal-budget/pull/98). La CI del commit final está en verde en Linux/Windows, E2E, Actual container smoke, Actual update/restore y Security. La issue #84 permanece abierta por aceptación real de proveedores/documentos, formatos PDF y análisis jurídico de discrepancias.
+**Estado en main (2-nov-2026):** la primera entrega (#97), la recuperación documental oficial (#98) y el endurecimiento posterior (#99, #100, #101, #103 y #104) están integrados. La PR #102 se cerró sin merge y fue sustituida por #103. Las revisiones incorporadas incluyen:
+
+- Separación entre grupos de filtro `OFFICIAL_SOURCE_DOMAINS` y hosts exactos `OFFICIAL_SOURCE_HOSTS`; no se hereda confianza por subdominio.
+- DOG reconocido solo en la ruta de la edición electrónica del portal oficial de la Xunta; `dog.gal` no se acepta como host oficial independiente.
+- Contexto fiscal explícito (comunidad, municipio, tipo de contribuyente, fecha del hecho) enviado solo a Ollama local, nunca a SearXNG ni derivado de datos financieros.
+- Política común IPv4/IPv6 basada en registros IANA, con DNS público validado y fijado, bloqueo de destinos especiales/no globales y rechazo de redirecciones.
+- Evidencia UI que identifica expresamente el carácter informativo de la consolidación BOE más reciente y evita atribuirla a `eventDate` sin historial oficial de versiones por bloque.
 
 El flujo mantiene dos rutas aisladas:
-- El chat financiero recibe agregados backend y no obtiene herramientas.
-- La investigación web no consulta el repositorio financiero. Requiere consentimiento por petición, envía la consulta exacta a SearXNG y expone una única herramienta `web_search`; la segunda inferencia recibe fuentes/extractos como contenido externo no confiable y no tiene herramientas.
-- Tras la búsqueda, el backend puede recuperar hasta tres documentos oficiales HTML/XHTML/texto de una allowlist HTTPS. No descarga resultados externos no oficiales, no sigue redirecciones y valida/pinea DNS público con límites de tamaño y tiempo.
-- Para identificadores BOE-A se consultan metadatos y relaciones de la API oficial de legislación consolidada, junto al texto HTML consolidado. Se muestran fechas, estados y relaciones contra la fecha de referencia suministrada.
-- DGT, TEAC, normas publicadas y guías AEAT/Ministerio se clasifican por separado; la clasificación no presupone carácter vinculante de cada criterio.
+- El chat financiero recibe agregados calculados por backend y no obtiene herramientas.
+- La investigación web requiere consentimiento por petición, expone una única herramienta `web_search` y envía a SearXNG exactamente la consulta aprobada. No consulta cuentas, movimientos, saldos ni agregados financieros.
+- El backend puede recuperar hasta tres documentos oficiales HTML/XHTML/texto desde hosts exactos HTTPS. Rechaza redirecciones, valida y fija DNS público y aplica límites de tamaño/tiempo. PDF y formatos desconocidos se declaran no compatibles.
+- Para identificadores BOE-A consulta metadatos y relaciones de la API oficial, además de la consolidación HTML más reciente. Los indicadores temporales son evidencia limitada, no una determinación completa de vigencia jurídica.
 
-**Límites:** el texto consolidado del BOE es informativo; marcas de estado no acreditan derogaciones tácitas, vigencia por artículo, reglas transitorias ni aplicación a circunstancias personales. PDF no se interpreta en esta iteración. Sin documento recuperado o evidencia temporal suficiente, el sistema debe declarar la limitación. Consulta [docs/web-search.md](web-search.md).
+**Validación registrada:** los comentarios de #84 registran CI satisfactoria para las PR #99, #100, #101, #103 y #104 en los controles aplicables de Linux/Windows, calidad, E2E y seguridad. La CI sintética no equivale a aceptación live contra SearXNG u organismos externos.
 
+**Pendiente para cerrar #84:**
+1. [#106 — Aceptación E2E real de SearXNG y fuentes oficiales](https://github.com/miguel-np/personal-budget/issues/106): probar desde el backend configurado SearXNG y las fuentes BOE, AEAT, DGT, TEAC, Xunta/DOG, Seguridad Social y Lex.gal; documentar endpoint, formato, disponibilidad y límites. No se sustituye por abrir enlaces con un navegador externo.
+2. [#107 — Versiones históricas BOE por bloque y fecha](https://github.com/miguel-np/personal-budget/issues/107): recuperar y contrastar versiones históricas por bloque. (`/texto`, `/texto/indice`, `/texto/bloque/{id_bloque}`), contrastada con la publicación original. Hasta entonces, `eventDate` no selecciona ni prueba la redacción histórica por artículo.
+3. [#108 — Corpus fiscal/legal](https://github.com/miguel-np/personal-budget/issues/108): ejercicio fiscal separado del año de presentación, jurisdicciones concurrentes, fechas transitorias, documentos desactualizados, doctrina/criterios y discrepancias.
+4. [#109 — Extracción PDF segura](https://github.com/miguel-np/personal-budget/issues/109): MIME/firma, límites de tamaño/tiempo y tratamiento de PDFs escaneados; OCR no se considera soportado por defecto.
+5. [#110 — Trazabilidad de afirmaciones y discrepancias](https://github.com/miguel-np/personal-budget/issues/110): asociar afirmaciones normativas con fuentes primarias y exponer conflictos. La síntesis no debe ocultar evidencia contraria ni convertir guías o consolidaciones informativas en normas vinculantes.
+
+La issue permanece abierta hasta completar y documentar estas aceptaciones. No se marca como cerrada por tener la infraestructura o CI sintética.
 ## Issues abiertas posteriores
 
 - [#85 — Proveedores de IA intercambiables](https://github.com/miguel-np/personal-budget/issues/85): capa de adaptadores para Ollama, OpenAI y xAI; abierta.

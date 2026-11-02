@@ -18,8 +18,8 @@ export interface WebSearchSource {
   readonly publishedAt: string | null;
   readonly modifiedAt: string | null;
   readonly snippet: string;
-  readonly sourceKind: 'normativa' | 'criterio_administrativo' | 'organismo_oficial' | 'externa';
-  readonly sourceAuthority: 'legislation' | 'dgt_criteria' | 'teac_criteria' | 'tax_administration' | 'tax_agency_guidance' | 'official_information' | 'external';
+  readonly sourceKind: 'normativa' | 'normativa_consolidada_informativa' | 'criterio_administrativo' | 'organismo_oficial' | 'externa';
+  readonly sourceAuthority: 'legislation' | 'legal_consolidation' | 'dgt_criteria' | 'teac_criteria' | 'tax_administration' | 'tax_agency_guidance' | 'official_information' | 'external';
   readonly document?: OfficialDocumentEvidence;
 }
 export interface WebSearchResponse {
@@ -112,6 +112,7 @@ function institutionLabel(url: URL): string {
 function sourceAuthority(url: URL): WebSearchSource['sourceAuthority'] {
   const hostname = url.hostname.toLowerCase();
   if (matchesDomain(hostname, 'boe.es') || isDogPublication(url)) return 'legislation';
+  if (matchesDomain(hostname, 'lex.gal')) return 'legal_consolidation';
   if (hostname === 'sede.tributos.hacienda.gob.es' || matchesDomain(hostname, 'petete.tributos.hacienda.gob.es')) return 'dgt_criteria';
   if (matchesDomain(hostname, 'serviciostelematicosext.hacienda.gob.es') || matchesDomain(hostname, 'sede.tea.hacienda.gob.es')) return 'teac_criteria';
   if (matchesDomain(hostname, 'hacienda.gob.es')) return 'tax_administration';
@@ -123,6 +124,7 @@ function sourceAuthority(url: URL): WebSearchSource['sourceAuthority'] {
 function sourceKind(url: URL): WebSearchSource['sourceKind'] {
   const hostname = url.hostname.toLowerCase();
   if (matchesDomain(hostname, 'boe.es') || isDogPublication(url)) return 'normativa';
+  if (matchesDomain(hostname, 'lex.gal')) return 'normativa_consolidada_informativa';
   if (hostname.endsWith('.hacienda.gob.es') || hostname === 'hacienda.gob.es') return 'criterio_administrativo';
   if (OFFICIAL_SOURCE_DOMAINS.some((domain) => matchesDomain(hostname, domain)) ||
     matchesDomain(hostname, 'seg-social.gob.es')) return 'organismo_oficial';
