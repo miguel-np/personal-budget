@@ -43,12 +43,12 @@ describe('public network address classification', () => {
 
   it('rejects non-global IPv6 prefixes inside 2000::/3 and accepts public unicast', () => {
     for (const address of ['2001::1', '2001:1::4', '2001:2::1', '2001:db8::1',
-      '2002:c000:0201::1', '3fff::1', '3fff:000f::1', 'fd00::1', 'fe80::1', 'ff02::1']) {
+      '2002:c000:0201::1', '3fff::1', '3fff:0010::1', 'fd00::1', 'fe80::1', 'ff02::1']) {
       expect(isPublicNetworkAddress(address, 6), address).toBe(false);
     }
     for (const address of ['2001:1::1', '2001:1::2', '2001:1::3', '2001:3::1',
       '2001:4:112::1', '2001:20::1', '2001:30::1', '2001:4860:4860::8888',
-      '2606:4700:4700::1111', '3fff:0010::1']) {
+      '2606:4700:4700::1111', '3fff:1000::1']) {
       expect(isPublicNetworkAddress(address, 6), address).toBe(true);
     }
   });
