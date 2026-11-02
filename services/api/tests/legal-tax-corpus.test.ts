@@ -7,7 +7,7 @@ describe('legal/tax regression corpus (#108)', () => {
     expect(new Set(legalTaxCorpus.map((item) => item.id)).size).toBe(legalTaxCorpus.length);
     expect(new Set(legalTaxCorpus.map((item) => item.jurisdiction.state).filter(Boolean)).size).toBeGreaterThanOrEqual(1);
     expect(legalTaxCorpus.some((item) => item.jurisdiction.autonomousCommunity === 'GA')).toBe(true);
-    expect(new Set(legalTaxCorpus.map((item) => item.taxYear).filter((year): year is number => year !== null)).size).toBeGreaterThanOrEqual(3);
+    expect(new Set(legalTaxCorpus.map((item) => item.taxYear).filter((year) => typeof year === 'number')).size).toBeGreaterThanOrEqual(3);
   });
 
   it('keeps tax year, filing year, event date and reference date independent', () => {
