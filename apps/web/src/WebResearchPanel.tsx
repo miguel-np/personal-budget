@@ -11,6 +11,7 @@ const OFFICIAL_DOMAINS = [
   'seg-social.es',
   'seg-social.gob.es',
   'xunta.gal',
+  'dog.gal',
   'cnmv.es',
   'bde.es',
 ] as const;
