@@ -1,13 +1,10 @@
 import { writeFile } from 'node:fs/promises';
+import { validateAcceptanceEndpoint } from './acceptance-endpoint.mjs';
 
 const baseValue = process.env.PERSONAL_BUDGET_ACCEPTANCE_API_URL;
 const bearer = process.env.PERSONAL_BUDGET_ACCEPTANCE_BEARER_TOKEN;
 if (!baseValue) throw new Error('PERSONAL_BUDGET_ACCEPTANCE_API_URL is required.');
-const base = new URL(baseValue);
-if (base.protocol !== 'https:' || base.username || base.password || base.search || base.hash ||
-  (base.pathname !== '/' && base.pathname !== '')) {
-  throw new Error('The acceptance target must be an HTTPS origin without credentials, path, query or fragment.');
-}
+const base = await validateAcceptanceEndpoint(baseValue);
 const headers = {
   accept: 'application/json',
   'content-type': 'application/json',
