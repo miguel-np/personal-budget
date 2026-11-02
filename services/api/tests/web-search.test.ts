@@ -149,6 +149,7 @@ describe('SearXNG web search provider', () => {
     expect(OFFICIAL_SOURCE_HOSTS).toContain('sede.agenciatributaria.gob.es');
     expect(OFFICIAL_SOURCE_HOSTS).toContain('www.boe.es');
     expect(OFFICIAL_SOURCE_HOSTS).toContain('sede.seg-social.gob.es');
+    expect(OFFICIAL_SOURCE_HOSTS).toContain('www.lex.gal');
     expect(OFFICIAL_SOURCE_HOSTS).not.toContain('dog.gal');
     expect(OFFICIAL_SOURCE_HOSTS).not.toContain('arbitrary.boe.es');
 
