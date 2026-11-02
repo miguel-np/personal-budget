@@ -42,6 +42,7 @@ export const OFFICIAL_SOURCE_HOSTS = [
   'seg-social.es',
   'www.seg-social.es',
   'sede.seg-social.gob.es',
+  'sede.seg-social.gob.es',
   'portal.seg-social.gob.es',
   'xunta.gal',
   'www.xunta.gal',
