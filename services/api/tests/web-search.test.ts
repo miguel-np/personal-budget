@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { OFFICIAL_SOURCE_HOSTS, SearXNGSearchProvider, WebSearchResponseTooLargeError } from '../src/web-search.js';
 import { assessBoeTemporalMetadata, extractOfficialHtmlText, retrieveOfficialDocument } from '../src/official-evidence.js';
 import type { OfficialDocumentFetcher } from '../src/official-evidence.js';
+import { isPublicNetworkAddress } from '../src/network-address.js';
 
 const servers: Array<{ close: () => Promise<void> }> = [];
 async function serve(handler: (request: IncomingMessage, response: ServerResponse) => void) {
@@ -26,6 +27,35 @@ function config(baseURL: string, maxResponseBytes = 32_768) {
 }
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => server.close()));
+});
+
+describe('public network address classification', () => {
+  it('rejects IANA IPv4 special-purpose, documentation and deprecated relay ranges', () => {
+    for (const address of ['0.0.0.1', '10.0.0.1', '100.64.0.1', '127.0.0.1', '169.254.1.1',
+      '172.16.0.1', '192.0.2.1', '192.88.99.1', '192.168.1.1', '198.18.0.1',
+      '198.51.100.1', '203.0.113.1', '224.0.0.1', '240.0.0.1']) {
+      expect(isPublicNetworkAddress(address, 4), address).toBe(false);
+    }
+    for (const address of ['8.8.8.8', '1.1.1.1', '192.31.196.1']) {
+      expect(isPublicNetworkAddress(address, 4), address).toBe(true);
+    }
+  });
+
+  it('rejects non-global IPv6 prefixes inside 2000::/3 and accepts public unicast', () => {
+    for (const address of ['2001::1', '2001:1::1', '2001:db8::1', '2001:2::1',
+      '2002:c000:0201::1', '3fff::1', '3fff:0fff::1', 'fd00::1', 'fe80::1', 'ff02::1']) {
+      expect(isPublicNetworkAddress(address, 6), address).toBe(false);
+    }
+    for (const address of ['2001:4860:4860::8888', '2606:4700:4700::1111']) {
+      expect(isPublicNetworkAddress(address, 6), address).toBe(true);
+    }
+  });
+
+  it('checks IPv4-mapped IPv6 answers against the embedded IPv4 range', () => {
+    expect(isPublicNetworkAddress('::ffff:192.168.1.1', 6)).toBe(false);
+    expect(isPublicNetworkAddress('::ffff:c0a8:101', 6)).toBe(false);
+    expect(isPublicNetworkAddress('::ffff:8.8.8.8', 6)).toBe(true);
+  });
 });
 
 describe('SearXNG web search provider', () => {
