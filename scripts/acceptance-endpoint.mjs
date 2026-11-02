@@ -72,6 +72,7 @@ function isPublicIpv6(address) {
   if (inIpv6Range(address, '2001::', 23)) return false;
   if (inIpv6Range(address, '2001:db8::', 32)) return false;
   if (inIpv6Range(address, '2002::', 16)) return false;
+  if (inIpv6Range(address, '3fff::', 20)) return false;
   return true;
 }
 
