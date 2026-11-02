@@ -14,17 +14,31 @@ const headers = {
   ...(bearer ? { authorization: 'Bearer ' + bearer } : {}),
 };
 const groups = [
-  { domain: 'boe.es', hosts: ['boe.es', 'www.boe.es'], query: 'site:boe.es BOE Ley 39/2015 texto consolidado' },
-  { domain: 'agenciatributaria.gob.es', hosts: ['sede.agenciatributaria.gob.es'], query: 'site:sede.agenciatributaria.gob.es manual IRPF oficial' },
-  { domain: 'hacienda.gob.es', hosts: ['hacienda.gob.es', 'www.hacienda.gob.es'], query: 'site:hacienda.gob.es normativa tributaria oficial' },
-  { domain: 'petete.tributos.hacienda.gob.es', hosts: ['petete.tributos.hacienda.gob.es', 'sede.tributos.hacienda.gob.es'], query: 'site:petete.tributos.hacienda.gob.es consultas vinculantes DGT' },
-  { domain: 'serviciostelematicosext.hacienda.gob.es', hosts: ['serviciostelematicosext.hacienda.gob.es', 'sede.tea.hacienda.gob.es'], query: 'site:serviciostelematicosext.hacienda.gob.es resoluciones TEAC' },
-  { domain: 'seg-social.es', hosts: ['seg-social.es', 'www.seg-social.es', 'sede.seg-social.gob.es', 'portal.seg-social.gob.es'], query: 'site:seg-social.es cotización información oficial' },
-  { domain: 'xunta.gal', hosts: ['xunta.gal', 'www.xunta.gal', 'sede.xunta.gal', 'facenda.xunta.gal'], query: 'site:xunta.gal diario oficial Galicia normativa' },
-  { domain: 'lex.gal', hosts: ['lex.gal', 'www.lex.gal'], query: 'site:lex.gal normativa gallega consolidada' },
-  { domain: 'cnmv.es', hosts: ['cnmv.es', 'www.cnmv.es'], query: 'site:cnmv.es normativa información inversores' },
-  { domain: 'bde.es', hosts: ['bde.es', 'www.bde.es', 'sedeelectronica.bde.es'], query: 'site:bde.es normativa bancaria' },
-];
+  { host: 'boe.es', domain: 'boe.es', allowedDomains: ["boe.es"], query: 'site:boe.es texto consolidado Ley 39/2015 BOE' },
+  { host: 'www.boe.es', domain: 'boe.es', allowedDomains: ["boe.es"], query: 'site:www.boe.es publicación oficial Ley 39/2015' },
+  { host: 'sede.agenciatributaria.gob.es', domain: 'agenciatributaria.gob.es', allowedDomains: ["agenciatributaria.gob.es"], query: 'site:sede.agenciatributaria.gob.es manual IRPF información oficial' },
+  { host: 'hacienda.gob.es', domain: 'hacienda.gob.es', allowedDomains: ["hacienda.gob.es"], query: 'site:hacienda.gob.es normativa tributaria publicaciones oficiales' },
+  { host: 'www.hacienda.gob.es', domain: 'hacienda.gob.es', allowedDomains: ["hacienda.gob.es"], query: 'site:www.hacienda.gob.es información tributaria oficial' },
+  { host: 'petete.tributos.hacienda.gob.es', domain: 'petete.tributos.hacienda.gob.es', allowedDomains: ["petete.tributos.hacienda.gob.es"], query: 'site:petete.tributos.hacienda.gob.es consultas vinculantes DGT IRPF' },
+  { host: 'sede.tributos.hacienda.gob.es', domain: 'sede.tributos.hacienda.gob.es', allowedDomains: [], query: 'site:sede.tributos.hacienda.gob.es consultas tributarias DGT' },
+  { host: 'serviciostelematicosext.hacienda.gob.es', domain: 'serviciostelematicosext.hacienda.gob.es', allowedDomains: ["serviciostelematicosext.hacienda.gob.es"], query: 'site:serviciostelematicosext.hacienda.gob.es resoluciones TEAC' },
+  { host: 'sede.tea.hacienda.gob.es', domain: 'sede.tea.hacienda.gob.es', allowedDomains: ["sede.tea.hacienda.gob.es"], query: 'site:sede.tea.hacienda.gob.es criterios y resoluciones TEAC' },
+  { host: 'seg-social.es', domain: 'seg-social.es', allowedDomains: ["seg-social.es"], query: 'site:seg-social.es cotización Seguridad Social normativa' },
+  { host: 'www.seg-social.es', domain: 'seg-social.es', allowedDomains: ["seg-social.es"], query: 'site:www.seg-social.es información oficial Seguridad Social' },
+  { host: 'sede.seg-social.gob.es', domain: 'sede.seg-social.gob.es', allowedDomains: [], query: 'site:sede.seg-social.gob.es sede electrónica Seguridad Social cotización' },
+  { host: 'portal.seg-social.gob.es', domain: 'seg-social.gob.es', allowedDomains: ["seg-social.gob.es"], query: 'site:portal.seg-social.gob.es portal importass cotización' },
+  { host: 'xunta.gal', domain: 'xunta.gal', allowedDomains: ["xunta.gal"], query: 'site:xunta.gal Diario Oficial de Galicia DOG normativa' },
+  { host: 'www.xunta.gal', domain: 'xunta.gal', allowedDomains: ["xunta.gal"], query: 'site:www.xunta.gal Diario Oficial de Galicia publicación' },
+  { host: 'sede.xunta.gal', domain: 'sede.xunta.gal', allowedDomains: [], query: 'site:sede.xunta.gal sede electrónica Xunta normativa' },
+  { host: 'facenda.xunta.gal', domain: 'facenda.xunta.gal', allowedDomains: [], query: 'site:facenda.xunta.gal Facenda Galicia normativa tributaria' },
+  { host: 'lex.gal', domain: 'lex.gal', allowedDomains: ["lex.gal"], query: 'site:lex.gal normativa gallega consolidada' },
+  { host: 'www.lex.gal', domain: 'lex.gal', allowedDomains: ["lex.gal"], query: 'site:www.lex.gal legislación de Galicia texto consolidado' },
+  { host: 'cnmv.es', domain: 'cnmv.es', allowedDomains: ["cnmv.es"], query: 'site:cnmv.es normativa CNMV inversores' },
+  { host: 'www.cnmv.es', domain: 'cnmv.es', allowedDomains: ["cnmv.es"], query: 'site:www.cnmv.es información y normativa CNMV' },
+  { host: 'bde.es', domain: 'bde.es', allowedDomains: ["bde.es"], query: 'site:bde.es normativa Banco de España' },
+  { host: 'www.bde.es', domain: 'bde.es', allowedDomains: ["bde.es"], query: 'site:www.bde.es publicaciones Banco de España' },
+  { host: 'sedeelectronica.bde.es', domain: 'bde.es', allowedDomains: ["bde.es"], query: 'site:sedeelectronica.bde.es sede electrónica Banco de España normativa' }
+
 const report = { startedAt: new Date().toISOString(), apiOrigin: base.origin, status: null, groups: [], privacy: {
   requestBodyContainsOnlyStaticPublicQueries: true,
   bearerTokenOmittedFromReport: true,
@@ -50,7 +64,7 @@ for (let i = 0; i < groups.length; i += 1) {
   try {
     const result = await fetchJson(new URL('/api/v1/assistant/web-search', base), {
       method: 'POST',
-      body: JSON.stringify({ consent: true, query: group.query, mode: 'general', domains: [group.domain] }),
+      body: JSON.stringify({ consent: true, query: group.query, mode: 'general', domains: group.allowedDomains }),
     });
     const data = result.body.data;
     if (!result.response.ok || !data || data.provider !== 'SearXNG' || !Array.isArray(data.sources)) {
@@ -60,7 +74,7 @@ for (let i = 0; i < groups.length; i += 1) {
       let url;
       try { url = new URL(source.url); } catch { return { id: source.id ?? null, host: null, accepted: false, reason: 'invalid_url' }; }
       const host = url.hostname.toLowerCase();
-      const hostAllowed = group.hosts.includes(host);
+      const hostAllowed = group.host === host;
       if (hostAllowed) observedHosts.add(host);
       const document = source.document ?? null;
       return {
@@ -75,7 +89,7 @@ for (let i = 0; i < groups.length; i += 1) {
     });
     report.groups.push({
       domain: group.domain,
-      expectedHosts: group.hosts,
+      expectedHosts: [group.host],
       httpStatus: result.response.status,
       responseMime: result.contentType,
       latencyMs: Date.now() - started,
@@ -87,7 +101,7 @@ for (let i = 0; i < groups.length; i += 1) {
   } catch (error) {
     report.groups.push({
       domain: group.domain,
-      expectedHosts: group.hosts,
+      expectedHosts: [group.host],
       latencyMs: Date.now() - started,
       status: 'failed',
       errorType: error instanceof Error ? error.name : 'UnknownError',
@@ -95,7 +109,7 @@ for (let i = 0; i < groups.length; i += 1) {
   }
   if (i < groups.length - 1) await delay(10_500);
 }
-const expectedHosts = groups.flatMap((group) => group.hosts);
+const expectedHosts = groups.map((group) => group.host);
 report.finishedAt = new Date().toISOString();
 report.hostCoverage = expectedHosts.map((host) => ({ host, observed: observedHosts.has(host) }));
 report.observedHostCount = observedHosts.size;
