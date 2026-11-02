@@ -403,7 +403,8 @@ export const legalTaxCorpus = [
     capturedAt: '2026-11-02',
     dates: { publicationDate: '2025-12-26', effectiveDate: null, eventDate: '2026-01-01', referenceDate: '2026-11-02' },
     documents: [
-      { id: 'BOE-A-2004-4214', authority: 'official_publication', url: 'https://www.boe.es/eli/es/rdlg/2004/03/05/2', locator: 'Real Decreto Legislativo 2/2004; national local-tax framework and IBI' },
+      { id: 'BOE-A-2004-4214', authority: 'official_publication', url: 'https://www.boe.es/eli/es/rdlg/2004/03/05/2', locator: 'Real Decreto Legislativo 2/2004, official original publication' },
+      { id: 'BOE-A-2004-4214-consolidated', authority: 'informative_consolidation', url: 'https://www.boe.es/buscar/act.php?id=BOE-A-2004-4214&p=20260101&tn=1', locator: 'Consolidated text selected as of 01/01/2026; Article 75, accrual and tax period; informational only' },
       { id: 'ANM-2025-141', authority: 'official_municipal_ordinance', url: 'https://sede.madrid.es/eli/es-md-01860896/odnz/1989/12/22/(1)/con/20251226/spa/html', locator: 'Madrid IBI ordinance, ANM 2025\\141, wording current for tax year 2026; Chapter VI, articles 8-9' }
     ],
     evidenceSnapshots: [
@@ -416,6 +417,14 @@ export const legalTaxCorpus = [
         capturedAt: '2026-11-02'
       },
       {
+        documentId: 'BOE-A-2004-4214-consolidated',
+        sourceUrl: 'https://www.boe.es/buscar/act.php?id=BOE-A-2004-4214&p=20260101&tn=1',
+        version: 'consolidated-text-as-of-2026-01-01',
+        locator: 'Article 75(1)-(2), accrual on the first day of the tax period; the tax period coincides with the calendar year',
+        excerpt: 'El impuesto se devengará el primer día del período impositivo. El período impositivo coincide con el año natural.',
+        capturedAt: '2026-11-02'
+      },
+      {
         documentId: 'ANM-2025-141',
         sourceUrl: 'https://sede.madrid.es/eli/es-md-01860896/odnz/1989/12/22/(1)/con/20251226/spa/html',
         version: 'consolidated-municipal-ordinance-as-of-2025-12-26',
@@ -425,7 +434,7 @@ export const legalTaxCorpus = [
       }
     ],
     expected: {
-      citationIds: ['BOE-A-2004-4214', 'ANM-2025-141'],
+      citationIds: ['BOE-A-2004-4214', 'BOE-A-2004-4214-consolidated', 'ANM-2025-141'],
       outcome: 'abstain_missing_property_classification',
       requiredFacts: ['property_municipality', 'property_nature', 'cadastral_value', 'property_use', 'tax_year'],
       doNotInfer: ['property_use_from_residence', 'municipal_rate_without_property_classification', 'bonifications', 'tax_due']
