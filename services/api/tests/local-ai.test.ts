@@ -509,7 +509,7 @@ describe('LocalAiClient', () => {
     expect(finalSystemPrompt).toContain('eventDate, si existe');
     expect(finalSystemPrompt).toContain('reconstruir versiones históricas por bloque si la consulta identifica explícitamente artículos');
     expect(finalSystemPrompt).toContain('No atribuyas la consolidación actual a eventDate');
-    expect(finalSystemPrompt).toContain('evidencia recuperada es insuficiente');
+    expect(finalSystemPrompt).toContain('Declara expresamente la falta de contenido, metadatos ausentes, discrepancias y límites de la consolidación BOE.');
   });
 
   it('passes retrieved official text and explicit temporal limits to the tool-free synthesis call', async () => {
