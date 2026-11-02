@@ -419,6 +419,7 @@ describe('official document evidence and temporal metadata', () => {
     });
     expect(result.textLength).toBeGreaterThan(5_000);
     expect(result.excerpt).toContain('IRPF');
+    expect(result.limitations.join(' ')).toContain('no reconstruye la redacción de cada artículo en eventDate');
     expect(result.temporal?.relatedNorms).toEqual([
       'BOE-A-2023-7 — MODIFICA — Artículo 2',
       'BOE-A-2026-8 — DEROGA — Disposición final',
@@ -427,6 +428,24 @@ describe('official document evidence and temporal metadata', () => {
     expect(requested).toContain('/datosabiertos/api/legislacion-consolidada/id/BOE-A-2025-1234/metadatos');
     expect(requested).toContain('/datosabiertos/api/legislacion-consolidada/id/BOE-A-2025-1234/analisis');
     expect(requested).toContain('/buscar/act.php?id=BOE-A-2025-1234');
+  });
+
+
+  it('discloses the current-only BOE text boundary even when temporal metadata is unavailable', async () => {
+    const source = {
+      id: 'S1', title: 'Ley', url: 'https://www.boe.es/buscar/act.php?id=BOE-A-2025-6789',
+      domain: 'www.boe.es', institution: 'BOE', publishedAt: null, modifiedAt: null, snippet: 'Snippet',
+      sourceKind: 'normativa' as const, sourceAuthority: 'legislation' as const,
+    };
+    const fetchOfficial: OfficialDocumentFetcher = async (url) => {
+      if (url.pathname.endsWith('/metadatos') || url.pathname.endsWith('/analisis')) {
+        throw new Error('Synthetic BOE metadata outage.');
+      }
+      return { body: Buffer.from('<html><body><main><p>Texto consolidado actual.</p></main></body></html>'), contentType: 'text/html' };
+    };
+    const result = await retrieveOfficialDocument(source, 'ley', '2026-11-01', 2_000, undefined, fetchOfficial);
+    expect(result).toMatchObject({ status: 'partial', temporal: null, excerpt: 'Texto consolidado actual.' });
+    expect(result.limitations.join(' ')).toContain('no reconstruye la redacción de cada artículo en eventDate');
   });
 
   it('retains dated BOE metadata when consolidated HTML cannot be retrieved', async () => {

@@ -58,7 +58,7 @@ Cuando un resultado contiene un identificador validado `BOE-A-AAAA-NNNN`, el ada
 
 Se extraen, cuando existen, fecha de publicación, fecha de entrada en vigor, fecha de actualización registral, indicadores explícitos de derogación/anulación/agotamiento, estado de consolidación y relaciones anteriores/posteriores (por ejemplo, modificaciones y derogaciones). La evaluación se calcula contra la fecha de referencia que el usuario indicó en modo fiscal. Una fecha futura de derogación/anulación no se presenta como efectiva en la fecha de referencia; una marca sin fecha deja el resultado como insuficiente.
 
-El frontend muestra las fechas y el estado como metadatos registrados por BOE, no como una decisión jurídica propia. Los estados «sin marca de derogación/anulación/agotamiento» y «consolidación finalizada» no equivalen a una garantía de vigencia legal.
+El frontend muestra las fechas y el estado como metadatos registrados por BOE, no como una decisión jurídica propia. La interfaz también expone la limitación de que el extracto HTML es la consolidación más reciente y no representa automáticamente el texto aplicable en `eventDate`. Los estados «sin marca de derogación/anulación/agotamiento» y «consolidación finalizada» no equivalen a una garantía de vigencia legal.
 
 **Límites jurídicos esenciales:**
 - El propio BOE indica que el texto consolidado es informativo y carece de valor jurídico; para fines jurídicos debe consultarse la publicación oficial.
