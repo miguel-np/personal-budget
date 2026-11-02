@@ -25,6 +25,25 @@ const blockXml = wrap(
   '</bloque>',
 );
 
+
+/**
+ * Offline regression fixture transcribed from official BOE publications:
+ * Ley 39/2015 (BOE-A-2015-10565) and its amendment by Real Decreto-ley 6/2022
+ * (BOE-A-2022-4972). This is NOT a captured response from the BOE Open Data API;
+ * the XML envelope/attributes follow the documented API contract.
+ */
+const realBoeArticle32Xml = wrap(
+  '<bloque id="a32" tipo="precepto" titulo="Artículo 32">' +
+  '<version id_norma="BOE-A-2015-10565" fecha_publicacion="20151002" fecha_vigencia="20161002">' +
+  '<p>4. Cuando una incidencia técnica haya imposibilitado el funcionamiento ordinario del sistema o aplicación que corresponda, y hasta que se solucione el problema, la Administración podrá determinar una ampliación de los plazos no vencidos, debiendo publicar en la sede electrónica tanto la incidencia técnica acontecida como la ampliación concreta del plazo no vencido.</p>' +
+  '</version>' +
+  '<version id_norma="BOE-A-2022-4972" fecha_publicacion="20220330" fecha_vigencia="20220331">' +
+  '<p>4. Cuando una incidencia técnica haya imposibilitado el funcionamiento ordinario del sistema o aplicación que corresponda, y hasta que se solucione el problema, la Administración podrá determinar una ampliación de los plazos no vencidos, debiendo publicar en la sede electrónica tanto la incidencia técnica acontecida como la ampliación concreta del plazo no vencido.</p>' +
+  '<p>5. Cuando como consecuencia de un ciberincidente se hayan visto gravemente afectados los servicios y sistemas utilizados para la tramitación de los procedimientos y el ejercicio de los derechos de los interesados que prevé la normativa vigente, la Administración podrá acordar la ampliación general de plazos de los procedimientos administrativos.</p>' +
+  '</version>' +
+  '</bloque>',
+);
+
 describe('BOE historical block versions', () => {
   it('parses the documented block index and locates explicit article references', () => {
     const index = parseBoeBlockIndexXml(indexXml);
@@ -124,6 +143,35 @@ describe('BOE historical block versions', () => {
     expect(selectBoeHistoricalVersion(history, '2021-04-01')).toMatchObject({
       status: 'insufficient', reason: 'ambiguous_effective_date',
     });
+  });
+
+
+  it('reconstructs the real BOE Article 32 amendment using publication and entry-into-force dates separately', () => {
+    const history = parseBoeBlockXml(realBoeArticle32Xml, 'a32');
+    expect(history).toMatchObject({ id: 'a32', title: 'Artículo 32', versions: [
+      { normId: 'BOE-A-2015-10565', publicationDate: '2015-10-02', effectiveDate: '2016-10-02' },
+      { normId: 'BOE-A-2022-4972', publicationDate: '2022-03-30', effectiveDate: '2022-03-31' },
+    ] });
+
+    const dayBeforeEntryIntoForce = selectBoeHistoricalVersion(history, '2022-03-30');
+    expect(dayBeforeEntryIntoForce).toMatchObject({
+      status: 'selected',
+      version: { normId: 'BOE-A-2015-10565', effectiveDate: '2016-10-02' },
+    });
+    if (dayBeforeEntryIntoForce.status !== 'selected') throw new Error('Expected the original Article 32 version.');
+    expect(dayBeforeEntryIntoForce.version.text).not.toContain('5. Cuando como consecuencia');
+
+    const entryIntoForceDate = selectBoeHistoricalVersion(history, '2022-03-31');
+    expect(entryIntoForceDate).toMatchObject({
+      status: 'selected',
+      version: {
+        normId: 'BOE-A-2022-4972',
+        publicationDate: '2022-03-30',
+        effectiveDate: '2022-03-31',
+      },
+    });
+    if (entryIntoForceDate.status !== 'selected') throw new Error('Expected the amended Article 32 version.');
+    expect(entryIntoForceDate.version.text).toContain('5. Cuando como consecuencia de un ciberincidente');
   });
 
   it('rejects DTDs, external entities, invalid references and mismatched block identifiers', () => {
