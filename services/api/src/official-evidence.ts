@@ -2,6 +2,8 @@ import { lookup } from 'node:dns/promises';
 import { request as httpsRequest, type RequestOptions } from 'node:https';
 import type { WebSearchSource } from './web-search.js';
 import { isPublicNetworkAddress } from './network-address.js';
+import { findExplicitBoeArticleTitles, parseBoeBlockIndexXml, parseBoeBlockXml, selectBoeHistoricalVersion } from './boe-history.js';
+import type { BoeHistoricalSelection } from './boe-history.js';
 
 /**
  * Official sources are a deliberately small allowlist. A result URL is never
@@ -89,6 +91,26 @@ export interface BoeTemporalEvidence {
   readonly relatedNorms: readonly string[];
 }
 
+export interface BoeHistoricalBlockEvidence {
+  readonly id: string;
+  readonly title: string;
+  readonly status: BoeHistoricalSelection['status'];
+  readonly reason?: string;
+  readonly consideredVersionCount: number;
+  readonly publicationDate?: string;
+  readonly effectiveDate?: string | null;
+  readonly modifyingNormId?: string;
+  readonly publicationUrl?: string;
+  readonly text?: string;
+  readonly textTruncated?: boolean;
+  readonly notes?: readonly string[];
+}
+export interface BoeHistoricalEvidence {
+  readonly eventDate: string;
+  readonly status: 'reconstructed' | 'insufficient';
+  readonly blocks: readonly BoeHistoricalBlockEvidence[];
+  readonly limitations: readonly string[];
+}
 export interface OfficialDocumentEvidence {
   readonly status: OfficialDocumentStatus;
   readonly documentType: 'boe_consolidated_legislation' | 'official_html' | 'unsupported_format';
@@ -98,12 +120,17 @@ export interface OfficialDocumentEvidence {
   readonly excerpt: string;
   readonly textLength: number;
   readonly temporal: BoeTemporalEvidence | null;
+  readonly historical: BoeHistoricalEvidence | null;
+  readonly fetches: readonly OfficialDocumentFetchRecord[];
   readonly limitations: readonly string[];
 }
 
 const MAX_HTML_BYTES = 1_048_576;
 const MAX_BOE_METADATA_BYTES = 96_000;
 const MAX_BOE_ANALYSIS_BYTES = 196_608;
+const MAX_BOE_INDEX_BYTES = 196_608;
+const MAX_BOE_BLOCK_BYTES = 524_288;
+const MAX_BOE_HISTORY_BLOCKS = 5;
 const MAX_EXCERPT_CHARS = 5_000;
 const MAX_RELATIONS = 12;
 
@@ -257,6 +284,15 @@ function relevantExcerpt(text: string, query: string): string {
 export interface OfficialDocumentFetchResponse {
   readonly body: Buffer;
   readonly contentType: string;
+  readonly statusCode?: number;
+}
+export interface OfficialDocumentFetchRecord {
+  readonly endpoint: string;
+  readonly httpStatus: number | null;
+  readonly contentType: string | null;
+  readonly bytesReceived: number;
+  readonly latencyMs: number;
+  readonly outcome: 'completed' | 'failed';
 }
 export type OfficialDocumentFetcher = (
   url: URL,
@@ -265,6 +301,31 @@ export type OfficialDocumentFetcher = (
   callerSignal?: AbortSignal,
 ) => Promise<OfficialDocumentFetchResponse>;
 type HttpsPayload = OfficialDocumentFetchResponse;
+interface ObservedOfficialFetch {
+  readonly payload: HttpsPayload | null;
+  readonly record: OfficialDocumentFetchRecord;
+}
+async function observeOfficialFetch(
+  url: URL,
+  maxBytes: number,
+  timeoutMs: number,
+  callerSignal: AbortSignal | undefined,
+  fetchOfficial: OfficialDocumentFetcher,
+): Promise<ObservedOfficialFetch> {
+  const startedAt = Date.now();
+  try {
+    const payload = await fetchOfficial(url, maxBytes, timeoutMs, callerSignal);
+    return { payload, record: {
+      endpoint: url.pathname, httpStatus: payload.statusCode ?? 200, contentType: payload.contentType,
+      bytesReceived: payload.body.byteLength, latencyMs: Math.max(0, Date.now() - startedAt), outcome: 'completed',
+    } };
+  } catch {
+    return { payload: null, record: {
+      endpoint: url.pathname, httpStatus: null, contentType: null, bytesReceived: 0,
+      latencyMs: Math.max(0, Date.now() - startedAt), outcome: 'failed',
+    } };
+  }
+}
 async function requestOfficialHttps(url: URL, maxBytes: number, timeoutMs: number, callerSignal?: AbortSignal): Promise<HttpsPayload> {
   if (url.protocol !== 'https:' || url.username || url.password || url.port || url.hash || !isOfficialHost(url.hostname)) {
     throw new Error('Official document URL rejected.');
@@ -289,7 +350,7 @@ async function requestOfficialHttps(url: URL, maxBytes: number, timeoutMs: numbe
       port: 443,
       method: 'GET',
       path: url.pathname + url.search,
-      headers: { Accept: 'text/html, application/xhtml+xml, application/json;q=0.9', 'User-Agent': 'PersonalBudget/0.1 official-source-evidence' },
+      headers: { Accept: 'application/xml, text/xml;q=0.95, text/html, application/xhtml+xml, application/json;q=0.9', 'User-Agent': 'PersonalBudget/0.1 official-source-evidence' },
       maxHeaderSize: 8_192,
       signal,
       lookup: pinnedLookup,
@@ -322,6 +383,7 @@ async function requestOfficialHttps(url: URL, maxBytes: number, timeoutMs: numbe
       response.on('end', () => resolve({
         body: Buffer.concat(chunks),
         contentType: String(response.headers['content-type'] ?? '').toLowerCase(),
+        statusCode: status,
       }));
     });
     request.on('error', reject);
@@ -358,10 +420,132 @@ function makeBoeTemporal(metadata: Record<string, unknown> | null, analysis: Rec
   const related = normalizeReferences(analysis ?? {});
   return assessBoeTemporalMetadata(metadata, referenceDate, related);
 }
+function hasXmlContentType(contentType: string): boolean {
+  const normalized = contentType.toLowerCase().split(';', 1)[0]!.trim();
+  return normalized === 'application/xml' || normalized === 'text/xml' || normalized.endsWith('+xml');
+}
+
+async function retrieveBoeHistoricalEvidence(
+  identifier: string,
+  query: string,
+  eventDate: string,
+  timeoutMs: number,
+  callerSignal: AbortSignal | undefined,
+  fetchOfficial: OfficialDocumentFetcher,
+): Promise<{ readonly evidence: BoeHistoricalEvidence; readonly fetches: readonly OfficialDocumentFetchRecord[] }> {
+  const limitations = [
+    'La reconstrucción usa el historial de versiones consolidado por bloque publicado por el BOE; ese texto consolidado tiene carácter meramente informativo y no sustituye la publicación oficial.',
+    'La fecha de publicación de la norma modificadora y la fecha de vigencia de la versión se evalúan por separado. Si la fecha de vigencia falta, el sistema se abstiene.',
+    'Solo se recuperan artículos citados expresamente en la consulta. No se infiere que los artículos no recuperados sean irrelevantes ni que la lista cubra toda la norma.',
+    'Las disposiciones transitorias, la retroactividad, la vigencia parcial y la aplicación material al supuesto requieren contraste con la publicación original y revisión jurídica.',
+  ];
+  const mentionPattern = /\b(?:art(?:ículo|ículo)?|art)\.?\s*(\d{1,4})(?:\s*(bis|ter|quater|quinquies))?\b/giu;
+  const requestedArticles = [...new Set([...query.matchAll(mentionPattern)].map((match) =>
+    match[1]! + (match[2] ? ' ' + match[2].toLowerCase() : '')))];
+  if (requestedArticles.length === 0) {
+    return { evidence: { eventDate, status: 'insufficient', blocks: [], limitations: [
+      ...limitations, 'La consulta no identifica un artículo concreto. Indica el artículo para reconstruir su versión histórica sin inferencias semánticas.',
+    ] }, fetches: [] };
+  }
+
+  const parsedEventDate = Date.parse(eventDate + 'T00:00:00.000Z');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate) || !Number.isFinite(parsedEventDate) ||
+    new Date(parsedEventDate).toISOString().slice(0, 10) !== eventDate) {
+    return { evidence: { eventDate, status: 'insufficient', blocks: [], limitations: [
+      ...limitations, 'La fecha del hecho no es una fecha ISO válida; no se selecciona ninguna versión histórica.',
+    ] }, fetches: [] };
+  }
+  const indexURL = new URL('/datosabiertos/api/legislacion-consolidada/id/' + identifier + '/texto/indice', 'https://www.boe.es');
+  const indexFetch = await observeOfficialFetch(indexURL, MAX_BOE_INDEX_BYTES, timeoutMs, callerSignal, fetchOfficial);
+  const fetches: OfficialDocumentFetchRecord[] = [indexFetch.record];
+  if (!indexFetch.payload || !hasXmlContentType(indexFetch.payload.contentType)) {
+    return { evidence: { eventDate, status: 'insufficient', blocks: [], limitations: [
+      ...limitations, 'No se pudo recuperar el índice XML de bloques de la API oficial del BOE.',
+    ] }, fetches };
+  }
+
+  let index;
+  try { index = parseBoeBlockIndexXml(indexFetch.payload.body); }
+  catch {
+    return { evidence: { eventDate, status: 'insufficient', blocks: [], limitations: [
+      ...limitations, 'El índice XML del BOE estaba malformado, excedía los límites seguros o no cumplía el contrato documentado.',
+    ] }, fetches };
+  }
+
+  const selectedBlocks = findExplicitBoeArticleTitles(query, index, MAX_BOE_HISTORY_BLOCKS);
+    const selectedNumbers = new Set(selectedBlocks.map((block) => {
+    const normalizedTitle = block.title.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const match = /^Articulo\s+(\d+)(?:\s+(bis|ter|quater|quinquies))?$/i.exec(normalizedTitle);
+    return match ? match[1]! + (match[2] ? ' ' + match[2].toLowerCase() : '') : '';
+  }));
+  const missingArticles = requestedArticles.filter((article) => !selectedNumbers.has(article));
+  if (selectedBlocks.length === 0) {
+    return { evidence: { eventDate, status: 'insufficient', blocks: missingArticles.map((article) => ({
+      id: 'not-found-' + article.replace(/\s+/g, '-'), title: 'Artículo ' + article,
+      status: 'insufficient' as const, reason: 'article_not_in_index', consideredVersionCount: 0,
+    })), limitations: [
+      ...limitations, 'El índice del BOE no contiene el artículo solicitado con ese título; no se ha sustituido por otro bloque.',
+    ] }, fetches };
+  }
+
+  const blocks = await Promise.all(selectedBlocks.map(async (entry): Promise<BoeHistoricalBlockEvidence> => {
+    const url = new URL('/datosabiertos/api/legislacion-consolidada/id/' + identifier + '/texto/bloque/' + encodeURIComponent(entry.id), 'https://www.boe.es');
+    const observed = await observeOfficialFetch(url, MAX_BOE_BLOCK_BYTES, timeoutMs, callerSignal, fetchOfficial);
+    fetches.push(observed.record);
+    if (!observed.payload || !hasXmlContentType(observed.payload.contentType)) {
+      return { id: entry.id, title: entry.title, status: 'insufficient', reason: 'block_unavailable', consideredVersionCount: 0 };
+    }
+    try {
+      const history = parseBoeBlockXml(observed.payload.body, entry.id);
+      const selection = selectBoeHistoricalVersion(history, eventDate);
+      if (selection.status !== 'selected') {
+        return {
+          id: history.id, title: history.title, status: selection.status,
+          ...(selection.status === 'insufficient' ? { reason: selection.reason } : {}),
+          consideredVersionCount: selection.consideredVersionCount,
+        };
+      }
+      return {
+        id: history.id, title: history.title, status: 'selected',
+        consideredVersionCount: selection.consideredVersionCount,
+        publicationDate: selection.version.publicationDate,
+        effectiveDate: selection.version.effectiveDate,
+        modifyingNormId: selection.version.normId,
+        publicationUrl: 'https://www.boe.es/diario_boe/txt.php?id=' + encodeURIComponent(selection.version.normId),
+        text: selection.version.text.slice(0, 6_000),
+        textTruncated: selection.version.text.length > 6_000,
+        notes: selection.version.notes,
+      };
+    } catch {
+      return { id: entry.id, title: entry.title, status: 'insufficient', reason: 'invalid_block_history', consideredVersionCount: 0 };
+    }
+  }));
+
+  const tooMany = requestedArticles.length > MAX_BOE_HISTORY_BLOCKS;
+  const complete = !tooMany && missingArticles.length === 0 && blocks.length === requestedArticles.length && blocks.every((block) => block.status === 'selected');
+  return {
+    evidence: {
+      eventDate,
+      status: complete ? 'reconstructed' : 'insufficient',
+      blocks,
+      limitations: [
+        ...limitations,
+        ...(tooMany ? ['La consulta menciona más artículos que el máximo de bloques recuperables en una petición; la cobertura es parcial.'] : []),
+        ...(missingArticles.length > 0 ? ['No se localizaron en el índice los artículos: ' + missingArticles.join(', ') + '.'] : []),
+        ...(blocks.some((block) => block.status === 'insufficient') ? ['Al menos un bloque no pudo seleccionarse con evidencia temporal inequívoca.'] : []),
+        ...(blocks.some((block) => block.status === 'not_yet_published' || block.status === 'not_effective_yet')
+          ? ['No había una versión publicada y en vigor acreditada para todos los artículos en eventDate.'] : []),
+      ],
+    },
+    fetches,
+  };
+}
+
+
 function unavailableEvidence(status: OfficialDocumentStatus, documentType: OfficialDocumentEvidence['documentType']): OfficialDocumentEvidence {
   return {
     status, documentType, retrievedAt: null, contentType: null, excerpt: '', textLength: 0,
-    temporal: null,
+    temporal: null, historical: null, fetches: [],
     limitations: ['No se pudo recuperar y validar el contenido de la fuente oficial. Abre el enlace original y no deduzcas vigencia a partir del snippet del buscador.'],
   };
 }
@@ -379,6 +563,7 @@ export async function retrieveOfficialDocument(
   timeoutMs: number,
   callerSignal?: AbortSignal,
   fetchOfficial: OfficialDocumentFetcher = requestOfficialHttps,
+  eventDate?: string,
 ): Promise<OfficialDocumentEvidence> {
   let sourceUrl: URL;
   try { sourceUrl = new URL(source.url); } catch { return unavailableEvidence('unsupported', 'unsupported_format'); }
@@ -392,33 +577,43 @@ export async function retrieveOfficialDocument(
       const metadataURL = new URL('/datosabiertos/api/legislacion-consolidada/id/' + id + '/metadatos', 'https://www.boe.es');
       const analysisURL = new URL('/datosabiertos/api/legislacion-consolidada/id/' + id + '/analisis', 'https://www.boe.es');
       const pageURL = new URL('/buscar/act.php?id=' + encodeURIComponent(id), 'https://www.boe.es');
-      const [metadataResult, analysisResult, pageResult] = await Promise.allSettled([
-        fetchOfficial(metadataURL, MAX_BOE_METADATA_BYTES, timeoutMs, callerSignal),
-        fetchOfficial(analysisURL, MAX_BOE_ANALYSIS_BYTES, timeoutMs, callerSignal),
-        fetchOfficial(pageURL, MAX_HTML_BYTES, timeoutMs, callerSignal),
+      const [metadataFetch, analysisFetch, htmlFetch] = await Promise.all([
+        observeOfficialFetch(metadataURL, MAX_BOE_METADATA_BYTES, timeoutMs, callerSignal, fetchOfficial),
+        observeOfficialFetch(analysisURL, MAX_BOE_ANALYSIS_BYTES, timeoutMs, callerSignal, fetchOfficial),
+        observeOfficialFetch(pageURL, MAX_HTML_BYTES, timeoutMs, callerSignal, fetchOfficial),
       ]);
-      const metadataPayload = metadataResult.status === 'fulfilled' ? parseJsonPayload(metadataResult.value) : null;
-      const analysisPayload = analysisResult.status === 'fulfilled' ? parseJsonPayload(analysisResult.value) : null;
+      const fetches = [metadataFetch.record, analysisFetch.record, htmlFetch.record];
+      const historicalResult = eventDate
+        ? await retrieveBoeHistoricalEvidence(id, query, eventDate, timeoutMs, callerSignal, fetchOfficial)
+        : null;
+      const allFetches = [...fetches, ...(historicalResult?.fetches ?? [])];
+      const historical = historicalResult?.evidence ?? null;
+      const metadataPayload = metadataFetch.payload ? parseJsonPayload(metadataFetch.payload) : null;
+      const analysisPayload = analysisFetch.payload ? parseJsonPayload(analysisFetch.payload) : null;
       const metadata = metadataPayload ? unwrapData(metadataPayload) : null;
-      const htmlPayload = pageResult.status === 'fulfilled' ? pageResult.value : null;
+      const htmlPayload = htmlFetch.payload;
       const htmlContentType = htmlPayload?.contentType ?? '';
       if (!htmlPayload || !(htmlContentType.includes('text/html') || htmlContentType.includes('application/xhtml+xml'))) {
         const temporal = makeBoeTemporal(metadata, analysisPayload, referenceDate);
         return {
           ...unavailableEvidence(metadata || analysisPayload ? 'partial' : 'unavailable', 'boe_consolidated_legislation'),
+          fetches: allFetches,
+          historical,
           ...(temporal ? { retrievedAt: new Date().toISOString(), temporal, limitations: temporalLimitations(temporal.assessment).concat(
             'No se pudo recuperar el texto consolidado HTML; consulta la publicación oficial y el enlace original.',
           ) } : {}),
         };
       }
       const fullText = extractOfficialHtmlText(htmlPayload.body.toString('utf8'));
-      if (!fullText) return unavailableEvidence('partial', 'boe_consolidated_legislation');
+      if (!fullText) return { ...unavailableEvidence('partial', 'boe_consolidated_legislation'), fetches: allFetches, historical };
       const temporal = makeBoeTemporal(metadata, analysisPayload, referenceDate);
       const status: OfficialDocumentStatus = metadata && analysisPayload ? 'retrieved' : 'partial';
       return {
         status, documentType: 'boe_consolidated_legislation', retrievedAt: new Date().toISOString(),
         contentType: htmlContentType, excerpt: relevantExcerpt(fullText, query), textLength: fullText.length,
         temporal,
+        fetches: allFetches,
+        historical,
         limitations: temporal ? temporalLimitations(temporal.assessment) : [
           'Se recuperó el texto consolidado, pero no se pudieron validar todos los metadatos temporales del BOE.',
           'El texto consolidado del BOE es informativo, no sustituye a la publicación oficial ni cubre derogaciones tácitas.',
@@ -430,22 +625,20 @@ export async function retrieveOfficialDocument(
     }
   }
 
-  try {
-    const payload = await fetchOfficial(sourceUrl, MAX_HTML_BYTES, timeoutMs, callerSignal);
-    if (!(payload.contentType.includes('text/html') || payload.contentType.includes('application/xhtml+xml') || payload.contentType.includes('text/plain'))) {
-      return unavailableEvidence('unsupported', 'unsupported_format');
-    }
-    const fullText = payload.contentType.includes('text/plain')
-      ? payload.body.toString('utf8').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ').trim()
-      : extractOfficialHtmlText(payload.body.toString('utf8'));
-    if (!fullText) return unavailableEvidence('partial', 'official_html');
-    return {
-      status: 'retrieved', documentType: 'official_html', retrievedAt: new Date().toISOString(),
-      contentType: payload.contentType, excerpt: relevantExcerpt(fullText, query), textLength: fullText.length,
-      temporal: null,
-      limitations: ['El contenido oficial se ha recuperado, pero no existe una comprobación temporal estructurada para este tipo de documento. La fecha y fuerza del criterio deben leerse en el original.'],
-    };
-  } catch {
-    return unavailableEvidence('unavailable', 'official_html');
+  const observed = await observeOfficialFetch(sourceUrl, MAX_HTML_BYTES, timeoutMs, callerSignal, fetchOfficial);
+  const payload = observed.payload;
+  if (!payload) return { ...unavailableEvidence('unavailable', 'official_html'), fetches: [observed.record] };
+  if (!(payload.contentType.includes('text/html') || payload.contentType.includes('application/xhtml+xml') || payload.contentType.includes('text/plain'))) {
+    return { ...unavailableEvidence('unsupported', 'unsupported_format'), fetches: [observed.record] };
   }
+  const fullText = payload.contentType.includes('text/plain')
+    ? payload.body.toString('utf8').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ').trim()
+    : extractOfficialHtmlText(payload.body.toString('utf8'));
+  if (!fullText) return { ...unavailableEvidence('partial', 'official_html'), fetches: [observed.record] };
+  return {
+    status: 'retrieved', documentType: 'official_html', retrievedAt: new Date().toISOString(),
+    contentType: payload.contentType, excerpt: relevantExcerpt(fullText, query), textLength: fullText.length,
+    temporal: null, historical: null, fetches: [observed.record],
+    limitations: ['El contenido oficial se ha recuperado, pero no existe una comprobación temporal estructurada para este tipo de documento. La fecha y fuerza del criterio deben leerse en el original.'],
+  };
 }

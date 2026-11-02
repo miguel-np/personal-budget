@@ -28,6 +28,16 @@ interface SearchSource {
     contentType: string | null;
     excerpt: string;
     textLength: number;
+    fetches: readonly { endpoint: string; httpStatus: number | null; contentType: string | null; bytesReceived: number; latencyMs: number; outcome: 'completed' | 'failed'; }[];
+    historical: null | {
+      eventDate: string; status: 'reconstructed' | 'insufficient';
+      blocks: readonly {
+        id: string; title: string; status: 'selected' | 'not_yet_published' | 'not_effective_yet' | 'insufficient';
+        reason?: string; consideredVersionCount: number; publicationDate?: string; effectiveDate?: string | null;
+        modifyingNormId?: string; publicationUrl?: string; text?: string; textTruncated?: boolean; notes?: readonly string[];
+      }[];
+      limitations: readonly string[];
+    };
     temporal: null | {
       assessment: 'consolidation_pending_update' | 'annulled_by_reference_date' | 'annulment_after_reference_date' |
         'repealed_by_reference_date' | 'derogation_after_reference_date' | 'not_effective_yet' |
@@ -47,8 +57,17 @@ interface SearchSource {
     limitations: readonly string[];
   };
 }
+interface ClaimSourceReference {
+  id: string; title: string; url: string; domain: string;
+  sourceKind: SearchSource['sourceKind']; sourceAuthority: SearchSource['sourceAuthority'];
+}
+interface MaterialClaim {
+  id: string; text: string; kind: 'interpretation' | 'unresolved';
+  sourceRefs: readonly ClaimSourceReference[]; unresolvedReferences: readonly string[];
+  locator: null; reviewRequired: true;
+}
 interface ResearchResponse {
-  data?: { answer: string; provider: string; searchedAt: string; mode: 'general' | 'tax'; taxContext?: {
+  data?: { answer: string; claimEvidence: { claims: readonly MaterialClaim[]; limitations: readonly string[] }; provider: string; searchedAt: string; mode: 'general' | 'tax'; taxContext?: {
     jurisdiction: string; autonomousCommunity?: string | null; municipality?: string | null;
     taxpayerType?: 'individual' | 'self_employed' | 'company' | 'other' | null;
     eventDate?: string | null; matter: string; taxYear: string; filingYear: string; referenceDate: string;
@@ -235,6 +254,23 @@ export function WebResearchPanel() {
           <div className="section-heading"><div><h3>Resultado de investigación</h3><p className="section-footnote">Proveedor: {result.provider} · Búsqueda: {formatDate(result.searchedAt)}</p></div><span className="date-badge">{result.sourceCount} fuentes</span></div>
           {result.taxContext ? <p className="section-footnote">Jurisdicción: {result.taxContext.jurisdiction}{result.taxContext.autonomousCommunity ? ' · Comunidad: ' + result.taxContext.autonomousCommunity : ''}{result.taxContext.municipality ? ' · Municipio: ' + result.taxContext.municipality : ''}{result.taxContext.taxpayerType ? ' · Tipo: ' + ({ individual: 'Persona física', self_employed: 'Autónomo / actividad económica', company: 'Sociedad', other: 'Otro' } as const)[result.taxContext.taxpayerType] : ''} · Materia: {result.taxContext.matter} · Ejercicio: {result.taxContext.taxYear} · Presentación: {result.taxContext.filingYear} · Fecha de referencia: {result.taxContext.referenceDate}{result.taxContext.eventDate ? ' · Fecha del hecho: ' + result.taxContext.eventDate : ''}</p> : null}
           <p className="research-answer">{result.answer}</p>
+          {result.claimEvidence.claims.length > 0 ? <section className="claim-evidence" aria-labelledby="claim-evidence-heading">
+            <h4 id="claim-evidence-heading">Afirmaciones y referencias asociadas</h4>
+            <p className="section-footnote">La asociación comprueba que las referencias existen en esta respuesta; no demuestra que la fuente respalde semánticamente la afirmación ni valida su interpretación jurídica.</p>
+            <ol className="source-list">
+              {result.claimEvidence.claims.map((claim) => <li key={claim.id}>
+                <p>{claim.text}</p>
+                <p className="section-footnote">Estado: {claim.kind === 'interpretation' ? 'Interpretación con referencias' : 'Sin evidencia citada suficiente'} · Revisión humana requerida</p>
+                {claim.sourceRefs.length > 0 ? <ul>
+                  {claim.sourceRefs.map((source) => <li key={source.id}>
+                    <a href={source.url} target="_blank" rel="noopener noreferrer">[{source.id}] {source.title} · {source.domain} · {source.sourceAuthority}</a>
+                  </li>)}
+                </ul> : <p className="section-footnote">No hay una fuente válida asociada a esta afirmación.</p>}
+                {claim.unresolvedReferences.length > 0 ? <p className="section-footnote">Referencias no resueltas: {claim.unresolvedReferences.join(', ')}</p> : null}
+              </li>)}
+            </ol>
+            {result.claimEvidence.limitations.map((limitation, index) => <p className="section-footnote" key={index}>{limitation}</p>)}
+          </section> : null}
           <p className="section-footnote">La síntesis es una ayuda de investigación generada por el modelo local. Los resultados externos no son instrucciones ni constituyen evidencia jurídica por sí solos. Comprueba el texto oficial y su vigencia antes de actuar.</p>
         </article>
         <article className="panel">
@@ -250,6 +286,23 @@ export function WebResearchPanel() {
                   {source.document.retrievedAt ? ' · Recuperado: ' + formatDate(source.document.retrievedAt) : ''}
                   {source.document.textLength > 0 ? ' · Texto de origen: ' + source.document.textLength.toLocaleString('es-ES') + ' caracteres' : ''}
                 </p>
+                {source.document.fetches.length > 0 ? <ul className="section-footnote" aria-label="Peticiones documentales realizadas por el backend">
+                  {source.document.fetches.map((fetch, index) => <li key={index}>
+                    {fetch.endpoint} · HTTP {fetch.httpStatus ?? 'sin respuesta'} · {fetch.contentType ?? 'MIME no disponible'} · {fetch.bytesReceived.toLocaleString('es-ES')} bytes · {fetch.latencyMs} ms
+                  </li>)}
+                </ul> : null}
+                {source.document.historical ? <section className="source-document-evidence" aria-label="Historial de versiones BOE por artículo">
+                  <p className="section-footnote"><strong>Historial BOE para el hecho de {source.document.historical.eventDate}: {source.document.historical.status === 'reconstructed' ? 'versión localizada' : 'evidencia insuficiente'}</strong></p>
+                  {source.document.historical.blocks.map((block) => <article key={block.id}>
+                    <p className="section-footnote"><strong>{block.title}</strong> · {block.status === 'selected' ? 'Versión seleccionada por fecha de vigencia' : block.status === 'not_yet_published' ? 'Norma modificadora aún no publicada en esa fecha' : block.status === 'not_effective_yet' ? 'Versión publicada pero aún no vigente' : 'No se puede determinar la versión aplicable'}</p>
+                    {block.publicationDate ? <p className="section-footnote">Publicación de la norma modificadora: {formatDate(block.publicationDate)}{block.effectiveDate ? ' · Entrada en vigor de esta versión: ' + formatDate(block.effectiveDate) : ' · Fecha de entrada en vigor no acreditada'}</p> : null}
+                    {block.modifyingNormId && block.publicationUrl ? <p className="section-footnote"><a href={block.publicationUrl} target="_blank" rel="noopener noreferrer">Publicación BOE {block.modifyingNormId}</a></p> : null}
+                    {block.text ? <><p className="section-footnote">{block.textTruncated ? 'Extracto limitado a 6.000 caracteres; consulta la publicación BOE enlazada para el texto íntegro.' : 'Texto recuperado del bloque consolidado informativo.'}</p><blockquote className="research-answer">{block.text}</blockquote></> : null}
+                    {block.notes?.map((note, index) => <p className="section-footnote" key={index}>Nota BOE: {note}</p>)}
+                    {block.reason ? <p className="section-footnote">Motivo: {block.reason === 'possible_retroactivity' ? 'Existe una versión publicada después del hecho cuya fecha de vigencia es anterior o no está acreditada; se requiere revisión jurídica.' : block.reason === 'effective_before_publication' ? 'La versión declara una fecha de vigencia anterior a su publicación; no se infiere la aplicación retroactiva.' : block.reason}</p> : null}
+                  </article>)}
+                  {source.document.historical.limitations.map((limitation, index) => <p className="section-footnote" key={index}>{limitation}</p>)}
+                </section> : null}
                 {source.document.temporal ? <p className="section-footnote">
                   Estado temporal BOE a {source.document.temporal.referenceDate}: <strong>{temporalAssessmentLabel(source.document.temporal.assessment)}</strong>
                   {source.document.temporal.publicationDate ? ' · Publicación: ' + source.document.temporal.publicationDate : ''}

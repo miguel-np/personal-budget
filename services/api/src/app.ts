@@ -9,6 +9,7 @@ import { LocalAiBusyError, LocalAiCancelledError, LocalAiClient, LocalAiContextB
 import type { AssistantContext, PlanningIntentDraft, WebResearchRequest } from './local-ai.js';
 import { OFFICIAL_SOURCE_DOMAINS, SearXNGSearchProvider, WebSearchResponseTooLargeError, WebSearchUnavailableError } from './web-search.js';
 import type { WebSearchProvider } from './web-search.js';
+import { buildClaimEvidence } from './claim-evidence.js';
 import { CurrencyPreferencesSchema, defaultCurrencyPreferences, readCurrencyPreferences, writeCurrencyPreferences } from './currency-preferences.js';
 import type { CurrencyPreferences } from './currency-preferences.js';
 import { AccountScopeError, AccountScopePreferenceSchema, defaultAccountScope, readAccountScope, resolveAccountScope, writeAccountScope } from './account-scope.js';
@@ -789,6 +790,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       );
       return { data: {
         answer: researched.answer,
+        claimEvidence: buildClaimEvidence(researched.answer, researched.search.sources),
         provider: researched.search.provider,
         searchedAt: researched.search.searchedAt,
         mode: query.mode,
