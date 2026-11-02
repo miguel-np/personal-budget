@@ -354,6 +354,7 @@ test('controlled web research requires per-query consent and shows official sour
             retrievedAt: '2026-11-01T12:01:00.000Z', contentType: 'text/html',
             excerpt: 'Artículo 1. Texto oficial recuperado del BOE.',
             textLength: 1280,
+            fetches: [],
             temporal: {
               assessment: 'not_marked_derogated_or_exhausted', referenceDate: '2026-11-01',
               publicationDate: '2025-03-01', effectiveDate: '2025-04-01',
