@@ -12,10 +12,22 @@ concurrency:
 
 jobs:
   acceptance:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+      - name: Validate endpoint guard syntax
+        run: node --check scripts/acceptance-endpoint.mjs && node --check scripts/validate-acceptance-endpoint.mjs
+      - name: Test endpoint guard
+        run: node --test scripts/acceptance-endpoint.test.mjs
       - name: Validate acceptance script syntax
         run: node --check scripts/web-search-live-acceptance.mjs
       - name: Validate acceptance endpoint configuration
@@ -27,17 +39,7 @@ jobs:
             echo "::error::Configure PERSONAL_BUDGET_ACCEPTANCE_API_URL with the HTTPS base URL of the deployed Personal Budget API."
             exit 1
           fi
-          node --input-type=module - "$API_BASE_URL" <<'NODE'
-          const value = process.argv[2];
-          const url = new URL(value);
-          if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || (url.pathname !== '/' && url.pathname !== '')) {
-            throw new Error('Acceptance API must be an HTTPS origin without credentials, path, query or fragment.');
-          }
-          const host = url.hostname.toLowerCase();
-          if (host === 'localhost' || host.endsWith('.local') || host.endsWith('.internal') || /^(127\\.|10\\.|192\\.168\\.|169\\.254\\.)/.test(host)) {
-            throw new Error('Acceptance API must not target loopback or private hostnames.');
-          }
-          NODE
+          node scripts/validate-acceptance-endpoint.mjs "$API_BASE_URL"
       - name: Run live acceptance through the configured backend
         env:
           PERSONAL_BUDGET_ACCEPTANCE_API_URL: ${{ secrets.PERSONAL_BUDGET_ACCEPTANCE_API_URL }}
