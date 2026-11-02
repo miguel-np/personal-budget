@@ -16,7 +16,7 @@ export const legalTaxCorpus = [
     capturedAt: '2026-11-02',
     evidenceSnapshots: [
       {
-        "documentId": "BOE-A-2006-20764",
+        "documentId": "BOE-A-2006-20764-consolidated",
         "sourceUrl": "https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764&p=20231231&tn=1",
         "version": "consolidated-text-as-of-2023-12-31",
         "locator": "Article 12(1), tax period",
@@ -25,7 +25,7 @@ export const legalTaxCorpus = [
       }
     ],
     dates: { publicationDate: '2006-11-29', effectiveDate: '2007-01-01', eventDate: '2023-12-31', referenceDate: '2024-06-30' },
-    documents: [{ id: 'BOE-A-2006-20764', authority: 'official_publication', url: 'https://www.boe.es/eli/es/l/2006/11/28/35', locator: 'Ley 35/2006; temporal scope and filing year' }, { id: 'BOE-A-2006-20764-consolidated', authority: 'informative_consolidation', url: 'https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764', locator: 'Consolidated text; informational disclaimer' }],
+    documents: [{ id: 'BOE-A-2006-20764', authority: 'official_publication', url: 'https://www.boe.es/eli/es/l/2006/11/28/35', locator: 'Ley 35/2006; temporal scope and filing year' }, { id: 'BOE-A-2006-20764-consolidated', authority: 'informative_consolidation', url: 'https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764&p=20231231&tn=1', locator: 'Consolidated text; informational disclaimer' }],
     expected: { citationIds: ["BOE-A-2006-20764"], outcome: 'separate_tax_and_filing_years', taxYear: 2023, filingYear: 2024, doNotInfer: ['residency', 'regional_deductions', 'taxable_income', 'filing_obligation'] },
     tags: ['year-separation', 'source-hierarchy'], reviewStatus: 'pending'
   },
@@ -46,7 +46,7 @@ export const legalTaxCorpus = [
         "capturedAt": "2026-11-02"
       },
       {
-        "documentId": "BOE-A-2006-20764",
+        "documentId": "BOE-A-2006-20764-consolidated",
         "sourceUrl": "https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764&p=20241231&tn=1",
         "version": "consolidated-text-as-of-2024-12-31",
         "locator": "Article 12(1), tax period for the 2024 tax year",
@@ -58,7 +58,7 @@ export const legalTaxCorpus = [
       }
     ],
     dates: { publicationDate: '2006-11-29', effectiveDate: '2007-01-01', eventDate: '2024-12-31', referenceDate: '2025-06-30' },
-    documents: [{ id: 'BOE-A-2006-20764', authority: 'official_publication', url: 'https://www.boe.es/eli/es/l/2006/11/28/35', locator: 'Ley 35/2006' }, { id: 'AEAT-IRPF-2024-MODEL100', authority: 'administrative_guide', url: 'https://sede.agenciatributaria.gob.es/Sede/Ayuda/24Presentacion/100.html', locator: 'Modelo 100 IRPF 2024; informational publication; campaign for filing in 2025' }],
+    documents: [{ id: 'BOE-A-2006-20764', authority: 'official_publication', url: 'https://www.boe.es/eli/es/l/2006/11/28/35', locator: 'Ley 35/2006, original official publication' }, { id: 'BOE-A-2006-20764-consolidated', authority: 'informative_consolidation', url: 'https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764&p=20241231&tn=1', locator: 'Consolidated text frozen at 31/12/2024; informational only' }, { id: 'AEAT-IRPF-2024-MODEL100', authority: 'administrative_guide', url: 'https://sede.agenciatributaria.gob.es/Sede/Ayuda/24Presentacion/100.html', locator: 'Modelo 100 IRPF 2024; informational publication; campaign for filing in 2025' }],
     expected: { citationIds: ["BOE-A-2006-20764","AEAT-IRPF-2024-MODEL100"], outcome: 'separate_tax_and_filing_years', taxYear: 2024, filingYear: 2025, administrativeGuideIsNotStatute: true, doNotInfer: ['autonomousCommunity', 'deductions', 'taxableIncome'] },
     tags: ['year-separation', 'administrative-guidance'], reviewStatus: 'pending'
   },
@@ -146,7 +146,7 @@ export const legalTaxCorpus = [
       }
     ],
     dates: { publicationDate: '2024-12-24', effectiveDate: '2024-12-25', eventDate: '2025-01-10', referenceDate: '2025-01-23', repealPublicationDate: '2025-01-23' },
-    documents: [{ id: 'BOE-A-2024-26915', authority: 'official_publication', url: 'https://www.boe.es/buscar/doc.php?id=BOE-A-2024-26915', locator: 'Artículo 8, apartado Tres: modificación de la disposición transitoria decimotercera de la Ley 37/1992; efectos desde 01/01/2025' }, { id: 'BOE-A-2025-1136', authority: 'official_publication', url: 'https://www.boe.es/eli/es/res/2025/01/22/(1)', locator: 'Acuerdo del Congreso de 22/01/2025; publicación oficial de la derogación el 23/01/2025' }, { id: 'BOE-A-1992-28740', authority: 'official_publication', url: 'https://www.boe.es/eli/es/l/1992/12/28/37', locator: 'Ley 37/1992 as amended' }],
+    documents: [{ id: 'BOE-A-2024-26915', authority: 'official_publication', url: 'https://www.boe.es/eli/es/rdl/2024/12/23/9', locator: 'Artículo 8, apartado Tres: modificación de la disposición transitoria decimotercera de la Ley 37/1992; efectos desde 01/01/2025' }, { id: 'BOE-A-2025-1136', authority: 'official_publication', url: 'https://www.boe.es/eli/es/res/2025/01/22/(1)', locator: 'Acuerdo del Congreso de 22/01/2025; publicación oficial de la derogación el 23/01/2025' }, { id: 'BOE-A-1992-28740', authority: 'official_publication', url: 'https://www.boe.es/eli/es/l/1992/12/28/37', locator: 'Ley 37/1992 as amended' }],
     expected: { citationIds: ["BOE-A-2024-26915","BOE-A-2025-1136"], outcome: 'flag_temporal_conflict_and_abstain_on_effects', amendmentEffectiveFrom: '2025-01-01', repealPublishedOn: '2025-01-23', conflict: 'RDL 9/2024 amended the IVA transitional limit; the Congress later repealed the RDL', doNotAssumeRetrospectiveEffect: true, doNotInfer: ['eligibility_for_special_regime', 'limits_for_event_date_without_temporal_legal_review', 'filing_frequency'] },
     tags: ['transitional', 'repeal', 'normative-discrepancy'], reviewStatus: 'pending'
   },
@@ -179,7 +179,7 @@ export const legalTaxCorpus = [
       }
     ],
     dates: { publicationDate: '2015-10-02', effectiveDate: '2016-10-02', eventDate: '2022-03-30', referenceDate: '2022-03-30' },
-    documents: [{ id: 'BOE-A-2015-10565', authority: 'official_publication', url: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2015-10565', locator: 'Ley 39/2015, artículo 32; redacción anterior' }, { id: 'BOE-A-2022-4972', authority: 'official_publication', url: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2022-4972', locator: 'RDL 6/2022; amendment effective 2022-03-31' }],
+    documents: [{ id: 'BOE-A-2015-10565', authority: 'official_publication', url: 'https://www.boe.es/eli/es/l/2015/10/01/39', locator: 'Ley 39/2015, artículo 32; redacción anterior' }, { id: 'BOE-A-2022-4972', authority: 'official_publication', url: 'https://www.boe.es/eli/es/rdl/2022/03/29/6', locator: 'RDL 6/2022; amendment effective 2022-03-31' }],
     expected: { citationIds: ["BOE-A-2015-10565","BOE-A-2022-4972"], outcome: 'select_pre_amendment_version', selectedNorm: 'BOE-A-2015-10565', mustNotContainNewParagraph5: true },
     tags: ['transitional', 'boe-history', 'boundary-before'], reviewStatus: 'pending'
   },
@@ -212,7 +212,7 @@ export const legalTaxCorpus = [
       }
     ],
     dates: { publicationDate: '2022-03-30', effectiveDate: '2022-03-31', eventDate: '2022-03-31', referenceDate: '2022-03-31' },
-    documents: [{ id: 'BOE-A-2015-10565', authority: 'official_publication', url: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2015-10565', locator: 'Ley 39/2015, artículo 32' }, { id: 'BOE-A-2022-4972', authority: 'official_publication', url: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2022-4972', locator: 'RDL 6/2022, artículo modificador; entrada en vigor 2022-03-31' }],
+    documents: [{ id: 'BOE-A-2015-10565', authority: 'official_publication', url: 'https://www.boe.es/eli/es/l/2015/10/01/39', locator: 'Ley 39/2015, artículo 32' }, { id: 'BOE-A-2022-4972', authority: 'official_publication', url: 'https://www.boe.es/eli/es/rdl/2022/03/29/6', locator: 'RDL 6/2022, artículo modificador; entrada en vigor 2022-03-31' }],
     expected: { citationIds: ["BOE-A-2015-10565","BOE-A-2022-4972"], outcome: 'select_amended_version', selectedNorm: 'BOE-A-2022-4972', mustContainNewParagraph5: true },
     tags: ['transitional', 'boe-history', 'boundary-after'], reviewStatus: 'pending'
   },
@@ -225,7 +225,7 @@ export const legalTaxCorpus = [
     capturedAt: '2026-11-02',
     evidenceSnapshots: [
       {
-        "documentId": "BOE-A-2025-2145",
+        "documentId": "BOE-A-2025-2145-consolidated",
         "sourceUrl": "https://www.boe.es/buscar/act.php?id=BOE-A-2025-2145&p=20251231&tn=1",
         "version": "consolidated-text-as-of-2025-12-31",
         "locator": "Article 2, modification of the regional IRPF deductions",
@@ -234,7 +234,7 @@ export const legalTaxCorpus = [
       }
     ],
     dates: { publicationDate: '2024-12-31', effectiveDate: '2025-01-01', eventDate: '2025-12-31', referenceDate: '2026-06-30' },
-    documents: [{ id: 'BOE-A-2025-2145', authority: 'official_publication', url: 'https://www.boe.es/eli/es-ga/l/2024/12/27/5', locator: 'Ley 5/2024, artículo 2; modification of Galicia ceded-tax consolidated text' }, { id: 'BOE-A-2025-2145-consolidated', authority: 'informative_consolidation', url: 'https://www.boe.es/buscar/act.php?id=BOE-A-2025-2145&p=20251231&tn=1', locator: 'Consolidated snapshot selected as of 31/12/2025; informational only' }],
+    documents: [{ id: 'BOE-A-2025-2145', authority: 'official_publication', url: 'https://www.boe.es/eli/es-ga/l/2024/12/27/5', locator: 'Ley 5/2024, original official publication' }, { id: 'BOE-A-2025-2145-consolidated', authority: 'informative_consolidation', url: 'https://www.boe.es/buscar/act.php?id=BOE-A-2025-2145&p=20251231&tn=1', locator: 'Consolidated snapshot selected as of 31/12/2025; informational only' }],
     expected: { citationIds: ["BOE-A-2025-2145"], outcome: 'regional_rule_candidate_requires_eligibility_facts', jurisdiction: 'GA', effectiveFrom: '2025-01-01', doNotInfer: ['disability', 'age', 'income_threshold', 'third_party_care', 'residency'] },
     tags: ['regional-jurisdiction', 'effective-date'], reviewStatus: 'pending'
   },
