@@ -12,7 +12,7 @@ Aplicación local-first de finanzas personales basada en Actual Budget, con una 
 - **Inteligencia financiera:** hallazgos verificables, anomalías, revisión semanal/mensual, flujo de caja estimado, propuestas presupuestarias simulables y alertas locales.
 - **Patrimonio y justificantes:** activos y pasivos externos, valoraciones manuales fechadas, clasificación explícita de cuentas de Actual, documentos privados y vínculos comprobados a movimientos.
 - **Portabilidad y recuperación:** exportación legible de conjuntos locales y backup/restauración cifrados de Actual más el estado propio inventariado.
-- **IA y herramientas locales:** Ollama opcional, MCP de solo lectura por stdio y búsqueda web explícita mediante SearXNG configurable. La investigación puede recuperar hasta tres documentos oficiales HTML/texto; para BOE-A consulta metadatos temporales/relaciones y muestra límites de vigencia. No interpreta PDF ni emite dictámenes legales.
+- **IA y herramientas locales:** Ollama opcional, MCP de solo lectura por stdio y búsqueda web explícita mediante SearXNG configurable. La investigación puede recuperar hasta tres documentos oficiales HTML/XHTML/texto; para BOE-A consulta metadatos/relaciones y puede reconstruir versiones históricas por bloque cuando se cita expresamente un artículo y se aporta `eventDate`. La consolidación es informativa, la selección se abstiene ante datos ambiguos y no sustituye la publicación primaria ni la revisión jurídica. PDF y OCR no están soportados.
 
 ## Arquitectura
 
