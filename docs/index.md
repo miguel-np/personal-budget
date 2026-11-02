@@ -31,6 +31,7 @@ Guías de implementación, operación, privacidad y arquitectura de `personal-bu
 
 - [IA local con Ollama y límites de contexto](local-ai.md)
 - [Búsqueda web controlada y fuentes oficiales](web-search.md)
+- [Corpus jurídico-fiscal de regresión](legal-tax-corpus.md)
 - [Herramientas MCP y permisos](mcp.md)
 - [Contratos financieros independientes del proveedor](provider-contracts.md)
 
