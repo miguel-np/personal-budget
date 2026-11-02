@@ -3,6 +3,7 @@ import { isIP } from 'node:net';
 import { request as httpRequest, type RequestOptions } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { OFFICIAL_SOURCE_DOMAINS, isOfficialSourceHost, retrieveOfficialDocument } from './official-evidence.js';
+import { isPublicNetworkAddress } from './network-address.js';
 import type { OfficialDocumentEvidence } from './official-evidence.js';
 
 export { OFFICIAL_SOURCE_DOMAINS, OFFICIAL_SOURCE_HOSTS } from './official-evidence.js';
@@ -46,44 +47,9 @@ export class WebSearchResponseTooLargeError extends Error {
   }
 }
 
-const blockedIPv4Subnets: readonly [number, number][] = [
-  [0x00000000, 8], [0x0a000000, 8], [0x64400000, 10], [0x7f000000, 8],
-  [0xa9fe0000, 16], [0xac100000, 12], [0xc0000000, 24], [0xc0000200, 24],
-  [0xc0a80000, 16], [0xc6120000, 15], [0xc6336400, 24], [0xcb007100, 24],
-  [0xe0000000, 4], [0xf0000000, 4],
-];
-
-function ipv4ToNumber(address: string): number | null {
-  const parts = address.split('.');
-  if (parts.length !== 4) return null;
-  const octets = parts.map(Number);
-  if (octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return null;
-  return (((octets[0]! << 24) >>> 0) + (octets[1]! << 16) + (octets[2]! << 8) + octets[3]!) >>> 0;
-}
-function isBlockedIPv4(address: string): boolean {
-  const number = ipv4ToNumber(address);
-  if (number === null) return true;
-  return blockedIPv4Subnets.some(([network, prefix]) => {
-    const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
-    return (number & mask) === (network & mask);
-  });
-}
 function isLoopbackAddress(address: string, family: number): boolean {
   if (family === 4) return address.startsWith('127.');
   return address === '::1' || address.toLowerCase() === '0:0:0:0:0:0:0:1';
-}
-function isPublicAddress(address: string, family: number): boolean {
-  if (family === 4) return !isBlockedIPv4(address);
-  const normalized = address.toLowerCase();
-  if (normalized.startsWith('::ffff:')) {
-    const mapped = normalized.slice(7);
-    return isIP(mapped) === 4 && !isBlockedIPv4(mapped);
-  }
-  // Only globally-routable 2000::/3 IPv6 addresses are accepted. This excludes
-  // unspecified, loopback, unique-local, link-local, multicast and documentation ranges.
-  if (!/^[23]/.test(normalized)) return false;
-  if (normalized.startsWith('2001:db8:') || normalized.startsWith('2001:10:') || normalized.startsWith('2001:20:')) return false;
-  return true;
 }
 function hostWithoutBrackets(host: string): string {
   return host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
@@ -244,14 +210,14 @@ export class SearXNGSearchProvider implements WebSearchProvider {
     let addresses: Array<{ readonly address: string; readonly family: number }> = [];
     if (isIP(hostname) !== 0) {
       const family = isIP(hostname);
-      if (!isLoopbackAddress(hostname, family) && !isPublicAddress(hostname, family)) throw new WebSearchUnavailableError();
+      if (!isLoopbackAddress(hostname, family) && !isPublicNetworkAddress(hostname, family)) throw new WebSearchUnavailableError();
       addresses = [{ address: hostname, family: family as 4 | 6 }];
     } else {
       try { addresses = await lookup(hostname, { all: true, verbatim: true }); }
       catch { throw new WebSearchUnavailableError(); }
       if (addresses.length === 0) throw new WebSearchUnavailableError();
       const localEndpoint = isLoopbackHost(hostname);
-      if (addresses.some((item) => localEndpoint ? !isLoopbackAddress(item.address, item.family) : !isPublicAddress(item.address, item.family))) {
+      if (addresses.some((item) => localEndpoint ? !isLoopbackAddress(item.address, item.family) : !isPublicNetworkAddress(item.address, item.family))) {
         throw new WebSearchUnavailableError();
       }
     }
