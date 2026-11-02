@@ -17,7 +17,7 @@
 | Backup/restore | Integrado | Actual + estado propio, manifiesto v2, nueve JSON y binarios documentales inventariados. |
 | IA/MCP | Integrados como capacidades opcionales | Ollama local y MCP de solo lectura; modelos/modelos runtime concretos requieren validación. |
 | Contratos neutrales | Integrados | #65 cerrada; suite de conformidad para proveedor de referencia y adaptador Actual. |
-| Búsqueda web #84 | PR [#111](https://github.com/miguel-np/personal-budget/pull/111) integrada en `main`; validación técnica automatizada en verde | Consentimiento por petición, SearXNG aislado del contexto financiero, recuperación oficial HTML/XHTML/texto, allowlist exacta y hardening SSRF/DNS. #111 añade selección histórica BOE informativa por artículo explícito/`eventDate`, telemetría de recuperación y asociación sintáctica por afirmación. La regresión de artículo 32 usa el ejemplo oficial de la FAQ/API BOE (`a32`, versiones `BOE-A-2015-10565` y `BOE-A-2022-4972`) y separa publicación (30-03-2022) de entrada en vigor (31-03-2022). PR #112 añade pruebas de límites XML y está pendiente de cierre. #106 sigue pendiente de aceptación live; #108, de corpus fiscal/legal revisado; #110, de verificación semántica y conflictos. #109 se cerró fuera de alcance; PDF/OCR no soportados. No es dictamen jurídico. |
+| Búsqueda web #84 | PR [#111](https://github.com/miguel-np/personal-budget/pull/111) y [#112](https://github.com/miguel-np/personal-budget/pull/112) integradas en `main`; #107 completada | Consentimiento por petición, SearXNG aislado del contexto financiero, recuperación oficial HTML/XHTML/texto, allowlist exacta y hardening SSRF/DNS. #111 añade selección histórica BOE informativa por artículo explícito/`eventDate`, telemetría y asociación sintáctica por afirmación; #112 completa pruebas de XML malformado, DTD/XXE, tamaño, profundidad/nodos y fronteras de publicación/vigencia. La regresión del artículo 32 se basa en el ejemplo oficial de la FAQ/API BOE (`a32`, `BOE-A-2015-10565`, `BOE-A-2022-4972`). #106 sigue pendiente de aceptación live; #108, de corpus fiscal/legal revisado; #110, de verificación semántica y conflictos. #109 se cerró fuera de alcance; PDF/OCR no soportados. No es dictamen jurídico. |
 
 ## Consolidación — fase 1
 
@@ -103,13 +103,13 @@ El flujo mantiene dos rutas aisladas:
 
 **Pendiente para cerrar #84:**
 
-1. [#106 — Aceptación E2E real de SearXNG y fuentes oficiales](https://github.com/miguel-np/personal-budget/issues/106): ejecutar desde el backend desplegado con su URL HTTPS y credenciales configuradas; probar SearXNG y los hosts oficiales aprobados, registrando endpoint, formato, disponibilidad y límites. Las pruebas sintéticas de CI no sustituyen este ensayo.
-2. [#107 — Versiones históricas BOE por bloque y fecha](https://github.com/miguel-np/personal-budget/issues/107): la implementación y la regresión del artículo 32 se integraron con #111 a partir del ejemplo oficial del BOE; la PR [#112](https://github.com/miguel-np/personal-budget/pull/112) incorpora cobertura adicional de XML malformado, profundidad/nodos y fechas límite. La aceptación del servicio live sigue en #106.
+1. [#106 — Aceptación E2E real de SearXNG y fuentes oficiales](https://github.com/miguel-np/personal-budget/issues/106): ejecutar desde el backend desplegado con su URL HTTPS y credenciales configuradas; probar SearXNG y los hosts oficiales aprobados, registrando endpoint, formato, disponibilidad y límites. La CI sintética no sustituye este ensayo.
+2. [#107 — Versiones históricas BOE por bloque y fecha](https://github.com/miguel-np/personal-budget/issues/107): **cerrada como completada** tras integrar #111/#112, validar el ejemplo oficial BOE del artículo 32 y probar límites XML y fechas exactas. No resuelve transitorias ni derogaciones tácitas.
 3. [#108 — Corpus fiscal/legal](https://github.com/miguel-np/personal-budget/issues/108): sigue pendiente un corpus determinista de al menos 12 casos oficiales con varias jurisdicciones/ejercicios, transitorias, discrepancias y resultados esperados revisados.
-4. PDF queda fuera del alcance base: la issue [#109](https://github.com/miguel-np/personal-budget/issues/109) se cerró como `not_planned`; se mantiene el rechazo explícito de MIME no admitidos y OCR no soportado.
+4. PDF queda fuera del alcance base: [#109](https://github.com/miguel-np/personal-budget/issues/109) se cerró como `not_planned`; se rechazan MIME no admitidos y OCR no está soportado.
 5. [#110 — Trazabilidad de afirmaciones y discrepancias](https://github.com/miguel-np/personal-budget/issues/110): la API/UI asocia frases con IDs de fuente existentes; no verifica entailment semántico ni resuelve conflictos jurídicos.
 
-La issue #84 permanece abierta hasta completar aceptación live (#106), corpus jurídico revisado (#108) y validación semántica/conflictos (#110). La integración de #111 y la regresión BOE de #107 no sustituyen esas aceptaciones.
+La issue #84 permanece abierta hasta completar aceptación live (#106), corpus jurídico revisado (#108) y validación semántica/conflictos (#110). La integración de #111/#112 y el cierre de #107 no sustituyen esas aceptaciones.
 ## Issues abiertas posteriores
 
 - [#85 — Proveedores de IA intercambiables](https://github.com/miguel-np/personal-budget/issues/85): capa de adaptadores para Ollama, OpenAI y xAI; abierta.
