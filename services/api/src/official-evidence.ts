@@ -98,6 +98,7 @@ export interface OfficialDocumentEvidence {
   readonly excerpt: string;
   readonly textLength: number;
   readonly temporal: BoeTemporalEvidence | null;
+  readonly fetches: readonly OfficialDocumentFetchRecord[];
   readonly limitations: readonly string[];
 }
 
@@ -257,6 +258,15 @@ function relevantExcerpt(text: string, query: string): string {
 export interface OfficialDocumentFetchResponse {
   readonly body: Buffer;
   readonly contentType: string;
+  readonly statusCode?: number;
+}
+export interface OfficialDocumentFetchRecord {
+  readonly endpoint: string;
+  readonly httpStatus: number | null;
+  readonly contentType: string | null;
+  readonly bytesReceived: number;
+  readonly latencyMs: number;
+  readonly outcome: 'completed' | 'failed';
 }
 export type OfficialDocumentFetcher = (
   url: URL,
@@ -265,6 +275,31 @@ export type OfficialDocumentFetcher = (
   callerSignal?: AbortSignal,
 ) => Promise<OfficialDocumentFetchResponse>;
 type HttpsPayload = OfficialDocumentFetchResponse;
+interface ObservedOfficialFetch {
+  readonly payload: HttpsPayload | null;
+  readonly record: OfficialDocumentFetchRecord;
+}
+async function observeOfficialFetch(
+  url: URL,
+  maxBytes: number,
+  timeoutMs: number,
+  callerSignal: AbortSignal | undefined,
+  fetchOfficial: OfficialDocumentFetcher,
+): Promise<ObservedOfficialFetch> {
+  const startedAt = Date.now();
+  try {
+    const payload = await fetchOfficial(url, maxBytes, timeoutMs, callerSignal);
+    return { payload, record: {
+      endpoint: url.pathname, httpStatus: payload.statusCode ?? 200, contentType: payload.contentType,
+      bytesReceived: payload.body.byteLength, latencyMs: Math.max(0, Date.now() - startedAt), outcome: 'completed',
+    } };
+  } catch {
+    return { payload: null, record: {
+      endpoint: url.pathname, httpStatus: null, contentType: null, bytesReceived: 0,
+      latencyMs: Math.max(0, Date.now() - startedAt), outcome: 'failed',
+    } };
+  }
+}
 async function requestOfficialHttps(url: URL, maxBytes: number, timeoutMs: number, callerSignal?: AbortSignal): Promise<HttpsPayload> {
   if (url.protocol !== 'https:' || url.username || url.password || url.port || url.hash || !isOfficialHost(url.hostname)) {
     throw new Error('Official document URL rejected.');
@@ -322,6 +357,7 @@ async function requestOfficialHttps(url: URL, maxBytes: number, timeoutMs: numbe
       response.on('end', () => resolve({
         body: Buffer.concat(chunks),
         contentType: String(response.headers['content-type'] ?? '').toLowerCase(),
+        statusCode: status,
       }));
     });
     request.on('error', reject);
@@ -361,7 +397,7 @@ function makeBoeTemporal(metadata: Record<string, unknown> | null, analysis: Rec
 function unavailableEvidence(status: OfficialDocumentStatus, documentType: OfficialDocumentEvidence['documentType']): OfficialDocumentEvidence {
   return {
     status, documentType, retrievedAt: null, contentType: null, excerpt: '', textLength: 0,
-    temporal: null,
+    temporal: null, fetches: [],
     limitations: ['No se pudo recuperar y validar el contenido de la fuente oficial. Abre el enlace original y no deduzcas vigencia a partir del snippet del buscador.'],
   };
 }
@@ -392,33 +428,36 @@ export async function retrieveOfficialDocument(
       const metadataURL = new URL('/datosabiertos/api/legislacion-consolidada/id/' + id + '/metadatos', 'https://www.boe.es');
       const analysisURL = new URL('/datosabiertos/api/legislacion-consolidada/id/' + id + '/analisis', 'https://www.boe.es');
       const pageURL = new URL('/buscar/act.php?id=' + encodeURIComponent(id), 'https://www.boe.es');
-      const [metadataResult, analysisResult, pageResult] = await Promise.allSettled([
-        fetchOfficial(metadataURL, MAX_BOE_METADATA_BYTES, timeoutMs, callerSignal),
-        fetchOfficial(analysisURL, MAX_BOE_ANALYSIS_BYTES, timeoutMs, callerSignal),
-        fetchOfficial(pageURL, MAX_HTML_BYTES, timeoutMs, callerSignal),
+      const [metadataFetch, analysisFetch, htmlFetch] = await Promise.all([
+        observeOfficialFetch(metadataURL, MAX_BOE_METADATA_BYTES, timeoutMs, callerSignal, fetchOfficial),
+        observeOfficialFetch(analysisURL, MAX_BOE_ANALYSIS_BYTES, timeoutMs, callerSignal, fetchOfficial),
+        observeOfficialFetch(pageURL, MAX_HTML_BYTES, timeoutMs, callerSignal, fetchOfficial),
       ]);
-      const metadataPayload = metadataResult.status === 'fulfilled' ? parseJsonPayload(metadataResult.value) : null;
-      const analysisPayload = analysisResult.status === 'fulfilled' ? parseJsonPayload(analysisResult.value) : null;
+      const fetches = [metadataFetch.record, analysisFetch.record, htmlFetch.record];
+      const metadataPayload = metadataFetch.payload ? parseJsonPayload(metadataFetch.payload) : null;
+      const analysisPayload = analysisFetch.payload ? parseJsonPayload(analysisFetch.payload) : null;
       const metadata = metadataPayload ? unwrapData(metadataPayload) : null;
-      const htmlPayload = pageResult.status === 'fulfilled' ? pageResult.value : null;
+      const htmlPayload = htmlFetch.payload;
       const htmlContentType = htmlPayload?.contentType ?? '';
       if (!htmlPayload || !(htmlContentType.includes('text/html') || htmlContentType.includes('application/xhtml+xml'))) {
         const temporal = makeBoeTemporal(metadata, analysisPayload, referenceDate);
         return {
           ...unavailableEvidence(metadata || analysisPayload ? 'partial' : 'unavailable', 'boe_consolidated_legislation'),
+          fetches,
           ...(temporal ? { retrievedAt: new Date().toISOString(), temporal, limitations: temporalLimitations(temporal.assessment).concat(
             'No se pudo recuperar el texto consolidado HTML; consulta la publicación oficial y el enlace original.',
           ) } : {}),
         };
       }
       const fullText = extractOfficialHtmlText(htmlPayload.body.toString('utf8'));
-      if (!fullText) return unavailableEvidence('partial', 'boe_consolidated_legislation');
+      if (!fullText) return { ...unavailableEvidence('partial', 'boe_consolidated_legislation'), fetches };
       const temporal = makeBoeTemporal(metadata, analysisPayload, referenceDate);
       const status: OfficialDocumentStatus = metadata && analysisPayload ? 'retrieved' : 'partial';
       return {
         status, documentType: 'boe_consolidated_legislation', retrievedAt: new Date().toISOString(),
         contentType: htmlContentType, excerpt: relevantExcerpt(fullText, query), textLength: fullText.length,
         temporal,
+        fetches,
         limitations: temporal ? temporalLimitations(temporal.assessment) : [
           'Se recuperó el texto consolidado, pero no se pudieron validar todos los metadatos temporales del BOE.',
           'El texto consolidado del BOE es informativo, no sustituye a la publicación oficial ni cubre derogaciones tácitas.',
