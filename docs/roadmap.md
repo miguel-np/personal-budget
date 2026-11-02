@@ -1,6 +1,6 @@
 # Roadmap de implementación
 
-**Baseline: 1-nov-2026.** El MVP local-first y las tres líneas de consolidación posteriores están integradas en `main`. Las issues reflejan trabajo implementado, exploración y nuevas capacidades; el estado de GitHub es la referencia operativa para saber si una tarea está abierta o cerrada.
+**Baseline: 2-nov-2026.** El MVP local-first y las tres líneas de consolidación posteriores están integradas en `main`. Las issues reflejan trabajo implementado, exploración y nuevas capacidades; el estado de GitHub es la referencia operativa para saber si una tarea está abierta o cerrada.
 
 ## Prioridades
 
@@ -44,7 +44,7 @@
 
 ## Siguiente etapa
 
-- [ ] [#84 — Búsqueda web controlada desde el asistente local](https://github.com/miguel-np/personal-budget/issues/84): primera entrega integrada por PR [#97](https://github.com/miguel-np/personal-budget/pull/97) y segunda iteración documental integrada por PR [#98](https://github.com/miguel-np/personal-budget/pull/98). La implementación mantiene búsqueda exacta consentida y recuperación de hasta tres documentos por petición. La allowlist de recuperación usa hosts exactos, distinta de los grupos de filtro; el DOG se identifica por su ruta en el portal de la Xunta y Seguridad Social incluye su sede electrónica oficial. El contexto opcional de comunidad, municipio, tipo de contribuyente y fecha del hecho se envía solo a Ollama local, no a SearXNG. Para normas BOE-A se consultan metadatos/relaciones y se evalúan sus marcas frente a referenceDate. El HTML recuperado es la consolidación más reciente; eventDate no selecciona versiones históricas por artículo. La API BOE documenta texto XML versionado por bloque, pero esa selección histórica aún no está integrada. Issue abierta para aceptación live con organismos, PDF, corpus fiscal/legal de discrepancias y selección histórica por bloque/transitorias; no es un motor de dictamen ni garantiza vigencia jurídica.
+- [ ] [#84 — Búsqueda web controlada desde el asistente local](https://github.com/miguel-np/personal-budget/issues/84): PR #97–#104 integradas en `main` (excepto #102, cerrada sin merge y sustituida por #103). Incluye búsqueda consentida, recuperación HTML/texto oficial, hosts exactos, contexto fiscal separado, hardening SSRF/DNS y aviso explícito sobre el límite histórico de la consolidación BOE. Pendiente: aceptación E2E live con SearXNG y organismos; versiones BOE por bloque/fecha; corpus fiscal/legal y discrepancias; PDF y extracción segura; trazabilidad de afirmaciones normativas. La issue sigue abierta; CI sintética no cuenta como aceptación operativa ni jurídica.
 - [ ] [#85 — Proveedores de IA intercambiables](https://github.com/miguel-np/personal-budget/issues/85): Ollama, OpenAI y xAI detrás de adaptadores independientes. Debe seguir siendo opcional y respetar privacidad/capacidades de cada modelo.
 - [ ] [#87 — Espacio fiscal y calendario de obligaciones](https://github.com/miguel-np/personal-budget/issues/87): ejercicios, perfil explícito, tareas y vencimientos basados en fuentes vigentes. No inferir obligaciones a partir de movimientos o ubicación aproximada.
 
