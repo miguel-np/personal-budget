@@ -48,6 +48,7 @@ export const OFFICIAL_SOURCE_HOSTS = [
   'sede.xunta.gal',
   'facenda.xunta.gal',
   'lex.gal',
+  'www.lex.gal',
   'cnmv.es',
   'www.cnmv.es',
   'bde.es',
