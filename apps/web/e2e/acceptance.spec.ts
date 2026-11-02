@@ -324,6 +324,20 @@ test('controlled web research requires per-query consent and shows official sour
       status: 200, contentType: 'application/json',
       body: JSON.stringify({ data: {
         answer: 'El BOE publica la disposición indicada [S1]. La fecha de búsqueda no acredita por sí sola su vigencia.',
+        claimEvidence: {
+          claims: [{
+            id: 'claim-e2e-boe-publication',
+            text: 'El BOE publica la disposición indicada [S1].',
+            kind: 'interpretation',
+            sourceRefs: [{
+              id: 'S1', title: 'Disposición publicada en el BOE',
+              url: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2025-1',
+              domain: 'www.boe.es', sourceKind: 'normativa', sourceAuthority: 'legislation',
+            }],
+            unresolvedReferences: [], locator: null, reviewRequired: true,
+          }],
+          limitations: ['La asociación de citas no demuestra soporte semántico y requiere revisión humana.'],
+        },
         provider: 'SearXNG', searchedAt: '2026-11-01T12:00:00.000Z', mode: 'tax',
         taxContext: {
           jurisdiction: 'España', autonomousCommunity: 'Galicia', municipality: 'Santiago de Compostela',
@@ -374,6 +388,8 @@ test('controlled web research requires per-query consent and shows official sour
   await form.getByRole('button', { name: 'Buscar y sintetizar fuentes' }).click();
 
   await expect(form.getByText('El BOE publica la disposición indicada [S1]. La fecha de búsqueda no acredita por sí sola su vigencia.')).toBeVisible();
+  await expect(form.getByRole('heading', { name: 'Afirmaciones y referencias asociadas' })).toBeVisible();
+  await expect(form.getByRole('link', { name: '[S1] Disposición publicada en el BOE · www.boe.es · legislation' })).toBeVisible();
   await expect(form.getByText('Texto oficial recuperado', { exact: true })).toBeVisible();
   await expect(form.getByText('Artículo 1. Texto oficial recuperado del BOE.')).toBeVisible();
   await expect(form.getByText(/Comunidad: Galicia · Municipio: Santiago de Compostela · Tipo: Persona física/)).toBeVisible();
