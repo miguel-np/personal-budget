@@ -75,7 +75,7 @@ export const legalTaxCorpus = [
     ],
     dates: { publicationDate: '2006-11-29', effectiveDate: '2007-01-01', eventDate: '2024-12-31', referenceDate: '2025-06-30' },
     documents: [{ id: 'BOE-A-2006-20764', authority: 'official_publication', url: 'https://www.boe.es/eli/es/l/2006/11/28/35', locator: 'Ley 35/2006, original official publication' }, { id: 'BOE-A-2006-20764-consolidated', authority: 'informative_consolidation', url: 'https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764&p=20241231&tn=1', locator: 'Consolidated text frozen at 31/12/2024; informational only' }, { id: 'AEAT-IRPF-2024-MODEL100', authority: 'administrative_guide', url: 'https://sede.agenciatributaria.gob.es/Sede/Ayuda/24Presentacion/100.html', locator: 'Modelo 100 IRPF 2024; informational publication; campaign for filing in 2025' }],
-    expected: { citationIds: ["BOE-A-2006-20764","AEAT-IRPF-2024-MODEL100"], outcome: 'separate_tax_and_filing_years', taxYear: 2024, filingYear: 2025, administrativeGuideIsNotStatute: true, doNotInfer: ['autonomousCommunity', 'deductions', 'taxableIncome'] },
+    expected: { citationIds: ["BOE-A-2006-20764","BOE-A-2006-20764-consolidated","AEAT-IRPF-2024-MODEL100"], outcome: 'separate_tax_and_filing_years', taxYear: 2024, filingYear: 2025, administrativeGuideIsNotStatute: true, doNotInfer: ['autonomousCommunity', 'deductions', 'taxableIncome'] },
     tags: ['year-separation', 'administrative-guidance'], reviewStatus: 'pending'
   },
   {
@@ -262,7 +262,7 @@ export const legalTaxCorpus = [
     ],
     dates: { publicationDate: '2024-12-31', effectiveDate: '2025-01-01', eventDate: '2025-12-31', referenceDate: '2026-06-30' },
     documents: [{ id: 'BOE-A-2025-2145', authority: 'official_publication', url: 'https://www.boe.es/eli/es-ga/l/2024/12/27/5', locator: 'Ley 5/2024, original official publication' }, { id: 'BOE-A-2025-2145-consolidated', authority: 'informative_consolidation', url: 'https://www.boe.es/buscar/act.php?id=BOE-A-2025-2145&p=20251231&tn=1', locator: 'Consolidated snapshot selected as of 31/12/2025; informational only' }],
-    expected: { citationIds: ["BOE-A-2025-2145"], outcome: 'regional_rule_candidate_requires_eligibility_facts', jurisdiction: 'GA', effectiveFrom: '2025-01-01', doNotInfer: ['disability', 'age', 'income_threshold', 'third_party_care', 'residency'] },
+    expected: { citationIds: ["BOE-A-2025-2145","BOE-A-2025-2145-consolidated"], outcome: 'regional_rule_candidate_requires_eligibility_facts', jurisdiction: 'GA', effectiveFrom: '2025-01-01', doNotInfer: ['disability', 'age', 'income_threshold', 'third_party_care', 'residency'] },
     tags: ['regional-jurisdiction', 'effective-date'], reviewStatus: 'pending'
   },
   {
