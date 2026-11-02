@@ -30,5 +30,19 @@ jobs:
           node-version-file: .nvmrc
       - name: Audit locked dependencies
         run: npm run audit && npm run audit:production
-      - name: Scan Git history and working tree for leaked secrets
-        run: docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 -v "$PWD:/repo:ro" zricethezav/gitleaks:v8.28.0 detect --source=/repo --redact --exit-code 1
+      - name: Scan incoming Git changes for leaked secrets
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            scan_range="${PR_BASE_SHA}..${CURRENT_SHA}"
+          elif [ -n "$PUSH_BEFORE_SHA" ] && [ "$PUSH_BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            scan_range="${PUSH_BEFORE_SHA}..${CURRENT_SHA}"
+          else
+            scan_range="${CURRENT_SHA}^..${CURRENT_SHA}"
+          fi
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 -v "$PWD:/repo:ro" zricethezav/gitleaks:v8.28.0 detect --source=/repo --log-opts="$scan_range" --redact --exit-code 1
