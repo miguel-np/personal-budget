@@ -47,8 +47,17 @@ interface SearchSource {
     limitations: readonly string[];
   };
 }
+interface ClaimSourceReference {
+  id: string; title: string; url: string; domain: string;
+  sourceKind: SearchSource['sourceKind']; sourceAuthority: SearchSource['sourceAuthority'];
+}
+interface MaterialClaim {
+  id: string; text: string; kind: 'interpretation' | 'unresolved';
+  sourceRefs: readonly ClaimSourceReference[]; unresolvedReferences: readonly string[];
+  locator: null; reviewRequired: true;
+}
 interface ResearchResponse {
-  data?: { answer: string; provider: string; searchedAt: string; mode: 'general' | 'tax'; taxContext?: {
+  data?: { answer: string; claimEvidence: { claims: readonly MaterialClaim[]; limitations: readonly string[] }; provider: string; searchedAt: string; mode: 'general' | 'tax'; taxContext?: {
     jurisdiction: string; autonomousCommunity?: string | null; municipality?: string | null;
     taxpayerType?: 'individual' | 'self_employed' | 'company' | 'other' | null;
     eventDate?: string | null; matter: string; taxYear: string; filingYear: string; referenceDate: string;
@@ -235,6 +244,23 @@ export function WebResearchPanel() {
           <div className="section-heading"><div><h3>Resultado de investigación</h3><p className="section-footnote">Proveedor: {result.provider} · Búsqueda: {formatDate(result.searchedAt)}</p></div><span className="date-badge">{result.sourceCount} fuentes</span></div>
           {result.taxContext ? <p className="section-footnote">Jurisdicción: {result.taxContext.jurisdiction}{result.taxContext.autonomousCommunity ? ' · Comunidad: ' + result.taxContext.autonomousCommunity : ''}{result.taxContext.municipality ? ' · Municipio: ' + result.taxContext.municipality : ''}{result.taxContext.taxpayerType ? ' · Tipo: ' + ({ individual: 'Persona física', self_employed: 'Autónomo / actividad económica', company: 'Sociedad', other: 'Otro' } as const)[result.taxContext.taxpayerType] : ''} · Materia: {result.taxContext.matter} · Ejercicio: {result.taxContext.taxYear} · Presentación: {result.taxContext.filingYear} · Fecha de referencia: {result.taxContext.referenceDate}{result.taxContext.eventDate ? ' · Fecha del hecho: ' + result.taxContext.eventDate : ''}</p> : null}
           <p className="research-answer">{result.answer}</p>
+          {result.claimEvidence.claims.length > 0 ? <section className="claim-evidence" aria-labelledby="claim-evidence-heading">
+            <h4 id="claim-evidence-heading">Afirmaciones y referencias asociadas</h4>
+            <p className="section-footnote">La asociación comprueba que las referencias existen en esta respuesta; no demuestra que la fuente respalde semánticamente la afirmación ni valida su interpretación jurídica.</p>
+            <ol className="source-list">
+              {result.claimEvidence.claims.map((claim) => <li key={claim.id}>
+                <p>{claim.text}</p>
+                <p className="section-footnote">Estado: {claim.kind === 'interpretation' ? 'Interpretación con referencias' : 'Sin evidencia citada suficiente'} · Revisión humana requerida</p>
+                {claim.sourceRefs.length > 0 ? <ul>
+                  {claim.sourceRefs.map((source) => <li key={source.id}>
+                    <a href={source.url} target="_blank" rel="noopener noreferrer">[{source.id}] {source.title} · {source.domain} · {source.sourceAuthority}</a>
+                  </li>)}
+                </ul> : <p className="section-footnote">No hay una fuente válida asociada a esta afirmación.</p>}
+                {claim.unresolvedReferences.length > 0 ? <p className="section-footnote">Referencias no resueltas: {claim.unresolvedReferences.join(', ')}</p> : null}
+              </li>)}
+            </ol>
+            {result.claimEvidence.limitations.map((limitation, index) => <p className="section-footnote" key={index}>{limitation}</p>)}
+          </section> : null}
           <p className="section-footnote">La síntesis es una ayuda de investigación generada por el modelo local. Los resultados externos no son instrucciones ni constituyen evidencia jurídica por sí solos. Comprueba el texto oficial y su vigencia antes de actuar.</p>
         </article>
         <article className="panel">

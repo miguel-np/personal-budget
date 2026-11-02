@@ -106,9 +106,9 @@ El flujo mantiene dos rutas aisladas:
 2. [#107 — Versiones históricas BOE por bloque y fecha](https://github.com/miguel-np/personal-budget/issues/107): recuperar y contrastar versiones históricas por bloque. (`/texto`, `/texto/indice`, `/texto/bloque/{id_bloque}`), contrastada con la publicación original. Hasta entonces, `eventDate` no selecciona ni prueba la redacción histórica por artículo.
 3. [#108 — Corpus fiscal/legal](https://github.com/miguel-np/personal-budget/issues/108): ejercicio fiscal separado del año de presentación, jurisdicciones concurrentes, fechas transitorias, documentos desactualizados, doctrina/criterios y discrepancias.
 4. [#109 — Extracción PDF segura](https://github.com/miguel-np/personal-budget/issues/109): MIME/firma, límites de tamaño/tiempo y tratamiento de PDFs escaneados; OCR no se considera soportado por defecto.
-5. [#110 — Trazabilidad de afirmaciones y discrepancias](https://github.com/miguel-np/personal-budget/issues/110): asociar afirmaciones normativas con fuentes primarias y exponer conflictos. La síntesis no debe ocultar evidencia contraria ni convertir guías o consolidaciones informativas en normas vinculantes.
+5. [#110 — Trazabilidad de afirmaciones y discrepancias](https://github.com/miguel-np/personal-budget/issues/110): la API asocia frases con IDs de fuente existentes y la UI presenta los enlaces junto a cada frase; esta relación no verifica soporte semántico ni resuelve discrepancias jurídicas.
 
-La issue permanece abierta hasta completar y documentar estas aceptaciones. No se marca como cerrada por tener la infraestructura o CI sintética.
+La issue permanece abierta hasta completar aceptación live (#106), reconstrucción histórica verificable (#107), corpus jurídico revisado (#108) y trazabilidad mejorada (#110). CI sintética no sustituye aceptación operativa o revisión jurídica.
 ## Issues abiertas posteriores
 
 - [#85 — Proveedores de IA intercambiables](https://github.com/miguel-np/personal-budget/issues/85): capa de adaptadores para Ollama, OpenAI y xAI; abierta.
