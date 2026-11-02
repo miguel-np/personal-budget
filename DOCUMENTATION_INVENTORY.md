@@ -38,6 +38,7 @@ Inventario de las guías y documentos versionados del repositorio. La navegació
 - docs/provider-contracts.md — contratos financieros neutrales y suite de conformidad.
 - docs/local-ai.md — Ollama, límites, privacidad y planificador conversacional.
 - docs/web-search.md — búsqueda externa controlada, SearXNG, fuentes oficiales y límites fiscales.
+- docs/legal-tax-corpus.md — casos de regresión fiscal, clasificación de fuentes, snapshots y revisión humana.
 - docs/mcp.md — transporte stdio y permisos MCP.
 
 ## Privacidad y operación
