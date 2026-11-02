@@ -387,6 +387,7 @@ describe('official document evidence and temporal metadata', () => {
     });
     expect(result.textLength).toBeGreaterThan(5_000);
     expect(result.excerpt).toContain('IRPF');
+    expect(result.limitations.join(' ')).toContain('no reconstruye la redacción de cada artículo en eventDate');
     expect(result.temporal?.relatedNorms).toEqual([
       'BOE-A-2023-7 — MODIFICA — Artículo 2',
       'BOE-A-2026-8 — DEROGA — Disposición final',
