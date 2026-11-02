@@ -10,6 +10,8 @@ export const legalTaxCorpus = [
   {
     id: 'ES-IRPF-2023-FILING-2024',
     jurisdiction: { state: 'ES', autonomousCommunity: null, municipality: null },
+    question: "¿Qué ejercicio corresponde a las rentas obtenidas durante 2023 y en qué año se presenta la declaración ordinaria?",
+    context: "Supuesto abstracto de una persona física con periodo impositivo coincidente con el año natural; no se facilitan residencia autonómica, rentas ni circunstancias personales.",
     taxOrProcedure: 'IRPF',
     taxpayer: 'individual; residency and personal circumstances explicitly unspecified',
     taxYear: 2023, filingYear: 2024,
@@ -40,6 +42,8 @@ export const legalTaxCorpus = [
   {
     id: 'ES-IRPF-2024-FILING-2025',
     jurisdiction: { state: 'ES', autonomousCommunity: null, municipality: null },
+    question: "¿A qué ejercicio corresponde la campaña del Modelo 100 de Renta 2024 y qué valor tiene la guía informativa de la AEAT?",
+    context: "Supuesto abstracto de una persona física sin comunidad autónoma de residencia indicada; se compara la ley del IRPF con material informativo de la campaña 2024.",
     taxOrProcedure: 'IRPF',
     taxpayer: 'individual; autonomous-community residence not supplied',
     taxYear: 2024, filingYear: 2025,
@@ -81,6 +85,8 @@ export const legalTaxCorpus = [
   {
     id: 'ES-FRAUD-LAW-11-2021-EFFECTIVE-DATES',
     jurisdiction: { state: 'ES', autonomousCommunity: null, municipality: null },
+    question: "¿Puede aplicarse una única fecha de entrada en vigor a todas las modificaciones de la Ley 11/2021?",
+    context: "Supuesto abstracto sobre las distintas letras de la disposición final séptima de la Ley 11/2021 y sus fechas de efectos.",
     taxOrProcedure: 'multiple_tax_amendments',
     taxpayer: 'corporate and individual taxpayers; provision-specific scope required',
     taxYear: 2021, filingYear: 2022,
@@ -103,6 +109,8 @@ export const legalTaxCorpus = [
   {
     id: 'ES-IVA-1992-ORIGINAL-VS-CURRENT',
     jurisdiction: { state: 'ES', autonomousCommunity: null, municipality: null },
+    question: "¿Qué versión de la Ley del IVA debe consultarse para un hecho imponible ocurrido el 15 de junio de 2024?",
+    context: "Supuesto abstracto de una operación empresarial sujeta potencialmente a IVA; no se aportan naturaleza de la operación, exención ni tipo impositivo.",
     taxOrProcedure: 'IVA',
     taxpayer: 'business; taxable-person status and transaction facts required',
     taxYear: 2024, filingYear: 2024,
@@ -139,6 +147,8 @@ export const legalTaxCorpus = [
   {
     id: 'ES-IVA-2024-DECREE-9-2024-REPEAL',
     jurisdiction: { state: 'ES', autonomousCommunity: null, municipality: null },
+    question: "¿Qué puede concluirse sobre la modificación temporal del régimen especial de IVA cuando el decreto fue derogado después de la fecha del hecho?",
+    context: "Supuesto abstracto de actividad económica que podría acogerse a regímenes especiales; se comparan el RDL 9/2024 y el acuerdo posterior de derogación, sin datos de actividad o volumen.",
     taxOrProcedure: 'IVA_simplified_regime_and_agriculture_fishing_special_regime',
     taxpayer: 'business; exact regime eligibility, turnover and activity facts required',
     taxYear: 2025, filingYear: null,
@@ -169,6 +179,8 @@ export const legalTaxCorpus = [
   {
     id: 'ES-BOE-ARTICLE-32-2022-03-30',
     jurisdiction: { state: 'ES', autonomousCommunity: null, municipality: null },
+    question: "¿Qué redacción del artículo 32 de la Ley 39/2015 corresponde al hecho producido el 30 de marzo de 2022?",
+    context: "Supuesto abstracto de procedimiento administrativo en la víspera de la entrada en vigor de la modificación introducida por el RDL 6/2022.",
     taxOrProcedure: 'administrative_deadline_extension',
     taxpayer: 'administrative-procedure participant; no personal data',
     taxYear: null, filingYear: null,
@@ -202,6 +214,8 @@ export const legalTaxCorpus = [
   {
     id: 'ES-BOE-ARTICLE-32-2022-03-31',
     jurisdiction: { state: 'ES', autonomousCommunity: null, municipality: null },
+    question: "¿Qué redacción del artículo 32 de la Ley 39/2015 corresponde al hecho producido el 31 de marzo de 2022?",
+    context: "Supuesto abstracto de procedimiento administrativo en la fecha de entrada en vigor de la modificación introducida por el RDL 6/2022.",
     taxOrProcedure: 'administrative_deadline_extension',
     taxpayer: 'administrative-procedure participant; no personal data',
     taxYear: null, filingYear: null,
@@ -235,6 +249,8 @@ export const legalTaxCorpus = [
   {
     id: 'ES-GALICIA-LAW-5-2024-IRPF-2025',
     jurisdiction: { state: 'ES', autonomousCommunity: 'GA', municipality: null },
+    question: "¿Qué norma gallega puede ser relevante para una deducción autonómica del IRPF del ejercicio 2025 y qué requisitos no se pueden presumir?",
+    context: "Supuesto abstracto de contribuyente residente en Galicia durante el ejercicio 2025; no se aportan edad, discapacidad, renta ni gastos que permitan determinar elegibilidad.",
     taxOrProcedure: 'regional_IRPF_deduction',
     taxpayer: 'individual resident in Galicia; all statutory eligibility facts still required',
     taxYear: 2025, filingYear: 2026,
@@ -268,6 +284,8 @@ export const legalTaxCorpus = [
   {
     id: 'ES-GALICIA-LAW-5-2024-DOG-BOE-DATE-DISCREPANCY',
     jurisdiction: { state: 'ES', autonomousCommunity: 'GA', municipality: null },
+    question: "¿Deben confundirse las fechas de publicación en el DOG y de reproducción en el BOE de una ley gallega?",
+    context: "Supuesto abstracto de una disposición autonómica publicada primero en el DOG y posteriormente en el BOE; las fechas de publicación se mantienen separadas de la entrada en vigor.",
     taxOrProcedure: 'regional_tax_and_administrative_measures',
     taxpayer: 'not specified; determine provision-specific scope',
     taxYear: 2025, filingYear: 2026,
@@ -303,6 +321,8 @@ export const legalTaxCorpus = [
   {
     id: 'ES-GALICIA-LAW-6-2023-SCOPE-ABSTENTION',
     jurisdiction: { state: 'ES', autonomousCommunity: 'GA', municipality: null },
+    question: "¿Permite una norma gallega de patrimonio público determinar la tributación de una herencia privada?",
+    context: "Supuesto abstracto de herencia privada; se aporta una norma sobre cesión y uso de bienes públicos como posible fuente irrelevante para el impuesto preguntado.",
     taxOrProcedure: 'inheritance_tax_question_with_irrelevant_public_asset_source',
     taxpayer: 'individual receiving a private inheritance; tax facts and relationship to deceased unspecified',
     taxYear: null, filingYear: null,
@@ -325,6 +345,8 @@ export const legalTaxCorpus = [
   {
     id: 'ES-IRPF-CONSOLIDATED-VS-OFFICIAL-PUBLICATION',
     jurisdiction: { state: 'ES', autonomousCommunity: null, municipality: null },
+    question: "¿Qué valor probatorio debe atribuirse al texto consolidado del IRPF frente a la publicación oficial y sus modificaciones?",
+    context: "Supuesto abstracto de una consulta sobre el IRPF del ejercicio 2022; se comparan la publicación oficial, las modificaciones posteriores y una consolidación informativa a fecha determinada.",
     taxOrProcedure: 'IRPF_historical_rule',
     taxpayer: 'individual; facts and tax year required',
     taxYear: 2022, filingYear: 2023,
@@ -358,6 +380,8 @@ export const legalTaxCorpus = [
   {
     id: 'ES-TAX-INSUFFICIENT-JURISDICTION-AND-FACTS',
     jurisdiction: { state: null, autonomousCommunity: null, municipality: null },
+    question: "¿Puede determinarse la norma fiscal aplicable si no se identifica el Estado, la residencia ni la fecha del hecho?",
+    context: "No se facilita jurisdicción, comunidad autónoma, municipio, tipo de contribuyente, impuesto concreto ni fecha del hecho; no se añade contexto financiero ni personal.",
     taxOrProcedure: 'unspecified_personal_tax_question',
     taxpayer: 'unknown',
     taxYear: 2024, filingYear: 2025,
@@ -371,6 +395,8 @@ export const legalTaxCorpus = [
   {
     id: 'ES-MADRID-IBI-2026-MUNICIPAL-ORDINANCE',
     jurisdiction: { state: 'ES', autonomousCommunity: 'MD', municipality: 'Madrid' },
+    question: "¿Puede determinarse el tipo de IBI aplicable en Madrid para 2026 sin conocer la naturaleza, el uso y el valor catastral del inmueble?",
+    context: "Supuesto abstracto de inmueble situado en Madrid para el devengo de 2026; no se aportan uso, clasificación catastral, valor catastral, titularidad ni posibles bonificaciones.",
     taxOrProcedure: 'IBI',
     taxpayer: 'Holder of a right over an urban or rural property in Madrid; property classification and cadastral facts not supplied',
     taxYear: 2026, filingYear: null,
