@@ -13,6 +13,9 @@ describe('legal/tax regression corpus (#108)', () => {
 
   it('keeps tax year, filing year, event date and reference date independent', () => {
     for (const item of legalTaxCorpus) {
+      expect(item.question.length).toBeGreaterThan(20);
+      expect(item.context.length).toBeGreaterThan(20);
+      expect(item.context).not.toMatch(/\\b\\d{8}[A-Z]\\b/);
       expect(item).toHaveProperty('taxYear');
       expect(item).toHaveProperty('filingYear');
       expect(item.dates).toHaveProperty('eventDate');
