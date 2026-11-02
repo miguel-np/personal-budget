@@ -28,6 +28,7 @@ interface SearchSource {
     contentType: string | null;
     excerpt: string;
     textLength: number;
+    fetches: readonly { endpoint: string; httpStatus: number | null; contentType: string | null; bytesReceived: number; latencyMs: number; outcome: 'completed' | 'failed'; }[];
     temporal: null | {
       assessment: 'consolidation_pending_update' | 'annulled_by_reference_date' | 'annulment_after_reference_date' |
         'repealed_by_reference_date' | 'derogation_after_reference_date' | 'not_effective_yet' |
@@ -276,6 +277,11 @@ export function WebResearchPanel() {
                   {source.document.retrievedAt ? ' · Recuperado: ' + formatDate(source.document.retrievedAt) : ''}
                   {source.document.textLength > 0 ? ' · Texto de origen: ' + source.document.textLength.toLocaleString('es-ES') + ' caracteres' : ''}
                 </p>
+                {source.document.fetches.length > 0 ? <ul className="section-footnote" aria-label="Peticiones documentales realizadas por el backend">
+                  {source.document.fetches.map((fetch, index) => <li key={index}>
+                    {fetch.endpoint} · HTTP {fetch.httpStatus ?? 'sin respuesta'} · {fetch.contentType ?? 'MIME no disponible'} · {fetch.bytesReceived.toLocaleString('es-ES')} bytes · {fetch.latencyMs} ms
+                  </li>)}
+                </ul> : null}
                 {source.document.temporal ? <p className="section-footnote">
                   Estado temporal BOE a {source.document.temporal.referenceDate}: <strong>{temporalAssessmentLabel(source.document.temporal.assessment)}</strong>
                   {source.document.temporal.publicationDate ? ' · Publicación: ' + source.document.temporal.publicationDate : ''}

@@ -430,22 +430,20 @@ export async function retrieveOfficialDocument(
     }
   }
 
-  try {
-    const payload = await fetchOfficial(sourceUrl, MAX_HTML_BYTES, timeoutMs, callerSignal);
-    if (!(payload.contentType.includes('text/html') || payload.contentType.includes('application/xhtml+xml') || payload.contentType.includes('text/plain'))) {
-      return unavailableEvidence('unsupported', 'unsupported_format');
-    }
-    const fullText = payload.contentType.includes('text/plain')
-      ? payload.body.toString('utf8').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ').trim()
-      : extractOfficialHtmlText(payload.body.toString('utf8'));
-    if (!fullText) return unavailableEvidence('partial', 'official_html');
-    return {
-      status: 'retrieved', documentType: 'official_html', retrievedAt: new Date().toISOString(),
-      contentType: payload.contentType, excerpt: relevantExcerpt(fullText, query), textLength: fullText.length,
-      temporal: null,
-      limitations: ['El contenido oficial se ha recuperado, pero no existe una comprobación temporal estructurada para este tipo de documento. La fecha y fuerza del criterio deben leerse en el original.'],
-    };
-  } catch {
-    return unavailableEvidence('unavailable', 'official_html');
+  const observed = await observeOfficialFetch(sourceUrl, MAX_HTML_BYTES, timeoutMs, callerSignal, fetchOfficial);
+  const payload = observed.payload;
+  if (!payload) return { ...unavailableEvidence('unavailable', 'official_html'), fetches: [observed.record] };
+  if (!(payload.contentType.includes('text/html') || payload.contentType.includes('application/xhtml+xml') || payload.contentType.includes('text/plain'))) {
+    return { ...unavailableEvidence('unsupported', 'unsupported_format'), fetches: [observed.record] };
   }
+  const fullText = payload.contentType.includes('text/plain')
+    ? payload.body.toString('utf8').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ').trim()
+    : extractOfficialHtmlText(payload.body.toString('utf8'));
+  if (!fullText) return { ...unavailableEvidence('partial', 'official_html'), fetches: [observed.record] };
+  return {
+    status: 'retrieved', documentType: 'official_html', retrievedAt: new Date().toISOString(),
+    contentType: payload.contentType, excerpt: relevantExcerpt(fullText, query), textLength: fullText.length,
+    temporal: null, fetches: [observed.record],
+    limitations: ['El contenido oficial se ha recuperado, pero no existe una comprobación temporal estructurada para este tipo de documento. La fecha y fuerza del criterio deben leerse en el original.'],
+  };
 }

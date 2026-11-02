@@ -439,6 +439,13 @@ describe('official document evidence and temporal metadata', () => {
       },
     });
     expect(result.textLength).toBeGreaterThan(5_000);
+    expect(result.fetches).toHaveLength(3);
+    expect(result.fetches.every((fetch) => fetch.outcome === 'completed' && fetch.httpStatus === 200)).toBe(true);
+    expect(result.fetches.find((fetch) => fetch.endpoint === '/buscar/act.php')).toMatchObject({
+      contentType: 'text/html; charset=utf-8',
+      bytesReceived: Buffer.byteLength(longText),
+      outcome: 'completed',
+    });
     expect(result.excerpt).toContain('IRPF');
     expect(result.limitations.join(' ')).toContain('no reconstruye la redacción de cada artículo en eventDate');
     expect(result.limitations.filter((limitation) => limitation.includes('no reconstruye la redacción de cada artículo en eventDate'))).toHaveLength(1);
