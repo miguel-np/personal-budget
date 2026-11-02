@@ -188,7 +188,7 @@ export class SearXNGSearchProvider implements WebSearchProvider {
     const candidates = search.sources.filter((source) => source.sourceAuthority !== 'external').slice(0, 3);
     const evidence = await Promise.all(candidates.map(async (source) => ({
       id: source.id,
-      document: await retrieveOfficialDocument(source, query, referenceDate, this.config.timeoutMs, callerSignal, requestOfficialHttps, eventDate),
+      document: await retrieveOfficialDocument(source, query, referenceDate, this.config.timeoutMs, callerSignal, undefined, eventDate),
     })));
     const byId = new Map(evidence.map((item) => [item.id, item.document]));
     return {
