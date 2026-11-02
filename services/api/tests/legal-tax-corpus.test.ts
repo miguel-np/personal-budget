@@ -23,7 +23,20 @@ describe('legal/tax regression corpus (#108)', () => {
     }
     expect(legalTaxCorpus.find((item) => item.id === 'ES-IRPF-2023-FILING-2024')).toMatchObject({
       taxYear: 2023, filingYear: 2024,
+      expected: { citationIds: expect.arrayContaining(['AEAT-IRPF-2023-PRESENTATION-DEADLINE']) },
     });
+    expect(legalTaxCorpus.find((item) => item.id === 'ES-IRPF-2024-FILING-2025')).toMatchObject({
+      taxYear: 2024, filingYear: 2025,
+      expected: { citationIds: expect.arrayContaining(['AEAT-IRPF-2024-PRESENTATION-DEADLINE']) },
+    });
+    for (const [caseId, phrase] of [
+      ['ES-IRPF-2023-FILING-2024', '3 de abril y 1 de julio de 2024'],
+      ['ES-IRPF-2024-FILING-2025', '2 de abril y 30 de junio de 2025'],
+    ] as const) {
+      const item = legalTaxCorpus.find((candidate) => candidate.id === caseId);
+      expect(item?.evidenceSnapshots.some((snapshot) =>
+        'excerpt' in snapshot && snapshot.excerpt.includes(phrase))).toBe(true);
+    }
     expect(legalTaxCorpus.find((item) => item.id === 'ES-IVA-2024-DECREE-9-2024-REPEAL')).toMatchObject({
       taxYear: 2025, filingYear: null,
       dates: { eventDate: '2025-01-10', referenceDate: '2025-01-23', repealPublicationDate: '2025-01-23' },
@@ -37,7 +50,18 @@ describe('legal/tax regression corpus (#108)', () => {
     expect(legalTaxCorpus.find((item) => item.id === 'ES-BOE-ARTICLE-32-2022-03-30')?.expected)
       .toMatchObject({ selectedNorm: 'BOE-A-2015-10565' });
     expect(legalTaxCorpus.find((item) => item.id === 'ES-BOE-ARTICLE-32-2022-03-31')?.expected)
-      .toMatchObject({ selectedNorm: 'BOE-A-2022-4972' });
+      .toMatchObject({ selectedNorm: 'BOE-A-2022-4972', mustContainNewParagraph5: true });
+    const article32After = legalTaxCorpus.find((item) => item.id === 'ES-BOE-ARTICLE-32-2022-03-31');
+    expect(article32After?.evidenceSnapshots.some((snapshot) =>
+      'excerpt' in snapshot && snapshot.excerpt.includes('ampliación general de plazos'))).toBe(true);
+    const law112021 = legalTaxCorpus.find((item) => item.id === 'ES-FRAUD-LAW-11-2021-EFFECTIVE-DATES');
+    expect(law112021?.evidenceSnapshots[0]).toMatchObject({
+      recordedFacts: expect.arrayContaining([
+        expect.stringContaining('three months'),
+        expect.stringContaining('2021-01-01'),
+        expect.stringContaining('2022-01-01'),
+      ]),
+    });
     expect(legalTaxCorpus.find((item) => item.id === 'ES-IVA-2024-DECREE-9-2024-REPEAL')?.expected)
       .toMatchObject({ outcome: 'flag_temporal_conflict_and_abstain_on_effects', resolutionRecordsEffectsFrom: '2025-01-01' });
   });
@@ -86,6 +110,16 @@ describe('legal/tax regression corpus (#108)', () => {
         expect.objectContaining({ id: 'BOE-A-2006-20764', authority: 'official_publication' }),
         expect.objectContaining({ id: 'AEAT-IRPF-2024-MODEL100', authority: 'administrative_guide' }),
       ]));
+    expect(legalTaxCorpus.find((item) => item.id === 'ES-GALICIA-LAW-5-2024-IRPF-2025')?.expected)
+      .toMatchObject({
+        candidateRule: {
+          deductionRatePercent: 10, maximumEUR: 600, minimumAge: 65,
+          minimumDisabilityPercent: 65,
+          taxableBaseMinusPersonalFamilyMinimumMaxEUR: { individual: 22000, joint: 31000 },
+          requiresProofOfThirdPartyCare: true,
+          excludesPublicOrConcertedResidenceInGalicia: true,
+        },
+      });
     expect(legalTaxCorpus.find((item) => item.id === 'ES-IRPF-CONSOLIDATED-VS-OFFICIAL-PUBLICATION')?.documents)
       .toEqual(expect.arrayContaining([
         expect.objectContaining({ authority: 'official_publication' }),
