@@ -54,7 +54,7 @@ Los formatos HTML/XHTML/texto plano se convierten a texto legible, eliminando sc
 Cuando un resultado contiene un identificador validado `BOE-A-AAAA-NNNN`, el adaptador utiliza únicamente endpoints fijos de la API oficial de legislación consolidada:
 - `/datosabiertos/api/legislacion-consolidada/id/{id}/metadatos`.
 - `/datosabiertos/api/legislacion-consolidada/id/{id}/analisis`.
-- `/buscar/act.php?id={id}` para la representación HTML consolidada.
+- `/buscar/act.php?id={id}` para la representación HTML consolidada. Esta ruta aporta la representación consolidada disponible en el momento de la consulta; no se interpreta como una instantánea histórica.
 
 Se extraen, cuando existen, fecha de publicación, fecha de entrada en vigor, fecha de actualización registral, indicadores explícitos de derogación/anulación/agotamiento, estado de consolidación y relaciones anteriores/posteriores (por ejemplo, modificaciones y derogaciones). La evaluación se calcula contra la fecha de referencia que el usuario indicó en modo fiscal. Una fecha futura de derogación/anulación no se presenta como efectiva en la fecha de referencia; una marca sin fecha deja el resultado como insuficiente.
 
@@ -66,6 +66,12 @@ El frontend muestra las fechas y el estado como metadatos registrados por BOE, n
 - Una ficha de norma no resuelve la vigencia parcial por artículo, normas transitorias, aplicación a hechos concretos ni la normativa autonómica/local concurrente.
 - Una consolidación desactualizada o pendiente puede no incorporar una modificación publicada recientemente.
 - La fecha de publicación no es la fecha de entrada en vigor, y ninguna fecha del buscador sustituye a los metadatos oficiales.
+
+### Versiones históricas y vigencia por artículo
+
+La API oficial del BOE documenta recursos adicionales para el texto consolidado: `/texto` (XML con todas las versiones), `/texto/indice` y `/texto/bloque/{id_bloque}`. Cada bloque identifica su tipo/título y agrupa versiones con `fecha_publicacion`, `fecha_vigencia` e `id_norma`. Estos recursos permiten una futura selección y trazabilidad de la redacción por bloque y fecha.
+
+**No están integrados por el adaptador actual.** Actualmente se recupera la representación HTML consolidada más reciente, junto con metadatos y relaciones. La fecha `referenceDate` solo evalúa las marcas temporales de la ficha; `eventDate` no selecciona la versión histórica del texto. Por ello, una respuesta no puede afirmar qué redacción de un artículo regía en la fecha del hecho basándose únicamente en el extracto actual. Debe declararse la insuficiencia y remitirse a la publicación original y al historial de versiones/modificadoras oficiales. La selección histórica por bloque y su verificación frente a publicaciones originales quedan pendientes de implementación y pruebas.
 
 Por tanto, el adaptador aporta evidencia documental/temporal verificable y transparencia sobre sus límites; no es un motor jurídico ni certifica la vigencia aplicable.
 
