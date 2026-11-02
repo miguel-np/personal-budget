@@ -10,7 +10,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: security
+  group: security-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
   dependency-and-secret-scan:
@@ -21,13 +21,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - name: Set up Node.js
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
-          node-version-file: .nvmrc
-      - name: Install locked dependencies
-        run: npm ci
-      - name: Audit dependencies
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Audit locked dependencies
         run: npm run audit && npm run audit:production
-      - name: Scan working tree for leaked secrets
-        run: docker run --rm -v "$PWD:/repo:ro" zricethezav/gitleaks:v8.28.0 detect --source=/repo --no-git --redact --exit-code 1
+      - name: Scan Git history and working tree for leaked secrets
+        run: docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 -v "$PWD:/repo:ro" zricethezav/gitleaks:v8.28.0 detect --source=/repo --redact --exit-code 1
