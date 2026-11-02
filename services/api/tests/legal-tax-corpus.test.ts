@@ -93,6 +93,22 @@ describe('legal/tax regression corpus (#108)', () => {
       ]));
   });
 
+  it('anchors the municipal IBI boundary to the Madrid ordinance and the dated national accrual rule', () => {
+    const ibi = legalTaxCorpus.find((item) => item.id === 'ES-MADRID-IBI-2026-MUNICIPAL-ORDINANCE');
+    expect(ibi?.documents).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'ANM-2025-141', authority: 'official_municipal_ordinance' }),
+      expect.objectContaining({ id: 'BOE-A-2004-4214-consolidated', authority: 'informative_consolidation' }),
+    ]));
+    expect(ibi?.evidenceSnapshots).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        documentId: 'BOE-A-2004-4214-consolidated',
+        version: 'consolidated-text-as-of-2026-01-01',
+        excerpt: 'El impuesto se devengará el primer día del período impositivo. El período impositivo coincide con el año natural.',
+      }),
+    ]));
+    expect(ibi?.expected).toMatchObject({ outcome: 'abstain_missing_property_classification' });
+  });
+
   it('requires explicit abstention when jurisdiction, facts or source scope are insufficient', () => {
     expect(legalTaxCorpus.find((item) => item.id === 'ES-TAX-INSUFFICIENT-JURISDICTION-AND-FACTS')?.expected)
       .toMatchObject({ outcome: 'abstain_insufficient_context' });
