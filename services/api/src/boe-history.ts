@@ -166,7 +166,7 @@ function descendants(node: XmlNode, name: string): XmlNode[] {
   return result;
 }
 function nodeText(node: XmlNode): string {
-  return node.content.map((item) => typeof item === 'string' ? item : nodeText(item)).join('').replace(/\s+/g, ' ').trim();
+  return node.content.map((item) => typeof item === 'string' ? item : nodeText(item)).join(' ').replace(/\s+/g, ' ').trim();
 }
 function childText(node: XmlNode, name: string): string | null {
   const child = childNodes(node, name)[0];
