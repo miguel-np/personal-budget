@@ -508,7 +508,7 @@ describe('LocalAiClient', () => {
     expect(finalSystemPrompt).toContain('referenceDate es la fecha');
     expect(finalSystemPrompt).toContain('eventDate, si existe');
     expect(finalSystemPrompt).toContain('reconstruir versiones históricas por bloque si la consulta identifica explícitamente artículos');
-    expect(finalSystemPrompt).toContain('No atribuyas la redacción consolidada actual a eventDate');
+    expect(finalSystemPrompt).toContain('No atribuyas la consolidación actual a eventDate');
     expect(finalSystemPrompt).toContain('evidencia recuperada es insuficiente');
   });
 
