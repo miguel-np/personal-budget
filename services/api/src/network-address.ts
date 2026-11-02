@@ -98,7 +98,7 @@ function isPublicIPv6(address: string): boolean {
   // Global unicast space is 2000::/3. Special-purpose ranges are then
   // evaluated using longest-prefix precedence, including IANA exceptions.
   const words = parseIPv6Words(address);
-  if (!words || (words[0]! & 0xe000) !== 0x2000) return false;
+  if (!words) return false;
 
   // IPv4-mapped IPv6 must inherit the policy of the embedded IPv4 address,
   // including when written in hexadecimal rather than dotted-decimal form.
@@ -111,6 +111,7 @@ function isPublicIPv6(address: string): boolean {
     return isPublicIPv4(ipv4);
   }
 
+  if ((words[0]! & 0xe000) !== 0x2000) return false;
   if (globallyReachableIPv6Exceptions.some((prefix) => matchesPrefix(words, prefix))) return true;
   return !blockedIPv6Prefixes.some((prefix) => matchesPrefix(words, prefix));
 }
