@@ -168,12 +168,17 @@ export const legalTaxCorpus = [
         "version": "official-repeal-resolution",
         "locator": "Congress agreement of 22/01/2025, published 23/01/2025",
         "excerpt": "acordó derogar el Real Decreto-ley 9/2024.",
+        "recordedFacts": [
+          "Agreement adopted: 2025-01-22; BOE publication: 2025-01-23",
+          "The BOE analysis says the modification of the VAT Law transitional provision 13, which had effects from 2025-01-01, is left without effect with those stated effects",
+          "This is source evidence about the legal amendment; applying it to a particular taxpayer or transaction still requires fact-specific legal review"
+        ],
         "capturedAt": "2026-11-02"
       }
     ],
     dates: { publicationDate: '2024-12-24', effectiveDate: '2024-12-25', eventDate: '2025-01-10', referenceDate: '2025-01-23', repealPublicationDate: '2025-01-23' },
     documents: [{ id: 'BOE-A-2024-26915', authority: 'official_publication', url: 'https://www.boe.es/eli/es/rdl/2024/12/23/9', locator: 'Artículo 8, apartado Tres: modificación de la disposición transitoria decimotercera de la Ley 37/1992; efectos desde 01/01/2025' }, { id: 'BOE-A-2025-1136', authority: 'official_publication', url: 'https://www.boe.es/eli/es/res/2025/01/22/(1)', locator: 'Acuerdo del Congreso de 22/01/2025; publicación oficial de la derogación el 23/01/2025' }, { id: 'BOE-A-1992-28740', authority: 'official_publication', url: 'https://www.boe.es/eli/es/l/1992/12/28/37', locator: 'Ley 37/1992 as amended' }],
-    expected: { citationIds: ["BOE-A-2024-26915","BOE-A-2025-1136"], outcome: 'flag_temporal_conflict_and_abstain_on_effects', amendmentEffectiveFrom: '2025-01-01', repealPublishedOn: '2025-01-23', conflict: 'RDL 9/2024 amended the IVA transitional limit; the Congress later repealed the RDL', doNotAssumeRetrospectiveEffect: true, doNotInfer: ['eligibility_for_special_regime', 'limits_for_event_date_without_temporal_legal_review', 'filing_frequency'] },
+    expected: { citationIds: ["BOE-A-2024-26915","BOE-A-2025-1136"], outcome: 'flag_temporal_conflict_and_abstain_on_effects', amendmentEffectiveFrom: '2025-01-01', repealPublishedOn: '2025-01-23', conflict: 'RDL 9/2024 amended the IVA transitional limit with effects from 2025-01-01; the 2025-01-22 repeal resolution records that this amendment is left without effect with the indicated effects from 2025-01-01', resolutionRecordsEffectsFrom: '2025-01-01', doNotInfer: ['individual_eligibility_for_special_regime', 'whether_a_specific_transaction_between_2025-01-01_and_2025-01-22_created_a_protected_position', 'filing_frequency'] },
     tags: ['transitional', 'repeal', 'normative-discrepancy'], reviewStatus: 'pending'
   },
   {
