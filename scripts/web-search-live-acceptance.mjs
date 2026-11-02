@@ -84,7 +84,7 @@ for (let i = 0; i < groups.length; i += 1) {
         (String(fetch?.contentType ?? '').toLowerCase().includes('text/html') ||
           String(fetch?.contentType ?? '').toLowerCase().includes('application/xhtml+xml') ||
           String(fetch?.contentType ?? '').toLowerCase().includes('text/plain')));
-      const hasText = document?.status === 'retrieved' || (document?.status === 'partial' && document?.textLength > 0);
+      const hasText = Number.isSafeInteger(document?.textLength) && document.textLength > 0 && (document?.status === 'retrieved' || document?.status === 'partial');
       const documentAccepted = hostAllowed && url.protocol === 'https:' && Boolean(source.title) && hasText && textFetchOk;
       if (documentAccepted) acceptedHosts.add(host);
       return {
@@ -132,7 +132,7 @@ await writeFile('web-search-live-acceptance-summary.md', [
   '- Backend: ' + report.apiOrigin,
   '- Provider: ' + report.status.provider,
   '- Status: ' + report.outcome,
-  '- Exact approved hosts observed: ' + acceptedHosts.size + '/' + expectedHosts.length,
+  '- Exact approved hosts with successful document extraction: ' + acceptedHosts.size + '/' + expectedHosts.length,
   '- Financial data sent: no (static public queries only)',
   '- Raw query text, document bodies and credentials are not included in this report.',
   '',
