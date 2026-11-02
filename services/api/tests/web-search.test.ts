@@ -97,7 +97,7 @@ describe('SearXNG web search provider', () => {
     expect(OFFICIAL_SOURCE_HOSTS).toContain('sede.agenciatributaria.gob.es');
     expect(OFFICIAL_SOURCE_HOSTS).toContain('www.boe.es');
     expect(OFFICIAL_SOURCE_HOSTS).toContain('sede.seg-social.gob.es');
-    expect(OFFICIAL_SOURCE_HOSTS).not.toContain('dog.gal');
+    expect(OFFICIAL_SOURCE_HOSTS).toContain('dog.gal');
     expect(OFFICIAL_SOURCE_HOSTS).not.toContain('arbitrary.boe.es');
 
     const fixture = await serve((_request, response) => {
@@ -106,6 +106,7 @@ describe('SearXNG web search provider', () => {
         { title: 'AEAT sede', url: 'https://sede.agenciatributaria.gob.es/Sede/irpf.html', content: 'Información oficial AEAT.' },
         { title: 'BOE www', url: 'https://www.boe.es/buscar/act.php?id=BOE-A-2025-1', content: 'Publicación oficial.' },
         { title: 'Sede Seguridad Social', url: 'https://sede.seg-social.gob.es/wps/portal/sede', content: 'Sede oficial.' },
+        { title: 'DOG oficial', url: 'https://dog.gal/', content: 'Publicación normativa de Galicia.' },
         { title: 'Subdominio no aprobado', url: 'https://arbitrary.boe.es/documento', content: 'No debe heredar confianza.' },
         { title: 'Fuente externa', url: 'https://example.org/article', content: 'Contexto externo.' },
       ] }));
@@ -113,7 +114,7 @@ describe('SearXNG web search provider', () => {
     const provider = new SearXNGSearchProvider(config(fixture.url));
     const general = await provider.search('consulta de prueba', []);
     expect(general.sources.map((source) => source.domain)).toEqual([
-      'sede.agenciatributaria.gob.es', 'www.boe.es', 'sede.seg-social.gob.es', 'example.org',
+      'sede.agenciatributaria.gob.es', 'www.boe.es', 'sede.seg-social.gob.es', 'dog.gal', 'example.org',
     ]);
     expect(general.sources[0]).toMatchObject({
       institution: 'Agencia Estatal de Administración Tributaria (AEAT)',
@@ -130,6 +131,13 @@ describe('SearXNG web search provider', () => {
       domain: 'sede.seg-social.gob.es',
       institution: 'Seguridad Social',
       sourceAuthority: 'official_information',
+    });
+    const dog = await provider.search('consulta de prueba', ['dog.gal']);
+    expect(dog.sources[0]).toMatchObject({
+      domain: 'dog.gal',
+      institution: 'Diario Oficial de Galicia (DOG)',
+      sourceKind: 'normativa',
+      sourceAuthority: 'legislation',
     });
   });
 
