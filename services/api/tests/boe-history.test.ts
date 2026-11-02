@@ -174,6 +174,30 @@ describe('BOE historical block versions', () => {
     expect(entryIntoForceDate.version.text).toContain('5. Cuando como consecuencia de un ciberincidente');
   });
 
+
+  it('covers publication-date boundaries and rejects malformed or resource-exhausting XML', () => {
+    const history = parseBoeBlockXml(realBoeArticle32Xml, 'a32');
+    expect(selectBoeHistoricalVersion(history, '2015-10-01')).toMatchObject({
+      status: 'not_yet_published',
+    });
+    expect(selectBoeHistoricalVersion(history, '2022-03-30')).toMatchObject({
+      status: 'selected', version: { normId: 'BOE-A-2015-10565' },
+    });
+    expect(selectBoeHistoricalVersion(history, '2022-04-01')).toMatchObject({
+      status: 'selected', version: { normId: 'BOE-A-2022-4972' },
+    });
+
+    expect(() => parseBoeBlockIndexXml(wrap(
+      '<indice><bloque><id>a1</id><titulo>Artículo 1</titulo></indice>',
+    ))).toThrow(/Mismatched XML closing tag|Incomplete XML/i);
+
+    const deeplyNested = '<item>'.repeat(63) + '</item>'.repeat(63);
+    expect(() => parseBoeBlockIndexXml(wrap(deeplyNested))).toThrow(/nesting budget/i);
+
+    const excessiveNodes = '<indice>' + '<item/>'.repeat(25_001) + '</indice>';
+    expect(() => parseBoeBlockIndexXml(wrap(excessiveNodes))).toThrow(/node budget/i);
+  });
+
   it('rejects DTDs, external entities, invalid references and mismatched block identifiers', () => {
     expect(() => parseBoeBlockIndexXml(Buffer.from(
       '<!DOCTYPE response [<!ENTITY x SYSTEM "file:///etc/passwd">]><response><status><code>200</code></status><data>&x;</data></response>',
