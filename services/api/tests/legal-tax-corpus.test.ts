@@ -64,8 +64,10 @@ describe('legal/tax regression corpus (#108)', () => {
         expect(snapshot.version.length).toBeGreaterThan(0);
         expect(snapshot.locator.length).toBeGreaterThan(0);
         expect(snapshot.capturedAt).toBe(item.capturedAt);
-        expect(Boolean(snapshot.excerpt) || (Array.isArray(snapshot.recordedFacts) && snapshot.recordedFacts.length > 0)).toBe(true);
-        if (snapshot.excerpt) expect(snapshot.excerpt.length).toBeLessThanOrEqual(250);
+        const excerpt = 'excerpt' in snapshot ? snapshot.excerpt : undefined;
+        const recordedFacts = 'recordedFacts' in snapshot ? snapshot.recordedFacts : undefined;
+        expect(Boolean(excerpt) || (Array.isArray(recordedFacts) && recordedFacts.length > 0)).toBe(true);
+        if (excerpt) expect(excerpt.length).toBeLessThanOrEqual(250);
       }
     }
   });
