@@ -19,8 +19,8 @@ interface SearchStatus { enabled: boolean; provider: string; explicitConsentRequ
 interface SearchSource {
   id: string; title: string; url: string; domain: string; institution: string; publishedAt: string | null; modifiedAt: string | null;
   snippet: string;
-  sourceKind: 'normativa' | 'criterio_administrativo' | 'organismo_oficial' | 'externa';
-  sourceAuthority: 'legislation' | 'dgt_criteria' | 'teac_criteria' | 'tax_administration' | 'tax_agency_guidance' | 'official_information' | 'external';
+  sourceKind: 'normativa' | 'normativa_consolidada_informativa' | 'criterio_administrativo' | 'organismo_oficial' | 'externa';
+  sourceAuthority: 'legislation' | 'legal_consolidation' | 'dgt_criteria' | 'teac_criteria' | 'tax_administration' | 'tax_agency_guidance' | 'official_information' | 'external';
   document?: {
     status: 'retrieved' | 'partial' | 'unavailable' | 'unsupported';
     documentType: 'boe_consolidated_legislation' | 'official_html' | 'unsupported_format';
@@ -67,6 +67,7 @@ async function readJson<T>(response: Response): Promise<T> {
 function sourceAuthorityLabel(authority: SearchSource['sourceAuthority']): string {
   const labels: Record<SearchSource['sourceAuthority'], string> = {
     legislation: 'Publicación normativa',
+    legal_consolidation: 'Base de legislación consolidada (informativa)',
     dgt_criteria: 'Doctrina DGT',
     teac_criteria: 'Criterio / resolución TEAC',
     tax_administration: 'Ministerio de Hacienda',
@@ -98,6 +99,7 @@ function temporalAssessmentLabel(assessment: NonNullable<NonNullable<SearchSourc
 }
 function sourceTypeLabel(kind: SearchSource['sourceKind']): string {
   if (kind === 'normativa') return 'Normativa publicada';
+  if (kind === 'normativa_consolidada_informativa') return 'Legislación consolidada (informativa)';
   if (kind === 'criterio_administrativo') return 'Criterio administrativo';
   if (kind === 'organismo_oficial') return 'Organismo oficial';
   return 'Fuente externa';
