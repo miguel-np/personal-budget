@@ -40,10 +40,18 @@ const groups = [
   { host: 'sedeelectronica.bde.es', domain: 'bde.es', allowedDomains: ['bde.es'], query: 'site:sedeelectronica.bde.es sede electrónica Banco de España normativa' }
 ];
 const report = { startedAt: new Date().toISOString(), apiOrigin: base.origin, status: null, groups: [], privacy: {
-  requestBodyContainsOnlyStaticPublicQueries: true,
+  acceptanceRequestsUseOnlyStaticPublicQueries: true,
+  acceptanceRequestsContainNoUserFinancialData: true,
   bearerTokenOmittedFromReport: true,
-  financialDataSent: false,
-}, outcome: 'incomplete' };
+  backendOutboundPayloadObserved: false,
+  deployedApiLogsInspected: false,
+  searxngLogsInspected: false,
+  status: 'requires_manual_review',
+  pendingChecks: [
+    'Inspect the deployed API outbound request at the SearXNG boundary and confirm it contains only the explicitly approved query and configured filters.',
+    'Inspect deployed API and SearXNG logs for accidental financial context, identifiers, conversation text, document bodies or sensitive snippets.',
+  ],
+}, outcome: 'incomplete', hostOutcome: 'incomplete', acceptanceComplete: false };
 const fetchJson = async (url, options = {}) => {
   const response = await fetch(url, { ...options, headers: { ...headers, ...(options.headers ?? {}) }, signal: AbortSignal.timeout(30_000), redirect: 'error' });
   const contentType = response.headers.get('content-type') ?? '';
@@ -154,7 +162,11 @@ report.observedHostCount = observedHosts.size;
 report.expectedHostCount = expectedHosts.length;
 const allGroupsHealthy = report.groups.every((group) => group.status === 'accepted');
 const allNegativeProbesHealthy = report.negativeProbes.every((probe) => probe.status === 'accepted');
-report.outcome = allGroupsHealthy && allNegativeProbesHealthy && acceptedHosts.size === expectedHosts.length ? 'accepted' : 'partial';
+report.hostOutcome = allGroupsHealthy && allNegativeProbesHealthy && acceptedHosts.size === expectedHosts.length ? 'accepted' : 'partial';
+// Network/log privacy evidence is not available to this runner. Never turn static test inputs
+// into a claim about the deployed API's outbound payload or its production log sinks.
+report.outcome = report.hostOutcome === 'accepted' ? 'hosts_accepted_privacy_review_pending' : 'partial';
+report.acceptanceComplete = false;
 await writeFile('web-search-live-acceptance-report.json', JSON.stringify(report, null, 2) + '\n', { flag: 'w' });
 await writeFile('web-search-live-acceptance-summary.md', [
   '# Live web-search acceptance', '',
@@ -162,9 +174,12 @@ await writeFile('web-search-live-acceptance-summary.md', [
   '- Finished: ' + report.finishedAt,
   '- Backend: ' + report.apiOrigin,
   '- Provider: ' + report.status.provider,
-  '- Status: ' + report.outcome,
+  '- Host outcome: ' + report.hostOutcome,
+  '- Overall outcome: ' + report.outcome,
   '- Exact approved hosts with successful document extraction: ' + acceptedHosts.size + '/' + expectedHosts.length,
-  '- Financial data sent: no (static public queries only)',
+  '- Acceptance requests contain only fixed public test queries; no user financial data is submitted by this script.',
+  '- Privacy review: pending (the runner cannot inspect the deployed API outbound payload or production API/SearXNG logs).',
+  '- Required manual checks: ' + report.privacy.pendingChecks.join(' '),
   '- Raw query text, document bodies and credentials are not included in this report.',
   '',
   '| Filter | Expected hosts | HTTP / MIME | Sources | Result |',
@@ -178,7 +193,9 @@ await writeFile('web-search-live-acceptance-summary.md', [
   'The report is an operational observation for this run. A host not observed is not accepted; it is not evidence that the host is unavailable or unsafe.',
   '',
 ].join('\n') + '\n');
-if (report.outcome !== 'accepted') {
-  console.error('Live acceptance was partial. The reports describe observed failures without treating missing hosts as accepted.');
+if (report.hostOutcome !== 'accepted') {
+  console.error('Live host acceptance was partial. Missing or rejected hosts remain unaccepted in the report.');
   process.exitCode = 1;
+} else {
+  console.log('All configured host checks passed. Overall acceptance remains incomplete until the manual privacy review is recorded.');
 }
