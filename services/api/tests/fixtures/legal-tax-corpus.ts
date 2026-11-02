@@ -22,6 +22,14 @@ export const legalTaxCorpus = [
         "locator": "Article 12(1), tax period",
         "excerpt": "El período impositivo será el año natural.",
         "capturedAt": "2026-11-02"
+      },
+      {
+        "documentId": "BOE-A-2006-20764",
+        "sourceUrl": "https://www.boe.es/diario_boe/txt.php?id=BOE-A-2006-20764",
+        "version": "official-original-publication",
+        "locator": "Article 12(1), tax period",
+        "excerpt": "El período impositivo será el año natural.",
+        "capturedAt": "2026-11-02"
       }
     ],
     dates: { publicationDate: '2006-11-29', effectiveDate: '2007-01-01', eventDate: '2023-12-31', referenceDate: '2024-06-30' },
@@ -54,6 +62,14 @@ export const legalTaxCorpus = [
           "Tax period is a calendar year under the general rule",
           "Filing campaign occurs in the following calendar year"
         ],
+        "capturedAt": "2026-11-02"
+      },
+      {
+        "documentId": "BOE-A-2006-20764",
+        "sourceUrl": "https://www.boe.es/diario_boe/txt.php?id=BOE-A-2006-20764",
+        "version": "official-original-publication",
+        "locator": "Article 12(1), tax period",
+        "excerpt": "El período impositivo será el año natural.",
         "capturedAt": "2026-11-02"
       }
     ],
@@ -231,6 +247,17 @@ export const legalTaxCorpus = [
         "locator": "Article 2, modification of the regional IRPF deductions",
         "excerpt": "el 10 % de las cantidades satisfechas a los terceros, con un límite máximo de 600 euros.",
         "capturedAt": "2026-11-02"
+      },
+      {
+        "documentId": "BOE-A-2025-2145",
+        "sourceUrl": "https://www.boe.es/eli/es-ga/l/2024/12/27/5",
+        "version": "official-original-publication",
+        "locator": "Article 2, amendments to the Galician IRPF deduction regime",
+        "recordedFacts": [
+          "Published in DOG on 2024-12-31; BOE republication on 2025-02-06",
+          "The consolidation used for the tax-year scenario is an informational snapshot selected as of 2025-12-31"
+        ],
+        "capturedAt": "2026-11-02"
       }
     ],
     dates: { publicationDate: '2024-12-31', effectiveDate: '2025-01-01', eventDate: '2025-12-31', referenceDate: '2026-06-30' },
@@ -341,4 +368,43 @@ export const legalTaxCorpus = [
     expected: { citationIds: [], outcome: 'abstain_insufficient_context', requiredFacts: ['state', 'autonomousCommunity_when_relevant', 'municipality_when_local_tax', 'taxpayer_type', 'tax_or_procedure', 'eventDate'], doNotInfer: ['location_from_network', 'residency_from_currency', 'taxpayer_type_from_financial_movements'] },
     tags: ['abstention', 'privacy', 'missing-context'], reviewStatus: 'pending'
   }
+  {
+    id: 'ES-MADRID-IBI-2026-MUNICIPAL-ORDINANCE',
+    jurisdiction: { state: 'ES', autonomousCommunity: 'MD', municipality: 'Madrid' },
+    taxOrProcedure: 'IBI',
+    taxpayer: 'Holder of a right over an urban or rural property in Madrid; property classification and cadastral facts not supplied',
+    taxYear: 2026, filingYear: null,
+    capturedAt: '2026-11-02',
+    dates: { publicationDate: '2025-12-26', effectiveDate: null, eventDate: '2026-01-01', referenceDate: '2026-11-02' },
+    documents: [
+      { id: 'BOE-A-2004-4214', authority: 'official_publication', url: 'https://www.boe.es/eli/es/rdlg/2004/03/05/2', locator: 'Real Decreto Legislativo 2/2004; national local-tax framework and IBI' },
+      { id: 'ANM-2025-141', authority: 'official_municipal_ordinance', url: 'https://sede.madrid.es/eli/es-md-01860896/odnz/1989/12/22/(1)/con/20251226/spa/html', locator: 'Madrid IBI ordinance, ANM 2025\\141, wording current for tax year 2026; Chapter VI, articles 8-9' }
+    ],
+    evidenceSnapshots: [
+      {
+        documentId: 'BOE-A-2004-4214',
+        sourceUrl: 'https://www.boe.es/eli/es/rdlg/2004/03/05/2',
+        version: 'official-original-publication',
+        locator: 'Official BOE publication record for the consolidated Local Finance Act',
+        recordedFacts: ['Published: 2004-03-09', 'Entry into force: 2004-03-10', 'Includes the statutory framework for IBI'],
+        capturedAt: '2026-11-02'
+      },
+      {
+        documentId: 'ANM-2025-141',
+        sourceUrl: 'https://sede.madrid.es/eli/es-md-01860896/odnz/1989/12/22/(1)/con/20251226/spa/html',
+        version: 'consolidated-municipal-ordinance-as-of-2025-12-26',
+        locator: 'Official Madrid ordinance record, ANM 2025\\141; version current for 2026; Chapter VI on rates',
+        recordedFacts: ['Last update published: 2025-12-26', 'The official record states the wording is current for 2026', 'Articles 8-9 distinguish general and differentiated property rates'],
+        capturedAt: '2026-11-02'
+      }
+    ],
+    expected: {
+      citationIds: ['BOE-A-2004-4214', 'ANM-2025-141'],
+      outcome: 'abstain_missing_property_classification',
+      requiredFacts: ['property_municipality', 'property_nature', 'cadastral_value', 'property_use', 'tax_year'],
+      doNotInfer: ['property_use_from_residence', 'municipal_rate_without_property_classification', 'bonifications', 'tax_due']
+    },
+    tags: ['municipal-jurisdiction', 'local-tax', 'source-hierarchy', 'abstention'],
+    reviewStatus: 'pending'
+  },
 ] as const;
