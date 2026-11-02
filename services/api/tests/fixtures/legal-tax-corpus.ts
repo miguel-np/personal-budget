@@ -367,7 +367,7 @@ export const legalTaxCorpus = [
     documents: [],
     expected: { citationIds: [], outcome: 'abstain_insufficient_context', requiredFacts: ['state', 'autonomousCommunity_when_relevant', 'municipality_when_local_tax', 'taxpayer_type', 'tax_or_procedure', 'eventDate'], doNotInfer: ['location_from_network', 'residency_from_currency', 'taxpayer_type_from_financial_movements'] },
     tags: ['abstention', 'privacy', 'missing-context'], reviewStatus: 'pending'
-  }
+  },
   {
     id: 'ES-MADRID-IBI-2026-MUNICIPAL-ORDINANCE',
     jurisdiction: { state: 'ES', autonomousCommunity: 'MD', municipality: 'Madrid' },
