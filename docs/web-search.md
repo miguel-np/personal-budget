@@ -37,7 +37,7 @@ Hosts exactos aprobados en esta iteración:
 - DGT: `petete.tributos.hacienda.gob.es`, `sede.tributos.hacienda.gob.es`.
 - TEAC: `serviciostelematicosext.hacienda.gob.es`, `sede.tea.hacienda.gob.es`.
 - Seguridad Social: `seg-social.es`, `www.seg-social.es`, `sede.seg-social.gob.es`, `portal.seg-social.gob.es`.
-- Xunta/DOG y Lex.gal: `xunta.gal`, `www.xunta.gal`, `sede.xunta.gal`, `facenda.xunta.gal`, `lex.gal`. Las páginas de la edición del DOG se reconocen solo en la ruta `/diario-oficial-galicia/` del host oficial de la Xunta.
+- Xunta/DOG y Lex.gal: `xunta.gal`, `www.xunta.gal`, `sede.xunta.gal`, `facenda.xunta.gal`, `lex.gal` y `www.lex.gal`. La Xunta enlaza la base consolidada desde su portal de transparencia. Las páginas de la edición del DOG se reconocen solo en la ruta `/diario-oficial-galicia/` del host oficial de la Xunta.
 - CNMV: `cnmv.es`, `www.cnmv.es`.
 - Banco de España: `bde.es`, `www.bde.es`, `sedeelectronica.bde.es`.
 
