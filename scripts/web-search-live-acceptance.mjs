@@ -89,6 +89,8 @@ for (let i = 0; i < groups.length; i += 1) {
       if (documentAccepted) acceptedHosts.add(host);
       return {
         id: source.id ?? null, host, sourceObserved: hostAllowed, documentAccepted,
+        publishedAt: source.publishedAt ?? null,
+        modifiedAt: source.modifiedAt ?? null,
         documentStatus: document?.status ?? null, textLength: Number.isSafeInteger(document?.textLength) ? document.textLength : 0,
         fetches: fetches.map((fetch) => ({ endpoint: fetch.endpoint ?? null, httpStatus: fetch.httpStatus ?? null,
           contentType: fetch.contentType ?? null, bytesReceived: fetch.bytesReceived ?? 0, latencyMs: fetch.latencyMs ?? null, outcome: fetch.outcome ?? 'unknown' })),
@@ -117,13 +119,42 @@ for (let i = 0; i < groups.length; i += 1) {
   }
   if (i < groups.length - 1) await delay(10_500);
 }
+const negativeProbes = [
+  { id: 'dog-gal-not-trusted-as-dog', domains: ['xunta.gal'], query: 'site:dog.gal Diario Oficial de Galicia DOG', forbiddenHosts: ['dog.gal'] },
+  { id: 'external-host-excluded-by-boe-filter', domains: ['boe.es'], query: 'site:example.com Example Domain public information', forbiddenHosts: ['example.com'] },
+  { id: 'unfiltered-secondary-source-classification', domains: [], query: 'site:example.com Example Domain public information', requireExternalClassification: true },
+];
+report.negativeProbes = [];
+for (const probe of negativeProbes) {
+  try {
+    const response = await fetchJson(new URL('/api/v1/assistant/web-search', base), {
+      method: 'POST', body: JSON.stringify({ consent: true, query: probe.query, mode: 'general', domains: probe.domains }),
+    });
+    const data = response.body.data;
+    if (!response.response.ok || !data || data.provider !== 'SearXNG' || !Array.isArray(data.sources)) throw new Error('Invalid negative-probe response.');
+    const observed = data.sources.map((source) => {
+      let host = null; try { host = new URL(source.url).hostname.toLowerCase(); } catch { /* Invalid source URL remains visible as a failed probe. */ }
+      return { host, sourceAuthority: source.sourceAuthority ?? null, documentRetrieved: Boolean(source.document && source.document.status === 'retrieved') };
+    });
+    const forbiddenObserved = probe.forbiddenHosts?.filter((forbidden) => observed.some((source) => source.host === forbidden || source.host?.endsWith('.' + forbidden))) ?? [];
+    const externalClassified = observed.some((source) => source.host === 'example.com' && source.sourceAuthority === 'external' && !source.documentRetrieved);
+    const accepted = probe.requireExternalClassification ? externalClassified : forbiddenObserved.length === 0;
+    report.negativeProbes.push({ id: probe.id, httpStatus: response.response.status, responseMime: response.contentType,
+      sourceCount: observed.length, sources: observed, forbiddenHostsObserved: forbiddenObserved,
+      status: accepted ? 'accepted' : observed.length === 0 ? 'not_observed' : 'rejected' });
+  } catch (error) {
+    report.negativeProbes.push({ id: probe.id, status: 'failed', errorType: error instanceof Error ? error.name : 'UnknownError' });
+  }
+  await delay(10_500);
+}
 const expectedHosts = groups.map((group) => group.host);
 report.finishedAt = new Date().toISOString();
 report.hostCoverage = expectedHosts.map((host) => ({ host, observed: observedHosts.has(host), documentAccepted: acceptedHosts.has(host) }));
 report.observedHostCount = observedHosts.size;
 report.expectedHostCount = expectedHosts.length;
 const allGroupsHealthy = report.groups.every((group) => group.status === 'accepted');
-report.outcome = allGroupsHealthy && acceptedHosts.size === expectedHosts.length ? 'accepted' : 'partial';
+const allNegativeProbesHealthy = report.negativeProbes.every((probe) => probe.status === 'accepted');
+report.outcome = allGroupsHealthy && allNegativeProbesHealthy && acceptedHosts.size === expectedHosts.length ? 'accepted' : 'partial';
 await writeFile('web-search-live-acceptance-report.json', JSON.stringify(report, null, 2) + '\n', { flag: 'w' });
 await writeFile('web-search-live-acceptance-summary.md', [
   '# Live web-search acceptance', '',
@@ -140,6 +171,9 @@ await writeFile('web-search-live-acceptance-summary.md', [
   '|---|---|---|---:|---|',
   ...report.groups.map((group) => '| ' + group.domain + ' | ' + group.expectedHosts.join(', ') + ' | ' +
     (group.httpStatus ?? '—') + ' / ' + (group.responseMime ?? '—') + ' | ' + (group.sourceCount ?? 0) + ' | ' + group.status + ' |'),
+  '',
+  '## Negative and classification probes',
+  ...report.negativeProbes.map((probe) => '- ' + probe.id + ': ' + probe.status + ' (' + (probe.sourceCount ?? 0) + ' sources)'),
   '',
   'The report is an operational observation for this run. A host not observed is not accepted; it is not evidence that the host is unavailable or unsafe.',
   '',
