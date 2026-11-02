@@ -541,3 +541,86 @@ describe('official document evidence and temporal metadata', () => {
 });
 
 });
+
+
+describe('BOE historical article version retrieval', () => {
+  it('retrieves an explicit article block and selects the version effective on eventDate', async () => {
+    const requested: string[] = [];
+    const metadata = {
+      fecha_publicacion: '20150102', fecha_vigencia: '20150201',
+      fecha_actualizacion: '20261030T100000Z', estatus_derogacion: 'N',
+      estatus_anulacion: 'N', vigencia_agotada: 'N', estado_consolidacion: 'Finalizado',
+    };
+    const analysis = { data: { analisis: {} } };
+    const html = '<html><body><main><p>Texto consolidado informativo.</p></main></body></html>';
+    const indexXml = `<?xml version="1.0" encoding="utf-8"?>
+      <response><status><code>200</code><text>ok</text></status><data>
+        <bloque><id>a14</id><titulo>Artículo 14</titulo><fecha_actualizacion>20261030</fecha_actualizacion></bloque>
+      </data></response>`;
+    const blockXml = `<?xml version="1.0" encoding="utf-8"?>
+      <response><status><code>200</code><text>ok</text></status><data>
+        <bloque id="a14" tipo="precepto" titulo="Artículo 14">
+          <version id_norma="BOE-A-2015-1" fecha_publicacion="20150102" fecha_vigencia="20150201">
+            <p>Redacción <strong>original</strong> vigente.</p>
+          </version>
+          <version id_norma="BOE-A-2020-2" fecha_publicacion="20200201" fecha_vigencia="20200301">
+            <p>Redacción modificada posterior.</p>
+          </version>
+        </bloque>
+      </data></response>`;
+    const fetchOfficial: OfficialDocumentFetcher = async (url) => {
+      requested.push(url.pathname);
+      if (url.pathname.endsWith('/metadatos')) return {
+        body: Buffer.from(JSON.stringify({ data: { metadatos: metadata } })), contentType: 'application/json',
+      };
+      if (url.pathname.endsWith('/analisis')) return { body: Buffer.from(JSON.stringify(analysis)), contentType: 'application/json' };
+      if (url.pathname === '/buscar/act.php') return { body: Buffer.from(html), contentType: 'text/html' };
+      if (url.pathname.endsWith('/texto/indice')) return { body: Buffer.from(indexXml), contentType: 'application/xml; charset=utf-8' };
+      if (url.pathname.endsWith('/texto/bloque/a14')) return { body: Buffer.from(blockXml), contentType: 'application/xml; charset=utf-8' };
+      throw new Error('Unexpected BOE URL.');
+    };
+    const source = {
+      id: 'S1', title: 'Ley', url: 'https://www.boe.es/buscar/act.php?id=BOE-A-2015-1',
+      domain: 'www.boe.es', institution: 'BOE', publishedAt: null, modifiedAt: null,
+      snippet: 'Texto oficial', sourceKind: 'normativa' as const, sourceAuthority: 'legislation' as const,
+    };
+    const result = await retrieveOfficialDocument(source, '¿Qué dispone el artículo 14?', '2026-11-01', 2_000,
+      undefined, fetchOfficial, '2020-02-29');
+    expect(result.historical).toMatchObject({
+      status: 'reconstructed', eventDate: '2020-02-29',
+      blocks: [{
+        id: 'a14', title: 'Artículo 14', status: 'selected',
+        publicationDate: '2015-01-02', effectiveDate: '2015-02-01',
+        modifyingNormId: 'BOE-A-2015-1', text: 'Redacción original vigente.',
+      }],
+    });
+    expect(requested).toContain('/datosabiertos/api/legislacion-consolidada/id/BOE-A-2015-1/texto/indice');
+    expect(requested).toContain('/datosabiertos/api/legislacion-consolidada/id/BOE-A-2015-1/texto/bloque/a14');
+    expect(result.fetches).toHaveLength(5);
+  });
+
+  it('does not fetch the BOE history index when no article is specified', async () => {
+    const requested: string[] = [];
+    const fetchOfficial: OfficialDocumentFetcher = async (url) => {
+      requested.push(url.pathname);
+      if (url.pathname.endsWith('/metadatos')) return {
+        body: Buffer.from(JSON.stringify({ data: { metadatos: {
+          fecha_publicacion: '20150102', fecha_vigencia: '20150201', estatus_derogacion: 'N',
+          estatus_anulacion: 'N', vigencia_agotada: 'N', estado_consolidacion: 'Finalizado',
+        } } })), contentType: 'application/json',
+      };
+      if (url.pathname.endsWith('/analisis')) return { body: Buffer.from(JSON.stringify({ data: { analisis: {} } })), contentType: 'application/json' };
+      if (url.pathname === '/buscar/act.php') return { body: Buffer.from('<html><body><p>Texto consolidado.</p></body></html>'), contentType: 'text/html' };
+      throw new Error('History index must not be requested without an explicit article.');
+    };
+    const source = {
+      id: 'S1', title: 'Ley', url: 'https://www.boe.es/buscar/act.php?id=BOE-A-2015-1',
+      domain: 'www.boe.es', institution: 'BOE', publishedAt: null, modifiedAt: null,
+      snippet: 'Texto oficial', sourceKind: 'normativa' as const, sourceAuthority: 'legislation' as const,
+    };
+    const result = await retrieveOfficialDocument(source, 'IRPF ejercicio 2025', '2026-11-01', 2_000,
+      undefined, fetchOfficial, '2020-02-29');
+    expect(result.historical).toMatchObject({ status: 'insufficient', eventDate: '2020-02-29', blocks: [] });
+    expect(requested.some((path) => path.endsWith('/texto/indice'))).toBe(false);
+  });
+});

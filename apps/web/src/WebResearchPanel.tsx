@@ -29,6 +29,15 @@ interface SearchSource {
     excerpt: string;
     textLength: number;
     fetches: readonly { endpoint: string; httpStatus: number | null; contentType: string | null; bytesReceived: number; latencyMs: number; outcome: 'completed' | 'failed'; }[];
+    historical: null | {
+      eventDate: string; status: 'reconstructed' | 'insufficient';
+      blocks: readonly {
+        id: string; title: string; status: 'selected' | 'not_yet_published' | 'not_effective_yet' | 'insufficient';
+        reason?: string; consideredVersionCount: number; publicationDate?: string; effectiveDate?: string | null;
+        modifyingNormId?: string; publicationUrl?: string; text?: string; textTruncated?: boolean; notes?: readonly string[];
+      }[];
+      limitations: readonly string[];
+    };
     temporal: null | {
       assessment: 'consolidation_pending_update' | 'annulled_by_reference_date' | 'annulment_after_reference_date' |
         'repealed_by_reference_date' | 'derogation_after_reference_date' | 'not_effective_yet' |
@@ -282,6 +291,18 @@ export function WebResearchPanel() {
                     {fetch.endpoint} · HTTP {fetch.httpStatus ?? 'sin respuesta'} · {fetch.contentType ?? 'MIME no disponible'} · {fetch.bytesReceived.toLocaleString('es-ES')} bytes · {fetch.latencyMs} ms
                   </li>)}
                 </ul> : null}
+                {source.document.historical ? <section className="source-document-evidence" aria-label="Historial de versiones BOE por artículo">
+                  <p className="section-footnote"><strong>Historial BOE para el hecho de {source.document.historical.eventDate}: {source.document.historical.status === 'reconstructed' ? 'versión localizada' : 'evidencia insuficiente'}</strong></p>
+                  {source.document.historical.blocks.map((block) => <article key={block.id}>
+                    <p className="section-footnote"><strong>{block.title}</strong> · {block.status === 'selected' ? 'Versión seleccionada por fecha de vigencia' : block.status === 'not_yet_published' ? 'Norma modificadora aún no publicada en esa fecha' : block.status === 'not_effective_yet' ? 'Versión publicada pero aún no vigente' : 'No se puede determinar la versión aplicable'}</p>
+                    {block.publicationDate ? <p className="section-footnote">Publicación de la norma modificadora: {formatDate(block.publicationDate)}{block.effectiveDate ? ' · Entrada en vigor de esta versión: ' + formatDate(block.effectiveDate) : ' · Fecha de entrada en vigor no acreditada'}</p> : null}
+                    {block.modifyingNormId && block.publicationUrl ? <p className="section-footnote"><a href={block.publicationUrl} target="_blank" rel="noopener noreferrer">Publicación BOE {block.modifyingNormId}</a></p> : null}
+                    {block.text ? <><p className="section-footnote">{block.textTruncated ? 'Extracto limitado a 6.000 caracteres; consulta la publicación BOE enlazada para el texto íntegro.' : 'Texto recuperado del bloque consolidado informativo.'}</p><blockquote className="research-answer">{block.text}</blockquote></> : null}
+                    {block.notes?.map((note, index) => <p className="section-footnote" key={index}>Nota BOE: {note}</p>)}
+                    {block.reason ? <p className="section-footnote">Motivo: {block.reason === 'possible_retroactivity' ? 'Existe una versión publicada después del hecho cuya fecha de vigencia es anterior o no está acreditada; se requiere revisión jurídica.' : block.reason === 'effective_before_publication' ? 'La versión declara una fecha de vigencia anterior a su publicación; no se infiere la aplicación retroactiva.' : block.reason}</p> : null}
+                  </article>)}
+                  {source.document.historical.limitations.map((limitation, index) => <p className="section-footnote" key={index}>{limitation}</p>)}
+                </section> : null}
                 {source.document.temporal ? <p className="section-footnote">
                   Estado temporal BOE a {source.document.temporal.referenceDate}: <strong>{temporalAssessmentLabel(source.document.temporal.assessment)}</strong>
                   {source.document.temporal.publicationDate ? ' · Publicación: ' + source.document.temporal.publicationDate : ''}

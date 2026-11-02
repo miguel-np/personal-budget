@@ -472,7 +472,8 @@ describe('LocalAiClient', () => {
         sourceKind: 'normativa' as const,
       }],
     };
-    const provider = { search: vi.fn(async () => searchResponse) } as unknown as SearXNGSearchProvider;
+    const retrieve = vi.fn(async () => searchResponse);
+    const provider = { search: vi.fn(async () => searchResponse), retrieveOfficialDocuments: retrieve } as unknown as SearXNGSearchProvider;
     const client = new LocalAiClient(config, fetcher);
     const request: WebResearchRequest = {
       query: 'BOE IRPF ejercicio 2025', mode: 'tax', jurisdiction: 'España',
@@ -485,6 +486,7 @@ describe('LocalAiClient', () => {
     expect(result.answer).toContain('[S1]');
     expect(result.search.sources).toHaveLength(1);
     expect(provider.search).toHaveBeenCalledWith('BOE IRPF ejercicio 2025', ['boe.es'], expect.any(AbortSignal));
+    expect(retrieve).toHaveBeenCalledWith(searchResponse, request.query, request.referenceDate, expect.any(AbortSignal), request.eventDate);
     const first = requestBodies[0]!;
     const second = requestBodies[1]!;
     expect(first.tools).toHaveLength(1);
@@ -505,7 +507,7 @@ describe('LocalAiClient', () => {
     expect(finalSystemPrompt).toContain('Lex.gal es un recurso de legislación gallega consolidada, no el diario oficial ni la publicación formal');
     expect(finalSystemPrompt).toContain('referenceDate es la fecha');
     expect(finalSystemPrompt).toContain('eventDate, si existe');
-    expect(finalSystemPrompt).toContain('no descarga ni reconstruye versiones históricas por bloque');
+    expect(finalSystemPrompt).toContain('reconstruir versiones históricas por bloque si la consulta identifica explícitamente artículos');
     expect(finalSystemPrompt).toContain('No atribuyas la redacción consolidada actual a eventDate');
     expect(finalSystemPrompt).toContain('evidencia recuperada es insuficiente');
   });
@@ -578,7 +580,7 @@ describe('LocalAiClient', () => {
     };
     const result = await client.researchWithWebSearch(request, provider, ['boe.es']);
 
-    expect(provider.retrieveOfficialDocuments).toHaveBeenCalledWith(search, request.query, request.referenceDate, expect.any(AbortSignal));
+    expect(provider.retrieveOfficialDocuments).toHaveBeenCalledWith(search, request.query, request.referenceDate, expect.any(AbortSignal), undefined);
     expect(result.search.sources[0]?.document?.status).toBe('retrieved');
     expect(JSON.stringify(requestBodies[1])).toContain('Texto oficial recuperado del BOE');
     expect(JSON.stringify(requestBodies[1])).toContain('consolidation_pending_update');

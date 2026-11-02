@@ -164,7 +164,7 @@ function parseSource(value: unknown, index: number, allowedDomains: readonly str
 
 export interface WebSearchProvider {
   search(query: string, allowedDomains: readonly string[], callerSignal?: AbortSignal): Promise<WebSearchResponse>;
-  retrieveOfficialDocuments?(search: WebSearchResponse, query: string, referenceDate: string, callerSignal?: AbortSignal): Promise<WebSearchResponse>;
+  retrieveOfficialDocuments?(search: WebSearchResponse, query: string, referenceDate: string, callerSignal?: AbortSignal, eventDate?: string): Promise<WebSearchResponse>;
 }
 
 export class SearXNGSearchProvider implements WebSearchProvider {
@@ -182,12 +182,13 @@ export class SearXNGSearchProvider implements WebSearchProvider {
     query: string,
     referenceDate: string,
     callerSignal?: AbortSignal,
+    eventDate?: string,
   ): Promise<WebSearchResponse> {
     if (callerSignal?.aborted) throw new WebSearchUnavailableError();
     const candidates = search.sources.filter((source) => source.sourceAuthority !== 'external').slice(0, 3);
     const evidence = await Promise.all(candidates.map(async (source) => ({
       id: source.id,
-      document: await retrieveOfficialDocument(source, query, referenceDate, this.config.timeoutMs, callerSignal),
+      document: await retrieveOfficialDocument(source, query, referenceDate, this.config.timeoutMs, callerSignal, requestOfficialHttps, eventDate),
     })));
     const byId = new Map(evidence.map((item) => [item.id, item.document]));
     return {
