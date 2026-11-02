@@ -39,7 +39,7 @@ describe('legal/tax regression corpus (#108)', () => {
     expect(legalTaxCorpus.find((item) => item.id === 'ES-BOE-ARTICLE-32-2022-03-31')?.expected)
       .toMatchObject({ selectedNorm: 'BOE-A-2022-4972' });
     expect(legalTaxCorpus.find((item) => item.id === 'ES-IVA-2024-DECREE-9-2024-REPEAL')?.expected)
-      .toMatchObject({ outcome: 'flag_temporal_conflict_and_abstain_on_effects', doNotAssumeRetrospectiveEffect: true });
+      .toMatchObject({ outcome: 'flag_temporal_conflict_and_abstain_on_effects', resolutionRecordsEffectsFrom: '2025-01-01' });
   });
 
   it('covers at least three distinct publication, version and authority discrepancies', () => {
