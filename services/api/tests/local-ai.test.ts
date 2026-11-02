@@ -504,6 +504,9 @@ describe('LocalAiClient', () => {
     expect(finalSystemPrompt).toContain('El texto consolidado BOE es informativo');
     expect(finalSystemPrompt).toContain('referenceDate es la fecha');
     expect(finalSystemPrompt).toContain('eventDate, si existe');
+    expect(finalSystemPrompt).toContain('no descarga ni reconstruye versiones históricas por bloque');
+    expect(finalSystemPrompt).toContain('No atribuyas la redacción consolidada actual a eventDate');
+    expect(finalSystemPrompt).toContain('evidencia recuperada es insuficiente');
   });
 
   it('passes retrieved official text and explicit temporal limits to the tool-free synthesis call', async () => {
