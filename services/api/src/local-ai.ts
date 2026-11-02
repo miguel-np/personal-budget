@@ -596,7 +596,7 @@ export class LocalAiClient {
           consolidationStatus: source.document.temporal.consolidationStatus,
           relatedNorms: source.document.temporal.relatedNorms.slice(0, 4).map((relation) => relation.slice(0, 160)),
         } : null,
-        limitations: source.document.limitations.slice(0, 2).map((limitation) => limitation.slice(0, 160)),
+        limitations: source.document.limitations.slice(0, 4).map((limitation) => limitation.slice(0, 160)),
       } } : {}),
     }));
     const toolResult = JSON.stringify({
