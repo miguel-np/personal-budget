@@ -107,14 +107,21 @@ describe('SearXNG web search provider', () => {
         { title: 'BOE www', url: 'https://www.boe.es/buscar/act.php?id=BOE-A-2025-1', content: 'Publicación oficial.' },
         { title: 'Sede Seguridad Social', url: 'https://sede.seg-social.gob.es/wps/portal/sede', content: 'Sede oficial.' },
         { title: 'Subdominio no aprobado', url: 'https://arbitrary.boe.es/documento', content: 'No debe heredar confianza.' },
+        { title: 'DOG en host no verificado', url: 'https://dog.gal/diario-oficial-galicia/2026/1', content: 'No se debe atribuir autoridad oficial sin verificar el host.' },
         { title: 'Fuente externa', url: 'https://example.org/article', content: 'Contexto externo.' },
       ] }));
     });
     const provider = new SearXNGSearchProvider(config(fixture.url));
     const general = await provider.search('consulta de prueba', []);
     expect(general.sources.map((source) => source.domain)).toEqual([
-      'sede.agenciatributaria.gob.es', 'www.boe.es', 'sede.seg-social.gob.es', 'example.org',
+      'sede.agenciatributaria.gob.es', 'www.boe.es', 'sede.seg-social.gob.es', 'dog.gal', 'example.org',
     ]);
+    expect(general.sources[3]).toMatchObject({
+      domain: 'dog.gal',
+      institution: 'dog.gal',
+      sourceKind: 'externa',
+      sourceAuthority: 'external',
+    });
     expect(general.sources[0]).toMatchObject({
       institution: 'Agencia Estatal de Administración Tributaria (AEAT)',
       sourceAuthority: 'tax_agency_guidance',
