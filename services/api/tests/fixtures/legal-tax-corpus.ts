@@ -44,6 +44,17 @@ export const legalTaxCorpus = [
         "locator": "Page heading and informational disclaimer",
         "excerpt": "Esta publicación tiene efectos meramente informativos.",
         "capturedAt": "2026-11-02"
+      },
+      {
+        "documentId": "BOE-A-2006-20764",
+        "sourceUrl": "https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764&p=20241231&tn=1",
+        "version": "consolidated-text-as-of-2024-12-31",
+        "locator": "Article 12(1), tax period for the 2024 tax year",
+        "recordedFacts": [
+          "Tax period is a calendar year under the general rule",
+          "Filing campaign occurs in the following calendar year"
+        ],
+        "capturedAt": "2026-11-02"
       }
     ],
     dates: { publicationDate: '2006-11-29', effectiveDate: '2007-01-01', eventDate: '2024-12-31', referenceDate: '2025-06-30' },
@@ -154,6 +165,17 @@ export const legalTaxCorpus = [
         "locator": "Article 32, version applicable on 30/03/2022",
         "excerpt": "Cuando una incidencia técnica haya imposibilitado el funcionamiento ordinario del sistema o aplicación.",
         "capturedAt": "2026-11-02"
+      },
+      {
+        "documentId": "BOE-A-2022-4972",
+        "sourceUrl": "https://www.boe.es/eli/es/rdl/2022/03/29/6",
+        "version": "official-original-publication",
+        "locator": "Official publication and entry-into-force data; article 32 amendment",
+        "recordedFacts": [
+          "Published: 2022-03-30",
+          "Entry into force: 2022-03-31"
+        ],
+        "capturedAt": "2026-11-02"
       }
     ],
     dates: { publicationDate: '2015-10-02', effectiveDate: '2016-10-02', eventDate: '2022-03-30', referenceDate: '2022-03-30' },
@@ -175,6 +197,17 @@ export const legalTaxCorpus = [
         "version": "official-original-publication",
         "locator": "Disposición final vigésima primera; amendment to Article 32(5) of Ley 39/2015",
         "excerpt": "se añade un apartado 5 al artículo 32 de la Ley 39/2015.",
+        "capturedAt": "2026-11-02"
+      },
+      {
+        "documentId": "BOE-A-2015-10565",
+        "sourceUrl": "https://www.boe.es/eli/es/l/2015/10/01/39",
+        "version": "Ley-39-2015-original-publication",
+        "locator": "Article 32 paragraphs in force before the RDL 6/2022 amendment",
+        "recordedFacts": [
+          "Original publication: 2015-10-02",
+          "Entry into force: 2016-10-02"
+        ],
         "capturedAt": "2026-11-02"
       }
     ],
@@ -276,6 +309,17 @@ export const legalTaxCorpus = [
         "version": "consolidated-snapshot-as-of-2022-12-31",
         "locator": "BOE consolidated-text disclaimer and selected version date",
         "excerpt": "Este texto consolidado es de carácter informativo y no tiene valor jurídico.",
+        "capturedAt": "2026-11-02"
+      },
+      {
+        "documentId": "BOE-A-2006-20764",
+        "sourceUrl": "https://www.boe.es/eli/es/l/2006/11/28/35",
+        "version": "official-original-publication",
+        "locator": "Original publication metadata for BOE-A-2006-20764",
+        "recordedFacts": [
+          "Official publication: 2006-11-29",
+          "Entry into force: 2007-01-01"
+        ],
         "capturedAt": "2026-11-02"
       }
     ],
