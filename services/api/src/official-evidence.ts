@@ -1,7 +1,7 @@
 import { lookup } from 'node:dns/promises';
-import { isIP } from 'node:net';
 import { request as httpsRequest, type RequestOptions } from 'node:https';
 import type { WebSearchSource } from './web-search.js';
+import { isPublicNetworkAddress } from './network-address.js';
 
 /**
  * Official sources are a deliberately small allowlist. A result URL is never
@@ -106,40 +106,6 @@ const MAX_BOE_ANALYSIS_BYTES = 196_608;
 const MAX_EXCERPT_CHARS = 5_000;
 const MAX_RELATIONS = 12;
 
-const blockedIPv4Subnets: readonly [number, number][] = [
-  [0x00000000, 8], [0x0a000000, 8], [0x64400000, 10], [0x7f000000, 8],
-  [0xa9fe0000, 16], [0xac100000, 12], [0xc0000000, 24], [0xc0000200, 24],
-  [0xc0a80000, 16], [0xc6120000, 15], [0xc6336400, 24], [0xcb007100, 24],
-  [0xe0000000, 4], [0xf0000000, 4],
-];
-
-function ipv4ToNumber(address: string): number | null {
-  const parts = address.split('.');
-  if (parts.length !== 4) return null;
-  const octets = parts.map(Number);
-  if (octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return null;
-  return (((octets[0]! << 24) >>> 0) + (octets[1]! << 16) + (octets[2]! << 8) + octets[3]!) >>> 0;
-}
-function isPublicIPv4(address: string): boolean {
-  const value = ipv4ToNumber(address);
-  if (value === null) return false;
-  return !blockedIPv4Subnets.some(([network, prefix]) => {
-    const mask = (0xffffffff << (32 - prefix)) >>> 0;
-    return (value & mask) === (network & mask);
-  });
-}
-function isPublicAddress(address: string, family: number): boolean {
-  if (family === 4) return isPublicIPv4(address);
-  const normalized = address.toLowerCase();
-  if (normalized.startsWith('::ffff:')) {
-    const mapped = normalized.slice(7);
-    return isIP(mapped) === 4 && isPublicIPv4(mapped);
-  }
-  return /^[23]/.test(normalized) &&
-    !normalized.startsWith('2001:db8:') &&
-    !normalized.startsWith('2001:10:') &&
-    !normalized.startsWith('2001:20:');
-}
 function isOfficialHost(hostname: string): boolean {
   return isOfficialSourceHost(hostname);
 }
@@ -303,7 +269,7 @@ async function requestOfficialHttps(url: URL, maxBytes: number, timeoutMs: numbe
     throw new Error('Official document URL rejected.');
   }
   const addresses = await lookup(url.hostname, { all: true, verbatim: true });
-  if (addresses.length === 0 || addresses.some((item) => !isPublicAddress(item.address, item.family))) {
+  if (addresses.length === 0 || addresses.some((item) => !isPublicNetworkAddress(item.address, item.family))) {
     throw new Error('Official document DNS address rejected.');
   }
   if (callerSignal?.aborted) throw new Error('Official document request cancelled.');
