@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { legalTaxCorpus } from './fixtures/legal-tax-corpus.js';
 
 describe('legal/tax regression corpus (#108)', () => {
-  it('contains at least twelve stable cases across state and autonomous-community jurisdiction and multiple tax years', () => {
+  it('contains at least thirteen stable cases across state and autonomous-community jurisdiction and multiple tax years', () => {
     expect(legalTaxCorpus.length).toBeGreaterThanOrEqual(13);
     expect(new Set(legalTaxCorpus.map((item) => item.id)).size).toBe(legalTaxCorpus.length);
     expect(legalTaxCorpus.some((item) => item.jurisdiction.state === 'ES')).toBe(true);
@@ -15,7 +15,7 @@ describe('legal/tax regression corpus (#108)', () => {
     for (const item of legalTaxCorpus) {
       expect(item.question.length).toBeGreaterThan(20);
       expect(item.context.length).toBeGreaterThan(20);
-      expect(item.context).not.toMatch(/\\b\\d{8}[A-Z]\\b/);
+      expect(item.context).not.toMatch(new RegExp('[0-9]{8}[A-Z]'));
       expect(item).toHaveProperty('taxYear');
       expect(item).toHaveProperty('filingYear');
       expect(item.dates).toHaveProperty('eventDate');
