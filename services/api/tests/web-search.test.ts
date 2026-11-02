@@ -125,6 +125,26 @@ describe('SearXNG web search provider', () => {
     });
   });
 
+  it('classifies Lex.gal as informational legal consolidation, not formal publication', async () => {
+    const fixture = await serve((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ results: [{
+        title: 'Normativa gallega consolidada',
+        url: 'https://www.lex.gal/es/lex.gal',
+        content: 'Base de legislación de Galicia en versión consolidada.',
+      }] }));
+    });
+    const provider = new SearXNGSearchProvider(config(fixture.url));
+    const result = await provider.search('normativa gallega', ['lex.gal']);
+    expect(result.sources).toHaveLength(1);
+    expect(result.sources[0]).toMatchObject({
+      domain: 'www.lex.gal',
+      institution: 'Lex.gal · legislación consolidada de Galicia',
+      sourceKind: 'normativa_consolidada_informativa',
+      sourceAuthority: 'legal_consolidation',
+    });
+  });
+
   it('only trusts exact official hosts and keeps domain filters as namespace selectors', async () => {
     expect(OFFICIAL_SOURCE_HOSTS).toContain('sede.agenciatributaria.gob.es');
     expect(OFFICIAL_SOURCE_HOSTS).toContain('www.boe.es');
