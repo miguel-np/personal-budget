@@ -102,11 +102,11 @@ El flujo mantiene dos rutas aisladas:
 **Validación registrada:** los comentarios de #84 registran CI satisfactoria para las PR #99, #100, #101, #103 y #104 en los controles aplicables de Linux/Windows, calidad, E2E y seguridad. La CI sintética no equivale a aceptación live contra SearXNG u organismos externos.
 
 **Pendiente para cerrar #84:**
-1. Aceptación E2E real, desde el backend configurado, de SearXNG y de las fuentes BOE, AEAT, DGT, TEAC, Xunta/DOG, Seguridad Social y Lex.gal; documentar endpoints, formato, disponibilidad y límites. No se sustituye por abrir enlaces con un navegador externo.
-2. Recuperación de versiones históricas del BOE por bloque y fecha (`/texto`, `/texto/indice`, `/texto/bloque/{id_bloque}`), contrastada con la publicación original. Hasta entonces, `eventDate` no selecciona ni prueba la redacción histórica por artículo.
-3. Corpus de regresión fiscal/legal con ejercicio fiscal separado del año de presentación, jurisdicciones concurrentes, fechas transitorias, documentos desactualizados, doctrina/criterios y discrepancias entre fuentes.
-4. Extracción PDF con validación de MIME y firma, límites de tamaño/tiempo y tratamiento explícito de PDFs escaneados; OCR no se considera soportado por defecto.
-5. Asociación verificable de afirmaciones normativas relevantes con fuentes primarias y exposición de discrepancias. La síntesis no debe ocultar evidencia contraria ni convertir guías o consolidaciones informativas en normas vinculantes.
+1. [#106 — Aceptación E2E real de SearXNG y fuentes oficiales](https://github.com/miguel-np/personal-budget/issues/106): probar desde el backend configurado SearXNG y las fuentes BOE, AEAT, DGT, TEAC, Xunta/DOG, Seguridad Social y Lex.gal; documentar endpoint, formato, disponibilidad y límites. No se sustituye por abrir enlaces con un navegador externo.
+2. [#107 — Versiones históricas BOE por bloque y fecha](https://github.com/miguel-np/personal-budget/issues/107): recuperar y contrastar versiones históricas por bloque. (`/texto`, `/texto/indice`, `/texto/bloque/{id_bloque}`), contrastada con la publicación original. Hasta entonces, `eventDate` no selecciona ni prueba la redacción histórica por artículo.
+3. [#108 — Corpus fiscal/legal](https://github.com/miguel-np/personal-budget/issues/108): ejercicio fiscal separado del año de presentación, jurisdicciones concurrentes, fechas transitorias, documentos desactualizados, doctrina/criterios y discrepancias.
+4. [#109 — Extracción PDF segura](https://github.com/miguel-np/personal-budget/issues/109): MIME/firma, límites de tamaño/tiempo y tratamiento de PDFs escaneados; OCR no se considera soportado por defecto.
+5. [#110 — Trazabilidad de afirmaciones y discrepancias](https://github.com/miguel-np/personal-budget/issues/110): asociar afirmaciones normativas con fuentes primarias y exponer conflictos. La síntesis no debe ocultar evidencia contraria ni convertir guías o consolidaciones informativas en normas vinculantes.
 
 La issue permanece abierta hasta completar y documentar estas aceptaciones. No se marca como cerrada por tener la infraestructura o CI sintética.
 ## Issues abiertas posteriores
