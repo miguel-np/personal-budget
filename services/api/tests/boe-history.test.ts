@@ -118,7 +118,7 @@ describe('BOE historical block versions', () => {
       versions: [
         { normId: 'BOE-A-2015-1', publicationDate: '2015-01-02', effectiveDate: '2015-01-03', text: 'Original', notes: [] },
         { normId: 'BOE-A-2020-2', publicationDate: '2020-02-01', effectiveDate: '2020-03-01', text: 'Modified A', notes: [] },
-        { normId: 'BOE-A-2021-3', publicationDate: '2021-02-01', effectiveDate: '2020-03-01', text: 'Modified B', notes: [] },
+        { normId: 'BOE-A-2021-3', publicationDate: '2020-02-15', effectiveDate: '2020-03-01', text: 'Modified B', notes: [] },
       ],
     };
     expect(selectBoeHistoricalVersion(history, '2021-04-01')).toMatchObject({
