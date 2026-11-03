@@ -397,7 +397,7 @@ test('controlled web research requires per-query consent and shows official sour
   await expect(form.getByRole('heading', { name: 'Afirmaciones y referencias asociadas' })).toBeVisible();
   await expect(form.getByText(/Clasificación propuesta por el modelo: Sin clasificar/)).toBeVisible();
   await expect(form.getByText(/Publicación primaria citada, pero sin fragmento literal verificable/)).toBeVisible();
-  await expect(form.getByRole('link', { name: '[S1] Disposición publicada en el BOE · www.boe.es · legislation' })).toBeVisible();
+  await expect(form.getByRole('link', { name: '[S1] Disposición publicada en el BOE · www.boe.es · Publicación normativa' })).toBeVisible();
   await expect(form.getByText(/no se proporcionó un fragmento literal/)).toBeVisible();
   await expect(form.getByText('Texto oficial recuperado', { exact: true })).toBeVisible();
   await expect(form.getByText('Artículo 1. Texto oficial recuperado del BOE.')).toBeVisible();
