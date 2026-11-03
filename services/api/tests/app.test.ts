@@ -218,11 +218,15 @@ describe('local API', () => {
         modelRequests.push(JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>);
         chatCall += 1;
         response.writeHead(200);
-        response.end(JSON.stringify(chatCall === 1 ? {
+        const toolCall = {
           message: { role: 'assistant', content: '', tool_calls: [{
             function: { name: 'web_search', arguments: { query: 'normativa IRPF ejercicio 2025' } },
           }] },
-        } : { message: { role: 'assistant', content: 'La fuente oficial publica la norma aplicable [S1] [[CLAIM|documented_fact]]. [[EVIDENCE|S1|Artículo 1|La disposición regula expresamente la materia tributaria indicada en el artículo primero de la norma.]]' } }));
+        };
+        const finalContent = chatCall === 2
+          ? 'La fuente oficial publica la norma aplicable [S1] [[CLAIM|documented_fact]]. [[EVIDENCE|S1|Artículo 1|La disposición regula expresamente la materia tributaria indicada en el artículo primero de la norma.]]'
+          : 'La norma permite aplicar una deducción [S1] [[CLAIM|documented_fact]] [[EVIDENCE|S1|Artículo 99|La deducción se aplicará en todos los supuestos sin excepción y sin límite alguno.]]';
+        response.end(JSON.stringify(chatCall % 2 === 1 ? toolCall : { message: { role: 'assistant', content: finalContent } }));
       });
     });
     const search = createServer((request, response) => {
@@ -299,6 +303,19 @@ describe('local API', () => {
         sourceCount: 1,
         claimEvidence: { claims: [{ classification: 'documented_fact', kind: 'evidence_located', primaryPublication: { status: 'not_located_in_results', sourceIds: [] }, sourceRefs: [{ evidenceStatus: 'excerpt_matched', locator: 'Artículo 1', locatorVerified: false, evidenceClass: 'legislation_source_unclassified', documentType: 'official_html', documentStatus: 'retrieved' }] }] },
       });
+      const unresolvedResponse = await app.inject({
+        method: 'POST', url: '/api/v1/assistant/web-search',
+        payload: {
+          consent: true, query: 'normativa IRPF ejercicio 2025', mode: 'tax', domains: ['boe.es'],
+          jurisdiction: 'España', autonomousCommunity: 'Galicia', municipality: 'Santiago de Compostela',
+          taxpayerType: 'individual', eventDate: '2025-06-15',
+          matter: 'IRPF', taxYear: '2025', filingYear: '2026', referenceDate: '2026-11-01',
+        },
+      });
+      expect(unresolvedResponse.statusCode).toBe(200);
+      expect(unresolvedResponse.json().data.answer).toContain('se abstiene de ofrecer una conclusión categórica');
+      expect(unresolvedResponse.json().data.claimEvidence.claims[0]?.kind).toBe('unresolved');
+
       expect(repository.listAccounts).not.toHaveBeenCalled();
       expect(repository.listTransactions).not.toHaveBeenCalled();
       expect(JSON.stringify(modelRequests[0])).not.toContain('account-1');

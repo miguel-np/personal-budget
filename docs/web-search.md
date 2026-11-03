@@ -137,6 +137,8 @@ La interfaz muestra cada afirmación con sus fuentes, estado de comprobación, f
 
 La coincidencia literal es una comprobación reproducible de procedencia, no una validación de entailment: no prueba que el fragmento sostenga la afirmación, que el documento tenga fuerza vinculante ni que sea la norma primaria aplicable. No se certifica exhaustividad de búsqueda. La publicación oficial original debe prevalecer como objeto de contraste cuando exista, y la aprobación fiscal/jurídica del corpus requiere revisión humana competente.
 
+En modo fiscal, la API aplica además una abstención determinista: si la comprobación estructurada encuentra una afirmación sin fragmento literal verificable, una referencia no resuelta, una discrepancia señalada o una publicación primaria presente en los resultados que la afirmación no cita, sustituye la síntesis por un aviso de que no puede ofrecerse una conclusión categórica. Las fuentes y fragmentos siguen visibles para revisión. Es una protección conservadora y puede abstenerse ante casos que requieran más contexto; no detecta contradicciones que el modelo no marque ni convierte una cita literal en prueba de que el texto respalda jurídicamente la afirmación.
+
 ### Clasificación y cobertura de publicación primaria
 
 Cada afirmación puede llevar una etiqueta propuesta por Ollama: hecho presentado como documentado, metadato descriptivo de publicación/ficha, interpretación o cuestión dependiente del supuesto. La etiqueta no la verifica el backend y no es un dictamen jurídico. El backend mantiene un estado separado de evidencia: fragmento localizado, fragmento ausente, documento no recuperado o cita no proporcionada.

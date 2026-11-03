@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildClaimEvidence } from '../src/claim-evidence.js';
+import { buildClaimEvidence, shouldAbstainFromTaxConclusion } from '../src/claim-evidence.js';
 import type { WebSearchSource } from '../src/web-search.js';
 
 const excerpt = 'Artículo 32. La Administración ampliará los plazos cuando una incidencia técnica haya imposibilitado el funcionamiento ordinario del sistema.';
@@ -104,6 +104,7 @@ describe('claim-to-source evidence', () => {
       documentType: 'official_html',
       documentStatus: 'retrieved',
     });
+    expect(shouldAbstainFromTaxConclusion(result)).toBe(true);
   });
 
   it('reports an absent primary publication conservatively when it is not in search results', () => {
@@ -244,6 +245,30 @@ describe('claim-to-source evidence', () => {
     expect(result.claims[0]?.kind).toBe('unresolved');
     expect(result.claims[0]?.conflicts).toMatchObject([{ status: 'unverified' }]);
     expect(result.claims[0]?.unresolvedReferences).toContain('[S2] (falta la cita visible para la discrepancia)');
+  });
+
+  it('requires fiscal abstention when claim evidence is missing or a discrepancy is reported', () => {
+    const missingEvidence = buildClaimEvidence(
+      'La norma impone una sanción [S1] [[EVIDENCE|S1|Artículo 32|La Administración impondrá siempre una sanción económica inmediata.]]',
+      [source('S1')],
+    );
+    expect(shouldAbstainFromTaxConclusion(missingEvidence)).toBe(true);
+
+    const discrepancy = buildClaimEvidence(
+      'Las fuentes discrepan [S1] [S2] [[EVIDENCE|S1|Artículo 32|La Administración ampliará los plazos cuando una incidencia técnica haya imposibilitado el funcionamiento ordinario del sistema.]] [[EVIDENCE|S2|Artículo 32|La Administración no ampliará los plazos por incidencias técnicas.]] [[CONFLICT|S1|S2|Los textos difieren sobre los efectos de la incidencia técnica.]]',
+      [source('S1'), source('S2', 'Artículo 32. La Administración no ampliará los plazos por incidencias técnicas.')],
+    );
+    expect(discrepancy.claims[0]?.conflicts).toMatchObject([{ status: 'reported_with_fragments' }]);
+    expect(shouldAbstainFromTaxConclusion(discrepancy)).toBe(true);
+    expect(shouldAbstainFromTaxConclusion({ claims: [], limitations: [] })).toBe(true);
+  });
+
+  it('does not force abstention when every claim has a located fragment and no conflict is reported', () => {
+    const supported = buildClaimEvidence(
+      'La disposición contiene la regla [S1] [[EVIDENCE|S1|Artículo 32|La Administración ampliará los plazos cuando una incidencia técnica haya imposibilitado el funcionamiento ordinario del sistema.]]',
+      [source('S1')],
+    );
+    expect(shouldAbstainFromTaxConclusion(supported)).toBe(false);
   });
 
   it('keeps the output deterministic and disclaims semantic entailment validation', () => {

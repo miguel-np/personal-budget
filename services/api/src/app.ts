@@ -9,7 +9,7 @@ import { LocalAiBusyError, LocalAiCancelledError, LocalAiClient, LocalAiContextB
 import type { AssistantContext, PlanningIntentDraft, WebResearchRequest } from './local-ai.js';
 import { OFFICIAL_SOURCE_DOMAINS, SearXNGSearchProvider, WebSearchResponseTooLargeError, WebSearchUnavailableError } from './web-search.js';
 import type { WebSearchProvider } from './web-search.js';
-import { buildClaimEvidence } from './claim-evidence.js';
+import { buildClaimEvidence, shouldAbstainFromTaxConclusion } from './claim-evidence.js';
 import { CurrencyPreferencesSchema, defaultCurrencyPreferences, readCurrencyPreferences, writeCurrencyPreferences } from './currency-preferences.js';
 import type { CurrencyPreferences } from './currency-preferences.js';
 import { AccountScopeError, AccountScopePreferenceSchema, defaultAccountScope, readAccountScope, resolveAccountScope, writeAccountScope } from './account-scope.js';
@@ -23,6 +23,8 @@ import { readFinancialActionState, updateFinancialActionState } from './financia
 import { readWealthData } from './wealth-store.js';
 import { registerPortfolioRoutes } from './portfolio-routes.js';
 
+
+const TAX_RESEARCH_ABSTENTION_ANSWER = 'La investigación se abstiene de ofrecer una conclusión categórica: al menos una afirmación no tiene evidencia documental literal verificable o existe una posible discrepancia sin resolver. Consulta las fuentes y fragmentos asociados. La coincidencia literal no demuestra que la fuente respalde la afirmación ni su aplicabilidad jurídica.';
 
 const TransactionQuerySchema = z.object({
   accountId: z.string().trim().min(1).max(128).optional(),
@@ -788,9 +790,15 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       const researched = await localAi.researchWithWebSearch(
         requestForModel, webSearchProvider, domains, requestAbort.signal,
       );
+      const claimEvidence = buildClaimEvidence(
+        researched.evidenceAnswer,
+        researched.search.sources,
+        { requirePrimaryPublication: query.mode === 'tax' },
+      );
+      const shouldAbstain = query.mode === 'tax' && shouldAbstainFromTaxConclusion(claimEvidence);
       return { data: {
-        answer: researched.answer,
-        claimEvidence: buildClaimEvidence(researched.evidenceAnswer, researched.search.sources, { requirePrimaryPublication: query.mode === 'tax' }),
+        answer: shouldAbstain ? TAX_RESEARCH_ABSTENTION_ANSWER : researched.answer,
+        claimEvidence,
         provider: researched.search.provider,
         searchedAt: researched.search.searchedAt,
         mode: query.mode,
