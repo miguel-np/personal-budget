@@ -138,7 +138,13 @@ function sourceReference(
   }
   const marker = sourceMarkers[0]!;
   const quote = normalizeEvidenceText(marker.quote);
-  const match = records.find((record) => quote.length >= 20 && normalizeEvidenceText(record.text).includes(quote));
+  const matchingRecords = records.filter((record) =>
+    quote.length >= 20 && normalizeEvidenceText(record.text).includes(quote));
+  const requestedBlock = marker.locator
+    ? matchingRecords.find((record) => record.kind === 'historical_block' &&
+      record.locator !== null && normalizeEvidenceText(record.locator) === normalizeEvidenceText(marker.locator!))
+    : undefined;
+  const match = requestedBlock ?? matchingRecords[0];
   if (!match) {
     return {
       id: source.id, title: source.title, url: source.url, domain: source.domain,
