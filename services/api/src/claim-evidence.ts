@@ -30,6 +30,7 @@ export interface ClaimSourceReference {
   readonly documentStatus: 'retrieved' | 'partial' | 'unavailable' | 'unsupported' | null;
   readonly documentType: 'boe_consolidated_legislation' | 'official_html' | 'unsupported_format' | null;
   readonly temporalAssessment: NonNullable<NonNullable<WebSearchSource['document']>['temporal']>['assessment'] | null;
+  readonly temporalEvidence: NonNullable<WebSearchSource['document']>['temporal'];
   readonly evidenceStatus: ClaimEvidenceStatus;
   readonly quote: string | null;
   readonly locator: string | null;
@@ -48,6 +49,22 @@ export interface ClaimPrimaryPublication {
   readonly sourceIds: readonly string[];
 }
 
+export type ClaimComparisonDimensionKey =
+  | 'evidence_class' | 'provider_published_at' | 'provider_modified_at'
+  | 'official_publication_date' | 'official_effective_date' | 'official_derogation_date'
+  | 'official_annulment_date' | 'official_last_registry_update' | 'official_temporal_assessment';
+export interface ClaimSourceComparisonDimension {
+  readonly dimension: ClaimComparisonDimensionKey;
+  readonly status: 'different' | 'consistent' | 'incomplete';
+  readonly values: readonly { readonly sourceId: string; readonly value: string }[];
+  readonly missingSourceIds: readonly string[];
+}
+export interface ClaimSourceComparison {
+  readonly sourceIds: readonly string[];
+  readonly dimensions: readonly ClaimSourceComparisonDimension[];
+  readonly notAssessedDimensions: readonly ['jurisdiction', 'legal_rank', 'subject_matter', 'case_applicability'];
+}
+
 export interface MaterialClaim {
   readonly id: string;
   readonly text: string;
@@ -58,6 +75,7 @@ export interface MaterialClaim {
   readonly unresolvedReferences: readonly string[];
   readonly conflicts: readonly ModelReportedConflict[];
   readonly primaryPublication: ClaimPrimaryPublication;
+  readonly sourceComparison: ClaimSourceComparison;
   readonly reviewRequired: true;
 }
 
@@ -156,6 +174,7 @@ function sourceReference(
     documentStatus: source.document?.status ?? null,
     documentType: source.document?.documentType ?? null,
     temporalAssessment: source.document?.temporal?.assessment ?? null,
+    temporalEvidence: source.document?.temporal ?? null,
   };
   const records = sourceEvidenceTexts(source);
   const sourceMarkers = markers.filter((candidate) => candidate.sourceId === source.id);
@@ -238,6 +257,52 @@ function evidenceClassForSource(source: WebSearchSource): EvidenceSourceClass {
     case 'external': return 'external';
     default: return 'external';
   }
+}
+
+const NOT_ASSESSED_COMPARISON_DIMENSIONS = [
+  'jurisdiction', 'legal_rank', 'subject_matter', 'case_applicability',
+] as const;
+
+function buildSourceComparison(references: readonly ClaimSourceReference[]): ClaimSourceComparison {
+  const sourceIds = references.map((reference) => reference.id);
+  const notAssessedDimensions = NOT_ASSESSED_COMPARISON_DIMENSIONS;
+  if (references.length < 2) return { sourceIds, dimensions: [], notAssessedDimensions };
+
+  const compare = (
+    dimension: ClaimComparisonDimensionKey,
+    valueFor: (reference: ClaimSourceReference) => string | null,
+  ): ClaimSourceComparisonDimension => {
+    const values = references.flatMap((reference) => {
+      const value = valueFor(reference);
+      return value === null ? [] : [{ sourceId: reference.id, value }];
+    });
+    const missingSourceIds = references
+      .filter((reference) => valueFor(reference) === null)
+      .map((reference) => reference.id);
+    const distinctValues = new Set(values.map((item) => item.value));
+    return {
+      dimension,
+      status: distinctValues.size > 1 ? 'different' : missingSourceIds.length === 0 ? 'consistent' : 'incomplete',
+      values,
+      missingSourceIds,
+    };
+  };
+
+  return {
+    sourceIds,
+    dimensions: [
+      compare('evidence_class', (reference) => reference.evidenceClass),
+      compare('provider_published_at', (reference) => reference.publishedAt),
+      compare('provider_modified_at', (reference) => reference.modifiedAt),
+      compare('official_publication_date', (reference) => reference.temporalEvidence?.publicationDate ?? null),
+      compare('official_effective_date', (reference) => reference.temporalEvidence?.effectiveDate ?? null),
+      compare('official_derogation_date', (reference) => reference.temporalEvidence?.derogationDate ?? null),
+      compare('official_annulment_date', (reference) => reference.temporalEvidence?.annulmentDate ?? null),
+      compare('official_last_registry_update', (reference) => reference.temporalEvidence?.lastRegistryUpdate ?? null),
+      compare('official_temporal_assessment', (reference) => reference.temporalEvidence?.assessment ?? null),
+    ],
+    notAssessedDimensions,
+  };
 }
 
 function primaryPublicationForClaim(
@@ -345,6 +410,7 @@ export function buildClaimEvidence(
       unresolvedReferences: [...new Set(unresolvedReferences)],
       conflicts,
       primaryPublication,
+      sourceComparison: buildSourceComparison(references),
       reviewRequired: true,
     };
   });
@@ -359,6 +425,8 @@ export function buildClaimEvidence(
       'La clase de fuente se deriva de la procedencia y de rutas institucionales conocidas; no acredita por sí sola el rango, autenticidad material o fuerza vinculante del documento.',
       'La búsqueda no es exhaustiva: que una publicación primaria no aparezca entre los resultados devueltos no demuestra que no exista.',
       'La recuperación y búsqueda no garantizan exhaustividad ni sustituyen la publicación primaria. Todas las afirmaciones requieren revisión humana; la evidencia insuficiente debe permanecer explícita.',
+      'La comparación automática solo contrasta clases de fuente y metadatos de fechas disponibles; las diferencias no prueban contradicción ni determinan qué versión debe prevalecer.',
+      'La jurisdicción concreta, el rango normativo, la materia y la aplicabilidad al supuesto no se comparan automáticamente porque las fuentes recuperadas no ofrecen metadatos estructurados suficientes.',
     ],
   };
 }

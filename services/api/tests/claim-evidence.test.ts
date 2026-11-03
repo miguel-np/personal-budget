@@ -271,6 +271,51 @@ describe('claim-to-source evidence', () => {
     expect(shouldAbstainFromTaxConclusion(supported)).toBe(false);
   });
 
+  it('compares available source and temporal metadata without inferring legal priority or case applicability', () => {
+    const temporalOne = {
+      assessment: 'not_marked_derogated_or_exhausted' as const, referenceDate: '2026-11-03',
+      publicationDate: '2025-03-01', effectiveDate: '2025-04-01', derogationDate: null,
+      annulmentDate: null, lastRegistryUpdate: '2025-04-01', derogated: false, annulled: false,
+      exhausted: false, consolidationStatus: 'Finalizado', relatedNorms: [],
+    };
+    const temporalThree = {
+      ...temporalOne, assessment: 'not_effective_yet' as const,
+      publicationDate: '2025-06-01', effectiveDate: '2025-07-01', lastRegistryUpdate: '2025-06-15',
+    };
+    const first = {
+      ...source('S1'), publishedAt: '2025-03-01T00:00:00.000Z', modifiedAt: '2025-03-10T00:00:00.000Z',
+      document: { ...source('S1').document!, temporal: temporalOne },
+    };
+    const consolidationExcerpt = 'Artículo 32. La Administración ampliará los plazos en los supuestos expresamente previstos por la norma.';
+    const second: WebSearchSource = {
+      ...source('S2', consolidationExcerpt),
+      url: 'https://www.lex.gal/norma/consolidada', domain: 'www.lex.gal', institution: 'Lex.gal',
+      sourceKind: 'normativa_consolidada_informativa', sourceAuthority: 'legal_consolidation',
+      publishedAt: '2025-04-01T00:00:00.000Z', modifiedAt: null,
+    };
+    const thirdExcerpt = 'Artículo 32. La Administración ampliará los plazos desde la fecha indicada en la disposición modificativa.';
+    const third: WebSearchSource = {
+      ...source('S3', thirdExcerpt),
+      publishedAt: '2025-06-01T00:00:00.000Z', modifiedAt: '2025-06-15T00:00:00.000Z',
+      document: { ...source('S3').document!, temporal: temporalThree },
+    };
+    const result = buildClaimEvidence(
+      'Las fuentes presentan metadatos distintos [S1] [S2] [S3] '+
+      '[[EVIDENCE|S1|Artículo 32|La Administración ampliará los plazos cuando una incidencia técnica haya imposibilitado el funcionamiento ordinario del sistema.]] '+
+      '[[EVIDENCE|S2|Artículo 32|La Administración ampliará los plazos en los supuestos expresamente previstos por la norma.]] '+
+      '[[EVIDENCE|S3|Artículo 32|La Administración ampliará los plazos desde la fecha indicada en la disposición modificativa.]]',
+      [first, second, third],
+    );
+    const comparison = result.claims[0]?.sourceComparison;
+    expect(comparison?.sourceIds).toEqual(['S1', 'S2', 'S3']);
+    expect(comparison?.dimensions.find((item) => item.dimension === 'evidence_class')).toMatchObject({ status: 'different' });
+    expect(comparison?.dimensions.find((item) => item.dimension === 'provider_published_at')).toMatchObject({ status: 'different' });
+    expect(comparison?.dimensions.find((item) => item.dimension === 'official_effective_date')).toMatchObject({ status: 'different', missingSourceIds: ['S2'] });
+    expect(comparison?.dimensions.find((item) => item.dimension === 'official_temporal_assessment')).toMatchObject({ status: 'different', missingSourceIds: ['S2'] });
+    expect(comparison?.notAssessedDimensions).toEqual(['jurisdiction', 'legal_rank', 'subject_matter', 'case_applicability']);
+    expect(result.claims[0]?.conflicts).toEqual([]);
+  });
+
   it('keeps the output deterministic and disclaims semantic entailment validation', () => {
     const answer = 'Conclusión basada en un texto publicado [S1] [[EVIDENCE|S1|Artículo 32|La Administración ampliará los plazos cuando una incidencia técnica haya imposibilitado el funcionamiento ordinario del sistema.]]';
     expect(buildClaimEvidence(answer, [source('S1')]).claims[0]?.id)

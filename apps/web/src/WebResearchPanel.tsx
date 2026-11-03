@@ -65,6 +65,7 @@ interface ClaimSourceReference {
   documentStatus: 'retrieved' | 'partial' | 'unavailable' | 'unsupported' | null;
   documentType: 'boe_consolidated_legislation' | 'official_html' | 'unsupported_format' | null;
   temporalAssessment: NonNullable<NonNullable<SearchSource['document']>['temporal']>['assessment'] | null;
+  temporalEvidence: NonNullable<SearchSource['document']>['temporal'];
   evidenceStatus: 'excerpt_matched' | 'excerpt_not_found' | 'document_not_retrieved' | 'quote_not_provided';
   quote: string | null; locator: string | null; locatorVerified: boolean;
 }
@@ -72,11 +73,26 @@ interface ModelReportedConflict {
   status: 'reported_with_fragments' | 'unverified';
   sourceIds: readonly [string, string]; reason: string;
 }
+type ClaimComparisonDimensionKey =
+  | 'evidence_class' | 'provider_published_at' | 'provider_modified_at'
+  | 'official_publication_date' | 'official_effective_date' | 'official_derogation_date'
+  | 'official_annulment_date' | 'official_last_registry_update' | 'official_temporal_assessment';
+interface ClaimSourceComparison {
+  sourceIds: readonly string[];
+  dimensions: readonly {
+    dimension: ClaimComparisonDimensionKey;
+    status: 'different' | 'consistent' | 'incomplete';
+    values: readonly { sourceId: string; value: string }[];
+    missingSourceIds: readonly string[];
+  }[];
+  notAssessedDimensions: readonly ('jurisdiction' | 'legal_rank' | 'subject_matter' | 'case_applicability')[];
+}
 interface MaterialClaim {
   id: string; text: string;
   classification: 'documented_fact' | 'metadata' | 'interpretation' | 'case_dependent' | 'unclassified';
   kind: 'evidence_located' | 'unresolved';
   primaryPublication: { status: 'cited_with_excerpt' | 'cited_without_excerpt' | 'available_not_cited' | 'not_located_in_results' | 'not_required'; sourceIds: readonly string[] };
+  sourceComparison: ClaimSourceComparison;
   sourceRefs: readonly ClaimSourceReference[]; unresolvedReferences: readonly string[];
   conflicts: readonly ModelReportedConflict[]; reviewRequired: true;
 }
@@ -147,6 +163,34 @@ function primaryPublicationStatusLabel(value: MaterialClaim['primaryPublication'
     not_required: 'No exigida para esta consulta',
   } as const)[value];
 }
+function comparisonDimensionLabel(value: ClaimComparisonDimensionKey): string {
+  return ({
+    evidence_class: 'Clase de fuente',
+    provider_published_at: 'Fecha de publicación indicada por el buscador',
+    provider_modified_at: 'Fecha de modificación indicada por el buscador',
+    official_publication_date: 'Fecha de publicación en metadatos oficiales BOE',
+    official_effective_date: 'Fecha de entrada en vigor en metadatos oficiales BOE',
+    official_derogation_date: 'Fecha de derogación en metadatos oficiales BOE',
+    official_annulment_date: 'Fecha de anulación en metadatos oficiales BOE',
+    official_last_registry_update: 'Última actualización registral BOE',
+    official_temporal_assessment: 'Evaluación temporal indicada por metadatos BOE',
+  } as const)[value];
+}
+function comparisonStatusLabel(value: 'different' | 'consistent' | 'incomplete'): string {
+  return ({
+    different: 'diferencias de metadatos detectadas',
+    consistent: 'mismo valor en las fuentes con dato disponible',
+    incomplete: 'comparación incompleta: hay datos ausentes',
+  } as const)[value];
+}
+function comparisonValueLabel(dimension: ClaimComparisonDimensionKey, value: string): string {
+  if (dimension === 'evidence_class') return evidenceClassLabel(value as ClaimSourceReference['evidenceClass']);
+  if (dimension === 'official_temporal_assessment') {
+    return temporalAssessmentLabel(value as NonNullable<NonNullable<SearchSource['document']>['temporal']>['assessment']);
+  }
+  return value;
+}
+
 function documentStatusLabel(
   status: NonNullable<SearchSource['document']>['status'],
   authority: SearchSource['sourceAuthority'],
@@ -334,6 +378,22 @@ export function WebResearchPanel() {
                     {source.locator ? <p className="section-footnote">Localizador: {source.locator} · {source.locatorVerified ? 'comprobado en el texto' : 'propuesto, no verificado'}</p> : null}
                   </li>)}
                 </ul> : <p className="section-footnote">No hay una fuente válida asociada a esta afirmación.</p>}
+                <section aria-label="Comparación documental de metadatos">
+                  {claim.sourceComparison.sourceIds.length < 2 ?
+                    <p className="section-footnote">Comparación de fuentes no disponible: se necesita más de una referencia asociada.</p> : <>
+                      <p className="section-footnote">Comparación de metadatos entre {claim.sourceComparison.sourceIds.join(', ')}. Las diferencias no determinan contradicción ni preferencia jurídica.</p>
+                      <ul aria-label="Dimensiones comparadas entre documentos">
+                        {claim.sourceComparison.dimensions.map((dimension) => <li key={dimension.dimension}>
+                          <strong>{comparisonDimensionLabel(dimension.dimension)}:</strong> {comparisonStatusLabel(dimension.status)}.
+                          {dimension.values.length > 0 ? <ul>
+                            {dimension.values.map((item) => <li key={item.sourceId}>{item.sourceId}: {comparisonValueLabel(dimension.dimension, item.value)}</li>)}
+                          </ul> : null}
+                          {dimension.missingSourceIds.length > 0 ? <span> Sin dato para {dimension.missingSourceIds.join(', ')}.</span> : null}
+                        </li>)}
+                      </ul>
+                    </>}
+                  <p className="section-footnote">No evaluados automáticamente: jurisdicción, rango normativo, materia y aplicabilidad al supuesto. Requieren comprobar el documento y su contexto.</p>
+                </section>
                 {claim.unresolvedReferences.length > 0 ? <p className="section-footnote">Referencias no resueltas: {claim.unresolvedReferences.join(', ')}</p> : null}
                 {claim.conflicts.map((conflict, index) => <p className="section-footnote" key={index}>Posible discrepancia señalada por el modelo entre {conflict.sourceIds.join(' y ')}: {conflict.reason} · {conflict.status === 'reported_with_fragments' ? 'ambos fragmentos están localizados, pendiente de valoración' : 'no hay evidencia suficiente para contrastar ambos fragmentos'}</p>)}
               </li>)}

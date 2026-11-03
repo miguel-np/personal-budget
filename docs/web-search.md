@@ -147,6 +147,12 @@ En modo fiscal, el backend identifica de forma conservadora resultados HTTPS que
 
 Los enlaces abren el documento original recuperado y muestran el fragmento y localizador disponible. El localizador solo se marca verificado cuando procede de un bloque histórico BOE seleccionado por el backend; no se fabrican anclas para páginas que no las proporcionan. Las afirmaciones siguen requiriendo revisión humana. La coincidencia literal no demuestra entailment semántico y la comparación documental no resuelve jerarquía, derogaciones tácitas, disposiciones transitorias ni aplicabilidad individual.
 
+### Comparación de metadatos entre fuentes
+
+Para cada afirmación con varias referencias, la API compara las clases de fuente, las fechas comunicadas por SearXNG y, cuando existen, las fechas y evaluaciones temporales de los metadatos oficiales BOE (publicación, entrada en vigor, derogación, anulación y última actualización registral). Cada dimensión indica si los valores difieren, coinciden o son incompletos, e identifica qué fuentes no aportan el dato. Las fechas del buscador no se equiparan a vigencia; los metadatos BOE tampoco resuelven por sí solos los efectos jurídicos.
+
+La jurisdicción, el rango normativo, la materia y la aplicabilidad al supuesto se marcan expresamente como no evaluados automáticamente: los resultados actuales no proporcionan un contrato estructurado fiable para esas dimensiones. Una diferencia de metadatos no se presenta como contradicción jurídica, ni se elige automáticamente la fuente más reciente. La UI conserva los enlaces y deja la valoración final a revisión humana.
+
 ## PDF: fuera del alcance de la entrega base
 
 La recuperación de documentos admitida por #84 se limita a HTML, XHTML y texto plano; el código rechaza PDF y cualquier otro MIME como formato no compatible. No se ejecuta OCR. La issue #109 se cierra explícitamente fuera de alcance para evitar presentar una capacidad inexistente como soportada. La extracción PDF solo se reconsiderará en una ampliación independiente con límites de bytes/páginas/tiempo/memoria, validación MIME y firma, aislamiento de contenido activo, pruebas de ficheros corruptos/cifrados y aceptación específica de OCR, siempre desactivado por defecto.

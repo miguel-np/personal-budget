@@ -335,10 +335,12 @@ test('controlled web research requires per-query consent and shows official sour
               url: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2025-1',
               domain: 'www.boe.es', sourceKind: 'normativa', sourceAuthority: 'legislation',
               evidenceClass: 'official_publication', publishedAt: null, modifiedAt: null,
-              documentStatus: 'retrieved', documentType: 'official_html', temporalAssessment: null,
+              documentStatus: 'retrieved', documentType: 'official_html', temporalAssessment: null, temporalEvidence: null,
               evidenceStatus: 'quote_not_provided', quote: null, locator: null, locatorVerified: false,
             }],
-            unresolvedReferences: [], conflicts: [], primaryPublication: { status: 'cited_without_excerpt', sourceIds: ['S1'] }, reviewRequired: true,
+            unresolvedReferences: [], conflicts: [], primaryPublication: { status: 'cited_without_excerpt', sourceIds: ['S1'] },
+            sourceComparison: { sourceIds: ['S1'], dimensions: [], notAssessedDimensions: ['jurisdiction', 'legal_rank', 'subject_matter', 'case_applicability'] },
+            reviewRequired: true,
           }],
           limitations: ['La asociación de fragmentos no demuestra soporte semántico y requiere revisión humana.'],
         },
@@ -397,6 +399,8 @@ test('controlled web research requires per-query consent and shows official sour
   await expect(form.getByRole('heading', { name: 'Afirmaciones y referencias asociadas' })).toBeVisible();
   await expect(form.getByText(/Clasificación propuesta por el modelo: Sin clasificar/)).toBeVisible();
   await expect(form.getByText(/Publicación primaria citada, pero sin fragmento literal verificable/)).toBeVisible();
+  await expect(form.getByText(/Comparación de fuentes no disponible: se necesita más de una referencia asociada/)).toBeVisible();
+  await expect(form.getByText(/No evaluados automáticamente: jurisdicción, rango normativo, materia y aplicabilidad al supuesto/)).toBeVisible();
   await expect(form.getByRole('link', { name: '[S1] Disposición publicada en el BOE · www.boe.es · Publicación normativa' })).toBeVisible();
   await expect(form.getByText(/no se proporcionó un fragmento literal/)).toBeVisible();
   await expect(form.getByText('Texto oficial recuperado', { exact: true })).toBeVisible();
