@@ -57,6 +57,29 @@ describe('claim-to-source evidence', () => {
     expect(unmarked.claims[0]?.classification).toBe('unclassified');
   });
 
+  it('classifies metadata separately from substantive legal claims', () => {
+    const result = buildClaimEvidence(
+      'La ficha indica una fecha de publicación [S1] [[CLAIM|metadata]].',
+      [source('S1')],
+    );
+    expect(result.claims[0]?.classification).toBe('metadata');
+    expect(result.claims[0]?.text).not.toContain('[[CLAIM');
+  });
+
+  it('does not treat an insecure BOE URL as a primary official publication', () => {
+    const insecure = {
+      ...source('S1'),
+      url: 'http://www.boe.es/diario_boe/txt.php?id=BOE-A-2025-1',
+    };
+    const result = buildClaimEvidence(
+      'La disposición contiene la regla [S1] [[EVIDENCE|S1||La Administración ampliará los plazos cuando una incidencia técnica haya imposibilitado el funcionamiento ordinario del sistema.]]',
+      [insecure],
+      { requirePrimaryPublication: true },
+    );
+    expect(result.claims[0]?.primaryPublication.status).toBe('not_located_in_results');
+    expect(result.claims[0]?.sourceRefs[0]?.evidenceClass).toBe('legislation_source_unclassified');
+  });
+
   it('warns when a primary publication is returned but the claim cites only an informative consolidation', () => {
     const primary = source('S1');
     const consolidation: WebSearchSource = {

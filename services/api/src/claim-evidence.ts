@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { WebSearchSource } from './web-search.js';
 
 export type MaterialClaimKind = 'evidence_located' | 'unresolved';
-export type MaterialClaimClassification = 'documented_fact' | 'interpretation' | 'case_dependent' | 'unclassified';
+export type MaterialClaimClassification = 'documented_fact' | 'metadata' | 'interpretation' | 'case_dependent' | 'unclassified';
 export type EvidenceSourceClass =
   | 'official_publication' | 'informative_consolidation' | 'dgt_doctrine' | 'teac_criteria'
   | 'administrative_guidance' | 'administrative_information' | 'official_information'
@@ -207,7 +207,7 @@ function parseClaimClassification(text: string): MaterialClaimClassification {
   const markers = [...text.matchAll(CLAIM_MARKER_PATTERN)];
   if (markers.length !== 1) return 'unclassified';
   const value = markers[0]![1];
-  return value === 'documented_fact' || value === 'interpretation' || value === 'case_dependent'
+  return value === 'documented_fact' || value === 'metadata' || value === 'interpretation' || value === 'case_dependent'
     ? value : 'unclassified';
 }
 

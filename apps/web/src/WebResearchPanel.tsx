@@ -74,7 +74,7 @@ interface ModelReportedConflict {
 }
 interface MaterialClaim {
   id: string; text: string;
-  classification: 'documented_fact' | 'interpretation' | 'case_dependent' | 'unclassified';
+  classification: 'documented_fact' | 'metadata' | 'interpretation' | 'case_dependent' | 'unclassified';
   kind: 'evidence_located' | 'unresolved';
   primaryPublication: { status: 'cited_with_excerpt' | 'cited_without_excerpt' | 'available_not_cited' | 'not_located_in_results' | 'not_required'; sourceIds: readonly string[] };
   sourceRefs: readonly ClaimSourceReference[]; unresolvedReferences: readonly string[];
@@ -113,6 +113,7 @@ function sourceAuthorityLabel(authority: SearchSource['sourceAuthority']): strin
 function claimClassificationLabel(value: MaterialClaim['classification']): string {
   return ({
     documented_fact: 'Hecho presentado como documentado',
+    metadata: 'Metadato de publicación o ficha oficial',
     interpretation: 'Interpretación del modelo',
     case_dependent: 'Depende de circunstancias del supuesto',
     unclassified: 'Sin clasificar',
@@ -120,7 +121,7 @@ function claimClassificationLabel(value: MaterialClaim['classification']): strin
 }
 function evidenceClassLabel(value: ClaimSourceReference['evidenceClass']): string {
   return ({
-    official_publication: 'Publicación oficial original',
+    official_publication: 'Publicación oficial original (ruta institucional detectada)',
     informative_consolidation: 'Consolidación informativa',
     dgt_doctrine: 'Doctrina DGT',
     teac_criteria: 'Criterio / resolución TEAC',
