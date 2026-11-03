@@ -3,7 +3,7 @@ import { buildClaimEvidence } from '../src/claim-evidence.js';
 import type { WebSearchSource } from '../src/web-search.js';
 
 const excerpt = 'Artículo 32. La Administración ampliará los plazos cuando una incidencia técnica haya imposibilitado el funcionamiento ordinario del sistema.';
-const source = (id: string, text = excerpt): WebSearchSource => ({
+const source = (id: string, text = excerpt, withDocument = true): WebSearchSource => ({
   id,
   title: 'Ley publicada',
   url: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2025-1',
@@ -14,9 +14,9 @@ const source = (id: string, text = excerpt): WebSearchSource => ({
   snippet: 'Fragmento del buscador que no debe probar una afirmación.',
   sourceKind: 'normativa',
   sourceAuthority: 'legislation',
-  document: {
-    status: 'retrieved',
-    documentType: 'official_html',
+  ...(withDocument ? { document: {
+    status: 'retrieved' as const,
+    documentType: 'official_html' as const,
     retrievedAt: '2026-11-03T08:00:00.000Z',
     contentType: 'text/html',
     excerpt: text,
@@ -25,7 +25,7 @@ const source = (id: string, text = excerpt): WebSearchSource => ({
     historical: null,
     fetches: [],
     limitations: [],
-  },
+  } } : {}),
 });
 
 describe('claim-to-source evidence', () => {
@@ -63,7 +63,7 @@ describe('claim-to-source evidence', () => {
   });
 
   it('does not treat a search snippet as documentary evidence when no document was retrieved', () => {
-    const noDocument = { ...source('S1'), document: undefined };
+    const noDocument = source('S1', excerpt, false);
     const result = buildClaimEvidence(
       'La fuente confirma la obligación [S1] [[EVIDENCE|S1|Artículo 32|La Administración ampliará los plazos cuando una incidencia técnica.]]',
       [noDocument],
