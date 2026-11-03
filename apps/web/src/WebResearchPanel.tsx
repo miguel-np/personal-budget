@@ -64,7 +64,7 @@ interface ClaimSourceReference {
   publishedAt: string | null; modifiedAt: string | null;
   documentStatus: 'retrieved' | 'partial' | 'unavailable' | 'unsupported' | null;
   documentType: 'boe_consolidated_legislation' | 'official_html' | 'unsupported_format' | null;
-  temporalAssessment: string | null;
+  temporalAssessment: NonNullable<NonNullable<SearchSource['document']>['temporal']>['assessment'] | null;
   evidenceStatus: 'excerpt_matched' | 'excerpt_not_found' | 'document_not_retrieved' | 'quote_not_provided';
   quote: string | null; locator: string | null; locatorVerified: boolean;
 }
@@ -130,6 +130,12 @@ function evidenceClassLabel(value: ClaimSourceReference['evidenceClass']): strin
     legislation_source_unclassified: 'Fuente en portal normativo; documento no clasificado',
     external: 'Fuente secundaria o externa',
   } as const)[value];
+}
+function claimDocumentStatusLabel(value: ClaimSourceReference['documentStatus']): string {
+  if (value === 'retrieved') return 'Documento recuperado';
+  if (value === 'partial') return 'Documento recuperado parcialmente';
+  if (value === 'unsupported') return 'Formato no compatible';
+  return 'Documento no recuperado';
 }
 function primaryPublicationStatusLabel(value: MaterialClaim['primaryPublication']['status']): string {
   return ({
@@ -317,10 +323,11 @@ export function WebResearchPanel() {
                 </> : null}
                 {claim.sourceRefs.length > 0 ? <ul>
                   {claim.sourceRefs.map((source) => <li key={source.id}>
-                    <div><a href={source.url} target="_blank" rel="noopener noreferrer">[{source.id}] {source.title} · {source.domain} · {source.sourceAuthority}</a></div>
+                    <div><a href={source.url} target="_blank" rel="noopener noreferrer">[{source.id}] {source.title} · {source.domain} · {sourceAuthorityLabel(source.sourceAuthority)}</a></div>
                     <p className="section-footnote">Naturaleza declarada de la fuente: {evidenceClassLabel(source.evidenceClass)}.</p>
+                    <p className="section-footnote">Recuperación documental: {claimDocumentStatusLabel(source.documentStatus)} · {source.documentType === 'boe_consolidated_legislation' ? 'consolidación BOE informativa' : source.documentType === 'official_html' ? 'HTML oficial' : source.documentType === 'unsupported_format' ? 'formato no compatible' : 'tipo documental no indicado'}.</p>
                     <p className="section-footnote">Fechas del buscador (no equivalen a vigencia): publicación {formatDate(source.publishedAt)}{source.modifiedAt ? ' · modificación indicada: ' + formatDate(source.modifiedAt) : ''}.</p>
-                    {source.temporalAssessment ? <p className="section-footnote">Metadatos temporales BOE: {source.temporalAssessment}.</p> : null}
+                    {source.temporalAssessment ? <p className="section-footnote">Metadatos temporales BOE: {temporalAssessmentLabel(source.temporalAssessment)}.</p> : null}
                     <p className="section-footnote">Comprobación: {source.evidenceStatus === 'excerpt_matched' ? 'el fragmento aparece en el documento recuperado' : source.evidenceStatus === 'excerpt_not_found' ? 'el fragmento no aparece en el extracto recuperado' : source.evidenceStatus === 'document_not_retrieved' ? 'no se recuperó el documento para contrastarlo' : 'no se proporcionó un fragmento literal'}</p>
                     {source.quote ? <blockquote className="research-answer">{source.quote}</blockquote> : null}
                     {source.locator ? <p className="section-footnote">Localizador: {source.locator} · {source.locatorVerified ? 'comprobado en el texto' : 'propuesto, no verificado'}</p> : null}

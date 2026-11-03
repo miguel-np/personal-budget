@@ -29,7 +29,7 @@ export interface ClaimSourceReference {
   readonly modifiedAt: string | null;
   readonly documentStatus: 'retrieved' | 'partial' | 'unavailable' | 'unsupported' | null;
   readonly documentType: 'boe_consolidated_legislation' | 'official_html' | 'unsupported_format' | null;
-  readonly temporalAssessment: string | null;
+  readonly temporalAssessment: NonNullable<NonNullable<WebSearchSource['document']>['temporal']>['assessment'] | null;
   readonly evidenceStatus: ClaimEvidenceStatus;
   readonly quote: string | null;
   readonly locator: string | null;
@@ -218,7 +218,7 @@ function isOfficialPublication(source: WebSearchSource): boolean {
   try { url = new URL(source.url); } catch { return false; }
   const host = url.hostname.toLowerCase();
   const boePublication = (host === 'boe.es' || host === 'www.boe.es') &&
-    (/^\/diario_boe\//.test(url.pathname) || /^\/eli\//.test(url.pathname));
+    /^\/diario_boe\//.test(url.pathname);
   const dogPublication = (host === 'xunta.gal' || host === 'www.xunta.gal') &&
     /^\/(?:es\/)?diario-oficial-galicia(?:\/|$)/i.test(url.pathname);
   return boePublication || dogPublication;

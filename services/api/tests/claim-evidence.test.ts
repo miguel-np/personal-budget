@@ -29,6 +29,19 @@ const source = (id: string, text = excerpt, withDocument = true): WebSearchSourc
 });
 
 describe('claim-to-source evidence', () => {
+  it('marks a primary official publication only when its journal route is cited with a located fragment', () => {
+    const result = buildClaimEvidence(
+      'La disposición establece la regla [S1] [[EVIDENCE|S1||La Administración ampliará los plazos cuando una incidencia técnica haya imposibilitado el funcionamiento ordinario del sistema.]]',
+      [source('S1')],
+      { requirePrimaryPublication: true },
+    );
+    expect(result.claims[0]?.primaryPublication).toEqual({
+      status: 'cited_with_excerpt',
+      sourceIds: ['S1'],
+    });
+    expect(result.claims[0]?.sourceRefs[0]?.evidenceClass).toBe('official_publication');
+  });
+
   it('keeps model classification separate from deterministic evidence status', () => {
     const classified = buildClaimEvidence(
       'El documento expresa el requisito [S1] [[CLAIM|documented_fact]] [[EVIDENCE|S1|Artículo 32|La Administración ampliará los plazos cuando una incidencia técnica haya imposibilitado el funcionamiento ordinario del sistema.]]',
