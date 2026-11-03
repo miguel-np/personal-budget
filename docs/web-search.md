@@ -124,11 +124,18 @@ La PR [#111](https://github.com/miguel-np/personal-budget/pull/111) se integró 
 
 No hay parser PDF ni OCR; los formatos PDF no HTML/texto se declaran no compatibles ([#109](https://github.com/miguel-np/personal-budget/issues/109)), cerrada explícitamente como fuera de alcance.
 
-## Trazabilidad de afirmaciones
+## Trazabilidad de afirmaciones y discrepancias
 
-La API construye una relación determinista entre cada frase de la síntesis y los identificadores `[S#]` que aparezcan en esa misma frase. Solo se resuelven IDs presentes en el conjunto de fuentes de la petición; las referencias inventadas se marcan como no resueltas. La interfaz muestra los enlaces y la clase de autoridad junto a la afirmación correspondiente.
+La síntesis devuelve una afirmación por línea y puede asociar:
+- Una cita visible a un identificador de fuente de la búsqueda.
+- Un marcador estructurado con localizador propuesto y un fragmento literal de entre 20 y 500 caracteres.
+- Un marcador de posible discrepancia entre dos fuentes, acompañado de las dos citas y sus fragmentos.
 
-Esta relación es trazabilidad sintáctica, no verificación semántica: no demuestra que una fuente sostenga la afirmación ni que una interpretación sea jurídicamente correcta. Las frases citadas se etiquetan como interpretación generada y todas requieren revisión humana. Una frase sin referencia válida se marca como no resuelta. No se inventan localizadores de artículo, bloque o página.
+El backend comprueba que cada ID existe, que el fragmento literal aparece en el texto documental recuperado (o en un bloque histórico BOE seleccionado por el evaluador del backend) y, cuando existe, que el localizador aparece en el extracto. Los snippets del buscador, por sí solos, no cuentan como evidencia documental. Los fragmentos ausentes, fuentes no recuperadas, citas inventadas o localizadores no verificables permanecen marcados como no resueltos.
+
+La interfaz muestra cada afirmación con sus fuentes, estado de comprobación, fragmentos y localizadores. Las discrepancias se presentan como **posibles discrepancias señaladas por el modelo**; incluso con dos fragmentos localizados, el backend no decide si existe una contradicción jurídica ni resuelve jerarquía, vigencia, ámbito o aplicabilidad.
+
+La coincidencia literal es una comprobación reproducible de procedencia, no una validación de entailment: no prueba que el fragmento sostenga la afirmación, que el documento tenga fuerza vinculante ni que sea la norma primaria aplicable. No se certifica exhaustividad de búsqueda. La publicación oficial original debe prevalecer como objeto de contraste cuando exista, y la aprobación fiscal/jurídica del corpus requiere revisión humana competente.
 
 ## PDF: fuera del alcance de la entrega base
 

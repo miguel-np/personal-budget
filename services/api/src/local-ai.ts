@@ -644,13 +644,13 @@ export class LocalAiClient {
     if ((finalPayload.message?.tool_calls?.length ?? 0) > 0) throw new LocalAiToolCallUnsupportedError();
     const rawAnswer = sanitizeWebNarrative(finalPayload.message?.content ?? '');
     const validSourceIds = new Set(search.sources.map((source) => source.id));
-    const evidenceAnswer = rawAnswer.replace(/\\[(S\\d+)\\]/g, (reference, sourceId: string) =>
+    const evidenceAnswer = rawAnswer.replace(/\[(S\d+)\]/g, (reference, sourceId: string) =>
       validSourceIds.has(sourceId) ? reference : '');
     const visibleAnswer = evidenceAnswer
-      .replace(/\\[\\[EVIDENCE\\|S\\d+\\|[^\\]\\r\\n]{0,660}\\]\\]/g, '')
-      .replace(/\\[\\[CONFLICT\\|S\\d+\\|S\\d+\\|[^\\]\\r\\n]{0,360}\\]\\]/g, '')
-      .replace(/[ \\t]{2,}/g, ' ')
-      .replace(/\\s+([,.!?;:])/g, '$1')
+      .replace(/\[\[EVIDENCE\|S\d+\|[^\]\r\n]{0,660}\]\]/g, '')
+      .replace(/\[\[CONFLICT\|S\d+\|S\d+\|[^\]\r\n]{0,360}\]\]/g, '')
+      .replace(/[ \t]{2,}/g, ' ')
+      .replace(/\s+([,.!?;:])/g, '$1')
       .trim();
     const hasValidCitation = [...validSourceIds].some((id) => evidenceAnswer.includes(`[${id}]`));
     return {
