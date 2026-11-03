@@ -371,5 +371,6 @@ export function buildClaimEvidence(
  */
 export function shouldAbstainFromTaxConclusion(evidence: ClaimEvidence): boolean {
   return evidence.claims.length === 0 || evidence.claims.some((claim) =>
-    claim.kind === 'unresolved' || claim.conflicts.length > 0);
+    claim.kind === 'unresolved' || claim.conflicts.length > 0 ||
+    claim.primaryPublication.status === 'available_not_cited');
 }

@@ -104,6 +104,7 @@ describe('claim-to-source evidence', () => {
       documentType: 'official_html',
       documentStatus: 'retrieved',
     });
+    expect(shouldAbstainFromTaxConclusion(result)).toBe(true);
   });
 
   it('reports an absent primary publication conservatively when it is not in search results', () => {
