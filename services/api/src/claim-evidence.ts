@@ -16,6 +16,16 @@ export type ClaimEvidenceStatus =
   | 'document_not_retrieved'
   | 'quote_not_provided';
 
+export interface ClaimHistoricalVersion {
+  readonly eventDate: string;
+  readonly blockId: string;
+  readonly title: string;
+  readonly publicationDate: string | null;
+  readonly effectiveDate: string | null;
+  readonly modifyingNormId: string | null;
+  readonly publicationUrl: string | null;
+}
+
 export interface ClaimSourceReference {
   readonly id: string;
   readonly title: string;
@@ -30,6 +40,8 @@ export interface ClaimSourceReference {
   readonly documentStatus: 'retrieved' | 'partial' | 'unavailable' | 'unsupported' | null;
   readonly documentType: 'boe_consolidated_legislation' | 'official_html' | 'unsupported_format' | null;
   readonly temporalAssessment: NonNullable<NonNullable<WebSearchSource['document']>['temporal']>['assessment'] | null;
+  readonly temporalEvidence: NonNullable<WebSearchSource['document']>['temporal'];
+  readonly historicalVersion: ClaimHistoricalVersion | null;
   readonly evidenceStatus: ClaimEvidenceStatus;
   readonly quote: string | null;
   readonly locator: string | null;
@@ -48,6 +60,24 @@ export interface ClaimPrimaryPublication {
   readonly sourceIds: readonly string[];
 }
 
+export type ClaimComparisonDimensionKey =
+  | 'evidence_class' | 'provider_published_at' | 'provider_modified_at'
+  | 'official_publication_date' | 'official_effective_date' | 'official_derogation_date'
+  | 'official_annulment_date' | 'official_last_registry_update' | 'official_temporal_assessment'
+  | 'selected_version_event_date' | 'selected_version_publication_date'
+  | 'selected_version_effective_date' | 'selected_version_modifying_norm';
+export interface ClaimSourceComparisonDimension {
+  readonly dimension: ClaimComparisonDimensionKey;
+  readonly status: 'different' | 'consistent' | 'incomplete';
+  readonly values: readonly { readonly sourceId: string; readonly value: string }[];
+  readonly missingSourceIds: readonly string[];
+}
+export interface ClaimSourceComparison {
+  readonly sourceIds: readonly string[];
+  readonly dimensions: readonly ClaimSourceComparisonDimension[];
+  readonly notAssessedDimensions: readonly ['jurisdiction', 'legal_rank', 'subject_matter', 'case_applicability'];
+}
+
 export interface MaterialClaim {
   readonly id: string;
   readonly text: string;
@@ -58,6 +88,7 @@ export interface MaterialClaim {
   readonly unresolvedReferences: readonly string[];
   readonly conflicts: readonly ModelReportedConflict[];
   readonly primaryPublication: ClaimPrimaryPublication;
+  readonly sourceComparison: ClaimSourceComparison;
   readonly reviewRequired: true;
 }
 
@@ -80,6 +111,7 @@ interface EvidenceText {
   readonly text: string;
   readonly locator: string | null;
   readonly kind: 'document_excerpt' | 'historical_block';
+  readonly historicalVersion: ClaimHistoricalVersion | null;
 }
 
 const REFERENCE_PATTERN = /\[S(\d+)\]/g;
@@ -111,13 +143,27 @@ function sourceEvidenceTexts(source: WebSearchSource): EvidenceText[] {
 
   const records: EvidenceText[] = [];
   if (document.excerpt.trim()) {
-    records.push({ text: document.excerpt, locator: null, kind: 'document_excerpt' });
+    records.push({ text: document.excerpt, locator: null, kind: 'document_excerpt', historicalVersion: null });
   }
-  for (const block of document.historical?.blocks ?? []) {
+  const historical = document.historical;
+  for (const block of historical?.blocks ?? []) {
     // Only a version selected by the backend's bounded BOE history evaluator can
     // be used as historical block evidence. Other versions remain contextual data.
-    if (block.status === 'selected' && block.text?.trim()) {
-      records.push({ text: block.text, locator: block.title, kind: 'historical_block' });
+    if (historical && block.status === 'selected' && block.text?.trim()) {
+      records.push({
+        text: block.text,
+        locator: block.title,
+        kind: 'historical_block',
+        historicalVersion: {
+          eventDate: historical.eventDate,
+          blockId: block.id,
+          title: block.title,
+          publicationDate: block.publicationDate ?? null,
+          effectiveDate: block.effectiveDate ?? null,
+          modifyingNormId: block.modifyingNormId ?? null,
+          publicationUrl: block.publicationUrl ?? null,
+        },
+      });
     }
   }
   return records;
@@ -156,6 +202,8 @@ function sourceReference(
     documentStatus: source.document?.status ?? null,
     documentType: source.document?.documentType ?? null,
     temporalAssessment: source.document?.temporal?.assessment ?? null,
+    temporalEvidence: source.document?.temporal ?? null,
+    historicalVersion: null,
   };
   const records = sourceEvidenceTexts(source);
   const sourceMarkers = markers.filter((candidate) => candidate.sourceId === source.id);
@@ -200,6 +248,9 @@ function sourceReference(
     quote: marker.quote,
     locator: backendLocatorVerified ? match.locator : requestedLocator,
     locatorVerified: backendLocatorVerified,
+    evidenceClass: backendLocatorVerified && isOfficialPublicationUrl(match.historicalVersion?.publicationUrl)
+      ? 'official_publication' : base.evidenceClass,
+    historicalVersion: backendLocatorVerified ? match.historicalVersion : null,
   };
 }
 
@@ -211,11 +262,10 @@ function parseClaimClassification(text: string): MaterialClaimClassification {
     ? value : 'unclassified';
 }
 
-function isOfficialPublication(source: WebSearchSource): boolean {
-  if (source.sourceAuthority !== 'legislation' ||
-    source.document?.documentType === 'boe_consolidated_legislation') return false;
+function isOfficialPublicationUrl(value: string | null | undefined): boolean {
+  if (!value) return false;
   let url: URL;
-  try { url = new URL(source.url); } catch { return false; }
+  try { url = new URL(value); } catch { return false; }
   if (url.protocol !== 'https:' || url.username || url.password || url.port || url.hash) return false;
   const host = url.hostname.toLowerCase();
   const boePublication = (host === 'boe.es' || host === 'www.boe.es') &&
@@ -223,6 +273,13 @@ function isOfficialPublication(source: WebSearchSource): boolean {
   const dogPublication = (host === 'xunta.gal' || host === 'www.xunta.gal') &&
     /^\/(?:es\/)?diario-oficial-galicia(?:\/|$)/i.test(url.pathname);
   return boePublication || dogPublication;
+}
+
+function isOfficialPublication(source: WebSearchSource): boolean {
+  // This classifies the result URL, not the document fetched to verify a quote.
+  // BOE results can point to the original publication while retrieval returns
+  // only its informative consolidation.
+  return source.sourceAuthority === 'legislation' && isOfficialPublicationUrl(source.url);
 }
 
 function evidenceClassForSource(source: WebSearchSource): EvidenceSourceClass {
@@ -240,6 +297,56 @@ function evidenceClassForSource(source: WebSearchSource): EvidenceSourceClass {
   }
 }
 
+const NOT_ASSESSED_COMPARISON_DIMENSIONS = [
+  'jurisdiction', 'legal_rank', 'subject_matter', 'case_applicability',
+] as const;
+
+function buildSourceComparison(references: readonly ClaimSourceReference[]): ClaimSourceComparison {
+  const sourceIds = references.map((reference) => reference.id);
+  const notAssessedDimensions = NOT_ASSESSED_COMPARISON_DIMENSIONS;
+  if (references.length < 2) return { sourceIds, dimensions: [], notAssessedDimensions };
+
+  const compare = (
+    dimension: ClaimComparisonDimensionKey,
+    valueFor: (reference: ClaimSourceReference) => string | null,
+  ): ClaimSourceComparisonDimension => {
+    const values = references.flatMap((reference) => {
+      const value = valueFor(reference);
+      return value === null ? [] : [{ sourceId: reference.id, value }];
+    });
+    const missingSourceIds = references
+      .filter((reference) => valueFor(reference) === null)
+      .map((reference) => reference.id);
+    const distinctValues = new Set(values.map((item) => item.value));
+    return {
+      dimension,
+      status: distinctValues.size > 1 ? 'different' : missingSourceIds.length === 0 ? 'consistent' : 'incomplete',
+      values,
+      missingSourceIds,
+    };
+  };
+
+  return {
+    sourceIds,
+    dimensions: [
+      compare('evidence_class', (reference) => reference.evidenceClass),
+      compare('provider_published_at', (reference) => reference.publishedAt),
+      compare('provider_modified_at', (reference) => reference.modifiedAt),
+      compare('official_publication_date', (reference) => reference.temporalEvidence?.publicationDate ?? null),
+      compare('official_effective_date', (reference) => reference.temporalEvidence?.effectiveDate ?? null),
+      compare('official_derogation_date', (reference) => reference.temporalEvidence?.derogationDate ?? null),
+      compare('official_annulment_date', (reference) => reference.temporalEvidence?.annulmentDate ?? null),
+      compare('official_last_registry_update', (reference) => reference.temporalEvidence?.lastRegistryUpdate ?? null),
+      compare('official_temporal_assessment', (reference) => reference.temporalEvidence?.assessment ?? null),
+      compare('selected_version_event_date', (reference) => reference.historicalVersion?.eventDate ?? null),
+      compare('selected_version_publication_date', (reference) => reference.historicalVersion?.publicationDate ?? null),
+      compare('selected_version_effective_date', (reference) => reference.historicalVersion?.effectiveDate ?? null),
+      compare('selected_version_modifying_norm', (reference) => reference.historicalVersion?.modifyingNormId ?? null),
+    ],
+    notAssessedDimensions,
+  };
+}
+
 function primaryPublicationForClaim(
   sources: readonly WebSearchSource[],
   citationIds: readonly string[],
@@ -254,10 +361,12 @@ function primaryPublicationForClaim(
     return { status: 'available_not_cited', sourceIds: primarySources.map((source) => source.id) };
   }
   const evidenceById = new Map(references.map((reference) => [reference.id, reference]));
-  const allCitedHaveExcerpts = cited.every((source) =>
-    evidenceById.get(source.id)?.evidenceStatus === 'excerpt_matched');
+  const allCitedHaveOriginalPublicationEvidence = cited.every((source) => {
+    const reference = evidenceById.get(source.id);
+    return reference?.evidenceStatus === 'excerpt_matched' && reference.evidenceClass === 'official_publication';
+  });
   return {
-    status: allCitedHaveExcerpts ? 'cited_with_excerpt' : 'cited_without_excerpt',
+    status: allCitedHaveOriginalPublicationEvidence ? 'cited_with_excerpt' : 'cited_without_excerpt',
     sourceIds: primarySources.map((source) => source.id),
   };
 }
@@ -345,6 +454,7 @@ export function buildClaimEvidence(
       unresolvedReferences: [...new Set(unresolvedReferences)],
       conflicts,
       primaryPublication,
+      sourceComparison: buildSourceComparison(references),
       reviewRequired: true,
     };
   });
@@ -359,6 +469,8 @@ export function buildClaimEvidence(
       'La clase de fuente se deriva de la procedencia y de rutas institucionales conocidas; no acredita por sí sola el rango, autenticidad material o fuerza vinculante del documento.',
       'La búsqueda no es exhaustiva: que una publicación primaria no aparezca entre los resultados devueltos no demuestra que no exista.',
       'La recuperación y búsqueda no garantizan exhaustividad ni sustituyen la publicación primaria. Todas las afirmaciones requieren revisión humana; la evidencia insuficiente debe permanecer explícita.',
+      'La comparación automática solo contrasta clases de fuente y metadatos de fechas disponibles; las diferencias no prueban contradicción ni determinan qué versión debe prevalecer.',
+      'La jurisdicción concreta, el rango normativo, la materia y la aplicabilidad al supuesto no se comparan automáticamente porque las fuentes recuperadas no ofrecen metadatos estructurados suficientes.',
     ],
   };
 }
@@ -372,5 +484,6 @@ export function buildClaimEvidence(
 export function shouldAbstainFromTaxConclusion(evidence: ClaimEvidence): boolean {
   return evidence.claims.length === 0 || evidence.claims.some((claim) =>
     claim.kind === 'unresolved' || claim.conflicts.length > 0 ||
-    claim.primaryPublication.status === 'available_not_cited');
+    claim.primaryPublication.status === 'available_not_cited' ||
+    claim.primaryPublication.status === 'cited_without_excerpt');
 }

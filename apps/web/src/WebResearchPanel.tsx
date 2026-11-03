@@ -57,6 +57,10 @@ interface SearchSource {
     limitations: readonly string[];
   };
 }
+interface ClaimHistoricalVersion {
+  eventDate: string; blockId: string; title: string;
+  publicationDate: string | null; effectiveDate: string | null; modifyingNormId: string | null; publicationUrl: string | null;
+}
 interface ClaimSourceReference {
   id: string; title: string; url: string; domain: string;
   sourceKind: SearchSource['sourceKind']; sourceAuthority: SearchSource['sourceAuthority'];
@@ -65,6 +69,8 @@ interface ClaimSourceReference {
   documentStatus: 'retrieved' | 'partial' | 'unavailable' | 'unsupported' | null;
   documentType: 'boe_consolidated_legislation' | 'official_html' | 'unsupported_format' | null;
   temporalAssessment: NonNullable<NonNullable<SearchSource['document']>['temporal']>['assessment'] | null;
+  temporalEvidence: NonNullable<SearchSource['document']>['temporal'];
+  historicalVersion: ClaimHistoricalVersion | null;
   evidenceStatus: 'excerpt_matched' | 'excerpt_not_found' | 'document_not_retrieved' | 'quote_not_provided';
   quote: string | null; locator: string | null; locatorVerified: boolean;
 }
@@ -72,11 +78,28 @@ interface ModelReportedConflict {
   status: 'reported_with_fragments' | 'unverified';
   sourceIds: readonly [string, string]; reason: string;
 }
+type ClaimComparisonDimensionKey =
+  | 'evidence_class' | 'provider_published_at' | 'provider_modified_at'
+  | 'official_publication_date' | 'official_effective_date' | 'official_derogation_date'
+  | 'official_annulment_date' | 'official_last_registry_update' | 'official_temporal_assessment'
+  | 'selected_version_event_date' | 'selected_version_publication_date'
+  | 'selected_version_effective_date' | 'selected_version_modifying_norm';
+interface ClaimSourceComparison {
+  sourceIds: readonly string[];
+  dimensions: readonly {
+    dimension: ClaimComparisonDimensionKey;
+    status: 'different' | 'consistent' | 'incomplete';
+    values: readonly { sourceId: string; value: string }[];
+    missingSourceIds: readonly string[];
+  }[];
+  notAssessedDimensions: readonly ('jurisdiction' | 'legal_rank' | 'subject_matter' | 'case_applicability')[];
+}
 interface MaterialClaim {
   id: string; text: string;
   classification: 'documented_fact' | 'metadata' | 'interpretation' | 'case_dependent' | 'unclassified';
   kind: 'evidence_located' | 'unresolved';
   primaryPublication: { status: 'cited_with_excerpt' | 'cited_without_excerpt' | 'available_not_cited' | 'not_located_in_results' | 'not_required'; sourceIds: readonly string[] };
+  sourceComparison: ClaimSourceComparison;
   sourceRefs: readonly ClaimSourceReference[]; unresolvedReferences: readonly string[];
   conflicts: readonly ModelReportedConflict[]; reviewRequired: true;
 }
@@ -141,12 +164,44 @@ function claimDocumentStatusLabel(value: ClaimSourceReference['documentStatus'])
 function primaryPublicationStatusLabel(value: MaterialClaim['primaryPublication']['status']): string {
   return ({
     cited_with_excerpt: 'Publicación primaria citada con fragmento literal localizado',
-    cited_without_excerpt: 'Publicación primaria citada, pero sin fragmento literal verificable',
+    cited_without_excerpt: 'La cita no tiene un fragmento verificado de la publicación original; puede proceder de una consolidación informativa',
     available_not_cited: 'Hay una publicación oficial original entre los resultados que esta afirmación no cita; la relación con el supuesto no está evaluada',
     not_located_in_results: 'No se localizó publicación oficial original entre los resultados; la búsqueda no es exhaustiva',
     not_required: 'No exigida para esta consulta',
   } as const)[value];
 }
+function comparisonDimensionLabel(value: ClaimComparisonDimensionKey): string {
+  return ({
+    evidence_class: 'Clase de fuente',
+    provider_published_at: 'Fecha de publicación indicada por el buscador',
+    provider_modified_at: 'Fecha de modificación indicada por el buscador',
+    official_publication_date: 'Fecha de publicación en metadatos oficiales BOE',
+    official_effective_date: 'Fecha de entrada en vigor en metadatos oficiales BOE',
+    official_derogation_date: 'Fecha de derogación en metadatos oficiales BOE',
+    official_annulment_date: 'Fecha de anulación en metadatos oficiales BOE',
+    official_last_registry_update: 'Última actualización registral BOE',
+    official_temporal_assessment: 'Evaluación temporal indicada por metadatos BOE',
+    selected_version_event_date: 'Fecha del hecho usada para seleccionar la versión histórica',
+    selected_version_publication_date: 'Publicación de la versión histórica seleccionada',
+    selected_version_effective_date: 'Entrada en vigor de la versión histórica seleccionada',
+    selected_version_modifying_norm: 'Norma modificadora de la versión histórica seleccionada',
+  } as const)[value];
+}
+function comparisonStatusLabel(value: 'different' | 'consistent' | 'incomplete'): string {
+  return ({
+    different: 'diferencias de metadatos detectadas',
+    consistent: 'mismos metadatos en las fuentes con dato disponible',
+    incomplete: 'comparación incompleta: hay datos ausentes',
+  } as const)[value];
+}
+function comparisonValueLabel(dimension: ClaimComparisonDimensionKey, value: string): string {
+  if (dimension === 'evidence_class') return evidenceClassLabel(value as ClaimSourceReference['evidenceClass']);
+  if (dimension === 'official_temporal_assessment') {
+    return temporalAssessmentLabel(value as NonNullable<NonNullable<SearchSource['document']>['temporal']>['assessment']);
+  }
+  return value;
+}
+
 function documentStatusLabel(
   status: NonNullable<SearchSource['document']>['status'],
   authority: SearchSource['sourceAuthority'],
@@ -329,11 +384,29 @@ export function WebResearchPanel() {
                     <p className="section-footnote">Recuperación documental: {claimDocumentStatusLabel(source.documentStatus)} · {source.documentType === 'boe_consolidated_legislation' ? 'consolidación BOE informativa' : source.documentType === 'official_html' ? 'HTML oficial' : source.documentType === 'unsupported_format' ? 'formato no compatible' : 'tipo documental no indicado'}.</p>
                     <p className="section-footnote">Fechas del buscador (no equivalen a vigencia): publicación {formatDate(source.publishedAt)}{source.modifiedAt ? ' · modificación indicada: ' + formatDate(source.modifiedAt) : ''}.</p>
                     {source.temporalAssessment ? <p className="section-footnote">Metadatos temporales BOE: {temporalAssessmentLabel(source.temporalAssessment)}.</p> : null}
+                    {source.temporalEvidence ? <p className="section-footnote">Fechas de ficha BOE (no constituyen dictamen): publicación {source.temporalEvidence.publicationDate ?? 'sin dato'} · entrada en vigor {source.temporalEvidence.effectiveDate ?? 'sin dato'} · derogación {source.temporalEvidence.derogationDate ?? 'sin dato'} · anulación {source.temporalEvidence.annulmentDate ?? 'sin dato'} · actualización registral {source.temporalEvidence.lastRegistryUpdate ?? 'sin dato'}.</p> : null}
+                    {source.historicalVersion ? <p className="section-footnote">Versión histórica seleccionada por el backend: {source.historicalVersion.title} · hecho {source.historicalVersion.eventDate} · publicación {source.historicalVersion.publicationDate ?? 'sin dato'} · entrada en vigor {source.historicalVersion.effectiveDate ?? 'sin dato'}{source.historicalVersion.modifyingNormId ? ' · modificada por ' + source.historicalVersion.modifyingNormId : ''}{source.historicalVersion.publicationUrl ? <> · <a href={source.historicalVersion.publicationUrl} target="_blank" rel="noopener noreferrer">abrir publicación original de la versión</a></> : ''}.</p> : null}
                     <p className="section-footnote">Comprobación: {source.evidenceStatus === 'excerpt_matched' ? 'el fragmento aparece en el documento recuperado' : source.evidenceStatus === 'excerpt_not_found' ? 'el fragmento no aparece en el extracto recuperado' : source.evidenceStatus === 'document_not_retrieved' ? 'no se recuperó el documento para contrastarlo' : 'no se proporcionó un fragmento literal'}</p>
                     {source.quote ? <blockquote className="research-answer">{source.quote}</blockquote> : null}
                     {source.locator ? <p className="section-footnote">Localizador: {source.locator} · {source.locatorVerified ? 'comprobado en el texto' : 'propuesto, no verificado'}</p> : null}
                   </li>)}
                 </ul> : <p className="section-footnote">No hay una fuente válida asociada a esta afirmación.</p>}
+                <section aria-label="Comparación documental de metadatos">
+                  {claim.sourceComparison.sourceIds.length < 2 ?
+                    <p className="section-footnote">Comparación de fuentes no disponible: se necesita más de una referencia asociada.</p> : <>
+                      <p className="section-footnote">Comparación descriptiva de metadatos entre {claim.sourceComparison.sourceIds.join(', ')}. Ni las diferencias ni la igualdad de valores determinan contradicción, equivalencia de autoridad o preferencia jurídica.</p>
+                      <ul aria-label="Dimensiones comparadas entre documentos">
+                        {claim.sourceComparison.dimensions.map((dimension) => <li key={dimension.dimension}>
+                          <strong>{comparisonDimensionLabel(dimension.dimension)}:</strong> {comparisonStatusLabel(dimension.status)}.
+                          {dimension.values.length > 0 ? <ul>
+                            {dimension.values.map((item) => <li key={item.sourceId}>{item.sourceId}: {comparisonValueLabel(dimension.dimension, item.value)}</li>)}
+                          </ul> : null}
+                          {dimension.missingSourceIds.length > 0 ? <span> Sin dato para {dimension.missingSourceIds.join(', ')}.</span> : null}
+                        </li>)}
+                      </ul>
+                    </>}
+                  <p className="section-footnote">No evaluados automáticamente: jurisdicción, rango normativo, materia y aplicabilidad al supuesto. Requieren comprobar el documento y su contexto.</p>
+                </section>
                 {claim.unresolvedReferences.length > 0 ? <p className="section-footnote">Referencias no resueltas: {claim.unresolvedReferences.join(', ')}</p> : null}
                 {claim.conflicts.map((conflict, index) => <p className="section-footnote" key={index}>Posible discrepancia señalada por el modelo entre {conflict.sourceIds.join(' y ')}: {conflict.reason} · {conflict.status === 'reported_with_fragments' ? 'ambos fragmentos están localizados, pendiente de valoración' : 'no hay evidencia suficiente para contrastar ambos fragmentos'}</p>)}
               </li>)}
