@@ -334,12 +334,33 @@ test('controlled web research requires per-query consent and shows official sour
               id: 'S1', title: 'Disposición publicada en el BOE',
               url: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2025-1',
               domain: 'www.boe.es', sourceKind: 'normativa', sourceAuthority: 'legislation',
-              evidenceClass: 'official_publication', publishedAt: null, modifiedAt: null,
-              documentStatus: 'retrieved', documentType: 'official_html', temporalAssessment: null, temporalEvidence: null, historicalVersion: null,
+              evidenceClass: 'official_publication', publishedAt: '2025-03-01T00:00:00.000Z', modifiedAt: null,
+              documentStatus: 'retrieved', documentType: 'official_html', temporalAssessment: 'not_marked_derogated_or_exhausted',
+              temporalEvidence: { assessment: 'not_marked_derogated_or_exhausted', referenceDate: '2026-11-01', publicationDate: '2025-03-01', effectiveDate: '2025-04-01', derogationDate: null, annulmentDate: null, lastRegistryUpdate: '2026-10-30', derogated: false, annulled: false, exhausted: false, consolidationStatus: 'Finalizado', relatedNorms: [] }, historicalVersion: null,
               evidenceStatus: 'quote_not_provided', quote: null, locator: null, locatorVerified: false,
+            }, {
+              id: 'S2', title: 'Consolidación informativa de Galicia',
+              url: 'https://www.lex.gal/norma/consolidada', domain: 'www.lex.gal',
+              sourceKind: 'normativa_consolidada_informativa', sourceAuthority: 'legal_consolidation',
+              evidenceClass: 'informative_consolidation', publishedAt: '2025-04-01T00:00:00.000Z', modifiedAt: null,
+              documentStatus: 'unavailable', documentType: 'official_html', temporalAssessment: null,
+              temporalEvidence: null, historicalVersion: null,
+              evidenceStatus: 'document_not_retrieved', quote: null, locator: null, locatorVerified: false,
             }],
             unresolvedReferences: [], conflicts: [], primaryPublication: { status: 'cited_without_excerpt', sourceIds: ['S1'] },
-            sourceComparison: { sourceIds: ['S1'], dimensions: [], notAssessedDimensions: ['jurisdiction', 'legal_rank', 'subject_matter', 'case_applicability'] },
+            sourceComparison: { sourceIds: ['S1', 'S2'], dimensions: [
+              { dimension: 'evidence_class', status: 'different', values: [
+                { sourceId: 'S1', value: 'official_publication' },
+                { sourceId: 'S2', value: 'informative_consolidation' },
+              ], missingSourceIds: [] },
+              { dimension: 'provider_published_at', status: 'different', values: [
+                { sourceId: 'S1', value: '2025-03-01T00:00:00.000Z' },
+                { sourceId: 'S2', value: '2025-04-01T00:00:00.000Z' },
+              ], missingSourceIds: [] },
+              { dimension: 'official_effective_date', status: 'incomplete', values: [
+                { sourceId: 'S1', value: '2025-04-01' },
+              ], missingSourceIds: ['S2'] },
+            ], notAssessedDimensions: ['jurisdiction', 'legal_rank', 'subject_matter', 'case_applicability'] },
             reviewRequired: true,
           }],
           limitations: ['La asociación de fragmentos no demuestra soporte semántico y requiere revisión humana.'],
@@ -350,7 +371,7 @@ test('controlled web research requires per-query consent and shows official sour
           taxpayerType: 'individual', eventDate: '2025-06-15',
           matter: 'IRPF', taxYear: '2025', filingYear: '2026', referenceDate: '2026-11-01',
         },
-        sourceCount: 1,
+        sourceCount: 2,
         sources: [{
           id: 'S1', title: 'Disposición publicada en el BOE', url: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2025-1',
           domain: 'www.boe.es', institution: 'Boletín Oficial del Estado (BOE)', publishedAt: '2025-03-01T00:00:00.000Z', modifiedAt: null,
@@ -370,6 +391,16 @@ test('controlled web research requires per-query consent and shows official sour
               consolidationStatus: 'Finalizado', relatedNorms: ['BOE-A-2024-123 — MODIFICA'],
             },
             limitations: ['El texto consolidado del BOE es informativo y no acredita derogaciones tácitas.'],
+          },
+        }, {
+          id: 'S2', title: 'Consolidación informativa de Galicia', url: 'https://www.lex.gal/norma/consolidada',
+          domain: 'www.lex.gal', institution: 'Lex.gal', publishedAt: '2025-04-01T00:00:00.000Z', modifiedAt: null,
+          snippet: 'Resultado sintético de una consolidación informativa.',
+          sourceKind: 'normativa_consolidada_informativa', sourceAuthority: 'legal_consolidation',
+          document: {
+            status: 'unavailable', documentType: 'official_html', retrievedAt: null, contentType: null,
+            excerpt: '', textLength: 0, fetches: [], historical: null, temporal: null,
+            limitations: ['Documento no recuperado en esta fixture.'],
           },
         }],
       } }),
@@ -399,7 +430,10 @@ test('controlled web research requires per-query consent and shows official sour
   await expect(form.getByRole('heading', { name: 'Afirmaciones y referencias asociadas' })).toBeVisible();
   await expect(form.getByText(/Clasificación propuesta por el modelo: Sin clasificar/)).toBeVisible();
   await expect(form.getByText(/Publicación primaria citada, pero sin fragmento literal verificable/)).toBeVisible();
-  await expect(form.getByText(/Comparación de fuentes no disponible: se necesita más de una referencia asociada/)).toBeVisible();
+  await expect(form.getByText(/Comparación descriptiva de metadatos entre S1, S2/)).toBeVisible();
+  await expect(form.getByText(/Clase de fuente: diferencias de metadatos detectadas/)).toBeVisible();
+  await expect(form.getByText(/Fecha de publicación indicada por el buscador: diferencias de metadatos detectadas/)).toBeVisible();
+  await expect(form.getByText(/Fecha de entrada en vigor en metadatos oficiales BOE: comparación incompleta: hay datos ausentes/)).toBeVisible();
   await expect(form.getByText(/No evaluados automáticamente: jurisdicción, rango normativo, materia y aplicabilidad al supuesto/)).toBeVisible();
   await expect(form.getByRole('link', { name: '[S1] Disposición publicada en el BOE · www.boe.es · Publicación normativa' })).toBeVisible();
   await expect(form.getByText(/no se proporcionó un fragmento literal/)).toBeVisible();

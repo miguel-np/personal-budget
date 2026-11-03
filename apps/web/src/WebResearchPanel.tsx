@@ -190,7 +190,7 @@ function comparisonDimensionLabel(value: ClaimComparisonDimensionKey): string {
 function comparisonStatusLabel(value: 'different' | 'consistent' | 'incomplete'): string {
   return ({
     different: 'diferencias de metadatos detectadas',
-    consistent: 'mismo valor en las fuentes con dato disponible',
+    consistent: 'mismos metadatos en las fuentes con dato disponible',
     incomplete: 'comparación incompleta: hay datos ausentes',
   } as const)[value];
 }
@@ -394,7 +394,7 @@ export function WebResearchPanel() {
                 <section aria-label="Comparación documental de metadatos">
                   {claim.sourceComparison.sourceIds.length < 2 ?
                     <p className="section-footnote">Comparación de fuentes no disponible: se necesita más de una referencia asociada.</p> : <>
-                      <p className="section-footnote">Comparación de metadatos entre {claim.sourceComparison.sourceIds.join(', ')}. Las diferencias no determinan contradicción ni preferencia jurídica.</p>
+                      <p className="section-footnote">Comparación descriptiva de metadatos entre {claim.sourceComparison.sourceIds.join(', ')}. Ni las diferencias ni la igualdad de valores determinan contradicción, equivalencia de autoridad o preferencia jurídica.</p>
                       <ul aria-label="Dimensiones comparadas entre documentos">
                         {claim.sourceComparison.dimensions.map((dimension) => <li key={dimension.dimension}>
                           <strong>{comparisonDimensionLabel(dimension.dimension)}:</strong> {comparisonStatusLabel(dimension.status)}.
