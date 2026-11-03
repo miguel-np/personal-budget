@@ -222,7 +222,7 @@ describe('local API', () => {
           message: { role: 'assistant', content: '', tool_calls: [{
             function: { name: 'web_search', arguments: { query: 'normativa IRPF ejercicio 2025' } },
           }] },
-        } : { message: { role: 'assistant', content: 'La fuente oficial publica la norma aplicable [S1] [[EVIDENCE|S1|Artículo 1|La disposición regula expresamente la materia tributaria indicada en el artículo primero de la norma.]]' } }));
+        } : { message: { role: 'assistant', content: 'La fuente oficial publica la norma aplicable [S1]. [[EVIDENCE|S1|Artículo 1|La disposición regula expresamente la materia tributaria indicada en el artículo primero de la norma.]]' } }));
       });
     });
     const search = createServer((request, response) => {

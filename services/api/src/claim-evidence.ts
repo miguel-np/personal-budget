@@ -100,7 +100,7 @@ function sourceEvidenceTexts(source: WebSearchSource): EvidenceText[] {
 
 function parseEvidenceMarkers(text: string): EvidenceMarker[] {
   return [...text.matchAll(EVIDENCE_MARKER_PATTERN)].map((match) => ({
-    sourceId: match[1]!,
+    sourceId: 'S' + match[1]!,
     locator: match[2]!.trim() || null,
     quote: match[3]!.trim(),
   }));
@@ -108,8 +108,8 @@ function parseEvidenceMarkers(text: string): EvidenceMarker[] {
 
 function parseConflictMarkers(text: string): ConflictMarker[] {
   return [...text.matchAll(CONFLICT_MARKER_PATTERN)].map((match) => ({
-    firstSourceId: match[1]!,
-    secondSourceId: match[2]!,
+    firstSourceId: 'S' + match[1]!,
+    secondSourceId: 'S' + match[2]!,
     reason: match[3]!.trim(),
   }));
 }
@@ -181,7 +181,7 @@ export function buildClaimEvidence(answerWithMarkers: string, sources: readonly 
       .replace(CONFLICT_MARKER_PATTERN, '')
       .replace(/[ \t]{2,}/g, ' ')
       .trim();
-    const citationIds = [...new Set([...rawText.matchAll(REFERENCE_PATTERN)].map((match) => match[1]!))];
+    const citationIds = [...new Set([...rawText.matchAll(REFERENCE_PATTERN)].map((match) => 'S' + match[1]!))];
     const evidenceMarkers = parseEvidenceMarkers(rawText);
     const conflictMarkers = parseConflictMarkers(rawText);
     const allIds = [...new Set([
@@ -192,16 +192,16 @@ export function buildClaimEvidence(answerWithMarkers: string, sources: readonly 
 
     const unresolvedReferences = allIds
       .filter((id) => !sourceById.has(id))
-      .map((id) => '[S' + id + ']');
+      .map((id) => '[' + id + ']');
     for (const marker of evidenceMarkers) {
       if (!citationIds.includes(marker.sourceId) && sourceById.has(marker.sourceId)) {
-        unresolvedReferences.push('[S' + marker.sourceId + '] (falta la cita visible)');
+        unresolvedReferences.push('[' + marker.sourceId + '] (falta la cita visible)');
       }
     }
     for (const marker of conflictMarkers) {
       for (const id of [marker.firstSourceId, marker.secondSourceId]) {
         if (!citationIds.includes(id) && sourceById.has(id)) {
-          unresolvedReferences.push('[S' + id + '] (falta la cita visible para la discrepancia)');
+          unresolvedReferences.push('[' + id + '] (falta la cita visible para la discrepancia)');
         }
       }
     }
