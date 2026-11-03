@@ -87,7 +87,6 @@ describe('claim-to-source evidence', () => {
     expect(result.claims[0]?.primaryPublication.status).toBe('not_located_in_results');
   });
 
-  });
   it('matches a verbatim quote and verifies a locator found in the recovered document', () => {
     const result = buildClaimEvidence(
       'La regla se recoge en el artículo citado [S1] [[EVIDENCE|S1|Artículo 32|La Administración ampliará los plazos cuando una incidencia técnica haya imposibilitado el funcionamiento ordinario del sistema.]]',
