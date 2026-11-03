@@ -44,7 +44,7 @@ export interface ModelReportedConflict {
 
 export interface ClaimPrimaryPublication {
   readonly status: PrimaryPublicationStatus;
-  /** IDs of official-publication results relevant to this claim. */
+  /** Official-publication result IDs; their relevance to the claim is not inferred. */
   readonly sourceIds: readonly string[];
 }
 
@@ -216,6 +216,7 @@ function isOfficialPublication(source: WebSearchSource): boolean {
     source.document?.documentType === 'boe_consolidated_legislation') return false;
   let url: URL;
   try { url = new URL(source.url); } catch { return false; }
+  if (url.protocol !== 'https:' || url.username || url.password || url.port || url.hash) return false;
   const host = url.hostname.toLowerCase();
   const boePublication = (host === 'boe.es' || host === 'www.boe.es') &&
     /^\/diario_boe\//.test(url.pathname);

@@ -128,7 +128,7 @@ function evidenceClassLabel(value: ClaimSourceReference['evidenceClass']): strin
     administrative_information: 'Información de la Administración',
     official_information: 'Información de organismo oficial',
     legislation_source_unclassified: 'Fuente en portal normativo; documento no clasificado',
-    external: 'Fuente secundaria o externa',
+    external: 'Fuente externa',
   } as const)[value];
 }
 function claimDocumentStatusLabel(value: ClaimSourceReference['documentStatus']): string {
@@ -139,10 +139,10 @@ function claimDocumentStatusLabel(value: ClaimSourceReference['documentStatus'])
 }
 function primaryPublicationStatusLabel(value: MaterialClaim['primaryPublication']['status']): string {
   return ({
-    cited_with_excerpt: 'Publicación primaria citada con fragmento localizado',
-    cited_without_excerpt: 'Publicación primaria citada, pero sin fragmento verificable',
-    available_not_cited: 'Hay una publicación primaria entre los resultados, pero esta afirmación no la cita',
-    not_located_in_results: 'No se localizó publicación primaria en los resultados devueltos; la búsqueda no es exhaustiva',
+    cited_with_excerpt: 'Publicación primaria citada con fragmento literal localizado',
+    cited_without_excerpt: 'Publicación primaria citada, pero sin fragmento literal verificable',
+    available_not_cited: 'Hay una publicación oficial original entre los resultados que esta afirmación no cita; la relación con el supuesto no está evaluada',
+    not_located_in_results: 'No se localizó publicación oficial original entre los resultados; la búsqueda no es exhaustiva',
     not_required: 'No exigida para esta consulta',
   } as const)[value];
 }
@@ -314,7 +314,7 @@ export function WebResearchPanel() {
                 <p className="section-footnote">Comprobación documental: {claim.kind === 'evidence_located' ? 'fragmentos literales localizados' : 'evidencia documental insuficiente'} · Revisión humana requerida</p>
                 {claim.primaryPublication.status !== 'not_required' ? <>
                   <p className="section-footnote">Publicación primaria: {primaryPublicationStatusLabel(claim.primaryPublication.status)}.</p>
-                  {claim.primaryPublication.sourceIds.length > 0 ? <ul aria-label="Publicaciones oficiales primarias relacionadas">
+                  {claim.primaryPublication.sourceIds.length > 0 ? <ul aria-label="Publicaciones oficiales originales entre los resultados">
                     {claim.primaryPublication.sourceIds.map((sourceId) => {
                       const primary = result.sources.find((candidate) => candidate.id === sourceId);
                       return primary ? <li key={sourceId}><a href={primary.url} target="_blank" rel="noopener noreferrer">[{primary.id}] {primary.title}</a></li> : null;
