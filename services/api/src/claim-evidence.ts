@@ -212,6 +212,7 @@ export function buildClaimEvidence(answerWithMarkers: string, sources: readonly 
       const second = references.find((reference) => reference.id === marker.secondSourceId);
       return {
         status: marker.firstSourceId !== marker.secondSourceId &&
+          citationIds.includes(marker.firstSourceId) && citationIds.includes(marker.secondSourceId) &&
           first?.evidenceStatus === 'excerpt_matched' && second?.evidenceStatus === 'excerpt_matched'
           ? 'reported_with_fragments' : 'unverified',
         sourceIds: [marker.firstSourceId, marker.secondSourceId],

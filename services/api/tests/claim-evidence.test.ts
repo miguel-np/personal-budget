@@ -148,6 +148,7 @@ describe('claim-to-source evidence', () => {
       [source('S1'), second],
     );
     expect(result.claims[0]?.kind).toBe('unresolved');
+    expect(result.claims[0]?.conflicts).toMatchObject([{ status: 'unverified' }]);
     expect(result.claims[0]?.unresolvedReferences).toContain('[S2] (falta la cita visible para la discrepancia)');
   });
 
