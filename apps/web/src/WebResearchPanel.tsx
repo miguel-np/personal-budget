@@ -60,11 +60,17 @@ interface SearchSource {
 interface ClaimSourceReference {
   id: string; title: string; url: string; domain: string;
   sourceKind: SearchSource['sourceKind']; sourceAuthority: SearchSource['sourceAuthority'];
+  evidenceStatus: 'excerpt_matched' | 'excerpt_not_found' | 'document_not_retrieved' | 'quote_not_provided';
+  quote: string | null; locator: string | null; locatorVerified: boolean;
+}
+interface ModelReportedConflict {
+  status: 'reported_with_fragments' | 'unverified';
+  sourceIds: readonly [string, string]; reason: string;
 }
 interface MaterialClaim {
-  id: string; text: string; kind: 'interpretation' | 'unresolved';
+  id: string; text: string; kind: 'evidence_located' | 'unresolved';
   sourceRefs: readonly ClaimSourceReference[]; unresolvedReferences: readonly string[];
-  locator: null; reviewRequired: true;
+  conflicts: readonly ModelReportedConflict[]; reviewRequired: true;
 }
 interface ResearchResponse {
   data?: { answer: string; claimEvidence: { claims: readonly MaterialClaim[]; limitations: readonly string[] }; provider: string; searchedAt: string; mode: 'general' | 'tax'; taxContext?: {
@@ -256,17 +262,21 @@ export function WebResearchPanel() {
           <p className="research-answer">{result.answer}</p>
           {result.claimEvidence.claims.length > 0 ? <section className="claim-evidence" aria-labelledby="claim-evidence-heading">
             <h4 id="claim-evidence-heading">Afirmaciones y referencias asociadas</h4>
-            <p className="section-footnote">La asociación comprueba que las referencias existen en esta respuesta; no demuestra que la fuente respalde semánticamente la afirmación ni valida su interpretación jurídica.</p>
+            <p className="section-footnote">La API comprueba que el fragmento citado aparece literalmente en el extracto recuperado. Esto no demuestra que la fuente implique la afirmación ni valida su fuerza jurídica, vigencia o aplicación al supuesto.</p>
             <ol className="source-list">
               {result.claimEvidence.claims.map((claim) => <li key={claim.id}>
                 <p>{claim.text}</p>
-                <p className="section-footnote">Estado: {claim.kind === 'interpretation' ? 'Interpretación con referencias' : 'Sin evidencia citada suficiente'} · Revisión humana requerida</p>
+                <p className="section-footnote">Estado: {claim.kind === 'evidence_located' ? 'Fragmentos literales localizados' : 'Evidencia documental insuficiente'} · Revisión humana requerida</p>
                 {claim.sourceRefs.length > 0 ? <ul>
                   {claim.sourceRefs.map((source) => <li key={source.id}>
-                    <a href={source.url} target="_blank" rel="noopener noreferrer">[{source.id}] {source.title} · {source.domain} · {source.sourceAuthority}</a>
+                    <div><a href={source.url} target="_blank" rel="noopener noreferrer">[{source.id}] {source.title} · {source.domain} · {source.sourceAuthority}</a></div>
+                    <p className="section-footnote">Comprobación: {source.evidenceStatus === 'excerpt_matched' ? 'el fragmento aparece en el documento recuperado' : source.evidenceStatus === 'excerpt_not_found' ? 'el fragmento no aparece en el extracto recuperado' : source.evidenceStatus === 'document_not_retrieved' ? 'no se recuperó el documento para contrastarlo' : 'no se proporcionó un fragmento literal'}</p>
+                    {source.quote ? <blockquote className="research-answer">{source.quote}</blockquote> : null}
+                    {source.locator ? <p className="section-footnote">Localizador: {source.locator} · {source.locatorVerified ? 'comprobado en el texto' : 'propuesto, no verificado'}</p> : null}
                   </li>)}
                 </ul> : <p className="section-footnote">No hay una fuente válida asociada a esta afirmación.</p>}
                 {claim.unresolvedReferences.length > 0 ? <p className="section-footnote">Referencias no resueltas: {claim.unresolvedReferences.join(', ')}</p> : null}
+                {claim.conflicts.map((conflict, index) => <p className="section-footnote" key={index}>Posible discrepancia señalada por el modelo entre {conflict.sourceIds.join(' y ')}: {conflict.reason} · {conflict.status === 'reported_with_fragments' ? 'ambos fragmentos están localizados, pendiente de valoración' : 'no hay evidencia suficiente para contrastar ambos fragmentos'}</p>)}
               </li>)}
             </ol>
             {result.claimEvidence.limitations.map((limitation, index) => <p className="section-footnote" key={index}>{limitation}</p>)}
