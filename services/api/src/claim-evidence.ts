@@ -362,3 +362,14 @@ export function buildClaimEvidence(
     ],
   };
 }
+
+
+/**
+ * Fail closed for fiscal answers when any structured claim is not backed by a
+ * located document fragment or a model-reported conflict remains unresolved.
+ * This does not detect conflicts omitted by the model or prove semantic entailment.
+ */
+export function shouldAbstainFromTaxConclusion(evidence: ClaimEvidence): boolean {
+  return evidence.claims.length === 0 || evidence.claims.some((claim) =>
+    claim.kind === 'unresolved' || claim.conflicts.length > 0);
+}
