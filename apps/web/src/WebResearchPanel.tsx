@@ -59,7 +59,7 @@ interface SearchSource {
 }
 interface ClaimHistoricalVersion {
   eventDate: string; blockId: string; title: string;
-  publicationDate: string | null; effectiveDate: string | null; modifyingNormId: string | null;
+  publicationDate: string | null; effectiveDate: string | null; modifyingNormId: string | null; publicationUrl: string | null;
 }
 interface ClaimSourceReference {
   id: string; title: string; url: string; domain: string;
@@ -164,7 +164,7 @@ function claimDocumentStatusLabel(value: ClaimSourceReference['documentStatus'])
 function primaryPublicationStatusLabel(value: MaterialClaim['primaryPublication']['status']): string {
   return ({
     cited_with_excerpt: 'Publicación primaria citada con fragmento literal localizado',
-    cited_without_excerpt: 'Publicación primaria citada, pero sin fragmento literal verificable',
+    cited_without_excerpt: 'La cita no tiene un fragmento verificado de la publicación original; puede proceder de una consolidación informativa',
     available_not_cited: 'Hay una publicación oficial original entre los resultados que esta afirmación no cita; la relación con el supuesto no está evaluada',
     not_located_in_results: 'No se localizó publicación oficial original entre los resultados; la búsqueda no es exhaustiva',
     not_required: 'No exigida para esta consulta',
@@ -385,7 +385,7 @@ export function WebResearchPanel() {
                     <p className="section-footnote">Fechas del buscador (no equivalen a vigencia): publicación {formatDate(source.publishedAt)}{source.modifiedAt ? ' · modificación indicada: ' + formatDate(source.modifiedAt) : ''}.</p>
                     {source.temporalAssessment ? <p className="section-footnote">Metadatos temporales BOE: {temporalAssessmentLabel(source.temporalAssessment)}.</p> : null}
                     {source.temporalEvidence ? <p className="section-footnote">Fechas de ficha BOE (no constituyen dictamen): publicación {source.temporalEvidence.publicationDate ?? 'sin dato'} · entrada en vigor {source.temporalEvidence.effectiveDate ?? 'sin dato'} · derogación {source.temporalEvidence.derogationDate ?? 'sin dato'} · anulación {source.temporalEvidence.annulmentDate ?? 'sin dato'} · actualización registral {source.temporalEvidence.lastRegistryUpdate ?? 'sin dato'}.</p> : null}
-                    {source.historicalVersion ? <p className="section-footnote">Versión histórica seleccionada por el backend: {source.historicalVersion.title} · hecho {source.historicalVersion.eventDate} · publicación {source.historicalVersion.publicationDate ?? 'sin dato'} · entrada en vigor {source.historicalVersion.effectiveDate ?? 'sin dato'}{source.historicalVersion.modifyingNormId ? ' · modificada por ' + source.historicalVersion.modifyingNormId : ''}.</p> : null}
+                    {source.historicalVersion ? <p className="section-footnote">Versión histórica seleccionada por el backend: {source.historicalVersion.title} · hecho {source.historicalVersion.eventDate} · publicación {source.historicalVersion.publicationDate ?? 'sin dato'} · entrada en vigor {source.historicalVersion.effectiveDate ?? 'sin dato'}{source.historicalVersion.modifyingNormId ? ' · modificada por ' + source.historicalVersion.modifyingNormId : ''}{source.historicalVersion.publicationUrl ? <> · <a href={source.historicalVersion.publicationUrl} target="_blank" rel="noopener noreferrer">abrir publicación original de la versión</a></> : ''}.</p> : null}
                     <p className="section-footnote">Comprobación: {source.evidenceStatus === 'excerpt_matched' ? 'el fragmento aparece en el documento recuperado' : source.evidenceStatus === 'excerpt_not_found' ? 'el fragmento no aparece en el extracto recuperado' : source.evidenceStatus === 'document_not_retrieved' ? 'no se recuperó el documento para contrastarlo' : 'no se proporcionó un fragmento literal'}</p>
                     {source.quote ? <blockquote className="research-answer">{source.quote}</blockquote> : null}
                     {source.locator ? <p className="section-footnote">Localizador: {source.locator} · {source.locatorVerified ? 'comprobado en el texto' : 'propuesto, no verificado'}</p> : null}

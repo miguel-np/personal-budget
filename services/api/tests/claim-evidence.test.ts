@@ -80,6 +80,26 @@ describe('claim-to-source evidence', () => {
     expect(result.claims[0]?.sourceRefs[0]?.evidenceClass).toBe('legislation_source_unclassified');
   });
 
+  it('does not treat BOE consolidated text as a verified excerpt from the original publication', () => {
+    const consolidated: WebSearchSource = {
+      ...source('S1'),
+      document: { ...source('S1').document!, documentType: 'boe_consolidated_legislation' },
+    };
+    const result = buildClaimEvidence(
+      'La norma publicada establece el requisito [S1] [[EVIDENCE|S1|Artículo 32|La Administración ampliará los plazos cuando una incidencia técnica haya imposibilitado el funcionamiento ordinario del sistema.]]',
+      [consolidated],
+      { requirePrimaryPublication: true },
+    );
+    expect(result.claims[0]?.sourceRefs[0]).toMatchObject({
+      evidenceStatus: 'excerpt_matched', evidenceClass: 'informative_consolidation',
+      documentType: 'boe_consolidated_legislation',
+    });
+    expect(result.claims[0]?.primaryPublication).toEqual({
+      status: 'cited_without_excerpt', sourceIds: ['S1'],
+    });
+    expect(shouldAbstainFromTaxConclusion(result)).toBe(true);
+  });
+
   it('warns when a primary publication is returned but the claim cites only an informative consolidation', () => {
     const primary = source('S1');
     const consolidation: WebSearchSource = {
@@ -211,7 +231,8 @@ describe('claim-to-source evidence', () => {
         status: 'reconstructed' as const,
         blocks: [{
           id: 'a32', title: 'Artículo 32', status: 'selected' as const,
-          consideredVersionCount: 2, text: excerpt,
+          consideredVersionCount: 2, publicationDate: '2015-10-02', effectiveDate: '2015-10-02',
+          publicationUrl: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2015-10565', text: excerpt,
         }],
         limitations: [],
       },
@@ -219,10 +240,14 @@ describe('claim-to-source evidence', () => {
     const result = buildClaimEvidence(
       'La redacción corresponde a la versión seleccionada [S1] [[EVIDENCE|S1|Artículo 32|La Administración ampliará los plazos cuando una incidencia técnica haya imposibilitado el funcionamiento ordinario del sistema.]]',
       [{ ...source('S1'), document }],
+      { requirePrimaryPublication: true },
     );
     expect(result.claims[0]?.sourceRefs[0]).toMatchObject({
       evidenceStatus: 'excerpt_matched', locator: 'Artículo 32', locatorVerified: true,
+      evidenceClass: 'official_publication',
+      historicalVersion: { publicationUrl: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2015-10565' },
     });
+    expect(result.claims[0]?.primaryPublication.status).toBe('cited_with_excerpt');
   });
 
   it('rejects duplicate evidence markers for a single source instead of silently ignoring extras', () => {
@@ -289,7 +314,7 @@ describe('claim-to-source evidence', () => {
         historical: {
           eventDate: '2022-03-30', status: 'reconstructed' as const,
           blocks: [{ id: 'a32', title: 'Artículo 32', status: 'selected' as const, consideredVersionCount: 2,
-            publicationDate: '2015-10-02', effectiveDate: '2015-10-02', text: excerpt }],
+            publicationDate: '2015-10-02', effectiveDate: '2015-10-02', publicationUrl: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2015-10565', text: excerpt }],
           limitations: [],
         },
       },
@@ -310,7 +335,7 @@ describe('claim-to-source evidence', () => {
         historical: {
           eventDate: '2022-03-30', status: 'reconstructed' as const,
           blocks: [{ id: 'a32', title: 'Artículo 32', status: 'selected' as const, consideredVersionCount: 2,
-            publicationDate: '2022-03-30', effectiveDate: '2022-03-31', modifyingNormId: 'BOE-A-2022-4972', text: thirdExcerpt }],
+            publicationDate: '2022-03-30', effectiveDate: '2022-03-31', modifyingNormId: 'BOE-A-2022-4972', publicationUrl: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2022-4972', text: thirdExcerpt }],
           limitations: [],
         },
       },
@@ -333,7 +358,7 @@ describe('claim-to-source evidence', () => {
     expect(comparison?.dimensions.find((item) => item.dimension === 'selected_version_effective_date')).toMatchObject({ status: 'different', missingSourceIds: ['S2'] });
     expect(comparison?.dimensions.find((item) => item.dimension === 'selected_version_modifying_norm')).toMatchObject({ status: 'incomplete', missingSourceIds: ['S1', 'S2'] });
     expect(result.claims[0]?.sourceRefs[0]?.historicalVersion).toMatchObject({
-      eventDate: '2022-03-30', blockId: 'a32', title: 'Artículo 32', publicationDate: '2015-10-02', effectiveDate: '2015-10-02',
+      eventDate: '2022-03-30', blockId: 'a32', title: 'Artículo 32', publicationDate: '2015-10-02', effectiveDate: '2015-10-02', publicationUrl: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2015-10565',
     });
     expect(comparison?.notAssessedDimensions).toEqual(['jurisdiction', 'legal_rank', 'subject_matter', 'case_applicability']);
     expect(result.claims[0]?.conflicts).toEqual([]);

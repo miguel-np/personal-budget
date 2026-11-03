@@ -23,6 +23,7 @@ export interface ClaimHistoricalVersion {
   readonly publicationDate: string | null;
   readonly effectiveDate: string | null;
   readonly modifyingNormId: string | null;
+  readonly publicationUrl: string | null;
 }
 
 export interface ClaimSourceReference {
@@ -160,6 +161,7 @@ function sourceEvidenceTexts(source: WebSearchSource): EvidenceText[] {
           publicationDate: block.publicationDate ?? null,
           effectiveDate: block.effectiveDate ?? null,
           modifyingNormId: block.modifyingNormId ?? null,
+          publicationUrl: block.publicationUrl ?? null,
         },
       });
     }
@@ -246,6 +248,8 @@ function sourceReference(
     quote: marker.quote,
     locator: backendLocatorVerified ? match.locator : requestedLocator,
     locatorVerified: backendLocatorVerified,
+    evidenceClass: backendLocatorVerified && isOfficialPublicationUrl(match.historicalVersion?.publicationUrl)
+      ? 'official_publication' : base.evidenceClass,
     historicalVersion: backendLocatorVerified ? match.historicalVersion : null,
   };
 }
@@ -258,11 +262,10 @@ function parseClaimClassification(text: string): MaterialClaimClassification {
     ? value : 'unclassified';
 }
 
-function isOfficialPublication(source: WebSearchSource): boolean {
-  if (source.sourceAuthority !== 'legislation' ||
-    source.document?.documentType === 'boe_consolidated_legislation') return false;
+function isOfficialPublicationUrl(value: string | null | undefined): boolean {
+  if (!value) return false;
   let url: URL;
-  try { url = new URL(source.url); } catch { return false; }
+  try { url = new URL(value); } catch { return false; }
   if (url.protocol !== 'https:' || url.username || url.password || url.port || url.hash) return false;
   const host = url.hostname.toLowerCase();
   const boePublication = (host === 'boe.es' || host === 'www.boe.es') &&
@@ -270,6 +273,13 @@ function isOfficialPublication(source: WebSearchSource): boolean {
   const dogPublication = (host === 'xunta.gal' || host === 'www.xunta.gal') &&
     /^\/(?:es\/)?diario-oficial-galicia(?:\/|$)/i.test(url.pathname);
   return boePublication || dogPublication;
+}
+
+function isOfficialPublication(source: WebSearchSource): boolean {
+  // This classifies the result URL, not the document fetched to verify a quote.
+  // BOE results can point to the original publication while retrieval returns
+  // only its informative consolidation.
+  return source.sourceAuthority === 'legislation' && isOfficialPublicationUrl(source.url);
 }
 
 function evidenceClassForSource(source: WebSearchSource): EvidenceSourceClass {
@@ -351,10 +361,12 @@ function primaryPublicationForClaim(
     return { status: 'available_not_cited', sourceIds: primarySources.map((source) => source.id) };
   }
   const evidenceById = new Map(references.map((reference) => [reference.id, reference]));
-  const allCitedHaveExcerpts = cited.every((source) =>
-    evidenceById.get(source.id)?.evidenceStatus === 'excerpt_matched');
+  const allCitedHaveOriginalPublicationEvidence = cited.every((source) => {
+    const reference = evidenceById.get(source.id);
+    return reference?.evidenceStatus === 'excerpt_matched' && reference.evidenceClass === 'official_publication';
+  });
   return {
-    status: allCitedHaveExcerpts ? 'cited_with_excerpt' : 'cited_without_excerpt',
+    status: allCitedHaveOriginalPublicationEvidence ? 'cited_with_excerpt' : 'cited_without_excerpt',
     sourceIds: primarySources.map((source) => source.id),
   };
 }
@@ -472,5 +484,6 @@ export function buildClaimEvidence(
 export function shouldAbstainFromTaxConclusion(evidence: ClaimEvidence): boolean {
   return evidence.claims.length === 0 || evidence.claims.some((claim) =>
     claim.kind === 'unresolved' || claim.conflicts.length > 0 ||
-    claim.primaryPublication.status === 'available_not_cited');
+    claim.primaryPublication.status === 'available_not_cited' ||
+    claim.primaryPublication.status === 'cited_without_excerpt');
 }

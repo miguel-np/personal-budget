@@ -334,15 +334,15 @@ test('controlled web research requires per-query consent and shows official sour
               id: 'S1', title: 'Disposición publicada en el BOE',
               url: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2025-1',
               domain: 'www.boe.es', sourceKind: 'normativa', sourceAuthority: 'legislation',
-              evidenceClass: 'official_publication', publishedAt: '2025-03-01T00:00:00.000Z', modifiedAt: null,
-              documentStatus: 'retrieved', documentType: 'official_html', temporalAssessment: 'not_marked_derogated_or_exhausted',
+              evidenceClass: 'informative_consolidation', publishedAt: '2025-03-01T00:00:00.000Z', modifiedAt: null,
+              documentStatus: 'retrieved', documentType: 'boe_consolidated_legislation', temporalAssessment: 'not_marked_derogated_or_exhausted',
               temporalEvidence: { assessment: 'not_marked_derogated_or_exhausted', referenceDate: '2026-11-01', publicationDate: '2025-03-01', effectiveDate: '2025-04-01', derogationDate: null, annulmentDate: null, lastRegistryUpdate: '2026-10-30', derogated: false, annulled: false, exhausted: false, consolidationStatus: 'Finalizado', relatedNorms: [] }, historicalVersion: null,
               evidenceStatus: 'quote_not_provided', quote: null, locator: null, locatorVerified: false,
             }, {
-              id: 'S2', title: 'Consolidación informativa de Galicia',
-              url: 'https://www.lex.gal/norma/consolidada', domain: 'www.lex.gal',
-              sourceKind: 'normativa_consolidada_informativa', sourceAuthority: 'legal_consolidation',
-              evidenceClass: 'informative_consolidation', publishedAt: '2025-04-01T00:00:00.000Z', modifiedAt: null,
+              id: 'S2', title: 'Consulta de la Dirección General de Tributos',
+              url: 'https://petete.tributos.hacienda.gob.es/consultas', domain: 'petete.tributos.hacienda.gob.es',
+              sourceKind: 'criterio_administrativo', sourceAuthority: 'dgt_criteria',
+              evidenceClass: 'dgt_doctrine', publishedAt: '2025-04-01T00:00:00.000Z', modifiedAt: null,
               documentStatus: 'unavailable', documentType: 'official_html', temporalAssessment: null,
               temporalEvidence: null, historicalVersion: null,
               evidenceStatus: 'document_not_retrieved', quote: null, locator: null, locatorVerified: false,
@@ -350,8 +350,8 @@ test('controlled web research requires per-query consent and shows official sour
             unresolvedReferences: [], conflicts: [], primaryPublication: { status: 'cited_without_excerpt', sourceIds: ['S1'] },
             sourceComparison: { sourceIds: ['S1', 'S2'], dimensions: [
               { dimension: 'evidence_class', status: 'different', values: [
-                { sourceId: 'S1', value: 'official_publication' },
-                { sourceId: 'S2', value: 'informative_consolidation' },
+                { sourceId: 'S1', value: 'informative_consolidation' },
+                { sourceId: 'S2', value: 'dgt_doctrine' },
               ], missingSourceIds: [] },
               { dimension: 'provider_published_at', status: 'different', values: [
                 { sourceId: 'S1', value: '2025-03-01T00:00:00.000Z' },
@@ -393,10 +393,10 @@ test('controlled web research requires per-query consent and shows official sour
             limitations: ['El texto consolidado del BOE es informativo y no acredita derogaciones tácitas.'],
           },
         }, {
-          id: 'S2', title: 'Consolidación informativa de Galicia', url: 'https://www.lex.gal/norma/consolidada',
-          domain: 'www.lex.gal', institution: 'Lex.gal', publishedAt: '2025-04-01T00:00:00.000Z', modifiedAt: null,
+          id: 'S2', title: 'Consulta de la Dirección General de Tributos', url: 'https://petete.tributos.hacienda.gob.es/consultas',
+          domain: 'petete.tributos.hacienda.gob.es', institution: 'Dirección General de Tributos', publishedAt: '2025-04-01T00:00:00.000Z', modifiedAt: null,
           snippet: 'Resultado sintético de una consolidación informativa.',
-          sourceKind: 'normativa_consolidada_informativa', sourceAuthority: 'legal_consolidation',
+          sourceKind: 'criterio_administrativo', sourceAuthority: 'dgt_criteria',
           document: {
             status: 'unavailable', documentType: 'official_html', retrievedAt: null, contentType: null,
             excerpt: '', textLength: 0, fetches: [], historical: null, temporal: null,
@@ -429,13 +429,15 @@ test('controlled web research requires per-query consent and shows official sour
   await expect(form.getByText('El BOE publica la disposición indicada [S1]. La fecha de búsqueda no acredita por sí sola su vigencia.')).toBeVisible();
   await expect(form.getByRole('heading', { name: 'Afirmaciones y referencias asociadas' })).toBeVisible();
   await expect(form.getByText(/Clasificación propuesta por el modelo: Sin clasificar/)).toBeVisible();
-  await expect(form.getByText(/Publicación primaria citada, pero sin fragmento literal verificable/)).toBeVisible();
+  await expect(form.getByText(/La cita no tiene un fragmento verificado de la publicación original/)).toBeVisible();
   await expect(form.getByText(/Comparación descriptiva de metadatos entre S1, S2/)).toBeVisible();
   await expect(form.getByText(/Clase de fuente: diferencias de metadatos detectadas/)).toBeVisible();
+  await expect(form.getByText(/Naturaleza declarada de la fuente: Consolidación informativa/)).toBeVisible();
   await expect(form.getByText(/Fecha de publicación indicada por el buscador: diferencias de metadatos detectadas/)).toBeVisible();
   await expect(form.getByText(/Fecha de entrada en vigor en metadatos oficiales BOE: comparación incompleta: hay datos ausentes/)).toBeVisible();
   await expect(form.getByText(/No evaluados automáticamente: jurisdicción, rango normativo, materia y aplicabilidad al supuesto/)).toBeVisible();
   await expect(form.getByRole('link', { name: '[S1] Disposición publicada en el BOE · www.boe.es · Publicación normativa' })).toBeVisible();
+  await expect(form.getByRole('link', { name: '[S2] Consulta de la Dirección General de Tributos · petete.tributos.hacienda.gob.es · Doctrina DGT' })).toBeVisible();
   await expect(form.getByText(/no se proporcionó un fragmento literal/)).toBeVisible();
   await expect(form.getByText('Texto oficial recuperado', { exact: true })).toBeVisible();
   await expect(form.getByText('Artículo 1. Texto oficial recuperado del BOE.')).toBeVisible();
