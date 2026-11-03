@@ -222,7 +222,7 @@ describe('local API', () => {
           message: { role: 'assistant', content: '', tool_calls: [{
             function: { name: 'web_search', arguments: { query: 'normativa IRPF ejercicio 2025' } },
           }] },
-        } : { message: { role: 'assistant', content: 'La fuente oficial publica la norma aplicable [S1]. [[EVIDENCE|S1|Artículo 1|La disposición regula expresamente la materia tributaria indicada en el artículo primero de la norma.]]' } }));
+        } : { message: { role: 'assistant', content: 'La fuente oficial publica la norma aplicable [S1] [[CLAIM|documented_fact]]. [[EVIDENCE|S1|Artículo 1|La disposición regula expresamente la materia tributaria indicada en el artículo primero de la norma.]]' } }));
       });
     });
     const search = createServer((request, response) => {
@@ -297,7 +297,7 @@ describe('local API', () => {
           matter: 'IRPF', taxYear: '2025', filingYear: '2026', referenceDate: '2026-11-01',
         },
         sourceCount: 1,
-        claimEvidence: { claims: [{ kind: 'evidence_located', sourceRefs: [{ evidenceStatus: 'excerpt_matched', locator: 'Artículo 1', locatorVerified: false }] }] },
+        claimEvidence: { claims: [{ classification: 'documented_fact', kind: 'evidence_located', primaryPublication: { status: 'not_located_in_results', sourceIds: [] }, sourceRefs: [{ evidenceStatus: 'excerpt_matched', locator: 'Artículo 1', locatorVerified: false, evidenceClass: 'legislation_source_unclassified', documentType: 'official_html', documentStatus: 'retrieved' }] }] },
       });
       expect(repository.listAccounts).not.toHaveBeenCalled();
       expect(repository.listTransactions).not.toHaveBeenCalled();

@@ -461,7 +461,7 @@ describe('LocalAiClient', () => {
           function: { name: 'web_search', arguments: { query: 'BOE IRPF ejercicio 2025' } },
         }] } }), { status: 200 });
       }
-      return new Response(JSON.stringify({ message: { role: 'assistant', content: 'La norma publicada se identifica en [S1] y el artículo citado [S99] [[EVIDENCE|S1|Artículo 32|La norma publicada será de aplicación en todos los supuestos previstos.]].' } }), { status: 200 });
+      return new Response(JSON.stringify({ message: { role: 'assistant', content: 'La norma publicada se identifica en [S1] [[CLAIM|documented_fact]] y el artículo citado [S99] [[EVIDENCE|S1|Artículo 32|La norma publicada será de aplicación en todos los supuestos previstos.]].' } }), { status: 200 });
     });
     const searchResponse = {
       provider: 'SearXNG' as const,
@@ -487,6 +487,7 @@ describe('LocalAiClient', () => {
     expect(result.evidenceAnswer).toContain('[S1]');
     expect(result.evidenceAnswer).toContain('[[EVIDENCE|S1|Artículo 32|');
     expect(result.answer).not.toContain('[[EVIDENCE');
+    expect(result.answer).not.toContain('[[CLAIM');
     expect(result.evidenceAnswer).toContain('[S99]');
     expect(result.answer).toContain('[referencia no resuelta]');
     expect(result.search.sources).toHaveLength(1);
@@ -515,6 +516,7 @@ describe('LocalAiClient', () => {
     expect(finalSystemPrompt).toContain('reconstruir versiones históricas por bloque si la consulta identifica explícitamente artículos');
     expect(finalSystemPrompt).toContain('No atribuyas la consolidación actual a eventDate');
     expect(finalSystemPrompt).toContain('Declara expresamente la falta de contenido, metadatos ausentes, discrepancias y límites de la consolidación BOE.');
+    expect(finalSystemPrompt).toContain('[[CLAIM|documented_fact]]');
     expect(finalSystemPrompt).toContain('[[EVIDENCE|S1|Artículo 32|fragmento literal copiado del documento]]');
     expect(finalSystemPrompt).toContain('[[CONFLICT|S1|S2|motivo concreto]]');
   });
