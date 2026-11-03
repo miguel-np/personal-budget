@@ -461,7 +461,7 @@ describe('LocalAiClient', () => {
           function: { name: 'web_search', arguments: { query: 'BOE IRPF ejercicio 2025' } },
         }] } }), { status: 200 });
       }
-      return new Response(JSON.stringify({ message: { role: 'assistant', content: 'La norma publicada se identifica en [S1].' } }), { status: 200 });
+      return new Response(JSON.stringify({ message: { role: 'assistant', content: 'La norma publicada se identifica en [S1] y el artículo citado [S99] [[EVIDENCE|S1|Artículo 32|La norma publicada será de aplicación en todos los supuestos previstos.]].' } }), { status: 200 });
     });
     const searchResponse = {
       provider: 'SearXNG' as const,
@@ -484,6 +484,11 @@ describe('LocalAiClient', () => {
     const result = await client.researchWithWebSearch(request, provider, ['boe.es']);
 
     expect(result.answer).toContain('[S1]');
+    expect(result.evidenceAnswer).toContain('[S1]');
+    expect(result.evidenceAnswer).toContain('[[EVIDENCE|S1|Artículo 32|');
+    expect(result.answer).not.toContain('[[EVIDENCE');
+    expect(result.evidenceAnswer).toContain('[S99]');
+    expect(result.answer).toContain('[referencia no resuelta]');
     expect(result.search.sources).toHaveLength(1);
     expect(provider.search).toHaveBeenCalledWith('BOE IRPF ejercicio 2025', ['boe.es'], expect.any(AbortSignal));
     expect(retrieve).toHaveBeenCalledWith(searchResponse, request.query, request.referenceDate, expect.any(AbortSignal), request.eventDate);
@@ -510,6 +515,8 @@ describe('LocalAiClient', () => {
     expect(finalSystemPrompt).toContain('reconstruir versiones históricas por bloque si la consulta identifica explícitamente artículos');
     expect(finalSystemPrompt).toContain('No atribuyas la consolidación actual a eventDate');
     expect(finalSystemPrompt).toContain('Declara expresamente la falta de contenido, metadatos ausentes, discrepancias y límites de la consolidación BOE.');
+    expect(finalSystemPrompt).toContain('[[EVIDENCE|S1|Artículo 32|fragmento literal copiado del documento]]');
+    expect(finalSystemPrompt).toContain('[[CONFLICT|S1|S2|motivo concreto]]');
   });
 
   it('passes retrieved official text and explicit temporal limits to the tool-free synthesis call', async () => {

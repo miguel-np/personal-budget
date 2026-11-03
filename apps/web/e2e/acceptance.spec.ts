@@ -328,15 +328,16 @@ test('controlled web research requires per-query consent and shows official sour
           claims: [{
             id: 'claim-e2e-boe-publication',
             text: 'El BOE publica la disposición indicada [S1].',
-            kind: 'interpretation',
+            kind: 'unresolved',
             sourceRefs: [{
               id: 'S1', title: 'Disposición publicada en el BOE',
               url: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2025-1',
               domain: 'www.boe.es', sourceKind: 'normativa', sourceAuthority: 'legislation',
+              evidenceStatus: 'quote_not_provided', quote: null, locator: null, locatorVerified: false,
             }],
-            unresolvedReferences: [], locator: null, reviewRequired: true,
+            unresolvedReferences: [], conflicts: [], reviewRequired: true,
           }],
-          limitations: ['La asociación de citas no demuestra soporte semántico y requiere revisión humana.'],
+          limitations: ['La asociación de fragmentos no demuestra soporte semántico y requiere revisión humana.'],
         },
         provider: 'SearXNG', searchedAt: '2026-11-01T12:00:00.000Z', mode: 'tax',
         taxContext: {
@@ -392,6 +393,7 @@ test('controlled web research requires per-query consent and shows official sour
   await expect(form.getByText('El BOE publica la disposición indicada [S1]. La fecha de búsqueda no acredita por sí sola su vigencia.')).toBeVisible();
   await expect(form.getByRole('heading', { name: 'Afirmaciones y referencias asociadas' })).toBeVisible();
   await expect(form.getByRole('link', { name: '[S1] Disposición publicada en el BOE · www.boe.es · legislation' })).toBeVisible();
+  await expect(form.getByText(/no se proporcionó un fragmento literal/)).toBeVisible();
   await expect(form.getByText('Texto oficial recuperado', { exact: true })).toBeVisible();
   await expect(form.getByText('Artículo 1. Texto oficial recuperado del BOE.')).toBeVisible();
   await expect(form.getByText(/Comunidad: Galicia · Municipio: Santiago de Compostela · Tipo: Persona física/)).toBeVisible();

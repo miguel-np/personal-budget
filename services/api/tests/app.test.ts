@@ -222,7 +222,7 @@ describe('local API', () => {
           message: { role: 'assistant', content: '', tool_calls: [{
             function: { name: 'web_search', arguments: { query: 'normativa IRPF ejercicio 2025' } },
           }] },
-        } : { message: { role: 'assistant', content: 'La fuente oficial publica la norma aplicable [S1].' } }));
+        } : { message: { role: 'assistant', content: 'La fuente oficial publica la norma aplicable [S1]. [[EVIDENCE|S1|Artículo 1|La disposición regula expresamente la materia tributaria indicada en el artículo primero de la norma.]]' } }));
       });
     });
     const search = createServer((request, response) => {
@@ -264,7 +264,18 @@ describe('local API', () => {
     });
     // The search provider remains real; official-source retrieval is separately
     // unit-tested and must not make this synthetic API test depend on the Internet.
-    searchProvider.retrieveOfficialDocuments = async (searchResponse) => searchResponse;
+    searchProvider.retrieveOfficialDocuments = async (searchResponse) => ({
+      ...searchResponse,
+      sources: searchResponse.sources.map((source) => ({
+        ...source,
+        document: {
+          status: 'retrieved' as const, documentType: 'official_html' as const,
+          retrievedAt: '2026-11-03T08:00:00.000Z', contentType: 'text/html',
+          excerpt: 'La disposición regula expresamente la materia tributaria indicada en el artículo primero de la norma.',
+          textLength: 100, temporal: null, historical: null, fetches: [], limitations: [],
+        },
+      })),
+    });
     const app = await createTestApp(repository, appConfig, searchProvider);
     try {
       const response = await app.inject({
@@ -286,6 +297,7 @@ describe('local API', () => {
           matter: 'IRPF', taxYear: '2025', filingYear: '2026', referenceDate: '2026-11-01',
         },
         sourceCount: 1,
+        claimEvidence: { claims: [{ kind: 'evidence_located', sourceRefs: [{ evidenceStatus: 'excerpt_matched', locator: 'Artículo 1', locatorVerified: false }] }] },
       });
       expect(repository.listAccounts).not.toHaveBeenCalled();
       expect(repository.listTransactions).not.toHaveBeenCalled();

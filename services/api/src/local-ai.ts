@@ -454,7 +454,7 @@ export class LocalAiClient {
     provider: WebSearchProvider,
     domains: readonly string[],
     callerSignal?: AbortSignal,
-  ): Promise<{ readonly answer: string; readonly search: WebSearchResponse }> {
+  ): Promise<{ readonly answer: string; readonly evidenceAnswer: string; readonly search: WebSearchResponse }> {
     if (!this.config.enabled || !this.config.model) throw new LocalAiUnavailableError();
     if (callerSignal?.aborted) throw new LocalAiCancelledError();
     const query = request.query;
@@ -631,7 +631,7 @@ export class LocalAiClient {
       stream: false,
       options: { num_ctx: MODEL_CONTEXT_TOKENS, num_predict: 768, temperature: 0 },
       messages: [
-        { role: 'system', content: systemPrompt + ' Ya se ejecutó la búsqueda y, cuando ha sido posible, se recuperaron documentos oficiales. No solicites ni simules otra herramienta. Basa cada afirmación factual en evidencia recibida y conserva las referencias [S#]. Separa metadata del buscador, texto oficial recuperado y metadatos temporales oficiales. No conviertas la fecha de publicación del buscador en vigencia. Si un documento no aparece como retrieved o partial, no afirmes haber leído el texto completo. Declara expresamente la falta de contenido, metadatos ausentes, discrepancias y límites de la consolidación BOE.' },
+        { role: 'system', content: systemPrompt + ' Ya se ejecutó la búsqueda y, cuando ha sido posible, se recuperaron documentos oficiales. No solicites ni simules otra herramienta. Basa cada afirmación factual en evidencia recibida y conserva las referencias [S#]. Separa metadata del buscador, texto oficial recuperado y metadatos temporales oficiales. No conviertas la fecha de publicación del buscador en vigencia. Si un documento no aparece como retrieved o partial, no afirmes haber leído el texto completo. Declara expresamente la falta de contenido, metadatos ausentes, discrepancias y límites de la consolidación BOE. Si un fragmento literal no aparece en el texto recuperado o las fuentes discrepan, abstente de ofrecer una conclusión categórica: explica qué está documentado, qué falta y qué requiere contraste humano. Devuelve una afirmación por línea. Para cada afirmación factual material, conserva la cita visible [S1] y añade el marcador técnico [[EVIDENCE|S1|Artículo 32|fragmento literal copiado del documento]], usando entre 20 y 500 caracteres copiados exactamente del extracto documental recuperado o del bloque histórico BOE seleccionado. No uses snippets del buscador como prueba documental. Si no existe fragmento literal disponible, no inventes uno y deja la afirmación sin marcador de evidencia. El localizador debe ser artículo, apartado o título que aparezca en el propio texto; si no está disponible, déjalo vacío. Cuando dos fuentes parezcan discrepar, explica la diferencia en una afirmación y añade [[CONFLICT|S1|S2|motivo concreto]], junto con ambos marcadores EVIDENCE y sus citas. No declares una contradicción jurídica resuelta: indica qué evidencia difiere y por qué requiere revisión humana.' },
         { role: 'user', content: userMessage },
         {
           role: 'assistant',
@@ -643,15 +643,26 @@ export class LocalAiClient {
     });
     if ((finalPayload.message?.tool_calls?.length ?? 0) > 0) throw new LocalAiToolCallUnsupportedError();
     const rawAnswer = sanitizeWebNarrative(finalPayload.message?.content ?? '');
-    const validReferences = new Set(search.sources.map((source) => `[${source.id}]`));
-    const answer = rawAnswer.replace(/\\[S\\d+\\]/g, (reference) => validReferences.has(reference) ? reference : '');
-    const hasValidCitation = [...validReferences].some((reference) => answer.includes(reference));
+    const validSourceIds = new Set(search.sources.map((source) => source.id));
+    // Preserve every model citation in the private evidence payload so the backend
+    // can explicitly mark unknown IDs as unresolved instead of silently losing them.
+    const evidenceAnswer = rawAnswer;
+    const visibleAnswer = evidenceAnswer
+      .replace(/\[(S\d+)\]/g, (reference, sourceId: string) =>
+        validSourceIds.has(sourceId) ? reference : '[referencia no resuelta]')
+      .replace(/\[\[EVIDENCE\|S\d+\|[^\]\r\n]{0,700}\]\]/g, '')
+      .replace(/\[\[CONFLICT\|S\d+\|S\d+\|[^\]\r\n]{0,360}\]\]/g, '')
+      .replace(/[ \t]{2,}/g, ' ')
+      .replace(/\s+([,.!?;:])/g, '$1')
+      .trim();
+    const hasValidCitation = [...validSourceIds].some((id) => evidenceAnswer.includes(`[${id}]`));
     return {
       answer: search.sources.length === 0
         ? 'No se encontraron fuentes que cumplan los filtros de búsqueda. No hay evidencia suficiente para elaborar una conclusión.'
         : hasValidCitation
-          ? answer
+          ? visibleAnswer
           : 'La síntesis local no citó ninguna de las fuentes devueltas. Revisa los documentos originales en la lista de fuentes antes de extraer conclusiones.',
+      evidenceAnswer,
       search,
     };
   }
