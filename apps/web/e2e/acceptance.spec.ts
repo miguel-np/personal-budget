@@ -442,7 +442,7 @@ test('controlled web research requires per-query consent and shows official sour
   await expect(form.getByText('Texto oficial recuperado', { exact: true })).toBeVisible();
   await expect(form.getByText('Artículo 1. Texto oficial recuperado del BOE.')).toBeVisible();
   await expect(form.getByText(/Comunidad: Galicia · Municipio: Santiago de Compostela · Tipo: Persona física/)).toBeVisible();
-  await expect(form.getByText('Sin marca BOE de derogación/anulación/agotamiento en la ficha consultada')).toBeVisible();
+  await expect(form.getByText('Sin marca BOE de derogación/anulación/agotamiento en la ficha consultada', { exact: true })).toBeVisible();
   await expect(form.getByRole('link', { name: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2025-1' })).toHaveAttribute('rel', 'noopener noreferrer');
   expect(approvedPayload).toMatchObject({
     consent: true, query: 'BOE IRPF ejercicio 2025', mode: 'tax',
