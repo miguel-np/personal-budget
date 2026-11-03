@@ -323,7 +323,7 @@ test('controlled web research requires per-query consent and shows official sour
     await route.fulfill({
       status: 200, contentType: 'application/json',
       body: JSON.stringify({ data: {
-        answer: 'El BOE publica la disposición indicada [S1]. La fecha de búsqueda no acredita por sí sola su vigencia.',
+        answer: 'La investigación se abstiene de ofrecer una conclusión categórica: al menos una afirmación no tiene evidencia documental literal verificable o existe una posible discrepancia sin resolver. Consulta las fuentes y fragmentos asociados. La coincidencia literal no demuestra que la fuente respalde la afirmación ni su aplicabilidad jurídica.',
         claimEvidence: {
           claims: [{
             id: 'claim-e2e-boe-publication',
@@ -426,7 +426,7 @@ test('controlled web research requires per-query consent and shows official sour
   await form.getByRole('checkbox', { name: /Autorizo enviar esta consulta a SearXNG y permitir la recuperación de documentos oficiales enlazados por el servidor/ }).check();
   await form.getByRole('button', { name: 'Buscar y sintetizar fuentes' }).click();
 
-  await expect(form.getByText('El BOE publica la disposición indicada [S1]. La fecha de búsqueda no acredita por sí sola su vigencia.')).toBeVisible();
+  await expect(form.getByText('La investigación se abstiene de ofrecer una conclusión categórica: al menos una afirmación no tiene evidencia documental literal verificable o existe una posible discrepancia sin resolver. Consulta las fuentes y fragmentos asociados. La coincidencia literal no demuestra que la fuente respalde la afirmación ni su aplicabilidad jurídica.')).toBeVisible();
   await expect(form.getByRole('heading', { name: 'Afirmaciones y referencias asociadas' })).toBeVisible();
   await expect(form.getByText(/Clasificación propuesta por el modelo: Sin clasificar/)).toBeVisible();
   await expect(form.getByText(/La cita no tiene un fragmento verificado de la publicación original/)).toBeVisible();

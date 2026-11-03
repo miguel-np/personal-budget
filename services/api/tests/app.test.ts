@@ -235,7 +235,7 @@ describe('local API', () => {
       response.writeHead(200);
       response.end(JSON.stringify({ results: [{
         title: 'Disposición publicada en BOE',
-        url: 'https://www.boe.es/buscar/act.php?id=BOE-A-2025-1',
+        url: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2025-1',
         content: 'Texto normativo oficial. Fecha de publicación indicada por la fuente.',
         publishedDate: '2025-03-01',
       }] }));
@@ -273,7 +273,7 @@ describe('local API', () => {
       sources: searchResponse.sources.map((source) => ({
         ...source,
         document: {
-          status: 'retrieved' as const, documentType: 'official_html' as const,
+          status: 'retrieved' as const, documentType: 'boe_consolidated_legislation' as const,
           retrievedAt: '2026-11-03T08:00:00.000Z', contentType: 'text/html',
           excerpt: 'La disposición regula expresamente la materia tributaria indicada en el artículo primero de la norma.',
           textLength: 100, temporal: null, historical: null, fetches: [], limitations: [],
@@ -293,7 +293,7 @@ describe('local API', () => {
       });
       expect(response.statusCode).toBe(200);
       expect(response.json().data).toMatchObject({
-        answer: 'La fuente oficial publica la norma aplicable [S1].',
+        answer: 'La investigación se abstiene de ofrecer una conclusión categórica: al menos una afirmación no tiene evidencia documental literal verificable o existe una posible discrepancia sin resolver. Consulta las fuentes y fragmentos asociados. La coincidencia literal no demuestra que la fuente respalde la afirmación ni su aplicabilidad jurídica.',
         provider: 'SearXNG', mode: 'tax',
         taxContext: {
           jurisdiction: 'España', autonomousCommunity: 'Galicia', municipality: 'Santiago de Compostela',
@@ -301,7 +301,7 @@ describe('local API', () => {
           matter: 'IRPF', taxYear: '2025', filingYear: '2026', referenceDate: '2026-11-01',
         },
         sourceCount: 1,
-        claimEvidence: { claims: [{ classification: 'documented_fact', kind: 'evidence_located', primaryPublication: { status: 'not_located_in_results', sourceIds: [] }, sourceRefs: [{ evidenceStatus: 'excerpt_matched', locator: 'Artículo 1', locatorVerified: false, evidenceClass: 'legislation_source_unclassified', documentType: 'official_html', documentStatus: 'retrieved' }] }] },
+        claimEvidence: { claims: [{ classification: 'documented_fact', kind: 'evidence_located', primaryPublication: { status: 'cited_without_excerpt', sourceIds: ['S1'] }, sourceRefs: [{ evidenceStatus: 'excerpt_matched', locator: 'Artículo 1', locatorVerified: false, evidenceClass: 'informative_consolidation', documentType: 'boe_consolidated_legislation', documentStatus: 'retrieved' }] }] },
       });
       const unresolvedResponse = await app.inject({
         method: 'POST', url: '/api/v1/assistant/web-search',
