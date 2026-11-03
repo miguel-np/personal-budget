@@ -119,8 +119,8 @@ function sourceReference(
   markers: readonly EvidenceMarker[],
 ): ClaimSourceReference {
   const records = sourceEvidenceTexts(source);
-  const marker = markers.find((candidate) => candidate.sourceId === source.id);
-  if (!marker) {
+  const sourceMarkers = markers.filter((candidate) => candidate.sourceId === source.id);
+  if (sourceMarkers.length === 0) {
     return {
       id: source.id, title: source.title, url: source.url, domain: source.domain,
       sourceKind: source.sourceKind, sourceAuthority: source.sourceAuthority,
@@ -129,6 +129,14 @@ function sourceReference(
     };
   }
 
+  if (sourceMarkers.length !== 1) {
+    return {
+      id: source.id, title: source.title, url: source.url, domain: source.domain,
+      sourceKind: source.sourceKind, sourceAuthority: source.sourceAuthority,
+      evidenceStatus: 'excerpt_not_found', quote: null, locator: null, locatorVerified: false,
+    };
+  }
+  const marker = sourceMarkers[0]!;
   const quote = normalizeEvidenceText(marker.quote);
   const match = records.find((record) => quote.length >= 20 && normalizeEvidenceText(record.text).includes(quote));
   if (!match) {
@@ -141,8 +149,8 @@ function sourceReference(
   }
 
   const requestedLocator = marker.locator;
-  const requestedLocatorVerified = Boolean(requestedLocator &&
-    normalizeEvidenceText(match.text).includes(normalizeEvidenceText(requestedLocator)));
+  // Only a title returned by the backend's BOE block evaluator is a verified
+  // locator. A model-proposed HTML locator is displayed but not trusted.
   const backendLocatorVerified = match.kind === 'historical_block' && Boolean(match.locator);
   return {
     id: source.id, title: source.title, url: source.url, domain: source.domain,
@@ -150,7 +158,7 @@ function sourceReference(
     evidenceStatus: 'excerpt_matched',
     quote: marker.quote,
     locator: backendLocatorVerified ? match.locator : requestedLocator,
-    locatorVerified: backendLocatorVerified || requestedLocatorVerified,
+    locatorVerified: backendLocatorVerified,
   };
 }
 
@@ -184,6 +192,13 @@ export function buildClaimEvidence(answerWithMarkers: string, sources: readonly 
         unresolvedReferences.push('[S' + marker.sourceId + '] (falta la cita visible)');
       }
     }
+    for (const marker of conflictMarkers) {
+      for (const id of [marker.firstSourceId, marker.secondSourceId]) {
+        if (!citationIds.includes(id) && sourceById.has(id)) {
+          unresolvedReferences.push('[S' + id + '] (falta la cita visible para la discrepancia)');
+        }
+      }
+    }
 
     const references = allIds.flatMap((id): ClaimSourceReference[] => {
       const source = sourceById.get(id);
@@ -196,7 +211,8 @@ export function buildClaimEvidence(answerWithMarkers: string, sources: readonly 
       const first = references.find((reference) => reference.id === marker.firstSourceId);
       const second = references.find((reference) => reference.id === marker.secondSourceId);
       return {
-        status: first?.evidenceStatus === 'excerpt_matched' && second?.evidenceStatus === 'excerpt_matched'
+        status: marker.firstSourceId !== marker.secondSourceId &&
+          first?.evidenceStatus === 'excerpt_matched' && second?.evidenceStatus === 'excerpt_matched'
           ? 'reported_with_fragments' : 'unverified',
         sourceIds: [marker.firstSourceId, marker.secondSourceId],
         reason: marker.reason.slice(0, 300),
@@ -207,7 +223,8 @@ export function buildClaimEvidence(answerWithMarkers: string, sources: readonly 
     return {
       id,
       text: visibleText,
-      kind: allFragmentsMatched ? 'evidence_located' : 'unresolved',
+      // Any reported conflict remains unresolved even when both literal fragments exist.
+      kind: allFragmentsMatched && conflicts.length === 0 ? 'evidence_located' : 'unresolved',
       sourceRefs: references,
       unresolvedReferences: [...new Set(unresolvedReferences)],
       conflicts,

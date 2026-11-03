@@ -42,7 +42,7 @@ describe('claim-to-source evidence', () => {
         evidenceStatus: 'excerpt_matched',
         quote: 'La Administración ampliará los plazos cuando una incidencia técnica haya imposibilitado el funcionamiento ordinario del sistema.',
         locator: 'Artículo 32',
-        locatorVerified: true,
+        locatorVerified: false,
       }],
       unresolvedReferences: [],
       conflicts: [],
@@ -98,13 +98,57 @@ describe('claim-to-source evidence', () => {
       [source('S1'), second],
     );
     expect(result.claims[0]).toMatchObject({
-      kind: 'evidence_located',
+      kind: 'unresolved',
       conflicts: [{
         status: 'reported_with_fragments',
         sourceIds: ['S1', 'S2'],
       }],
     });
     expect(result.limitations.join(' ')).toContain('no decide si existe contradicción jurídica');
+  });
+
+
+  it('verifies the title of a backend-selected BOE historical block as a locator', () => {
+    const document = {
+      ...source('S1').document!,
+      historical: {
+        eventDate: '2022-03-30',
+        status: 'reconstructed' as const,
+        blocks: [{
+          id: 'a32', title: 'Artículo 32', status: 'selected' as const,
+          consideredVersionCount: 2, text: excerpt,
+        }],
+        limitations: [],
+      },
+    };
+    const result = buildClaimEvidence(
+      'La redacción corresponde a la versión seleccionada [S1] [[EVIDENCE|S1|Artículo 32|La Administración ampliará los plazos cuando una incidencia técnica haya imposibilitado el funcionamiento ordinario del sistema.]]',
+      [{ ...source('S1'), document }],
+    );
+    expect(result.claims[0]?.sourceRefs[0]).toMatchObject({
+      evidenceStatus: 'excerpt_matched', locator: 'Artículo 32', locatorVerified: true,
+    });
+  });
+
+  it('rejects duplicate evidence markers for a single source instead of silently ignoring extras', () => {
+    const result = buildClaimEvidence(
+      'La regla se aplica [S1] [[EVIDENCE|S1||La Administración ampliará los plazos cuando una incidencia técnica haya imposibilitado el funcionamiento ordinario del sistema.]] [[EVIDENCE|S1||Esta frase inventada no aparece en el documento recuperado.]]',
+      [source('S1')],
+    );
+    expect(result.claims[0]).toMatchObject({
+      kind: 'unresolved',
+      sourceRefs: [{ evidenceStatus: 'excerpt_not_found', quote: null }],
+    });
+  });
+
+  it('requires both citations to be visible for a reported conflict', () => {
+    const second = source('S2', 'Artículo 32. La Administración no ampliará los plazos por incidencias técnicas.');
+    const result = buildClaimEvidence(
+      'Las fuentes difieren [S1] [[EVIDENCE|S1|Artículo 32|La Administración ampliará los plazos cuando una incidencia técnica haya imposibilitado el funcionamiento ordinario del sistema.]] [[EVIDENCE|S2|Artículo 32|La Administración no ampliará los plazos por incidencias técnicas.]] [[CONFLICT|S1|S2|Los textos difieren en la ampliación del plazo por incidencias técnicas.]]',
+      [source('S1'), second],
+    );
+    expect(result.claims[0]?.kind).toBe('unresolved');
+    expect(result.claims[0]?.unresolvedReferences).toContain('[S2] (falta la cita visible para la discrepancia)');
   });
 
   it('keeps the output deterministic and disclaims semantic entailment validation', () => {
