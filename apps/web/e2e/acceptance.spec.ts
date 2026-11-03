@@ -335,7 +335,7 @@ test('controlled web research requires per-query consent and shows official sour
               url: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2025-1',
               domain: 'www.boe.es', sourceKind: 'normativa', sourceAuthority: 'legislation',
               evidenceClass: 'official_publication', publishedAt: null, modifiedAt: null,
-              documentStatus: 'retrieved', documentType: 'official_html', temporalAssessment: null, temporalEvidence: null,
+              documentStatus: 'retrieved', documentType: 'official_html', temporalAssessment: null, temporalEvidence: null, historicalVersion: null,
               evidenceStatus: 'quote_not_provided', quote: null, locator: null, locatorVerified: false,
             }],
             unresolvedReferences: [], conflicts: [], primaryPublication: { status: 'cited_without_excerpt', sourceIds: ['S1'] },

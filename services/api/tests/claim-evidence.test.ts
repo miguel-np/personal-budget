@@ -284,7 +284,15 @@ describe('claim-to-source evidence', () => {
     };
     const first = {
       ...source('S1'), publishedAt: '2025-03-01T00:00:00.000Z', modifiedAt: '2025-03-10T00:00:00.000Z',
-      document: { ...source('S1').document!, temporal: temporalOne },
+      document: {
+        ...source('S1').document!, temporal: temporalOne,
+        historical: {
+          eventDate: '2022-03-30', status: 'reconstructed' as const,
+          blocks: [{ id: 'a32', title: 'Artículo 32', status: 'selected' as const, consideredVersionCount: 2,
+            publicationDate: '2015-10-02', effectiveDate: '2015-10-02', text: excerpt }],
+          limitations: [],
+        },
+      },
     };
     const consolidationExcerpt = 'Artículo 32. La Administración ampliará los plazos en los supuestos expresamente previstos por la norma.';
     const second: WebSearchSource = {
@@ -297,7 +305,15 @@ describe('claim-to-source evidence', () => {
     const third: WebSearchSource = {
       ...source('S3', thirdExcerpt),
       publishedAt: '2025-06-01T00:00:00.000Z', modifiedAt: '2025-06-15T00:00:00.000Z',
-      document: { ...source('S3').document!, temporal: temporalThree },
+      document: {
+        ...source('S3').document!, temporal: temporalThree,
+        historical: {
+          eventDate: '2022-03-30', status: 'reconstructed' as const,
+          blocks: [{ id: 'a32', title: 'Artículo 32', status: 'selected' as const, consideredVersionCount: 2,
+            publicationDate: '2022-03-30', effectiveDate: '2022-03-31', modifyingNormId: 'BOE-A-2022-4972', text: thirdExcerpt }],
+          limitations: [],
+        },
+      },
     };
     const result = buildClaimEvidence(
       'Las fuentes presentan metadatos distintos [S1] [S2] [S3] '+
@@ -312,6 +328,13 @@ describe('claim-to-source evidence', () => {
     expect(comparison?.dimensions.find((item) => item.dimension === 'provider_published_at')).toMatchObject({ status: 'different' });
     expect(comparison?.dimensions.find((item) => item.dimension === 'official_effective_date')).toMatchObject({ status: 'different', missingSourceIds: ['S2'] });
     expect(comparison?.dimensions.find((item) => item.dimension === 'official_temporal_assessment')).toMatchObject({ status: 'different', missingSourceIds: ['S2'] });
+    expect(comparison?.dimensions.find((item) => item.dimension === 'selected_version_event_date')).toMatchObject({ status: 'incomplete', missingSourceIds: ['S2'] });
+    expect(comparison?.dimensions.find((item) => item.dimension === 'selected_version_publication_date')).toMatchObject({ status: 'different', missingSourceIds: ['S2'] });
+    expect(comparison?.dimensions.find((item) => item.dimension === 'selected_version_effective_date')).toMatchObject({ status: 'different', missingSourceIds: ['S2'] });
+    expect(comparison?.dimensions.find((item) => item.dimension === 'selected_version_modifying_norm')).toMatchObject({ status: 'incomplete', missingSourceIds: ['S1', 'S2'] });
+    expect(result.claims[0]?.sourceRefs[0]?.historicalVersion).toMatchObject({
+      eventDate: '2022-03-30', blockId: 'a32', title: 'Artículo 32', publicationDate: '2015-10-02', effectiveDate: '2015-10-02',
+    });
     expect(comparison?.notAssessedDimensions).toEqual(['jurisdiction', 'legal_rank', 'subject_matter', 'case_applicability']);
     expect(result.claims[0]?.conflicts).toEqual([]);
   });

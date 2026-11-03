@@ -57,6 +57,10 @@ interface SearchSource {
     limitations: readonly string[];
   };
 }
+interface ClaimHistoricalVersion {
+  eventDate: string; blockId: string; title: string;
+  publicationDate: string | null; effectiveDate: string | null; modifyingNormId: string | null;
+}
 interface ClaimSourceReference {
   id: string; title: string; url: string; domain: string;
   sourceKind: SearchSource['sourceKind']; sourceAuthority: SearchSource['sourceAuthority'];
@@ -66,6 +70,7 @@ interface ClaimSourceReference {
   documentType: 'boe_consolidated_legislation' | 'official_html' | 'unsupported_format' | null;
   temporalAssessment: NonNullable<NonNullable<SearchSource['document']>['temporal']>['assessment'] | null;
   temporalEvidence: NonNullable<SearchSource['document']>['temporal'];
+  historicalVersion: ClaimHistoricalVersion | null;
   evidenceStatus: 'excerpt_matched' | 'excerpt_not_found' | 'document_not_retrieved' | 'quote_not_provided';
   quote: string | null; locator: string | null; locatorVerified: boolean;
 }
@@ -76,7 +81,9 @@ interface ModelReportedConflict {
 type ClaimComparisonDimensionKey =
   | 'evidence_class' | 'provider_published_at' | 'provider_modified_at'
   | 'official_publication_date' | 'official_effective_date' | 'official_derogation_date'
-  | 'official_annulment_date' | 'official_last_registry_update' | 'official_temporal_assessment';
+  | 'official_annulment_date' | 'official_last_registry_update' | 'official_temporal_assessment'
+  | 'selected_version_event_date' | 'selected_version_publication_date'
+  | 'selected_version_effective_date' | 'selected_version_modifying_norm';
 interface ClaimSourceComparison {
   sourceIds: readonly string[];
   dimensions: readonly {
@@ -174,6 +181,10 @@ function comparisonDimensionLabel(value: ClaimComparisonDimensionKey): string {
     official_annulment_date: 'Fecha de anulación en metadatos oficiales BOE',
     official_last_registry_update: 'Última actualización registral BOE',
     official_temporal_assessment: 'Evaluación temporal indicada por metadatos BOE',
+    selected_version_event_date: 'Fecha del hecho usada para seleccionar la versión histórica',
+    selected_version_publication_date: 'Publicación de la versión histórica seleccionada',
+    selected_version_effective_date: 'Entrada en vigor de la versión histórica seleccionada',
+    selected_version_modifying_norm: 'Norma modificadora de la versión histórica seleccionada',
   } as const)[value];
 }
 function comparisonStatusLabel(value: 'different' | 'consistent' | 'incomplete'): string {
@@ -373,6 +384,7 @@ export function WebResearchPanel() {
                     <p className="section-footnote">Recuperación documental: {claimDocumentStatusLabel(source.documentStatus)} · {source.documentType === 'boe_consolidated_legislation' ? 'consolidación BOE informativa' : source.documentType === 'official_html' ? 'HTML oficial' : source.documentType === 'unsupported_format' ? 'formato no compatible' : 'tipo documental no indicado'}.</p>
                     <p className="section-footnote">Fechas del buscador (no equivalen a vigencia): publicación {formatDate(source.publishedAt)}{source.modifiedAt ? ' · modificación indicada: ' + formatDate(source.modifiedAt) : ''}.</p>
                     {source.temporalAssessment ? <p className="section-footnote">Metadatos temporales BOE: {temporalAssessmentLabel(source.temporalAssessment)}.</p> : null}
+                    {source.historicalVersion ? <p className="section-footnote">Versión histórica seleccionada por el backend: {source.historicalVersion.title} · hecho {source.historicalVersion.eventDate} · publicación {source.historicalVersion.publicationDate ?? 'sin dato'} · entrada en vigor {source.historicalVersion.effectiveDate ?? 'sin dato'}{source.historicalVersion.modifyingNormId ? ' · modificada por ' + source.historicalVersion.modifyingNormId : ''}.</p> : null}
                     <p className="section-footnote">Comprobación: {source.evidenceStatus === 'excerpt_matched' ? 'el fragmento aparece en el documento recuperado' : source.evidenceStatus === 'excerpt_not_found' ? 'el fragmento no aparece en el extracto recuperado' : source.evidenceStatus === 'document_not_retrieved' ? 'no se recuperó el documento para contrastarlo' : 'no se proporcionó un fragmento literal'}</p>
                     {source.quote ? <blockquote className="research-answer">{source.quote}</blockquote> : null}
                     {source.locator ? <p className="section-footnote">Localizador: {source.locator} · {source.locatorVerified ? 'comprobado en el texto' : 'propuesto, no verificado'}</p> : null}

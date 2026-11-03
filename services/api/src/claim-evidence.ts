@@ -16,6 +16,15 @@ export type ClaimEvidenceStatus =
   | 'document_not_retrieved'
   | 'quote_not_provided';
 
+export interface ClaimHistoricalVersion {
+  readonly eventDate: string;
+  readonly blockId: string;
+  readonly title: string;
+  readonly publicationDate: string | null;
+  readonly effectiveDate: string | null;
+  readonly modifyingNormId: string | null;
+}
+
 export interface ClaimSourceReference {
   readonly id: string;
   readonly title: string;
@@ -31,6 +40,7 @@ export interface ClaimSourceReference {
   readonly documentType: 'boe_consolidated_legislation' | 'official_html' | 'unsupported_format' | null;
   readonly temporalAssessment: NonNullable<NonNullable<WebSearchSource['document']>['temporal']>['assessment'] | null;
   readonly temporalEvidence: NonNullable<WebSearchSource['document']>['temporal'];
+  readonly historicalVersion: ClaimHistoricalVersion | null;
   readonly evidenceStatus: ClaimEvidenceStatus;
   readonly quote: string | null;
   readonly locator: string | null;
@@ -52,7 +62,9 @@ export interface ClaimPrimaryPublication {
 export type ClaimComparisonDimensionKey =
   | 'evidence_class' | 'provider_published_at' | 'provider_modified_at'
   | 'official_publication_date' | 'official_effective_date' | 'official_derogation_date'
-  | 'official_annulment_date' | 'official_last_registry_update' | 'official_temporal_assessment';
+  | 'official_annulment_date' | 'official_last_registry_update' | 'official_temporal_assessment'
+  | 'selected_version_event_date' | 'selected_version_publication_date'
+  | 'selected_version_effective_date' | 'selected_version_modifying_norm';
 export interface ClaimSourceComparisonDimension {
   readonly dimension: ClaimComparisonDimensionKey;
   readonly status: 'different' | 'consistent' | 'incomplete';
@@ -98,6 +110,7 @@ interface EvidenceText {
   readonly text: string;
   readonly locator: string | null;
   readonly kind: 'document_excerpt' | 'historical_block';
+  readonly historicalVersion: ClaimHistoricalVersion | null;
 }
 
 const REFERENCE_PATTERN = /\[S(\d+)\]/g;
@@ -129,13 +142,26 @@ function sourceEvidenceTexts(source: WebSearchSource): EvidenceText[] {
 
   const records: EvidenceText[] = [];
   if (document.excerpt.trim()) {
-    records.push({ text: document.excerpt, locator: null, kind: 'document_excerpt' });
+    records.push({ text: document.excerpt, locator: null, kind: 'document_excerpt', historicalVersion: null });
   }
-  for (const block of document.historical?.blocks ?? []) {
+  const historical = document.historical;
+  for (const block of historical?.blocks ?? []) {
     // Only a version selected by the backend's bounded BOE history evaluator can
     // be used as historical block evidence. Other versions remain contextual data.
-    if (block.status === 'selected' && block.text?.trim()) {
-      records.push({ text: block.text, locator: block.title, kind: 'historical_block' });
+    if (historical && block.status === 'selected' && block.text?.trim()) {
+      records.push({
+        text: block.text,
+        locator: block.title,
+        kind: 'historical_block',
+        historicalVersion: {
+          eventDate: historical.eventDate,
+          blockId: block.id,
+          title: block.title,
+          publicationDate: block.publicationDate ?? null,
+          effectiveDate: block.effectiveDate ?? null,
+          modifyingNormId: block.modifyingNormId ?? null,
+        },
+      });
     }
   }
   return records;
@@ -175,6 +201,7 @@ function sourceReference(
     documentType: source.document?.documentType ?? null,
     temporalAssessment: source.document?.temporal?.assessment ?? null,
     temporalEvidence: source.document?.temporal ?? null,
+    historicalVersion: null,
   };
   const records = sourceEvidenceTexts(source);
   const sourceMarkers = markers.filter((candidate) => candidate.sourceId === source.id);
@@ -219,6 +246,7 @@ function sourceReference(
     quote: marker.quote,
     locator: backendLocatorVerified ? match.locator : requestedLocator,
     locatorVerified: backendLocatorVerified,
+    historicalVersion: backendLocatorVerified ? match.historicalVersion : null,
   };
 }
 
@@ -300,6 +328,10 @@ function buildSourceComparison(references: readonly ClaimSourceReference[]): Cla
       compare('official_annulment_date', (reference) => reference.temporalEvidence?.annulmentDate ?? null),
       compare('official_last_registry_update', (reference) => reference.temporalEvidence?.lastRegistryUpdate ?? null),
       compare('official_temporal_assessment', (reference) => reference.temporalEvidence?.assessment ?? null),
+      compare('selected_version_event_date', (reference) => reference.historicalVersion?.eventDate ?? null),
+      compare('selected_version_publication_date', (reference) => reference.historicalVersion?.publicationDate ?? null),
+      compare('selected_version_effective_date', (reference) => reference.historicalVersion?.effectiveDate ?? null),
+      compare('selected_version_modifying_norm', (reference) => reference.historicalVersion?.modifyingNormId ?? null),
     ],
     notAssessedDimensions,
   };
