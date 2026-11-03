@@ -60,6 +60,11 @@ interface SearchSource {
 interface ClaimSourceReference {
   id: string; title: string; url: string; domain: string;
   sourceKind: SearchSource['sourceKind']; sourceAuthority: SearchSource['sourceAuthority'];
+  evidenceClass: 'official_publication' | 'informative_consolidation' | 'dgt_doctrine' | 'teac_criteria' | 'administrative_guidance' | 'administrative_information' | 'official_information' | 'legislation_source_unclassified' | 'external';
+  publishedAt: string | null; modifiedAt: string | null;
+  documentStatus: 'retrieved' | 'partial' | 'unavailable' | 'unsupported' | null;
+  documentType: 'boe_consolidated_legislation' | 'official_html' | 'unsupported_format' | null;
+  temporalAssessment: NonNullable<NonNullable<SearchSource['document']>['temporal']>['assessment'] | null;
   evidenceStatus: 'excerpt_matched' | 'excerpt_not_found' | 'document_not_retrieved' | 'quote_not_provided';
   quote: string | null; locator: string | null; locatorVerified: boolean;
 }
@@ -68,7 +73,10 @@ interface ModelReportedConflict {
   sourceIds: readonly [string, string]; reason: string;
 }
 interface MaterialClaim {
-  id: string; text: string; kind: 'evidence_located' | 'unresolved';
+  id: string; text: string;
+  classification: 'documented_fact' | 'metadata' | 'interpretation' | 'case_dependent' | 'unclassified';
+  kind: 'evidence_located' | 'unresolved';
+  primaryPublication: { status: 'cited_with_excerpt' | 'cited_without_excerpt' | 'available_not_cited' | 'not_located_in_results' | 'not_required'; sourceIds: readonly string[] };
   sourceRefs: readonly ClaimSourceReference[]; unresolvedReferences: readonly string[];
   conflicts: readonly ModelReportedConflict[]; reviewRequired: true;
 }
@@ -101,6 +109,43 @@ function sourceAuthorityLabel(authority: SearchSource['sourceAuthority']): strin
     external: 'Fuente externa',
   };
   return labels[authority];
+}
+function claimClassificationLabel(value: MaterialClaim['classification']): string {
+  return ({
+    documented_fact: 'Hecho presentado como documentado',
+    metadata: 'Metadato de publicación o ficha oficial',
+    interpretation: 'Interpretación del modelo',
+    case_dependent: 'Depende de circunstancias del supuesto',
+    unclassified: 'Sin clasificar',
+  } as const)[value];
+}
+function evidenceClassLabel(value: ClaimSourceReference['evidenceClass']): string {
+  return ({
+    official_publication: 'Publicación oficial original (ruta institucional detectada)',
+    informative_consolidation: 'Consolidación informativa',
+    dgt_doctrine: 'Doctrina DGT',
+    teac_criteria: 'Criterio / resolución TEAC',
+    administrative_guidance: 'Guía administrativa',
+    administrative_information: 'Información de la Administración',
+    official_information: 'Información de organismo oficial',
+    legislation_source_unclassified: 'Fuente en portal normativo; documento no clasificado',
+    external: 'Fuente externa',
+  } as const)[value];
+}
+function claimDocumentStatusLabel(value: ClaimSourceReference['documentStatus']): string {
+  if (value === 'retrieved') return 'Documento recuperado';
+  if (value === 'partial') return 'Documento recuperado parcialmente';
+  if (value === 'unsupported') return 'Formato no compatible';
+  return 'Documento no recuperado';
+}
+function primaryPublicationStatusLabel(value: MaterialClaim['primaryPublication']['status']): string {
+  return ({
+    cited_with_excerpt: 'Publicación primaria citada con fragmento literal localizado',
+    cited_without_excerpt: 'Publicación primaria citada, pero sin fragmento literal verificable',
+    available_not_cited: 'Hay una publicación oficial original entre los resultados que esta afirmación no cita; la relación con el supuesto no está evaluada',
+    not_located_in_results: 'No se localizó publicación oficial original entre los resultados; la búsqueda no es exhaustiva',
+    not_required: 'No exigida para esta consulta',
+  } as const)[value];
 }
 function documentStatusLabel(
   status: NonNullable<SearchSource['document']>['status'],
@@ -266,10 +311,24 @@ export function WebResearchPanel() {
             <ol className="source-list">
               {result.claimEvidence.claims.map((claim) => <li key={claim.id}>
                 <p>{claim.text}</p>
-                <p className="section-footnote">Estado: {claim.kind === 'evidence_located' ? 'Fragmentos literales localizados' : 'Evidencia documental insuficiente'} · Revisión humana requerida</p>
+                <p className="section-footnote">Clasificación propuesta por el modelo: {claimClassificationLabel(claim.classification)} · No equivale a validación jurídica.</p>
+                <p className="section-footnote">Comprobación documental: {claim.kind === 'evidence_located' ? 'fragmentos literales localizados' : 'evidencia documental insuficiente'} · Revisión humana requerida</p>
+                {claim.primaryPublication.status !== 'not_required' ? <>
+                  <p className="section-footnote">Publicación primaria: {primaryPublicationStatusLabel(claim.primaryPublication.status)}.</p>
+                  {claim.primaryPublication.sourceIds.length > 0 ? <ul aria-label="Publicaciones oficiales originales entre los resultados">
+                    {claim.primaryPublication.sourceIds.map((sourceId) => {
+                      const primary = result.sources.find((candidate) => candidate.id === sourceId);
+                      return primary ? <li key={sourceId}><a href={primary.url} target="_blank" rel="noopener noreferrer">[{primary.id}] {primary.title}</a></li> : null;
+                    })}
+                  </ul> : null}
+                </> : null}
                 {claim.sourceRefs.length > 0 ? <ul>
                   {claim.sourceRefs.map((source) => <li key={source.id}>
-                    <div><a href={source.url} target="_blank" rel="noopener noreferrer">[{source.id}] {source.title} · {source.domain} · {source.sourceAuthority}</a></div>
+                    <div><a href={source.url} target="_blank" rel="noopener noreferrer">[{source.id}] {source.title} · {source.domain} · {sourceAuthorityLabel(source.sourceAuthority)}</a></div>
+                    <p className="section-footnote">Naturaleza declarada de la fuente: {evidenceClassLabel(source.evidenceClass)}.</p>
+                    <p className="section-footnote">Recuperación documental: {claimDocumentStatusLabel(source.documentStatus)} · {source.documentType === 'boe_consolidated_legislation' ? 'consolidación BOE informativa' : source.documentType === 'official_html' ? 'HTML oficial' : source.documentType === 'unsupported_format' ? 'formato no compatible' : 'tipo documental no indicado'}.</p>
+                    <p className="section-footnote">Fechas del buscador (no equivalen a vigencia): publicación {formatDate(source.publishedAt)}{source.modifiedAt ? ' · modificación indicada: ' + formatDate(source.modifiedAt) : ''}.</p>
+                    {source.temporalAssessment ? <p className="section-footnote">Metadatos temporales BOE: {temporalAssessmentLabel(source.temporalAssessment)}.</p> : null}
                     <p className="section-footnote">Comprobación: {source.evidenceStatus === 'excerpt_matched' ? 'el fragmento aparece en el documento recuperado' : source.evidenceStatus === 'excerpt_not_found' ? 'el fragmento no aparece en el extracto recuperado' : source.evidenceStatus === 'document_not_retrieved' ? 'no se recuperó el documento para contrastarlo' : 'no se proporcionó un fragmento literal'}</p>
                     {source.quote ? <blockquote className="research-answer">{source.quote}</blockquote> : null}
                     {source.locator ? <p className="section-footnote">Localizador: {source.locator} · {source.locatorVerified ? 'comprobado en el texto' : 'propuesto, no verificado'}</p> : null}

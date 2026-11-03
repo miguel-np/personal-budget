@@ -790,7 +790,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       );
       return { data: {
         answer: researched.answer,
-        claimEvidence: buildClaimEvidence(researched.evidenceAnswer, researched.search.sources),
+        claimEvidence: buildClaimEvidence(researched.evidenceAnswer, researched.search.sources, { requirePrimaryPublication: query.mode === 'tax' }),
         provider: researched.search.provider,
         searchedAt: researched.search.searchedAt,
         mode: query.mode,

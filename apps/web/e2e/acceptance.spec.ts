@@ -328,14 +328,17 @@ test('controlled web research requires per-query consent and shows official sour
           claims: [{
             id: 'claim-e2e-boe-publication',
             text: 'El BOE publica la disposición indicada [S1].',
+            classification: 'unclassified',
             kind: 'unresolved',
             sourceRefs: [{
               id: 'S1', title: 'Disposición publicada en el BOE',
               url: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2025-1',
               domain: 'www.boe.es', sourceKind: 'normativa', sourceAuthority: 'legislation',
+              evidenceClass: 'official_publication', publishedAt: null, modifiedAt: null,
+              documentStatus: 'retrieved', documentType: 'official_html', temporalAssessment: null,
               evidenceStatus: 'quote_not_provided', quote: null, locator: null, locatorVerified: false,
             }],
-            unresolvedReferences: [], conflicts: [], reviewRequired: true,
+            unresolvedReferences: [], conflicts: [], primaryPublication: { status: 'cited_without_excerpt', sourceIds: ['S1'] }, reviewRequired: true,
           }],
           limitations: ['La asociación de fragmentos no demuestra soporte semántico y requiere revisión humana.'],
         },
@@ -392,7 +395,9 @@ test('controlled web research requires per-query consent and shows official sour
 
   await expect(form.getByText('El BOE publica la disposición indicada [S1]. La fecha de búsqueda no acredita por sí sola su vigencia.')).toBeVisible();
   await expect(form.getByRole('heading', { name: 'Afirmaciones y referencias asociadas' })).toBeVisible();
-  await expect(form.getByRole('link', { name: '[S1] Disposición publicada en el BOE · www.boe.es · legislation' })).toBeVisible();
+  await expect(form.getByText(/Clasificación propuesta por el modelo: Sin clasificar/)).toBeVisible();
+  await expect(form.getByText(/Publicación primaria citada, pero sin fragmento literal verificable/)).toBeVisible();
+  await expect(form.getByRole('link', { name: '[S1] Disposición publicada en el BOE · www.boe.es · Publicación normativa' })).toBeVisible();
   await expect(form.getByText(/no se proporcionó un fragmento literal/)).toBeVisible();
   await expect(form.getByText('Texto oficial recuperado', { exact: true })).toBeVisible();
   await expect(form.getByText('Artículo 1. Texto oficial recuperado del BOE.')).toBeVisible();

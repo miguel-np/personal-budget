@@ -29,6 +29,100 @@ const source = (id: string, text = excerpt, withDocument = true): WebSearchSourc
 });
 
 describe('claim-to-source evidence', () => {
+  it('marks a primary official publication only when its journal route is cited with a located fragment', () => {
+    const result = buildClaimEvidence(
+      'La disposición establece la regla [S1] [[EVIDENCE|S1||La Administración ampliará los plazos cuando una incidencia técnica haya imposibilitado el funcionamiento ordinario del sistema.]]',
+      [source('S1')],
+      { requirePrimaryPublication: true },
+    );
+    expect(result.claims[0]?.primaryPublication).toEqual({
+      status: 'cited_with_excerpt',
+      sourceIds: ['S1'],
+    });
+    expect(result.claims[0]?.sourceRefs[0]?.evidenceClass).toBe('official_publication');
+  });
+
+  it('keeps model classification separate from deterministic evidence status', () => {
+    const classified = buildClaimEvidence(
+      'El documento expresa el requisito [S1] [[CLAIM|documented_fact]] [[EVIDENCE|S1|Artículo 32|La Administración ampliará los plazos cuando una incidencia técnica haya imposibilitado el funcionamiento ordinario del sistema.]]',
+      [source('S1')],
+    );
+    expect(classified.claims[0]).toMatchObject({
+      classification: 'documented_fact',
+      kind: 'evidence_located',
+    });
+    expect(classified.claims[0]?.text).not.toContain('[[CLAIM');
+
+    const unmarked = buildClaimEvidence('La regla parece aplicable [S1].', [source('S1')]);
+    expect(unmarked.claims[0]?.classification).toBe('unclassified');
+  });
+
+  it('classifies metadata separately from substantive legal claims', () => {
+    const result = buildClaimEvidence(
+      'La ficha indica una fecha de publicación [S1] [[CLAIM|metadata]].',
+      [source('S1')],
+    );
+    expect(result.claims[0]?.classification).toBe('metadata');
+    expect(result.claims[0]?.text).not.toContain('[[CLAIM');
+  });
+
+  it('does not treat an insecure BOE URL as a primary official publication', () => {
+    const insecure = {
+      ...source('S1'),
+      url: 'http://www.boe.es/diario_boe/txt.php?id=BOE-A-2025-1',
+    };
+    const result = buildClaimEvidence(
+      'La disposición contiene la regla [S1] [[EVIDENCE|S1||La Administración ampliará los plazos cuando una incidencia técnica haya imposibilitado el funcionamiento ordinario del sistema.]]',
+      [insecure],
+      { requirePrimaryPublication: true },
+    );
+    expect(result.claims[0]?.primaryPublication.status).toBe('not_located_in_results');
+    expect(result.claims[0]?.sourceRefs[0]?.evidenceClass).toBe('legislation_source_unclassified');
+  });
+
+  it('warns when a primary publication is returned but the claim cites only an informative consolidation', () => {
+    const primary = source('S1');
+    const consolidation: WebSearchSource = {
+      ...source('S2'),
+      url: 'https://www.lex.gal/norma/consolidada',
+      domain: 'www.lex.gal',
+      institution: 'Lex.gal',
+      sourceKind: 'normativa_consolidada_informativa',
+      sourceAuthority: 'legal_consolidation',
+    };
+    const result = buildClaimEvidence(
+      'La guía consolidada explica la regla [S2] [[CLAIM|interpretation]] [[EVIDENCE|S2|Artículo 32|La Administración ampliará los plazos cuando una incidencia técnica haya imposibilitado el funcionamiento ordinario del sistema.]]',
+      [primary, consolidation],
+      { requirePrimaryPublication: true },
+    );
+    expect(result.claims[0]?.primaryPublication).toEqual({
+      status: 'available_not_cited',
+      sourceIds: ['S1'],
+    });
+    expect(result.claims[0]?.sourceRefs[0]).toMatchObject({
+      evidenceClass: 'informative_consolidation',
+      documentType: 'official_html',
+      documentStatus: 'retrieved',
+    });
+  });
+
+  it('reports an absent primary publication conservatively when it is not in search results', () => {
+    const onlySecondary: WebSearchSource = {
+      ...source('S2'),
+      url: 'https://www.lex.gal/norma/consolidada',
+      domain: 'www.lex.gal',
+      institution: 'Lex.gal',
+      sourceKind: 'normativa_consolidada_informativa',
+      sourceAuthority: 'legal_consolidation',
+    };
+    const result = buildClaimEvidence(
+      'La regla se encuentra en la consolidación [S2] [[EVIDENCE|S2||La Administración ampliará los plazos cuando una incidencia técnica haya imposibilitado el funcionamiento ordinario del sistema.]]',
+      [onlySecondary],
+      { requirePrimaryPublication: true },
+    );
+    expect(result.claims[0]?.primaryPublication.status).toBe('not_located_in_results');
+  });
+
   it('matches a verbatim quote and verifies a locator found in the recovered document', () => {
     const result = buildClaimEvidence(
       'La regla se recoge en el artículo citado [S1] [[EVIDENCE|S1|Artículo 32|La Administración ampliará los plazos cuando una incidencia técnica haya imposibilitado el funcionamiento ordinario del sistema.]]',
