@@ -235,6 +235,7 @@ function evidenceClassForSource(source: WebSearchSource): EvidenceSourceClass {
     case 'tax_administration': return 'administrative_information';
     case 'official_information': return 'official_information';
     case 'external': return 'external';
+    default: return 'external';
   }
 }
 
