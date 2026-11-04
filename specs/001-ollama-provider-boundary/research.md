@@ -14,11 +14,11 @@
 
 ### D1 — Contrato interno pequeño, no SDK universal
 
-Se adopta `ModelProvider` con tres piezas: capacidades, probe por modelo y chat normalizado. No se añade streaming en este incremento porque el código actual utiliza respuestas no streaming. El contrato declara explícitamente streaming como no soportado por el adaptador actual.
+Se adopta `ModelProvider` con tres piezas: capacidades, probe por modelo y chat normalizado. La request expresa controles genéricos (`contextWindowTokens`, `maxOutputTokens`, `temperature`) y tool definitions con `name`, `description`, `parameters`; las respuestas y tool calls se normalizan a `content` + `{ name, arguments }`. No se añade streaming en este incremento porque el código actual utiliza respuestas no streaming. El contrato declara explícitamente streaming como no soportado por el adaptador actual.
 
 ### D2 — Ollama conserva su dialecto dentro del adaptador
 
-Los endpoints, `stream: false`, forma de `options`, `format`, mensajes y respuesta `message.tool_calls` permanecen en `OllamaProvider`. `LocalAiClient` envía una solicitud neutral y recibe `content` + `toolCalls`.
+Los endpoints, `stream: false`, `options.num_ctx`, `num_predict`, `temperature`, los sobres de tools, la codificación de mensajes y la respuesta `message.tool_calls` permanecen en `OllamaProvider`. `LocalAiClient` envía una solicitud neutral y recibe `content` + `toolCalls` normalizadas.
 
 ### D3 — Capacidades declaradas sin fingir compatibilidad
 
