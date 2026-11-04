@@ -117,11 +117,11 @@ Como usuario que autoriza una búsqueda concreta, quiero que el modelo local pue
 - La suite E2E y los contratos HTTP existentes mantienen resultados compatibles.
 - No se modifican datos de Actual ni almacenes persistentes.
 
-## Supuestos y puntos pendientes
+## Supuestos y decisiones del incremento
 
 - La issue #85 sigue abierta y es el objetivo paraguas; esta especificación delimita solo el primer incremento.
 - Ollama permanece como proveedor por defecto y único en este incremento.
-- La ubicación final de la interfaz (en `services/api` o en un paquete separado) se decidirá en el plan, en función del grafo real de dependencias.
-- **[NEEDS CLARIFICATION]** El contrato debe confirmar si la capacidad de tool calling se modela como una operación genérica del proveedor o como una conversación por pasos orquestada por el backend. No debe conceder al adaptador la ejecución de herramientas.
-- **[NEEDS CLARIFICATION]** Definir qué métricas son propias del proveedor y cuáles deben normalizarse en el contrato común, sin introducir coste/tokens ficticios cuando Ollama no los proporciona.
-- **[NEEDS CLARIFICATION]** Confirmar el modelo de persistencia de las especificaciones entregadas: historial inmutable por feature o especificación viva. Propuesta inicial: historial inmutable, con nuevas carpetas numeradas para cambios posteriores.
+- La interfaz vive en `services/api/src`: solo la consume la API y no pertenece al dominio financiero compartido.
+- El contrato representa tool calls de forma normalizada como datos. El backend orquesta los pasos: valida la llamada, ejecuta la herramienta permitida y solicita la siguiente inferencia. El adaptador no ejecuta herramientas.
+- Las métricas de duración, cola, contexto y resultado siguen siendo responsabilidad de `LocalAiClient`. No se inventan tokens, coste ni telemetría del proveedor cuando Ollama no los informa. Una futura ampliación de uso/coste requerirá campos opcionales y explícitos, probados por proveedor.
+- Las especificaciones entregadas conservan historial inmutable por feature. Una evolución funcional material crea una carpeta numerada nueva, enlazada a la especificación, issue y PR anteriores; no se reescribe silenciosamente la especificación ya entregada.
