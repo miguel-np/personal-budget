@@ -55,7 +55,7 @@ specify check
 La opción `--force` solo debe ejecutarse sobre una rama limpia y revisable: la inicialización en un proyecto existente puede reemplazar archivos gestionados en rutas coincidentes. Revisar el diff completo antes de integrar. Comprobar que:
 - Se han generado los archivos compartidos `.specify/`.
 - Se han instalado las Skills `speckit-*` sin sobrescribir Skills existentes.
-- La constitución de este repositorio se conserva.
+- La constitución de este repositorio se conserva o se restaura/mezcla manualmente si el CLI la cambia; no aceptar un reemplazo sin revisar su diff.
 - `.codex/hooks.json` sigue siendo el de Impeccable y no aparecen handlers de Spec Kit en `.codex/config.toml`.
 - No se han modificado código de aplicación, dependencias npm, lockfiles ni datos.
 
@@ -66,6 +66,8 @@ La issue #85 (proveedores intercambiables) es una candidata adecuada para probar
 La primera especificación piloto es `specs/001-ollama-provider-boundary/spec.md`. Delimita una primera fase segura: crear una frontera de proveedor y encapsular Ollama, sin implementar todavía OpenAI/xAI ni enviar datos a cloud.
 
 Flujo para continuar en Codex, después de instalar las Skills:
+
+La carpeta piloto ya contiene un borrador de `spec.md`. Spec Kit resuelve el feature activo desde `.specify/feature.json` (o desde `SPECIFY_FEATURE_DIRECTORY`), no desde el nombre de la rama. Para trabajar sobre este borrador, exportar `SPECIFY_FEATURE_DIRECTORY=specs/001-ollama-provider-boundary` en la terminal desde la que se inicia Codex.
 
 1. Revisar/ratificar la constitución con `$speckit-constitution`.
 2. Refinar la especificación con `$speckit-clarify` y resolver los puntos `NEEDS CLARIFICATION`.
