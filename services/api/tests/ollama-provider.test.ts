@@ -59,14 +59,19 @@ describe('OllamaProvider contract', () => {
     const provider = new OllamaProvider({ baseURL: 'http://127.0.0.1:11434', fetcher });
     const request: ModelProviderChatRequest = {
       model: 'synthetic-model',
-      options: { num_ctx: 2_048, num_predict: 384, temperature: 0 },
+      contextWindowTokens: 2_048,
+      maxOutputTokens: 384,
+      temperature: 0,
       tools: [{
-        type: 'function',
-        function: { name: 'web_search', parameters: { type: 'object' } },
+        name: 'web_search',
+        description: 'Búsqueda externa acotada.',
+        parameters: { type: 'object' },
       }],
       messages: [
         { role: 'system', content: 'No ejecutar herramientas.' },
         { role: 'user', content: 'Consulta aprobada.' },
+        { role: 'assistant', content: '', toolCalls: [{ name: 'web_search', arguments: { query: 'consulta exacta' } }] },
+        { role: 'tool', toolName: 'web_search', content: 'Resultado sintético.' },
       ],
     };
     const signal = AbortSignal.timeout(1_000);
@@ -78,14 +83,23 @@ describe('OllamaProvider contract', () => {
       options: { num_ctx: 2_048, num_predict: 384, temperature: 0 },
       tools: [{
         type: 'function',
-        function: { name: 'web_search', parameters: { type: 'object' } },
+        function: {
+          name: 'web_search',
+          description: 'Búsqueda externa acotada.',
+          parameters: { type: 'object' },
+        },
       }],
-      messages: request.messages,
+      messages: [
+        { role: 'system', content: 'No ejecutar herramientas.' },
+        { role: 'user', content: 'Consulta aprobada.' },
+        { role: 'assistant', content: '', tool_calls: [{ function: { name: 'web_search', arguments: { query: 'consulta exacta' } } }] },
+        { role: 'tool', tool_name: 'web_search', content: 'Resultado sintético.' },
+      ],
     });
     expect(requestSignal).toBe(signal);
     expect(response).toEqual({
       content: '',
-      toolCalls: [{ function: { name: 'web_search', arguments: { query: 'consulta exacta' } } }],
+      toolCalls: [{ name: 'web_search', arguments: { query: 'consulta exacta' } }],
     });
     // The provider only returns tool-call data; it has no execution callback.
     expect(Object.keys(response)).toEqual(['content', 'toolCalls']);
