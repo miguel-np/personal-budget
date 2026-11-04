@@ -74,9 +74,18 @@ describe('MCP interop through the official MCP SDK client', () => {
     expect(names).toEqual(expect.arrayContaining([
       'get_monthly_summary', 'get_spending_by_category', 'compare_periods', 'get_yearly_overview',
       'get_uncategorized_transactions', 'get_recurring_candidates', 'simulate_budget_change',
+      'get_financial_findings', 'get_budget_alerts', 'get_budget_improvement_context',
+      'project_cash_flow', 'get_net_worth_summary',
     ]));
-    expect(tools.tools.every((tool) => /read-only/i.test(tool.description ?? ''))).toBe(true);
-    expect(tools.tools.length).toBe(7);
+    expect(tools.tools.every((tool) => /read-only|non-persisting/i.test(tool.description ?? ''))).toBe(true);
+    expect(tools.tools.length).toBe(12);
+
+    const prompts = await client.listPrompts();
+    expect(prompts.prompts.map((prompt) => prompt.name)).toEqual(expect.arrayContaining([
+      'monthly_financial_review', 'budget_coaching', 'cash_flow_review', 'recurring_payment_audit', 'wealth_review',
+    ]));
+    const workflow = await client.getPrompt({ name: 'wealth_review', arguments: {} });
+    expect(workflow.messages[0]?.content).toMatchObject({ type: 'text' });
 
     const summary = await client.callTool({ name: 'get_monthly_summary', arguments: { month: '2026-10' } });
     const summaryContent = summary.content as Array<{ type: string; text?: string }>;

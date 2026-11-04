@@ -11,3 +11,22 @@ Las pruebas de protocolo lanzan el servidor como subproceso y usan una API sint�
 Además, `services/mcp/tests/sdk-client.test.ts` valida la interoperabilidad con el **cliente oficial del SDK `@modelcontextprotocol/sdk`** (el mismo stack de protocolo que usan los clientes de escritorio): handshake de inicialización, listado de herramientas, llamadas estructuradas y fallos cerrados, contra una API sintética.
 
 Validación en vivo (25-oct-2026): el cliente SDK oficial conectado por stdio al servidor MCP del checkout, con la API local real en `127.0.0.1:3000`, listó las 7 herramientas, devolvió `get_monthly_summary`, `compare_periods` y `simulate_budget_change` con datos reales del presupuesto sintético y rechazó herramientas desconocidas. La comprobación con un cliente de escritorio concreto (Claude Desktop u otro) en el equipo del usuario sigue siendo una verificación opcional adicional.
+
+
+## Herramientas financieras y flujos MCP (v0.2)
+
+El servidor mantiene el transporte stdio y el límite loopback de la API. Además de las siete herramientas originales, expone estas herramientas agregadas:
+
+| Herramienta | Fuente local | Alcance |
+|---|---|---|
+| `get_financial_findings` | `GET /api/v1/intelligence/findings` | Hallazgos y evidencias para un periodo explícito; no devuelve IDs de cuentas. |
+| `get_budget_alerts` | `GET /api/v1/budget-alerts` | Alertas activas y resumen por categoría de un mes. |
+| `get_budget_improvement_context` | `GET /api/v1/budget-improvements` | Línea base determinista, propuestas, supuestos y contexto de objetivos. |
+| `project_cash_flow` | `POST /api/v1/cash-flow/project` | Proyección 7/30/90 días. El endpoint calcula una estimación sin persistirla; se omiten IDs de eventos y nombres de cuentas en la respuesta MCP. |
+| `get_net_worth_summary` | `GET /api/v1/wealth/summary` | Totales patrimoniales y cobertura; los identificadores de cuentas/activos se reducen a recuentos. |
+
+Todas las herramientas MCP son de consulta o simulación no persistente. El uso de POST en `project_cash_flow` no modifica datos: es el contrato de cálculo de una proyección y no crea compromisos ni aplica escenarios.
+
+El servidor también publica cinco prompts MCP reutilizables mediante `prompts/list` y `prompts/get`: `monthly_financial_review`, `budget_coaching`, `cash_flow_review`, `recurring_payment_audit` y `wealth_review`. Los prompts orientan al cliente para que utilice únicamente las herramientas compatibles y separe hechos observados, estimaciones y candidatos.
+
+El asistente Ollama integrado en la aplicación sigue sin herramientas. Estas capacidades solo están disponibles para un cliente MCP externo al que el usuario conecte expresamente. Los resultados financieros se entregan a ese cliente/modelo cuando invoca las herramientas; el transporte local no garantiza que un modelo remoto procese la información localmente.
