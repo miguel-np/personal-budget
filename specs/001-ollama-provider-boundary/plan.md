@@ -27,8 +27,8 @@ El primer incremento implementa únicamente Ollama. No añade proveedores remoto
 `services/api/src/model-provider.ts` define:
 - Identidad de proveedor y capacidades declaradas para salida estructurada, tool calling y streaming.
 - Estado de disponibilidad por modelo.
-- Mensajes, opciones, formato estructurado y herramientas como datos tipados.
-- Una respuesta normalizada con contenido y tool calls separados.
+- Mensajes, límites de contexto/salida, temperatura, formato estructurado y definiciones de herramienta neutrales como datos tipados.
+- Una respuesta normalizada con contenido y tool calls `{ name, arguments }`.
 - Un error de proveedor genérico que no expone detalles de transporte.
 
 El contrato no contiene métodos para ejecutar herramientas, leer finanzas, acceder al filesystem ni persistir datos.
@@ -38,8 +38,8 @@ El contrato no contiene métodos para ejecutar herramientas, leer finanzas, acce
 `services/api/src/ollama-provider.ts`:
 - Valida URL loopback y ausencia de credenciales.
 - Consulta `/api/tags` para saber si el modelo está disponible.
-- Traduce solicitudes normalizadas a `/api/chat` con `stream: false`.
-- Normaliza `message.content` y `message.tool_calls`.
+- Traduce solicitudes normalizadas a `/api/chat` con `stream: false`; mapea límites/temperatura a `options.num_ctx`, `num_predict` y `temperature`.
+- Mapea tool definitions, assistant tool calls y tool results al dialecto Ollama; normaliza `message.content` y `message.tool_calls`.
 - Convierte errores HTTP, de red y JSON a un error estable.
 - Devuelve tool calls como datos; nunca las ejecuta.
 
