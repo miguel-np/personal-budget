@@ -85,6 +85,16 @@ Propuesta inicial: cada carpeta `specs/NNN-.../` conserva el registro de una ent
 
 La decisión queda pendiente de confirmación al completar el primer piloto.
 
+## Estado del piloto de proveedor
+
+La rama incorpora el primer incremento de código de la issue #85:
+- Contrato `ModelProvider` y adaptador Ollama.
+- Integración en `LocalAiClient` y punto de inyección en `AppDependencies`.
+- Pruebas sintéticas del adaptador y de la inyección, más regresión existente de los flujos locales.
+- Plan, research, contrato, quickstart y tareas en `specs/001-ollama-provider-boundary/`.
+
+La PR [#123](https://github.com/miguel-np/personal-budget/pull/123) está en borrador. Los tests se han escrito pero aún no se han ejecutado en un checkout local. No marcar la entrega como validada ni fusionar hasta completar la matriz de pruebas de `quickstart.md`.
+
 ## Límites de la adopción actual
 
 La constitución y la primera especificación se han preparado en la rama de adopción siguiendo la estructura y los templates oficiales de Spec Kit v1.0.6. El CLI no se ha ejecutado desde este entorno; por tanto, la instalación de las Skills, generación de scripts/templates, registro de integración y verificación de hooks siguen pendientes. No afirmar que Codex ya reconoce los comandos hasta completar los pasos locales anteriores.
