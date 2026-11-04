@@ -100,7 +100,12 @@ export class OllamaProvider implements ModelProvider {
 
     if (!response.ok) throw new ModelProviderUnavailableError();
     try {
-      const payload = await response.json() as OllamaChatPayload;
+      const raw = await response.text();
+      if (request.maxResponseChars !== undefined &&
+        (!Number.isSafeInteger(request.maxResponseChars) || request.maxResponseChars < 1 || raw.length > request.maxResponseChars)) {
+        throw new ModelProviderUnavailableError();
+      }
+      const payload = JSON.parse(raw) as OllamaChatPayload;
       const content = payload.message?.content ?? '';
       const toolCalls = payload.message?.tool_calls ?? [];
       if (typeof content !== 'string' || !Array.isArray(toolCalls)) {
