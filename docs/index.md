@@ -29,6 +29,7 @@ Guías de implementación, operación, privacidad y arquitectura de `personal-bu
 
 ## IA e integraciones
 
+- [Workflows y Skills de IA](ai-workflows.md)
 - [IA local con Ollama y límites de contexto](local-ai.md)
 - [Búsqueda web controlada y fuentes oficiales](web-search.md)
 - [Corpus jurídico-fiscal de regresión](legal-tax-corpus.md)
