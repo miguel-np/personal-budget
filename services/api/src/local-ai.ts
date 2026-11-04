@@ -752,8 +752,12 @@ export class LocalAiClient {
   private async checkStatus(): Promise<LocalAiStatus> {
     const model = this.config.model;
     if (!model) return { enabled: true, status: 'not_configured' };
-    const availability = await this.provider.probe(model, AbortSignal.timeout(this.config.timeoutMs));
-    return { enabled: true, status: availability, model };
+    try {
+      const availability = await this.provider.probe(model, AbortSignal.timeout(this.config.timeoutMs));
+      return { enabled: true, status: availability, model };
+    } catch {
+      return { enabled: true, status: 'unavailable', model };
+    }
   }
 
   private async callModel(prompt: BoundedPrompt, signal: AbortSignal, systemPrompt = SYSTEM_PROMPT, maxOutputTokens = MAX_OUTPUT_TOKENS, jsonMode = false): Promise<string> {
