@@ -127,7 +127,7 @@ describe('MCP stdio protocol and failure boundaries', () => {
       'get_monthly_summary', 'get_spending_by_category', 'compare_periods', 'get_yearly_overview',
       'get_uncategorized_transactions', 'get_recurring_candidates', 'simulate_budget_change',
     ]));
-    expect(list.result?.tools?.every((tool) => /read-only/i.test(tool.description))).toBe(true);
+    expect(list.result?.tools?.every((tool) => /read-only|non-persisting/i.test(tool.description))).toBe(true);
 
     fixture.write(reply(3, 'tools/call', { name: 'get_monthly_summary', arguments: { month: '2026-10' } }));
     expect(await fixture.read()).toMatchObject({
