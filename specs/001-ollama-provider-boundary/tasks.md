@@ -37,7 +37,7 @@
 
 - [ ] T011 Verificar que el esquema de extracción de planificación se conserva en `services/api/tests/local-ai.test.ts`.
 - [ ] T012 Verificar que la clasificación mantiene JSON y no pasa por sanitización narrativa en `services/api/tests/local-ai.test.ts`.
-- [x] T013 Añadir casos del adaptador para JSON mal formado, error HTTP/red y límite explícito de respuesta en `services/api/tests/ollama-provider.test.ts`.
+- [x] T013 Añadir casos del adaptador para JSON/tool calls malformados, error HTTP/red y límite explícito de respuesta en `services/api/tests/ollama-provider.test.ts`.
 
 ## Phase 5: User Story 3 — Conservar investigación web (Priority: P2)
 
