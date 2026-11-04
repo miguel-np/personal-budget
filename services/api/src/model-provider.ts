@@ -6,26 +6,41 @@ export interface ModelProviderCapabilities {
   readonly streaming: ModelProviderCapability;
 }
 
-export interface ModelProviderChatMessage {
-  readonly role: 'system' | 'user' | 'assistant' | 'tool';
-  readonly content: string;
-  readonly tool_name?: string;
-  readonly tool_calls?: readonly ModelProviderToolCall[];
+export interface ModelProviderToolCall {
+  readonly name: string;
+  readonly arguments: unknown;
 }
 
-export interface ModelProviderToolCall {
-  readonly function?: {
-    readonly name?: string;
-    readonly arguments?: unknown;
+export type ModelProviderChatMessage =
+  | {
+    readonly role: 'system' | 'user';
+    readonly content: string;
+  }
+  | {
+    readonly role: 'assistant';
+    readonly content: string;
+    readonly toolCalls?: readonly ModelProviderToolCall[];
+  }
+  | {
+    readonly role: 'tool';
+    readonly content: string;
+    readonly toolName: string;
   };
+
+export interface ModelProviderToolDefinition {
+  readonly name: string;
+  readonly description: string;
+  readonly parameters: Readonly<Record<string, unknown>>;
 }
 
 export interface ModelProviderChatRequest {
   readonly model: string;
   readonly messages: readonly ModelProviderChatMessage[];
-  readonly options?: Readonly<Record<string, unknown>>;
+  readonly contextWindowTokens?: number;
+  readonly maxOutputTokens?: number;
+  readonly temperature?: number;
   readonly format?: 'json' | Readonly<Record<string, unknown>>;
-  readonly tools?: readonly Readonly<Record<string, unknown>>[];
+  readonly tools?: readonly ModelProviderToolDefinition[];
   /** Optional response-body cap applied by the adapter before JSON parsing. */
   readonly maxResponseChars?: number;
 }
@@ -38,8 +53,9 @@ export interface ModelProviderChatResponse {
 export type ModelProviderAvailability = 'available' | 'model_missing' | 'unavailable';
 
 /**
- * Provider boundary for model inference. Implementations own vendor-specific
- * transport, payload mapping and response parsing; they never execute tools.
+ * Provider-neutral inference contract. Vendor-specific request options,
+ * message serialization and tool schemas belong inside each adapter.
+ * Tool calls are returned as data; providers never execute them.
  */
 export interface ModelProvider {
   readonly id: string;
