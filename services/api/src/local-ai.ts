@@ -380,8 +380,11 @@ export class LocalAiClient {
           if (!raw || raw.length > 8_000) throw new LocalAiUnavailableError();
           try { return JSON.parse(raw) as unknown; }
           catch { throw new LocalAiUnavailableError(); }
-        } catch {
-          this.invalidateStatus();
+        } catch (error) {
+          if (error instanceof LocalAiBusyError || error instanceof LocalAiCancelledError ||
+            error instanceof LocalAiContextBudgetError || error instanceof LocalAiUnavailableError) {
+            throw error;
+          }
           throw new LocalAiUnavailableError();
         }
       }, signal);
