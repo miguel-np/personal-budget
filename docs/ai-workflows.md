@@ -16,6 +16,7 @@ Los flujos están diseñados para reutilizar los cálculos existentes de `financ
 | `recurring-payment-audit` | Revisar patrones candidatos de recurrencia | `get_recurring_candidates` |
 | `wealth-review` | Revisar patrimonio y cobertura | `get_net_worth_summary` |
 | `tax-research` | Investigar información fiscal pública con fuentes | Flujo de investigación web de la aplicación; no requiere ni recibe datos financieros MCP |
+| `impeccable` | Diseñar, criticar, auditar y refinar UX/UI | No aplica a análisis financiero ni a reglas del dominio |
 
 ## Prompts MCP
 
@@ -42,5 +43,11 @@ Los flujos están diseñados para reutilizar los cálculos existentes de `financ
 - El servidor MCP no expone shell, SQL, filesystem, navegación general ni herramientas de escritura.
 - El chat local integrado no recibe herramientas. Un cliente MCP externo sí recibe los datos que solicite; comprueba dónde los procesa ese cliente antes de conectarlo.
 - No incluyas `.env`, exportaciones, extractos ni backups en Skills o prompts.
+
+## Desarrollo asistido
+
+- **Impeccable** se limita a interfaces web y experiencia de usuario. Debe respetar `docs/design-system.md` y no puede cambiar semántica financiera, cálculos, textos factuales o flujos de escritura fuera del alcance de una tarea.
+- **GitHub Spec Kit** se está adoptando para estructurar cambios funcionales: especificación, plan, tareas, revisión de consistencia, implementación y convergencia. La adopción de Codex se documenta en [spec-kit-adoption.md](spec-kit-adoption.md). Mientras no se ejecute y verifique el CLI en un checkout local, sus Skills `$speckit-*` no deben considerarse instaladas.
+- Las Skills financieras siguen siendo las instrucciones especializadas de dominio. Spec Kit las complementa; no las sustituye.
 
 Consulta [MCP](mcp.md), [IA local](local-ai.md), [privacidad](privacy.md) y [flujo de caja](cash-flow.md).

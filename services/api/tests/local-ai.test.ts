@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { LocalAiBusyError, LocalAiCancelledError, LocalAiClient, LocalAiContextBudgetError, LocalAiToolCallUnsupportedError, LocalAiUnavailableError } from '../src/local-ai.js';
 import type { AssistantContext, WebResearchRequest } from '../src/local-ai.js';
+import type { ModelProvider } from '../src/model-provider.js';
 import type { SearXNGSearchProvider, WebSearchProvider } from '../src/web-search.js';
 
 const config = { enabled: true, baseURL: 'http://127.0.0.1:11434', model: 'synthetic-model', timeoutMs: 1_000, maxContextChars: 2_000 };
@@ -29,6 +30,22 @@ describe('LocalAiClient', () => {
     await expect(client.status()).resolves.toEqual({ enabled: true, status: 'not_configured' });
     expect(fetcher).not.toHaveBeenCalled();
     await expect(client.explain(context)).rejects.toBeInstanceOf(LocalAiUnavailableError);
+  });
+
+  it('uses an injected provider without invoking the default Ollama transport', async () => {
+    const fetcher = vi.fn<typeof fetch>();
+    const provider: ModelProvider = {
+      id: 'synthetic-provider',
+      capabilities: { structuredOutput: 'supported', toolCalling: 'unsupported', streaming: 'unsupported' },
+      probe: vi.fn(async () => 'available'),
+      chat: vi.fn(async () => ({ content: 'Tendencia estable.', toolCalls: [] })),
+    };
+    const client = new LocalAiClient(config, fetcher, undefined, provider);
+
+    await expect(client.explain(context)).resolves.toBe('Tendencia estable.');
+    expect(provider.probe).toHaveBeenCalledWith('synthetic-model', expect.any(AbortSignal));
+    expect(provider.chat).toHaveBeenCalledTimes(1);
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it('returns structured category JSON without narrative sanitization and uses the JSON output format', async () => {
