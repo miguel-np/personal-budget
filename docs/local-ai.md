@@ -4,6 +4,18 @@ La integración de Ollama es opcional y utiliza la API del runtime en loopback. 
 
 La configuración rechaza endpoints remotos de Ollama. El modelo debe estar instalado antes de utilizar el asistente.
 
+## Frontera interna de proveedor
+
+La API separa la orquestación de casos de uso de los detalles del runtime:
+
+- `services/api/src/model-provider.ts` define el contrato neutral de proveedor, capacidades, probe por modelo, mensajes y respuesta normalizada.
+- `services/api/src/ollama-provider.ts` encapsula `/api/tags`, `/api/chat`, el formato de opciones y el mapeo de tool calls de Ollama.
+- `LocalAiClient` conserva prompts, límites de contexto, timeout, cancelación, cola, coalescing, métricas, sanitización y reglas de uso.
+- El adaptador devuelve tool calls como datos no confiables. No ejecuta herramientas ni recibe acceso a SearXNG, Actual, SQL, shell o filesystem.
+- Ollama es la única implementación conectada por defecto. OpenAI/xAI, selector, credenciales y enrutamiento siguen fuera de este incremento.
+
+La frontera no cambia la configuración ni los endpoints públicos actuales.
+
 ## Asistente financiero
 
 - Estado disponible en GET /api/v1/assistant/status.
