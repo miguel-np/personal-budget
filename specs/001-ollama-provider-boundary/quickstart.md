@@ -4,7 +4,7 @@ Ejecutar desde WSL, en la raíz del repositorio, con Node.js 24.22.1 y dependenc
 
 ```bash
 npm ci
-npm test -- --run services/api/tests/ollama-provider.test.ts services/api/tests/local-ai.test.ts
+npm test -- services/api/tests/ollama-provider.test.ts services/api/tests/local-ai.test.ts
 npm run lint
 npm run typecheck
 npm run build
