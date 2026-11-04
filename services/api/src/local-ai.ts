@@ -248,10 +248,11 @@ function createBoundedPrompt(context: AssistantContext, maxContextChars: number)
   if (estimatedInputTokens > MAX_ESTIMATED_INPUT_TOKENS) throw new LocalAiContextBudgetError();
   return { question, contextJSON, userMessage, estimatedInputTokens };
 }
-function fingerprint(model: string, context: AssistantContext, prompt: BoundedPrompt): string {
-  // The full aggregate payload and an internal account-scope fingerprint prevent cross-period or cross-account coalescing.
+function fingerprint(providerId: string, model: string, context: AssistantContext, prompt: BoundedPrompt): string {
+  // Provider identity, the full aggregate payload and the internal account-scope fingerprint
+  // prevent cross-provider, cross-period or cross-account coalescing.
   return createHash('sha256').update(JSON.stringify([
-    model, context.deduplicationKey ?? '', prompt.question, prompt.contextJSON,
+    providerId, model, context.deduplicationKey ?? '', prompt.question, prompt.contextJSON,
     MODEL_CONTEXT_TOKENS, MAX_OUTPUT_TOKENS,
   ])).digest('hex');
 }
@@ -416,7 +417,7 @@ export class LocalAiClient {
     if (!this.config.enabled || !this.config.model) throw new LocalAiUnavailableError();
     if (callerSignal?.aborted) throw new LocalAiCancelledError();
     const prompt = createBoundedPrompt(context, this.config.maxContextChars);
-    const key = fingerprint(this.config.model, context, prompt);
+    const key = fingerprint(this.provider.id, this.config.model, context, prompt);
     return this.infer(prompt, key, callerSignal, SYSTEM_PROMPT, MAX_OUTPUT_TOKENS, false);
   }
 
@@ -666,7 +667,7 @@ export class LocalAiClient {
       estimatedInputTokens,
     };
     const key = createHash('sha256').update(JSON.stringify([
-      'category-classification-v1', this.config.model, contextJSON, MODEL_CONTEXT_TOKENS, 512,
+      'category-classification-v1', this.provider.id, this.config.model, contextJSON, MODEL_CONTEXT_TOKENS, 512,
     ])).digest('hex');
     return this.infer(prompt, key, callerSignal, CATEGORY_CLASSIFICATION_SYSTEM_PROMPT, 512, true);
   }
