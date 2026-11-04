@@ -51,8 +51,8 @@
 
 - [ ] T017 Ejecutar lint, typecheck, build, cobertura y auditorías.
 - [ ] T018 Ejecutar E2E de navegador y verificar que los contratos HTTP no han cambiado.
-- [ ] T019 Revisar `docs/local-ai.md`, `docs/architecture.md` y `docs/ai-workflows.md` contra el contrato implementado.
-- [ ] T020 Revisar diff completo, confirmar que no cambiaron datos financieros ni hooks de Impeccable y preparar PR para revisión.
+- [x] T019 Revisar `docs/local-ai.md`, `docs/architecture.md` y `docs/ai-workflows.md` contra el contrato implementado.
+- [x] T020 Revisar diff completo, confirmar que no cambiaron datos financieros ni hooks de Impeccable y preparar PR en borrador para revisión.
 
 ## Dependencies & Execution Order
 
