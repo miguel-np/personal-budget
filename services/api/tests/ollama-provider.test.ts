@@ -143,6 +143,23 @@ describe('OllamaProvider contract', () => {
     }, AbortSignal.timeout(1_000))).rejects.toBeInstanceOf(ModelProviderUnavailableError);
   });
 
+  it('rejects malformed model tool calls instead of normalizing incomplete instructions', async () => {
+    const provider = new OllamaProvider({
+      baseURL: 'http://127.0.0.1:11434',
+      fetcher: vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+        message: {
+          content: '',
+          tool_calls: [{ function: { arguments: { query: 'consulta alterada' } } }],
+        },
+      }), { status: 200 })),
+    });
+
+    await expect(provider.chat({
+      model: 'synthetic-model',
+      messages: [{ role: 'user', content: 'Consulta aprobada.' }],
+    }, AbortSignal.timeout(1_000))).rejects.toBeInstanceOf(ModelProviderUnavailableError);
+  });
+
   it('sanitizes HTTP, network and malformed chat responses into one provider error', async () => {
     const providers = [
       new OllamaProvider({
