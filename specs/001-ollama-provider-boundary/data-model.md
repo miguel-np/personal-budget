@@ -21,15 +21,16 @@ No devuelve endpoints internos, modelos no solicitados ni detalles de red.
 ## ModelProviderChatRequest
 
 - `model`: nombre del modelo elegido por configuración backend.
-- `messages`: mensajes de sistema, usuario, asistente o resultado de herramienta.
-- `options`: opciones propias del runtime que el adaptador interpreta.
-- `format`: formato JSON o esquema estructurado.
-- `tools`: definiciones declarativas; no son funciones ejecutables desde el proveedor.
+- `messages`: mensajes normalizados de sistema/usuario, asistente con tool calls normalizadas o resultado de herramienta con su nombre.
+- `contextWindowTokens`, `maxOutputTokens` y `temperature`: controles de generación independientes de los nombres de opción de cada proveedor.
+- `format`: modo JSON o esquema estructurado.
+- `tools`: definiciones con nombre, descripción y parámetros; nunca callbacks ejecutables.
+- `maxResponseChars`: límite opcional del cuerpo de respuesta comprobado por el adaptador antes de parsear.
 
 ## ModelProviderChatResponse
 
 - `content`: texto producido por el modelo.
-- `toolCalls`: tool calls solicitadas por el modelo, como datos no confiables que debe validar el backend.
+- `toolCalls`: llamadas normalizadas como `{ name, arguments }`, no envueltas en el sobre de ningún proveedor.
 
 ## Persistencia
 
