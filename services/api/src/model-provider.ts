@@ -26,6 +26,8 @@ export interface ModelProviderChatRequest {
   readonly options?: Readonly<Record<string, unknown>>;
   readonly format?: 'json' | Readonly<Record<string, unknown>>;
   readonly tools?: readonly Readonly<Record<string, unknown>>[];
+  /** Optional response-body cap applied by the adapter before JSON parsing. */
+  readonly maxResponseChars?: number;
 }
 
 export interface ModelProviderChatResponse {
