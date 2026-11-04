@@ -115,6 +115,20 @@ describe('OllamaProvider contract', () => {
     expect(requestBody?.format).toEqual(schema);
   });
 
+  it('enforces an explicit response-body limit before parsing JSON', async () => {
+    const provider = new OllamaProvider({
+      baseURL: 'http://127.0.0.1:11434',
+      fetcher: vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+        message: { content: 'x'.repeat(101) },
+      }), { status: 200 })),
+    });
+    await expect(provider.chat({
+      model: 'synthetic-model',
+      maxResponseChars: 100,
+      messages: [{ role: 'user', content: 'Pregunta sintética.' }],
+    }, AbortSignal.timeout(1_000))).rejects.toBeInstanceOf(ModelProviderUnavailableError);
+  });
+
   it('sanitizes HTTP, network and malformed chat responses into one provider error', async () => {
     const providers = [
       new OllamaProvider({
