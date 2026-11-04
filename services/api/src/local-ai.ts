@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { OllamaProvider } from './ollama-provider.js';
+import type { ModelProvider, ModelProviderChatRequest, ModelProviderChatResponse } from './model-provider.js';
 import type { WebSearchProvider, WebSearchResponse } from './web-search.js';
 
 export interface LocalAiConfig {
@@ -164,28 +166,6 @@ interface SharedInference {
   readonly estimatedInputTokens: number;
   readonly submittedAt: number;
 }
-interface OllamaTagsPayload {
-  readonly models?: readonly { readonly name?: string; readonly model?: string }[];
-}
-interface OllamaChatPayload {
-  readonly message?: {
-    readonly content?: string;
-    readonly tool_calls?: readonly {
-      readonly function?: { readonly name?: string; readonly arguments?: unknown };
-    }[];
-  };
-}
-
-function isLoopback(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(url.hostname) &&
-      (url.protocol === 'http:' || url.protocol === 'https:') && url.username === '' && url.password === '';
-  } catch { return false; }
-}
-function urlWithPath(baseURL: string, path: string): string {
-  return new URL(path, baseURL.endsWith('/') ? baseURL : baseURL + '/').toString();
-}
 function sanitizeNarrative(value: string): string {
   return value.replace(/\d+(?:[.,]\d+)*(?:\s?%)?/g, 'el valor mostrado en los resultados')
     .replace(/https?:\/\/\S+/gi, '')
@@ -277,7 +257,7 @@ function fingerprint(model: string, context: AssistantContext, prompt: BoundedPr
 }
 
 export class LocalAiClient {
-  private readonly baseURL: string;
+  private readonly provider: ModelProvider;
   private cachedStatus: { readonly value: LocalAiStatus; readonly expiresAt: number } | undefined;
   private statusInFlight: Promise<LocalAiStatus> | undefined;
   private statusGeneration = 0;
@@ -287,15 +267,15 @@ export class LocalAiClient {
 
   public constructor(
     private readonly config: LocalAiConfig,
-    private readonly fetcher: typeof fetch = fetch,
+    fetcher: typeof fetch = fetch,
     private readonly onMetric?: (metric: LocalAiMetric) => void,
+    provider?: ModelProvider,
   ) {
-    if (!isLoopback(config.baseURL)) throw new Error('Ollama must use a loopback URL.');
     if (!Number.isSafeInteger(config.timeoutMs) || config.timeoutMs < 1) throw new Error('AI timeout must be a positive integer.');
     if (!Number.isSafeInteger(config.maxContextChars) || config.maxContextChars < 256) {
       throw new Error('AI context budget must be an integer of at least 256 characters.');
     }
-    this.baseURL = config.baseURL.endsWith('/') ? config.baseURL : config.baseURL + '/';
+    this.provider = provider ?? new OllamaProvider({ baseURL: config.baseURL, fetcher });
   }
 
   public async status(callerSignal?: AbortSignal): Promise<LocalAiStatus> {
@@ -359,13 +339,9 @@ export class LocalAiClient {
     const submittedAt = Date.now();
     try {
       const extracted = await this.runLimited(async () => {
-        const response = await this.fetcher(urlWithPath(this.baseURL, 'api/chat'), {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', Accept: 'application/json' },
-          signal,
-          body: JSON.stringify({
-            model: this.config.model,
-            stream: false,
+        try {
+          const payload = await this.provider.chat({
+            model: this.config.model!,
             format: {
               type: 'object',
               properties: {
@@ -399,16 +375,15 @@ export class LocalAiClient {
               },
               { role: 'user', content: userMessage },
             ],
-          }),
-        });
-        if (!response.ok) throw new LocalAiUnavailableError();
-        let payload: OllamaChatPayload;
-        try { payload = await response.json() as OllamaChatPayload; }
-        catch { throw new LocalAiUnavailableError(); }
-        const raw = payload.message?.content ?? '';
-        if (!raw || raw.length > 8_000) throw new LocalAiUnavailableError();
-        try { return JSON.parse(raw) as unknown; }
-        catch { throw new LocalAiUnavailableError(); }
+          }, signal);
+          const raw = payload.content;
+          if (!raw || raw.length > 8_000) throw new LocalAiUnavailableError();
+          try { return JSON.parse(raw) as unknown; }
+          catch { throw new LocalAiUnavailableError(); }
+        } catch {
+          this.invalidateStatus();
+          throw new LocalAiUnavailableError();
+        }
       }, signal);
       this.emitMetric({
         event: 'inference', outcome: 'success', modelCalls: 1,
@@ -508,30 +483,12 @@ export class LocalAiClient {
         },
       },
     };
-    const sendChat = async (body: Record<string, unknown>): Promise<OllamaChatPayload> => {
+    const sendChat = async (body: ModelProviderChatRequest): Promise<ModelProviderChatResponse> => {
       return this.runLimited(async () => {
-        let response: Response;
         try {
-          response = await this.fetcher(urlWithPath(this.baseURL, 'api/chat'), {
-            method: 'POST',
-            headers: { 'content-type': 'application/json', Accept: 'application/json' },
-            signal,
-            body: JSON.stringify(body),
-          });
+          return await this.provider.chat(body, signal);
         } catch {
           if (signal.aborted) throw errorForAbort(signal);
-          this.invalidateStatus();
-          throw new LocalAiUnavailableError();
-        }
-        if (!response.ok) {
-          this.invalidateStatus();
-          throw new LocalAiUnavailableError();
-        }
-        try {
-          const raw = await response.text();
-          if (raw.length > 24_000) throw new LocalAiUnavailableError();
-          return JSON.parse(raw) as OllamaChatPayload;
-        } catch {
           this.invalidateStatus();
           throw new LocalAiUnavailableError();
         }
@@ -548,7 +505,7 @@ export class LocalAiClient {
         { role: 'user', content: userMessage },
       ],
     });
-    const toolCalls = firstPayload.message?.tool_calls ?? [];
+    const toolCalls = firstPayload.toolCalls;
     if (toolCalls.length !== 1) throw new LocalAiToolCallUnsupportedError();
     const functionCall = toolCalls[0]?.function;
     if (functionCall?.name !== 'web_search' || !functionCall.arguments ||
@@ -635,14 +592,14 @@ export class LocalAiClient {
         { role: 'user', content: userMessage },
         {
           role: 'assistant',
-          content: firstPayload.message?.content ?? '',
+          content: firstPayload.content,
           tool_calls: toolCalls,
         },
         { role: 'tool', tool_name: 'web_search', content: toolResult },
       ],
     });
-    if ((finalPayload.message?.tool_calls?.length ?? 0) > 0) throw new LocalAiToolCallUnsupportedError();
-    const rawAnswer = sanitizeWebNarrative(finalPayload.message?.content ?? '');
+    if (finalPayload.toolCalls.length > 0) throw new LocalAiToolCallUnsupportedError();
+    const rawAnswer = sanitizeWebNarrative(finalPayload.content);
     const validSourceIds = new Set(search.sources.map((source) => source.id));
     // Preserve every model citation in the private evidence payload so the backend
     // can explicitly mark unknown IDs as unresolved instead of silently losing them.
@@ -788,46 +745,29 @@ export class LocalAiClient {
   private async checkStatus(): Promise<LocalAiStatus> {
     const model = this.config.model;
     if (!model) return { enabled: true, status: 'not_configured' };
-    try {
-      const response = await this.fetcher(urlWithPath(this.baseURL, 'api/tags'), {
-        method: 'GET', headers: { Accept: 'application/json' },
-        signal: AbortSignal.timeout(this.config.timeoutMs),
-      });
-      if (!response.ok) return { enabled: true, status: 'unavailable', model };
-      const payload = await response.json() as OllamaTagsPayload;
-      const found = (payload.models ?? []).some((item) => item.name === model || item.model === model);
-      return { enabled: true, status: found ? 'available' : 'model_missing', model };
-    } catch { return { enabled: true, status: 'unavailable', model }; }
+    const availability = await this.provider.probe(model, AbortSignal.timeout(this.config.timeoutMs));
+    return { enabled: true, status: availability, model };
   }
 
   private async callModel(prompt: BoundedPrompt, signal: AbortSignal, systemPrompt = SYSTEM_PROMPT, maxOutputTokens = MAX_OUTPUT_TOKENS, jsonMode = false): Promise<string> {
-    let response: Response;
+    let rawAnswer: string;
     try {
-      response = await this.fetcher(urlWithPath(this.baseURL, 'api/chat'), {
-        method: 'POST', headers: { 'content-type': 'application/json', Accept: 'application/json' },
-        signal,
-        body: JSON.stringify({
-          model: this.config.model, stream: false,
-          options: { num_ctx: MODEL_CONTEXT_TOKENS, num_predict: maxOutputTokens },
-          ...(jsonMode ? { format: 'json' } : {}),
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: prompt.userMessage },
-          ],
-        }),
-      });
+      const payload = await this.provider.chat({
+        model: this.config.model!,
+        options: { num_ctx: MODEL_CONTEXT_TOKENS, num_predict: maxOutputTokens },
+        ...(jsonMode ? { format: 'json' } : {}),
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: prompt.userMessage },
+        ],
+      }, signal);
+      rawAnswer = payload.content;
     } catch {
       if (signal.aborted) throw errorForAbort(signal);
       this.invalidateStatus();
       throw new LocalAiUnavailableError();
     }
-    if (!response.ok) {
-      this.invalidateStatus();
-      throw new LocalAiUnavailableError();
-    }
     try {
-      const payload = await response.json() as OllamaChatPayload;
-      const rawAnswer = payload.message?.content ?? '';
       // Structured classification JSON must not pass through narrative sanitization,
       // because sanitization deliberately rewrites digits that are valid category IDs.
       const answer = jsonMode
