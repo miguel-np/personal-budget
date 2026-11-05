@@ -274,6 +274,20 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<{ respon
   return { response, payload };
 }
 
+function SortDirectionIcon({ ascending }: { ascending: boolean }) {
+  return (
+    <svg className="sort-indicator" aria-hidden="true" focusable="false" viewBox="0 0 16 16" fill="none">
+      <path
+        d={ascending ? 'M8 12V4m-3 3 3-3 3 3' : 'M8 4v8m-3-3 3 3 3-3'}
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function MovementManager(props: MovementManagerProps) {
   const {
     transactions, total, accounts, categories, currency, locale, startDate, endDate,
@@ -809,15 +823,28 @@ export function MovementManager(props: MovementManagerProps) {
         ) : null}
       </div>
       {editNotice ? <p className="form-alert" role="status">{editNotice}</p> : null}
-      {transactions.length === 0 ? <div className="empty-state"><span className="empty-symbol" aria-hidden="true">◇</span><h3>No se han encontrado movimientos</h3><p>Cambia el periodo o los filtros. Esta vista no inventa datos cuando Actual no devuelve resultados.</p></div> : (
+      {transactions.length === 0 ? <div className="empty-state"><span className="empty-symbol" aria-hidden="true" /><h3>No se han encontrado movimientos</h3><p>Cambia el periodo o los filtros. Esta vista no inventa datos cuando Actual no devuelve resultados.</p></div> : (
         <div className="table-wrap" role="region" aria-label="Movimientos paginados; desplázate horizontalmente para ver todas las columnas" tabIndex={0}>
           <table className="transactions-table">
             <thead><tr>
               <th scope="col"><input type="checkbox" aria-label="Seleccionar todos los gastos ordinarios de esta página" checked={allSelectableSelected} onChange={(event) => { const checked = event.currentTarget.checked; setSelectedIds(checked ? selectableTransactions.map((item) => item.id) : []); setBatchPreview(false); setBatchExpectedCategories({}); setBatchNotice(''); }} /></th>
-              <th scope="col"><button type="button" className="sort-button" onClick={() => onSort('date')}>Fecha{sortKey === 'date' ? (sortAscending ? ' ↑' : ' ↓') : ''}</button></th>
-              <th scope="col"><button type="button" className="sort-button" onClick={() => onSort('description')}>Descripción{sortKey === 'description' ? (sortAscending ? ' ↑' : ' ↓') : ''}</button></th>
+              <th scope="col" aria-sort={sortKey === 'date' ? (sortAscending ? 'ascending' : 'descending') : undefined}>
+                <button type="button" className="sort-button" onClick={() => onSort('date')}>
+                  Fecha{sortKey === 'date' ? <SortDirectionIcon ascending={sortAscending} /> : null}
+                </button>
+              </th>
+              <th scope="col" aria-sort={sortKey === 'description' ? (sortAscending ? 'ascending' : 'descending') : undefined}>
+                <button type="button" className="sort-button" onClick={() => onSort('description')}>
+                  Descripción{sortKey === 'description' ? <SortDirectionIcon ascending={sortAscending} /> : null}
+                </button>
+              </th>
               <th scope="col">Cuenta</th><th scope="col">Categoría</th>
-              <th scope="col"><button type="button" className="sort-button" onClick={() => onSort('amount')}>Importe{sortKey === 'amount' ? (sortAscending ? ' ↑' : ' ↓') : ''}</button></th><th scope="col">Estado</th><th scope="col">Acción</th>
+              <th scope="col" aria-sort={sortKey === 'amount' ? (sortAscending ? 'ascending' : 'descending') : undefined}>
+                <button type="button" className="sort-button" onClick={() => onSort('amount')}>
+                  Importe{sortKey === 'amount' ? <SortDirectionIcon ascending={sortAscending} /> : null}
+                </button>
+              </th>
+              <th scope="col">Estado</th><th scope="col">Acción</th>
             </tr></thead>
             <tbody>{transactions.map((transaction) => {
               const category = categories.find((item) => item.id === transaction.category);

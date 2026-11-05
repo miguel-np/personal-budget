@@ -28,10 +28,10 @@ La suite levanta y detiene sus servidores automáticamente. Chromium se instala 
 - Viewports de escritorio, tablet y móvil; overflow horizontal.
 - Los artefactos solo se guardan en fallos y contienen fixtures sintéticos.
 
-No se simulan OFX, cambio de divisa ni selección consolidada de varias cuentas hasta que esas funciones existan.
+La suite incluye fixtures OFX sintéticos y preferencias de divisa locales. Los escenarios concretos deben leerse en apps/web/e2e/acceptance.spec.ts; no se simula una instancia real de Actual Budget ni se reutilizan presupuestos, backups o datos financieros del usuario.
 
 ### Accesibilidad y reflujo
 
-La suite también comprueba el enlace de salto y el enfoque del título tras la navegación, que los campos visibles tengan etiqueta programática, el contraste AA de textos financieros prioritarios y la ausencia de desbordamiento a nivel de documento en secciones principales a 1440 px, 768 px y 375 px. Los controles de acción frecuentes se verifican frente al objetivo táctil de 44 CSS px.
+La suite recorre las doce secciones de navegación. Comprueba el enlace de salto, el foco del título tras navegar, la visibilidad del destino activo en la navegación horizontal, etiquetas programáticas, regiones de tablas desplazables con foco de teclado y movimiento reducido. La comprobación de contraste evalúa textos financieros prioritarios en tema claro y oscuro, componiendo los fondos transparentes con las superficies ancestrales. La regresión responsive comprueba que el documento no desborde en ambos temas y en 320, 375, 390, 768, 1024 y 1440 CSS px; los objetivos principales se verifican en las doce secciones, los dos temas y 320, 375 y 390 CSS px frente al objetivo de diseño de 44 × 44 CSS px.
 
 Estas comprobaciones no sustituyen una auditoría manual: antes de cerrar #36 hay que recorrer los flujos esenciales con teclado y lector de pantalla/árbol de accesibilidad, comprobar foco no oculto, zoom y movimiento reducido, y registrar las limitaciones conocidas.

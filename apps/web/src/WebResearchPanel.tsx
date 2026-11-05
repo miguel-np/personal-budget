@@ -303,7 +303,7 @@ export function WebResearchPanel() {
   const ready = status?.enabled === true;
 
   return (
-    <section className="content-section" aria-labelledby="web-research-heading">
+    <section className="content-section" aria-labelledby="web-research-heading" aria-busy={busy}>
       <div className="section-heading">
         <div><p className="eyebrow">INVESTIGACIÓN EXTERNA · OPCIONAL</p><h2 id="web-research-heading">Buscar y contrastar fuentes</h2></div>
         <span className="date-badge">{ready ? 'SearXNG configurado' : status ? 'Desactivado' : 'Comprobando'}</span>
@@ -353,6 +353,11 @@ export function WebResearchPanel() {
             {busy ? 'Buscando y contrastando…' : 'Buscar y sintetizar fuentes'}
           </button>
         </form>
+        {busy || result ? (
+          <p className="research-status" role="status" aria-live="polite" aria-atomic="true">
+            {busy ? 'Buscando y contrastando fuentes…' : `Búsqueda completada: ${result?.sourceCount ?? 0} fuentes encontradas.`}
+          </p>
+        ) : null}
         {error ? <p className="form-alert error" role="alert">{error}</p> : null}
       </article>
       {result ? <>
