@@ -19,11 +19,11 @@ El análisis combina inspección estática de React/CSS/Playwright y regresiones
 
 ## Verificación automatizada añadida
 
-- Todas las doce rutas se comprueban en 320, 375, 390, 768, 1024 y 1440 CSS px para detectar overflow global.
+- Todas las doce rutas se comprueban en ambos temas y en 320, 375, 390, 768, 1024 y 1440 CSS px para detectar overflow global.
 - Los textos financieros priorizados se comprueban en ambos temas con composición de fondos transparentes y umbrales AA de 4,5:1 para texto normal y 3:1 para texto grande.
 - Los campos visibles se comprueban en las doce rutas para identificar controles sin etiqueta programática.
-- Los objetivos de navegación y acciones principales se comprueban en móvil en las doce rutas.
-- Se comprueba el enlace de salto, el foco del encabezado al navegar, la visibilidad del enlace activo en navegación horizontal, el foco de regiones de tabla y la preferencia de movimiento reducido.
+- Los objetivos de navegación y acciones principales se comprueban en ambos temas y en 320, 375 y 390 CSS px en las doce rutas.
+- Se comprueba el enlace de salto, el foco del encabezado al navegar, la visibilidad del enlace activo en navegación horizontal, el foco de las regiones de movimientos, presupuestos y proyección mensual de Planificación, y la preferencia de movimiento reducido.
 - La investigación web anuncia su espera y finalización mediante una región de estado.
 
 Estas pruebas son controles de regresión específicos; no equivalen a una auditoría WCAG completa ni prueban todos los estados de cada funcionalidad.
