@@ -1,5 +1,21 @@
 import { expect, test } from '@playwright/test';
 const fixtureApi = 'http://127.0.0.1:3000';
+const auditedSections = [
+  { route: '/', heading: 'Resumen financiero' },
+  { route: '/movements', heading: 'Movimientos' },
+  { route: '/accounts', heading: 'Cuentas' },
+  { route: '/patrimony', heading: 'Patrimonio y documentos' },
+  { route: '/reports', heading: 'Informes' },
+  { route: '/budgets', heading: 'Presupuestos' },
+  { route: '/planning', heading: 'Planificación' },
+  { route: '/intelligence', heading: 'Inteligencia financiera' },
+  { route: '/review', heading: 'Revisión financiera' },
+  { route: '/goals', heading: 'Objetivos' },
+  { route: '/assistant', heading: 'Asistente' },
+  { route: '/settings', heading: 'Configuración' },
+] as const;
+const auditedViewports = [320, 375, 390, 768, 1024, 1440] as const;
+
 
 function syntheticOfx(currencyCode = 'EUR'): Buffer {
   return Buffer.from([
@@ -512,8 +528,8 @@ test('desktop, tablet and mobile viewports avoid page-level horizontal overflow'
   }
 });
 
-test('skip navigation and section changes keep keyboard focus predictable', async ({ page }) => {
-  await page.setViewportSize({ width: 375, height: 812 });
+test('skip navigation, route focus and horizontal navigation stay keyboard accessible', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 812 });
   await page.goto('/');
 
   const skipLink = page.getByRole('link', { name: 'Saltar al contenido principal' });
@@ -526,10 +542,48 @@ test('skip navigation and section changes keep keyboard focus predictable', asyn
     .getByRole('link', { name: 'Movimientos', exact: true }).click();
   await expect(page).toHaveURL('/movements');
   await expect(page.getByRole('heading', { name: 'Movimientos', level: 1 })).toBeFocused();
+
+  await page.goto('/settings');
+  const navigation = page.getByRole('navigation', { name: 'Secciones de la aplicación' });
+  const activeLink = navigation.locator('[aria-current="page"]');
+  const position = await navigation.evaluate((nav, link) => {
+    const navRect = nav.getBoundingClientRect();
+    const linkRect = (link as HTMLElement).getBoundingClientRect();
+    return { navLeft: navRect.left, navRight: navRect.right, linkLeft: linkRect.left, linkRight: linkRect.right };
+  }, await activeLink.elementHandle());
+  expect(position.linkLeft).toBeGreaterThanOrEqual(position.navLeft - 1);
+  expect(position.linkRight).toBeLessThanOrEqual(position.navRight + 1);
+});
+
+test('wide movement and budget tables expose named keyboard-scroll regions', async ({ page }) => {
+  await page.goto('/movements');
+  const movementRegion = page.getByRole('region', { name: /Movimientos paginados/ });
+  await expect(movementRegion).toBeVisible();
+  await movementRegion.focus();
+  await expect(movementRegion).toBeFocused();
+
+  await page.goto('/budgets');
+  const budgetRegion = page.getByRole('region', { name: /Presupuestos por categoría/ });
+  await expect(budgetRegion).toBeVisible();
+  await budgetRegion.focus();
+  await expect(budgetRegion).toBeFocused();
+});
+
+test('reduced motion preserves state while removing non-essential movement', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/');
+  const motion = await page.locator('.nav-item').first().evaluate((element) => ({
+    preferenceHonored: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+    transitionMilliseconds: getComputedStyle(element).transitionDuration.split(',').map((value) => Number.parseFloat(value) * 1000),
+    scrollBehavior: getComputedStyle(document.documentElement).scrollBehavior,
+  }));
+  expect(motion.preferenceHonored).toBe(true);
+  expect(motion.transitionMilliseconds.every((duration) => duration <= 0.1)).toBe(true);
+  expect(motion.scrollBehavior).toBe('auto');
 });
 
 test('visible form controls have programmatic labels across core sections', async ({ page }) => {
-  for (const route of ['/', '/movements', '/reports', '/budgets', '/planning', '/intelligence', '/assistant', '/settings']) {
+  for (const route of auditedSections.map((section) => section.route)) {
     await page.goto(route);
     await expect(page.getByRole('main')).toBeVisible();
     const unlabeled = await page.locator('input:not([type="hidden"]), select, textarea').evaluateAll((elements) => {
@@ -558,67 +612,99 @@ test('visible form controls have programmatic labels across core sections', asyn
   }
 });
 
-test('key financial text meets WCAG AA contrast against its rendered surface', async ({ page }) => {
-  await page.goto('/');
-  await expect(page.locator('.stat-card').first()).toBeVisible();
-  const lowContrast = await page.evaluate(() => {
-    type RGBA = [number, number, number, number];
-    const parseColor = (value: string): RGBA | null => {
-      const channels = value.match(/[\d.]+/g)?.map(Number);
-      if (!channels || channels.length < 3) return null;
-      return [channels[0] ?? 0, channels[1] ?? 0, channels[2] ?? 0, channels[3] ?? 1];
-    };
-    const luminance = (color: RGBA): number => {
-      const channel = (value: number) => {
-        const srgb = value / 255;
-        return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
-      };
-      return 0.2126 * channel(color[0]) + 0.7152 * channel(color[1]) + 0.0722 * channel(color[2]);
-    };
-    const ratio = (foreground: RGBA, background: RGBA) => {
-      const a = luminance(foreground);
-      const b = luminance(background);
-      return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
-    };
-    const selectors = [
-      '.page-header h1', '.page-subtitle', '.stat-card > p', '.stat-card > strong',
-      '.stat-card > span', '.app-footer', '.muted-copy', '.section-footnote', '.field-label',
-    ];
-    return selectors.flatMap((selector) => [...document.querySelectorAll(selector)]
-      .filter((element) => element.getClientRects().length > 0 && (element.textContent ?? '').trim().length > 0)
-      .map((element) => {
-        const style = getComputedStyle(element);
-        const foreground = parseColor(style.color);
-        let ancestor: Element | null = element;
-        let background: RGBA | null = null;
-        while (ancestor) {
-          const parsed = parseColor(getComputedStyle(ancestor).backgroundColor);
-          if (parsed && parsed[3] >= 0.99) { background = parsed; break; }
-          ancestor = ancestor.parentElement;
-        }
-        const contrast = foreground && background ? ratio(foreground, background) : 0;
-        return { selector, text: (element.textContent ?? '').trim().slice(0, 60), contrast: Number(contrast.toFixed(2)) };
-      }).filter((sample) => sample.contrast < 4.5));
-  });
-  expect(lowContrast, 'Text that fails the WCAG AA contrast threshold: ' + JSON.stringify(lowContrast)).toEqual([]);
+test('key financial text meets WCAG AA contrast in both themes across all sections', async ({ page }) => {
+  for (const section of auditedSections) {
+    await page.goto(section.route);
+    await expect(page.getByRole('heading', { name: section.heading, level: 1 })).toBeVisible();
+
+    for (const theme of ['dark', 'light'] as const) {
+      await page.evaluate((selectedTheme) => {
+        document.documentElement.dataset.theme = selectedTheme;
+      }, theme);
+
+      const lowContrast = await page.evaluate(() => {
+        type RGBA = { r: number; g: number; b: number; a: number };
+        const parseColor = (value: string): RGBA | null => {
+          const channels = value.match(/[\\d.]+/g)?.map(Number);
+          if (!channels || channels.length < 3) return null;
+          return {
+            r: channels[0] ?? 0,
+            g: channels[1] ?? 0,
+            b: channels[2] ?? 0,
+            a: channels.length >= 4 ? channels[3] ?? 1 : 1,
+          };
+        };
+        const composite = (foreground: RGBA, background: RGBA): RGBA => {
+          const alpha = foreground.a + background.a * (1 - foreground.a);
+          if (alpha <= 0) return { r: 0, g: 0, b: 0, a: 0 };
+          return {
+            r: (foreground.r * foreground.a + background.r * background.a * (1 - foreground.a)) / alpha,
+            g: (foreground.g * foreground.a + background.g * background.a * (1 - foreground.a)) / alpha,
+            b: (foreground.b * foreground.a + background.b * background.a * (1 - foreground.a)) / alpha,
+            a: alpha,
+          };
+        };
+        const luminance = (color: RGBA): number => {
+          const channel = (value: number) => {
+            const srgb = value / 255;
+            return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+          };
+          return 0.2126 * channel(color.r) + 0.7152 * channel(color.g) + 0.0722 * channel(color.b);
+        };
+        const contrastRatio = (foreground: RGBA, background: RGBA): number => {
+          const a = luminance(foreground);
+          const b = luminance(background);
+          return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+        };
+        const selectors = [
+          '.page-header h1', '.page-subtitle', '.section-heading h2',
+          '.stat-card > p', '.stat-card > strong', '.stat-card > span',
+          '.field-label', '.transactions-table th', '.transactions-table td',
+          '.budget-table th', '.budget-table td', '.trend-table th', '.trend-table td',
+        ];
+        return selectors.flatMap((selector) => [...document.querySelectorAll(selector)]
+          .filter((element) => element.getClientRects().length > 0 && (element.textContent ?? '').trim().length > 0)
+          .map((element) => {
+            const style = getComputedStyle(element);
+            const foregroundColor = parseColor(style.color);
+            const ancestors: Element[] = [];
+            let current: Element | null = element;
+            while (current) {
+              ancestors.push(current);
+              current = current.parentElement;
+            }
+            let background: RGBA = { r: 255, g: 255, b: 255, a: 1 };
+            for (let index = ancestors.length - 1; index >= 0; index -= 1) {
+              const layer = parseColor(getComputedStyle(ancestors[index]!).backgroundColor);
+              if (layer) background = composite(layer, background);
+            }
+            const foreground = foregroundColor ? composite(foregroundColor, background) : null;
+            const fontSize = Number.parseFloat(style.fontSize) || 16;
+            const fontWeight = Number.parseInt(style.fontWeight, 10) || 400;
+            const threshold = fontSize >= 24 || (fontSize >= 18.66 && fontWeight >= 700) ? 3 : 4.5;
+            const contrast = foreground ? contrastRatio(foreground, background) : 0;
+            return {
+              selector,
+              text: (element.textContent ?? '').trim().slice(0, 60),
+              contrast: Number(contrast.toFixed(2)),
+              threshold,
+            };
+          })
+          .filter((sample) => sample.contrast + 0.01 < sample.threshold));
+      });
+
+      expect(lowContrast, 'Contrast failures in ' + theme + ' theme at ' + section.route + ': ' + JSON.stringify(lowContrast)).toEqual([]);
+    }
+  }
 });
 
-test('core sections reflow at desktop, tablet and mobile widths without page-level overflow', async ({ page }) => {
-  const sections = [
-    { route: '/', heading: 'Resumen financiero' },
-    { route: '/movements', heading: 'Movimientos' },
-    { route: '/reports', heading: 'Informes' },
-    { route: '/budgets', heading: 'Presupuestos' },
-    { route: '/planning', heading: 'Planificación' },
-    { route: '/intelligence', heading: 'Inteligencia financiera' },
-    { route: '/assistant', heading: 'Asistente' },
-    { route: '/settings', heading: 'Configuración' },
-  ];
-  for (const width of [1440, 768, 375]) {
-    await page.setViewportSize({ width, height: 900 });
-    for (const section of sections) {
-      await page.goto(section.route);
-      await expect(page.getByRole('heading', { name: section.heading, level: 1 })).toBeVisible();
+test('all twelve sections reflow at the six supported desktop, tablet and mobile widths', async ({ page }) => {
+  for (const section of auditedSections) {
+    await page.goto(section.route);
+    await expect(page.getByRole('heading', { name: section.heading, level: 1 })).toBeVisible();
+
+    for (const width of auditedViewports) {
+      await page.setViewportSize({ width, height: 900 });
       const dimensions = await page.evaluate(() => ({
         viewport: window.innerWidth,
         document: document.documentElement.scrollWidth,
@@ -635,27 +721,30 @@ test('core sections reflow at desktop, tablet and mobile widths without page-lev
         }).filter((element) => element.right > window.innerWidth + 1 && element.width > 0)
           .sort((a, b) => b.right - a.right).slice(0, 8),
       }));
-      expect(dimensions.document, 'Page overflow at ' + section.route + ' / ' + width + 'px: ' + JSON.stringify(dimensions.offenders)).toBeLessThanOrEqual(dimensions.viewport + 1);
+      expect(dimensions.document, 'Page overflow at ' + section.route + ' / ' + width + 'px: ' + JSON.stringify(dimensions.offenders))
+        .toBeLessThanOrEqual(dimensions.viewport + 1);
     }
   }
 });
 
-test('primary actions expose comfortable touch target sizes on mobile', async ({ page }) => {
+test('primary action targets meet the 44px design target across all sections on mobile', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
-  await page.goto('/movements');
-  const undersized = await page.locator('.button, .nav-item, .mode-button, .pagination button')
-    .evaluateAll((elements) => elements
-      .filter((element) => element.getClientRects().length > 0)
-      .map((element) => ({
-        selector: element.className.toString(),
-        label: (element.textContent ?? '').trim().slice(0, 40),
-        width: Math.round(element.getBoundingClientRect().width),
-        height: Math.round(element.getBoundingClientRect().height),
-      }))
-      .filter((element) => element.height < 44 || element.width < 44));
-  expect(undersized, 'Action targets below the 44px design target: ' + JSON.stringify(undersized)).toEqual([]);
+  for (const section of auditedSections) {
+    await page.goto(section.route);
+    await expect(page.getByRole('heading', { name: section.heading, level: 1 })).toBeVisible();
+    const undersized = await page.locator('.button, .nav-item, .mode-button, .pagination button')
+      .evaluateAll((elements) => elements
+        .filter((element) => element.getClientRects().length > 0)
+        .map((element) => ({
+          selector: element.className.toString(),
+          label: (element.textContent ?? '').trim().slice(0, 40),
+          width: Math.round(element.getBoundingClientRect().width),
+          height: Math.round(element.getBoundingClientRect().height),
+        }))
+        .filter((element) => element.height < 44 || element.width < 44));
+    expect(undersized, 'Action targets below the 44px design target at ' + section.route + ': ' + JSON.stringify(undersized)).toEqual([]);
+  }
 });
-
 
 test('movement editor previews validated changes before writing to Actual', async ({ page, request }) => {
   await page.goto('/movements');
