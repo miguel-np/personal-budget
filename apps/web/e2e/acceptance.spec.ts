@@ -557,7 +557,7 @@ test('skip navigation, route focus and horizontal navigation stay keyboard acces
   expect(position.linkRight).toBeLessThanOrEqual(position.navRight + 1);
 });
 
-test('wide movement and budget tables expose named keyboard-scroll regions', async ({ page }) => {
+test('movement, budget and planning tables expose named keyboard-scroll regions', async ({ page }) => {
   await page.goto('/movements');
   const movementRegion = page.getByRole('region', { name: /Movimientos paginados/ });
   await expect(movementRegion).toBeVisible();
@@ -565,10 +565,46 @@ test('wide movement and budget tables expose named keyboard-scroll regions', asy
   await expect(movementRegion).toBeFocused();
 
   await page.goto('/budgets');
-  const budgetRegion = page.getByRole('region', { name: 'Presupuestos por categoría; desplázate horizontalmente para ver todas las columnas', exact: true });
+  const budgetRegion = page.getByRole('region', {
+    name: 'Presupuestos por categoría; desplázate horizontalmente para ver todas las columnas',
+    exact: true,
+  });
   await expect(budgetRegion).toBeVisible();
   await budgetRegion.focus();
   await expect(budgetRegion).toBeFocused();
+
+  await page.route('**/api/v1/forecasts/simulate', async (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ data: {
+      isEstimate: true,
+      currency: 'EUR',
+      horizonMonths: 6,
+      history: { startDate: '2026-05-01', endDate: '2026-10-31', monthsWithData: 6, transactionCount: 30 },
+      baselineMonthlyIncomeMinor: 250000,
+      recurringExpenseMonthlyMinor: 50000,
+      extraordinaryExpenseMonthlyMinor: 140000,
+      projectedMonthlyIncomeMinor: 250000,
+      projectedMonthlyExpenseMinor: 190000,
+      projectedMonthlySavingsMinor: 60000,
+      projectedSavingsMinor: 360000,
+      monthlyProjection: [{ month: '2026-12', incomeMinor: 250000, expenseMinor: 190000, savingsMinor: 60000 }],
+      assumptions: ['Proyección sintética para E2E.'],
+      warnings: [],
+    } }),
+  }));
+
+  await page.goto('/planning');
+  const forecastPanel = page.locator('article.planning-panel')
+    .filter({ has: page.getByRole('heading', { name: 'Simulación presupuestaria explicable' }) });
+  await forecastPanel.getByRole('button', { name: 'Simular escenario' }).click();
+  const projectionRegion = page.getByRole('region', {
+    name: 'Proyección mensual de ingresos, gastos y ahorro',
+    exact: true,
+  });
+  await expect(projectionRegion).toBeVisible();
+  await projectionRegion.focus();
+  await expect(projectionRegion).toBeFocused();
 });
 
 test('reduced motion preserves state while removing non-essential movement', async ({ page }) => {
@@ -700,51 +736,71 @@ test('key financial text meets WCAG AA contrast in both themes across all sectio
   }
 });
 
-test('all twelve sections reflow at the six supported desktop, tablet and mobile widths', async ({ page }) => {
+test('all twelve sections reflow in both themes at six desktop, tablet and mobile widths', async ({ page }) => {
   for (const section of auditedSections) {
     await page.goto(section.route);
     await expect(page.getByRole('heading', { name: section.heading, level: 1 })).toBeVisible();
 
-    for (const width of auditedViewports) {
-      await page.setViewportSize({ width, height: 900 });
-      const dimensions = await page.evaluate(() => ({
-        viewport: window.innerWidth,
-        document: document.documentElement.scrollWidth,
-        offenders: [...document.querySelectorAll('*')].map((element) => {
-          const rect = element.getBoundingClientRect();
-          return {
-            tag: element.tagName.toLowerCase(),
-            className: typeof element.className === 'string' ? element.className.slice(0, 80) : '',
-            left: Math.round(rect.left),
-            right: Math.round(rect.right),
-            width: Math.round(rect.width),
-            scrollWidth: element.scrollWidth,
-          };
-        }).filter((element) => element.right > window.innerWidth + 1 && element.width > 0)
-          .sort((a, b) => b.right - a.right).slice(0, 8),
-      }));
-      expect(dimensions.document, 'Page overflow at ' + section.route + ' / ' + width + 'px: ' + JSON.stringify(dimensions.offenders))
-        .toBeLessThanOrEqual(dimensions.viewport + 1);
+    for (const theme of ['dark', 'light'] as const) {
+      await page.evaluate((selectedTheme) => {
+        document.documentElement.dataset.theme = selectedTheme;
+      }, theme);
+
+      for (const width of auditedViewports) {
+        await page.setViewportSize({ width, height: 900 });
+        const dimensions = await page.evaluate(() => ({
+          viewport: window.innerWidth,
+          document: document.documentElement.scrollWidth,
+          offenders: [...document.querySelectorAll('*')].map((element) => {
+            const rect = element.getBoundingClientRect();
+            return {
+              tag: element.tagName.toLowerCase(),
+              className: typeof element.className === 'string' ? element.className.slice(0, 80) : '',
+              left: Math.round(rect.left),
+              right: Math.round(rect.right),
+              width: Math.round(rect.width),
+              scrollWidth: element.scrollWidth,
+            };
+          }).filter((element) => element.right > window.innerWidth + 1 && element.width > 0)
+            .sort((a, b) => b.right - a.right).slice(0, 8),
+        }));
+        expect(
+          dimensions.document,
+          'Page overflow at ' + section.route + ' / ' + theme + ' / ' + width + 'px: ' + JSON.stringify(dimensions.offenders),
+        ).toBeLessThanOrEqual(dimensions.viewport + 1);
+      }
     }
   }
 });
 
-test('primary action targets meet the 44px design target across all sections on mobile', async ({ page }) => {
-  await page.setViewportSize({ width: 375, height: 812 });
+test('primary action targets meet the 44px design target across all sections and mobile widths in both themes', async ({ page }) => {
   for (const section of auditedSections) {
     await page.goto(section.route);
     await expect(page.getByRole('heading', { name: section.heading, level: 1 })).toBeVisible();
-    const undersized = await page.locator('.button, .nav-item, .mode-button, .pagination button')
-      .evaluateAll((elements) => elements
-        .filter((element) => element.getClientRects().length > 0)
-        .map((element) => ({
-          selector: element.className.toString(),
-          label: (element.textContent ?? '').trim().slice(0, 40),
-          width: Math.round(element.getBoundingClientRect().width),
-          height: Math.round(element.getBoundingClientRect().height),
-        }))
-        .filter((element) => element.height < 44 || element.width < 44));
-    expect(undersized, 'Action targets below the 44px design target at ' + section.route + ': ' + JSON.stringify(undersized)).toEqual([]);
+
+    for (const theme of ['dark', 'light'] as const) {
+      await page.evaluate((selectedTheme) => {
+        document.documentElement.dataset.theme = selectedTheme;
+      }, theme);
+
+      for (const width of [320, 375, 390] as const) {
+        await page.setViewportSize({ width, height: 812 });
+        const undersized = await page.locator('.button, .nav-item, .mode-button, .pagination button')
+          .evaluateAll((elements) => elements
+            .filter((element) => element.getClientRects().length > 0)
+            .map((element) => ({
+              selector: element.className.toString(),
+              label: (element.textContent ?? '').trim().slice(0, 40),
+              width: Math.round(element.getBoundingClientRect().width),
+              height: Math.round(element.getBoundingClientRect().height),
+            }))
+            .filter((element) => element.height < 44 || element.width < 44));
+        expect(
+          undersized,
+          'Action targets below 44px at ' + section.route + ' / ' + theme + ' / ' + width + 'px: ' + JSON.stringify(undersized),
+        ).toEqual([]);
+      }
+    }
   }
 });
 
