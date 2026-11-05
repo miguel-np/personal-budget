@@ -565,7 +565,7 @@ test('wide movement and budget tables expose named keyboard-scroll regions', asy
   await expect(movementRegion).toBeFocused();
 
   await page.goto('/budgets');
-  const budgetRegion = page.getByRole('region', { name: /Presupuestos por categoría/ });
+  const budgetRegion = page.getByRole('region', { name: 'Presupuestos por categoría; desplázate horizontalmente para ver todas las columnas', exact: true });
   await expect(budgetRegion).toBeVisible();
   await budgetRegion.focus();
   await expect(budgetRegion).toBeFocused();
