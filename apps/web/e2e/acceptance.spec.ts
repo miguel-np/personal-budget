@@ -557,6 +557,15 @@ test('skip navigation, route focus and horizontal navigation stay keyboard acces
   expect(position.linkRight).toBeLessThanOrEqual(position.navRight + 1);
 });
 
+test('movement sorting exposes its direction through table semantics and a decorative SVG', async ({ page }) => {
+  await page.goto('/movements');
+  const dateColumn = page.getByRole('columnheader', { name: 'Fecha', exact: true });
+  await expect(dateColumn).toHaveAttribute('aria-sort', 'descending');
+  await dateColumn.getByRole('button', { name: 'Fecha', exact: true }).click();
+  await expect(dateColumn).toHaveAttribute('aria-sort', 'ascending');
+  await expect(dateColumn.locator('svg.sort-indicator[aria-hidden="true"]')).toBeVisible();
+});
+
 test('movement, budget and planning tables expose named keyboard-scroll regions', async ({ page }) => {
   await page.goto('/movements');
   const movementRegion = page.getByRole('region', { name: /Movimientos paginados/ });
