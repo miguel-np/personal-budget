@@ -38,4 +38,4 @@ La referencia viva es la propia aplicación con sus pruebas de navegador sintét
 - Los controles de acción frecuentes usan un objetivo de 44 × 44 CSS px cuando corresponde. Los campos visibles deben tener una etiqueta programática; los placeholders no sustituyen a una etiqueta.
 - El contraste de los textos financieros prioritarios se comprueba en tema claro y oscuro sobre el color de fondo compuesto por sus ancestros, con 4,5:1 para texto normal y 3:1 para texto grande. La comprobación automatizada es una señal de regresión, no una certificación completa.
 - Se respetan las preferencias de movimiento reducido existentes. La revisión manual sigue comprobando teclado, foco, zoom, árbol de accesibilidad/lector de pantalla y tareas completas.
-- La regresión responsive recorre las doce secciones en 320, 375, 390, 768, 1024 y 1440 CSS px. Los datos de las pruebas y capturas de aceptación son sintéticos.
+- La regresión responsive recorre las doce secciones en ambos temas y en 320, 375, 390, 768, 1024 y 1440 CSS px. Los datos de las pruebas y capturas de aceptación son sintéticos.
