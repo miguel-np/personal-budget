@@ -260,7 +260,7 @@ function ErrorNotice({ title, message, onRetry }: { title: string; message: stri
   );
 }
 function EmptyState({ title, body }: { title: string; body: string }) {
-  return <div className="empty-state"><span className="empty-symbol" aria-hidden="true">◇</span><h3>{title}</h3><p>{body}</p></div>;
+  return <div className="empty-state"><span className="empty-symbol" aria-hidden="true" /><h3>{title}</h3><p>{body}</p></div>;
 }
 function LoadingState() {
   return <div className="loading-state" role="status"><span className="spinner" aria-hidden="true" /> Cargando datos locales…</div>;
