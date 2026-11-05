@@ -546,11 +546,13 @@ test('skip navigation, route focus and horizontal navigation stay keyboard acces
   await page.goto('/settings');
   const navigation = page.getByRole('navigation', { name: 'Secciones de la aplicación' });
   const activeLink = navigation.locator('[aria-current="page"]');
-  const position = await navigation.evaluate((nav, link) => {
+  const position = await activeLink.evaluate((link) => {
+    const nav = link.closest('.nav-list');
+    if (!nav) throw new Error('Navigation container is missing');
     const navRect = nav.getBoundingClientRect();
-    const linkRect = (link as HTMLElement).getBoundingClientRect();
+    const linkRect = link.getBoundingClientRect();
     return { navLeft: navRect.left, navRight: navRect.right, linkLeft: linkRect.left, linkRight: linkRect.right };
-  }, await activeLink.elementHandle());
+  });
   expect(position.linkLeft).toBeGreaterThanOrEqual(position.navLeft - 1);
   expect(position.linkRight).toBeLessThanOrEqual(position.navRight + 1);
 });
@@ -625,7 +627,7 @@ test('key financial text meets WCAG AA contrast in both themes across all sectio
       const lowContrast = await page.evaluate(() => {
         type RGBA = { r: number; g: number; b: number; a: number };
         const parseColor = (value: string): RGBA | null => {
-          const channels = value.match(/[\\d.]+/g)?.map(Number);
+          const channels = value.match(/[\d.]+/g)?.map(Number);
           if (!channels || channels.length < 3) return null;
           return {
             r: channels[0] ?? 0,
