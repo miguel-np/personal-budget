@@ -10,7 +10,7 @@ El análisis combina inspección estática de React/CSS/Playwright y regresiones
 
 | Severidad | Área | Evidencia estática | Corrección |
 |---|---|---|---|
-| Media | Iconografía y navegación | La navegación compartida utilizaba glifos Unicode y una barra horizontal podía dejar el destino activo fuera del área visible. | Sustitución por SVG inline accesibles; el SVG queda oculto al árbol de accesibilidad y el enlace conserva su nombre visible. El destino activo se desplaza a la vista al cambiar de ruta. |
+| Media | Iconografía y navegación | La navegación compartida y los estados vacíos utilizaban glifos Unicode; los encabezados ordenables exponían flechas como texto plano. La barra horizontal podía dejar el destino activo fuera del área visible. | Sustitución de la iconografía de navegación y ordenación por SVG decorativos; los estados vacíos usan una forma CSS. Los encabezados anuncian `aria-sort` y el destino activo se desplaza a la vista al cambiar de ruta. |
 | Media | Estados dinámicos | La búsqueda web tenía errores anunciados, pero no un estado accesible explícito para espera y finalización. | aria-busy y región role=status anuncian progreso y cantidad de fuentes, sin exponer contenido adicional. |
 | Media | Tablas y teclado | La tabla de proyección de Planificación tenía scroll horizontal sin región etiquetada y enfocable, a diferencia de las regiones de movimientos y presupuestos. | Se añade role=region, nombre accesible y tabIndex=0. |
 | Media | Objetivos táctiles | Una regla específica de Inteligencia financiera reducía la altura de sus botones por debajo del objetivo compartido. | Se fija una altura mínima de 44 CSS px para esas acciones y se añade cobertura transversal por ruta. |
@@ -23,7 +23,7 @@ El análisis combina inspección estática de React/CSS/Playwright y regresiones
 - Los textos financieros priorizados se comprueban en ambos temas con composición de fondos transparentes y umbrales AA de 4,5:1 para texto normal y 3:1 para texto grande.
 - Los campos visibles se comprueban en las doce rutas para identificar controles sin etiqueta programática.
 - Los objetivos de navegación y acciones principales se comprueban en ambos temas y en 320, 375 y 390 CSS px en las doce rutas.
-- Se comprueba el enlace de salto, el foco del encabezado al navegar, la visibilidad del enlace activo en navegación horizontal, el foco de las regiones de movimientos, presupuestos y proyección mensual de Planificación, y la preferencia de movimiento reducido.
+- Se comprueba el enlace de salto, el foco del encabezado al navegar, la visibilidad del enlace activo en navegación horizontal, `aria-sort` al ordenar movimientos, el foco de las regiones de movimientos, presupuestos y proyección mensual de Planificación, y la preferencia de movimiento reducido.
 - La investigación web anuncia su espera y finalización mediante una región de estado.
 
 Estas pruebas son controles de regresión específicos; no equivalen a una auditoría WCAG completa ni prueban todos los estados de cada funcionalidad.
