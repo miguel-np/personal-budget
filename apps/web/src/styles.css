@@ -186,7 +186,8 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .spinner { width: 16px; height: 16px; border: 2px solid #3a4e68; border-top-color: #9bc4ff; border-radius: 50%; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .empty-state { display: grid; justify-items: start; gap: 8px; padding: 18px 0; }
-.empty-symbol { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid #324760; border-radius: 10px; color: #9cbce3; background: #15243a; font-size: 17px; }
+.empty-symbol { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid #324760; border-radius: 10px; color: #9cbce3; background: #15243a; }
+.empty-symbol::before { content: ""; width: 9px; height: 9px; border: 1.75px solid currentColor; border-radius: 1px; transform: rotate(45deg); }
 .empty-state h3 { margin: 0; color: var(--text-primary); font-size: 13px; }
 .empty-state p { max-width: 520px; margin: 0; color: var(--text-tertiary); font-size: 11px; line-height: 1.7; }
 .filters-panel { display: grid; grid-template-columns: minmax(180px, 1.7fr) repeat(2, minmax(145px, 1fr)) max-content; align-items: end; gap: 12px; margin-bottom: 16px; border: 1px solid var(--border); border-radius: 13px; padding: 15px; background: var(--surface-panel); }
@@ -201,6 +202,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .transactions-table tbody tr:hover { background: #142136; }
 .sort-button { padding: 0; border: 0; background: transparent; color: inherit; font-size: inherit; font-weight: inherit; cursor: pointer; }
 .sort-button:hover { color: #e9f2ff; }
+.sort-indicator { display: inline-block; width: 13px; height: 13px; margin-left: 5px; vertical-align: -2px; }
 .transaction-name { display: block; max-width: 250px; overflow: hidden; color: var(--text-primary); font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
 .transaction-note { display: block; margin-top: 5px; max-width: 250px; overflow: hidden; color: #768aa3; text-overflow: ellipsis; white-space: nowrap; }
 .amount-cell { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
