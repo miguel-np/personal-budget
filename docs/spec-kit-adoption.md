@@ -1,6 +1,6 @@
 # Adopción de GitHub Spec Kit
 
-**Estado**: iniciada en la rama `chore/adopt-spec-kit`; integración CLI pendiente de ejecutar y verificar en el checkout local.
+**Estado**: integrada y verificada localmente en la rama `chore/adopt-spec-kit`; pendiente de revisión y ratificación de la constitución para cerrar el piloto.
 
 ## Decisión
 
@@ -93,8 +93,8 @@ La rama incorpora el primer incremento de código de la issue #85:
 - Pruebas sintéticas del adaptador y de la inyección, más regresión existente de los flujos locales.
 - Plan, research, contrato, quickstart y tareas en `specs/001-ollama-provider-boundary/`.
 
-La PR [#123](https://github.com/miguel-np/personal-budget/pull/123) está en borrador. Los tests se han escrito pero aún no se han ejecutado en un checkout local. No marcar la entrega como validada ni fusionar hasta completar la matriz de pruebas de `quickstart.md`.
+La PR [#123](https://github.com/miguel-np/personal-budget/pull/123) permanece en borrador hasta la revisión de la constitución y la especificación. La matriz de `quickstart.md` se ejecutó con Node.js 24.22.1: 474 pruebas activas pasaron (cuatro omisiones intencionadas), junto con lint, typecheck, build, cobertura y las auditorías de dependencias y producción sin vulnerabilidades. La aceptación live, si se realiza, usa solo un modelo local y datos sintéticos.
 
 ## Límites de la adopción actual
 
-La constitución y la primera especificación se han preparado en la rama de adopción siguiendo la estructura y los templates oficiales de Spec Kit v1.0.6. El CLI no se ha ejecutado desde este entorno; por tanto, la instalación de las Skills, generación de scripts/templates, registro de integración y verificación de hooks siguen pendientes. No afirmar que Codex ya reconoce los comandos hasta completar los pasos locales anteriores.
+La constitución y la primera especificación se prepararon siguiendo la estructura y los templates oficiales de Spec Kit v1.0.6. La integración se ejecutó con esa versión en un entorno temporal aislado: instaló scripts, plantillas y las Skills `speckit-*`; `specify integration status` devolvió `OK` y `specify check` confirmó la disponibilidad de Codex. El hash de `.codex/hooks.json` se mantuvo inalterado y no se instalaron eventos de Spec Kit.

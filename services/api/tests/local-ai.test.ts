@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { LocalAiBusyError, LocalAiCancelledError, LocalAiClient, LocalAiContextBudgetError, LocalAiToolCallUnsupportedError, LocalAiUnavailableError } from '../src/local-ai.js';
 import type { AssistantContext, WebResearchRequest } from '../src/local-ai.js';
-import type { ModelProvider } from '../src/model-provider.js';
+import type { ModelProvider, ModelProviderAvailability } from '../src/model-provider.js';
 import type { SearXNGSearchProvider, WebSearchProvider } from '../src/web-search.js';
 
 const config = { enabled: true, baseURL: 'http://127.0.0.1:11434', model: 'synthetic-model', timeoutMs: 1_000, maxContextChars: 2_000 };
@@ -37,7 +37,7 @@ describe('LocalAiClient', () => {
     const provider: ModelProvider = {
       id: 'synthetic-provider',
       capabilities: { structuredOutput: 'supported', toolCalling: 'unsupported', streaming: 'unsupported' },
-      probe: vi.fn(async () => 'available'),
+      probe: vi.fn(async (): Promise<ModelProviderAvailability> => 'available'),
       chat: vi.fn(async () => ({ content: 'Tendencia estable.', toolCalls: [] })),
     };
     const client = new LocalAiClient(config, fetcher, undefined, provider);

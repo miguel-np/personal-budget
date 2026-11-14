@@ -6,7 +6,7 @@
 
 Introducir un contrato interno mínimo para proveedores de modelos y encapsular la API HTTP actual de Ollama en un adaptador. `LocalAiClient` conserva la orquestación de casos de uso (prompts, validación del contexto, cola, coalescing, métricas, consentimiento y políticas de seguridad), pero delega el transporte, el mapeo de payloads y la normalización de respuestas al proveedor.
 
-El primer incremento implementa únicamente Ollama. No añade proveedores remotos, selección de proveedor, almacenamiento de secretos ni nuevas rutas HTTP. Los cambios actuales están preparados en esta rama y requieren validación local.
+El primer incremento implementa únicamente Ollama. No añade proveedores remotos, selección de proveedor, almacenamiento de secretos ni nuevas rutas HTTP. Los cambios se validan localmente con la matriz indicada en `quickstart.md`.
 
 ## Technical Context
 
@@ -56,7 +56,7 @@ No se cambia el significado de los endpoints públicos ni el contexto financiero
 - [x] Ollama continúa limitado a loopback; no se añade proveedor cloud.
 - [x] El proveedor no puede ejecutar tools; backend valida la búsqueda.
 - [x] No se añaden dependencias ni persistencia.
-- [x] Se escriben pruebas sintéticas; la validación local sigue pendiente.
+- [x] Se escriben pruebas sintéticas y se ejecuta la validación local indicada en `quickstart.md`.
 - [x] No se cambian endpoints públicos ni la UI.
 - [x] Se conserva documentación y trazabilidad del issue #85.
 
