@@ -391,7 +391,7 @@ function ForecastPanel({ categories, accounts }: { categories: readonly Category
             <article className="panel"><p className="eyebrow">AHORRO PROYECTADO · {result.horizonMonths} MESES</p><strong>{money(result.projectedSavingsMinor, result.currency)}</strong><p className="section-footnote">{money(result.projectedMonthlySavingsMinor, result.currency)} por mes</p></article>
           </div>
           {result.warnings.map((warning) => <p key={warning} className="form-alert warning" role="note">{warning}</p>)}
-          <div className="trend-table-wrap">
+          <div className="trend-table-wrap" role="region" tabIndex={0} aria-label="Proyección mensual de ingresos, gastos y ahorro">
             <table className="trend-table">
               <thead><tr><th scope="col">Mes</th><th scope="col">Ingresos</th><th scope="col">Gastos</th><th scope="col">Ahorro</th></tr></thead>
               <tbody>{result.monthlyProjection.map((row) => (

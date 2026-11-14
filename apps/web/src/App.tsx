@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { DashboardSignals } from './DashboardSignals.js';
 import { GoalsDashboardSummary } from './GoalsDashboardSummary.js';
 import { formatAccountBalance, formatCivilDate, formatMoney as sharedFormatMoney, setFinanceLocale } from './finance-format.js';
@@ -133,20 +133,48 @@ class ApiError extends Error {
     this.name = 'ApiError';
   }
 }
+type NavIconName =
+  | 'overview' | 'movements' | 'accounts' | 'patrimony' | 'reports' | 'budgets'
+  | 'planning' | 'intelligence' | 'review' | 'goals' | 'assistant' | 'settings';
+
 const NAV_ITEMS = [
-  { href: '/', label: 'Resumen', icon: '◫' },
-  { href: '/movements', label: 'Movimientos', icon: '↕' },
-  { href: '/accounts', label: 'Cuentas', icon: '€' },
-  { href: '/patrimony', label: 'Patrimonio y documentos', icon: '◇' }, 
-  { href: '/reports', label: 'Informes', icon: '▥' },
-  { href: '/budgets', label: 'Presupuestos', icon: '◷' },
-  { href: '/planning', label: 'Planificación', icon: '◎' },
-  { href: '/intelligence', label: 'Inteligencia financiera', icon: '◈' },
-  { href: '/review', label: 'Revisión financiera', icon: '✓' },
-  { href: '/goals', label: 'Objetivos', icon: '↗' },
-  { href: '/assistant', label: 'Asistente', icon: '✧' },
-  { href: '/settings', label: 'Configuración', icon: '⚙' },
+  { href: '/', label: 'Resumen', icon: 'overview' },
+  { href: '/movements', label: 'Movimientos', icon: 'movements' },
+  { href: '/accounts', label: 'Cuentas', icon: 'accounts' },
+  { href: '/patrimony', label: 'Patrimonio y documentos', icon: 'patrimony' },
+  { href: '/reports', label: 'Informes', icon: 'reports' },
+  { href: '/budgets', label: 'Presupuestos', icon: 'budgets' },
+  { href: '/planning', label: 'Planificación', icon: 'planning' },
+  { href: '/intelligence', label: 'Inteligencia financiera', icon: 'intelligence' },
+  { href: '/review', label: 'Revisión financiera', icon: 'review' },
+  { href: '/goals', label: 'Objetivos', icon: 'goals' },
+  { href: '/assistant', label: 'Asistente', icon: 'assistant' },
+  { href: '/settings', label: 'Configuración', icon: 'settings' },
 ] as const;
+
+const NAV_ICON_MARKS: Record<NavIconName, ReactNode> = {
+  overview: <><rect x="3.5" y="3.5" width="7" height="7" rx="1" /><rect x="13.5" y="3.5" width="7" height="5" rx="1" /><rect x="13.5" y="11.5" width="7" height="9" rx="1" /><rect x="3.5" y="13.5" width="7" height="7" rx="1" /></>,
+  movements: <><path d="M7 4v15m0 0-3-3m3 3 3-3" /><path d="M17 20V5m0 0 3 3m-3-3-3 3" /></>,
+  accounts: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 9h18m-5 5h2" /><path d="M6 5V3h12v2" /></>,
+  patrimony: <><path d="M3 20h18M5 20V9l7-5 7 5v11" /><path d="M9 20v-7h6v7M8 10h.01M16 10h.01" /></>,
+  reports: <><path d="M4 20V4m0 16h17" /><path d="m7 15 4-4 3 2 5-6" /><path d="M16 7h3v3" /></>,
+  budgets: <><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 7h8M8 11h2m4 0h2M8 15h2m4 0h2M8 18h8" /></>,
+  planning: <><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M7 3v4m10-4v4M3 10h18" /><path d="M8 14h3m-3 3h6" /></>,
+  intelligence: <><path d="M9 18h6m-5 3h4" /><path d="M8.5 14.5a7 7 0 1 1 7 0c-.9.7-1.5 1.5-1.5 2.5h-4c0-1-.6-1.8-1.5-2.5Z" /><path d="M12 7v4m-2-2h4" /></>,
+  review: <><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 4V3h6v1M8 11h3m-3 4h2m3-1 1.5 1.5L18 12" /></>,
+  goals: <><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4.5" /><path d="m12 12 7-7m-3 0h3v3" /></>,
+  assistant: <><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-6.5A7.5 7.5 0 1 1 20 11.5Z" /><path d="M8 11h.01M12 11h.01M16 11h.01" /></>,
+  settings: <><circle cx="12" cy="12" r="3" /><path d="m19.4 15 .1.1 1 1.7-1.8 1.8-1.7-1-.2-.1a7.6 7.6 0 0 1-1.3.5l-.3.1-.5 2h-2.5l-.5-2-.3-.1a7.6 7.6 0 0 1-1.3-.5l-.2.1-1.7 1-1.8-1.8 1-1.7.1-.2a7.6 7.6 0 0 1-.5-1.3l-.1-.3-2-.5v-2.5l2-.5.1-.3a7.6 7.6 0 0 1 .5-1.3l-.1-.2-1-1.7 1.8-1.8 1.7 1 .2.1a7.6 7.6 0 0 1 1.3-.5l.3-.1.5-2h2.5l.5 2 .3.1a7.6 7.6 0 0 1 1.3.5l.2-.1 1.7-1 1.8 1.8-1 1.7-.1.2a7.6 7.6 0 0 1 .5 1.3l.1.3 2 .5v2.5l-2 .5-.1.3a7.6 7.6 0 0 1-.5 1.3Z" /></>,
+};
+
+function NavigationIcon({ name }: { name: NavIconName }) {
+  return (
+    <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="18" height="18"
+      fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      {NAV_ICON_MARKS[name]}
+    </svg>
+  );
+}
 
 function isoDate(date: Date): string {
   return date.toISOString().slice(0, 10);
@@ -232,7 +260,7 @@ function ErrorNotice({ title, message, onRetry }: { title: string; message: stri
   );
 }
 function EmptyState({ title, body }: { title: string; body: string }) {
-  return <div className="empty-state"><span className="empty-symbol" aria-hidden="true">◇</span><h3>{title}</h3><p>{body}</p></div>;
+  return <div className="empty-state"><span className="empty-symbol" aria-hidden="true" /><h3>{title}</h3><p>{body}</p></div>;
 }
 function LoadingState() {
   return <div className="loading-state" role="status"><span className="spinner" aria-hidden="true" /> Cargando datos locales…</div>;
@@ -319,9 +347,15 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (previousRoute.current === route) return;
-    previousRoute.current = route;
-    document.querySelector<HTMLHeadingElement>('.page-header h1')?.focus({ preventScroll: true });
+    if (previousRoute.current !== route) {
+      previousRoute.current = route;
+      document.querySelector<HTMLHeadingElement>('.page-header h1')?.focus({ preventScroll: true });
+    }
+    document.querySelector<HTMLElement>('.nav-list [aria-current="page"]')?.scrollIntoView({
+      block: 'nearest',
+      inline: 'nearest',
+      behavior: 'auto',
+    });
   }, [route]);
 
   function navigate(event: MouseEvent<HTMLAnchorElement>, href: string): void {
@@ -594,7 +628,7 @@ export function App() {
           {NAV_ITEMS.map((item) => (
             <a className={'nav-item' + (item.href === route ? ' active' : '')} href={item.href} onClick={(event) => navigate(event, item.href)}
               aria-current={item.href === route ? 'page' : undefined} key={item.href}>
-              <span className="nav-icon" aria-hidden="true">{item.icon}</span><span>{item.label}</span>
+              <span className="nav-icon"><NavigationIcon name={item.icon} /></span><span>{item.label}</span>
             </a>
           ))}
         </nav>
@@ -608,7 +642,6 @@ export function App() {
       <main id="main-content" className="main-content" tabIndex={-1}>
         <header className="page-header">
           <div>
-            <p className="eyebrow">ÁREA PERSONAL / {pageTitle.toLocaleUpperCase('es')}</p>
             <h1 tabIndex={-1}>{route === '/' ? 'Resumen financiero' : route === '/movements' ? 'Movimientos' : route === '/reports' ? 'Informes' : route === '/assistant' ? 'Asistente' : route === '/settings' ? 'Configuración' : pageTitle}</h1>
             <p className="page-subtitle">Tus finanzas, con cálculos verificables y sin enviar datos a terceros.</p>
           </div>

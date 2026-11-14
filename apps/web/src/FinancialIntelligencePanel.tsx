@@ -338,7 +338,7 @@ export function FinancialIntelligencePanel({
       ) : null}
       {!loading && !error && findings.length === 0 ? (
         <div className="empty-state">
-          <span className="empty-symbol" aria-hidden="true">◇</span>
+          <span className="empty-symbol" aria-hidden="true" />
           <h3>{(payload?.findings.length ?? 0) === 0 ? 'Sin hallazgos para este periodo' : 'No hay hallazgos con estos filtros'}</h3>
           <p>{(payload?.warnings.length ?? 0) > 0
             ? 'No se ha detectado evidencia suficiente para generar hallazgos activos. Consulta las limitaciones del análisis.'
