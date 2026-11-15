@@ -54,24 +54,31 @@ function readUniqueHeader(
     : { ...(values.length === 1 ? { value: values[0] } : {}), invalid: false };
 }
 
+function normalizedHostPort(hostname: string, port: number): string {
+  const normalizedHostname = hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  const host = normalizedHostname.includes(':') ? '[' + normalizedHostname + ']' : normalizedHostname;
+  return host + ':' + port;
+}
+
 function allowedHostValues(input: RequestBoundaryInput): ReadonlySet<string> {
   const values = new Set<string>();
   for (const origin of input.allowedOrigins) {
     try {
-      values.add(new URL(origin).host.toLowerCase());
+      const parsed = new URL(origin);
+      const port = Number(parsed.port || (parsed.protocol === 'https:' ? 443 : 80));
+      values.add(normalizedHostPort(parsed.hostname, port));
     } catch {
       // Configuration validation rejects malformed origins before the server starts.
     }
   }
 
   for (const hostname of LOOPBACK_HOSTNAMES) {
-    const host = hostname.includes(':') ? '[' + hostname + ']' : hostname;
-    values.add(host + ':' + input.apiPort);
+    values.add(normalizedHostPort(hostname, input.apiPort));
   }
 
   // Fastify's in-memory inject transport uses localhost:80 when no Host is
   // supplied. This test-only compatibility does not affect a listening server.
-  if (input.environment === 'test') values.add('localhost:80');
+  if (input.environment === 'test') values.add(normalizedHostPort('localhost', 80));
   return values;
 }
 
@@ -83,7 +90,8 @@ function isAllowedHost(value: string | undefined, input: RequestBoundaryInput): 
     if (parsed.hostname.endsWith('.')) return false;
     const hostname = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase();
     if (!LOOPBACK_HOSTNAMES.has(hostname)) return false;
-    return allowedHostValues(input).has(parsed.host.toLowerCase());
+    const port = Number(parsed.port || 80);
+    return allowedHostValues(input).has(normalizedHostPort(hostname, port));
   } catch {
     return false;
   }

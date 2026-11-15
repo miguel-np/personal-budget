@@ -82,6 +82,14 @@ describe('validateRequestBoundary', () => {
     expect(validate({ headers: { host: '127.0.0.1:43127' }, apiPort: 43127 })).toEqual({ allowed: true });
   });
 
+  it('normalizes implicit HTTP default ports without widening the hostname allowlist', () => {
+    expect(validate({ headers: { host: 'localhost' }, environment: 'test' })).toEqual({ allowed: true });
+    expect(validate({ headers: { host: '127.0.0.1' }, environment: 'test' }))
+      .toMatchObject({ allowed: false, code: 'HOST_NOT_ALLOWED' });
+    expect(validate({ headers: { host: '127.0.0.1:80' }, environment: 'production' }))
+      .toMatchObject({ allowed: false, code: 'HOST_NOT_ALLOWED' });
+  });
+
   it('allows localhost:80 only for Fastify in-memory tests', () => {
     expect(validate({ headers: { host: 'localhost:80' }, environment: 'test' })).toEqual({ allowed: true });
     expect(validate({ headers: { host: 'localhost:80' }, environment: 'production' }))
