@@ -719,6 +719,7 @@ textarea::placeholder {
 /* Explicit light theme. System mode resolves to a concrete theme in App.tsx. */
 :root[data-theme="light"] {
   color-scheme: light;
+  --focus-ring: #275d9b;
   --text-primary: #172335;
   --text-secondary: #3e5065;
   --text-tertiary: #61748a;
@@ -897,10 +898,10 @@ textarea::placeholder {
 .goal-projection-details summary, .planning-data-management summary { cursor: pointer; color: var(--text-primary); font-size: 12px; font-weight: 650; line-height: 1.6; }
 .goal-projection-details h5 { margin: 14px 0 6px; color: var(--text-primary); font-size: 11px; }
 .goal-projection-table-wrap { max-width: 100%; overflow-x: auto; border: 1px solid var(--border-subtle); border-radius: 8px; }
-.goal-projection-table { width: 100%; border-collapse: collapse; font-size: 10px; white-space: nowrap; }
+.goal-projection-table { width: 100%; border-collapse: collapse; font-size: 12px; white-space: nowrap; }
 .goal-projection-table th, .goal-projection-table td { padding: 9px 10px; border-bottom: 1px solid var(--border-subtle); text-align: right; font-variant-numeric: tabular-nums; }
 .goal-projection-table th:first-child, .goal-projection-table td:first-child { text-align: left; }
-.goal-projection-table thead th { color: var(--text-secondary); background: var(--surface-recessed); font-weight: 600; }
+.goal-projection-table thead th { color: var(--text-secondary); background: var(--surface-recessed); font-size: 11px; font-weight: 600; }
 .goal-projection-table tbody th { color: var(--text-primary); font-weight: 600; }
 .goal-projection-table tr:last-child th, .goal-projection-table tr:last-child td { border-bottom: 0; }
 .assumption-list { margin: 0; padding-left: 18px; color: var(--text-secondary); font-size: 11px; line-height: 1.7; }
