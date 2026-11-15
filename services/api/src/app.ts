@@ -5,6 +5,7 @@ import { buildFinancialAnomalyFindings, buildPeriodChangeFindings, buildUncatego
 import type { BudgetAlertCategory, BudgetAlertRule, BudgetImprovementCategoryPreference, CashFlowEvent, BudgetCategoryClassification, BudgetRepository, BudgetTransaction, CategorySuggestion as CoreCategorySuggestion, FinancialFinding, FindingPriority, ForecastScenario, ImportRecord, PlanningCommitment, TransactionStructureUpdate } from '@personal-budget/finance-core';
 import { z, ZodError } from 'zod';
 import type { AppConfig } from './config.js';
+import { validateRequestBoundary } from './request-boundary.js';
 import { LocalAiBusyError, LocalAiCancelledError, LocalAiClient, LocalAiContextBudgetError, LocalAiToolCallUnsupportedError, LocalAiUnavailableError } from './local-ai.js';
 import type { AssistantContext, PlanningIntentDraft, WebResearchRequest } from './local-ai.js';
 import { OFFICIAL_SOURCE_DOMAINS, SearXNGSearchProvider, WebSearchResponseTooLargeError, WebSearchUnavailableError } from './web-search.js';
@@ -548,9 +549,18 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   });
 
   app.addHook('onRequest', async (request, reply) => {
-    const origin = request.headers.origin;
-    if (origin && !config.allowedOrigins.includes(origin)) {
-      return reply.code(403).send({ error: { code: 'ORIGIN_NOT_ALLOWED', message: 'Origin is not allowed.' } });
+    const boundary = validateRequestBoundary({
+      method: request.method,
+      headers: request.headers,
+      rawHeaders: request.raw.rawHeaders,
+      allowedOrigins: config.allowedOrigins,
+      apiPort: config.port,
+      environment: config.environment,
+    });
+    if (!boundary.allowed) {
+      return reply.code(boundary.statusCode).send({
+        error: { code: boundary.code, message: boundary.message },
+      });
     }
   });
 

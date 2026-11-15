@@ -515,6 +515,60 @@ describe('local API', () => {
     expect(allowed.statusCode).toBe(200);
   });
 
+  it('rejects hostile write requests before changing local preferences', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'api-request-boundary-'));
+    temporaryDirectories.push(root);
+    const dataDirectory = join(root, 'state');
+    const app = await createTestApp(createRepository(), { ...config, actualDataDir: dataDirectory });
+
+    const blockedOrigin = await app.inject({
+      method: 'PUT',
+      url: '/api/v1/preferences/app',
+      headers: { origin: 'https://attacker.example' },
+      payload: { theme: 'dark', locale: 'en-GB' },
+    });
+    const blockedHost = await app.inject({
+      method: 'PUT',
+      url: '/api/v1/preferences/app',
+      headers: { host: 'attacker.example:3000' },
+      payload: { theme: 'dark', locale: 'en-GB' },
+    });
+    const blockedFetchMetadata = await app.inject({
+      method: 'PUT',
+      url: '/api/v1/preferences/app',
+      headers: { 'sec-fetch-site': 'cross-site' },
+      payload: { theme: 'dark', locale: 'en-GB' },
+    });
+
+    expect(blockedOrigin.statusCode).toBe(403);
+    expect(blockedOrigin.json().error.code).toBe('ORIGIN_NOT_ALLOWED');
+    expect(blockedHost.statusCode).toBe(400);
+    expect(blockedHost.json().error.code).toBe('HOST_NOT_ALLOWED');
+    expect(blockedFetchMetadata.statusCode).toBe(403);
+    expect(blockedFetchMetadata.json().error.code).toBe('ORIGIN_NOT_ALLOWED');
+    await expect(readFile(join(dataDirectory, 'app-preferences.json'), 'utf8'))
+      .rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('rejects browser-simple and multipart cross-origin requests before body parsing', async () => {
+    const app = await createTestApp();
+    const contentTypes = [
+      'application/x-www-form-urlencoded',
+      'text/plain',
+      'multipart/form-data; boundary=synthetic-boundary',
+    ];
+    for (const contentType of contentTypes) {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/preferences/reset',
+        headers: { origin: 'https://attacker.example', 'content-type': contentType },
+        payload: 'confirmation=RESET_APP_PREFERENCES',
+      });
+      expect(response.statusCode, contentType).toBe(403);
+      expect(response.json().error.code).toBe('ORIGIN_NOT_ALLOWED');
+    }
+  });
+
   it('calculates reports with finance-core and excludes internal transfers', async () => {
     const repository = createRepository();
     const app = await createTestApp(repository);

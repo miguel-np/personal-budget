@@ -54,6 +54,14 @@ El backup cifrado unificado contiene el volumen de Actual, nueve almacenes JSON 
 
 La exportación portable es diferente: es una instantánea legible seleccionable, no un backup restaurable. No contiene secretos ni claves.
 
+## Acceso desde navegador y límites locales
+
+El frontend compilado aplica una CSP desde el servidor Vite Preview: scripts, hojas de estilo y conexiones quedan limitados al mismo origen; imágenes/fuentes admiten solo los esquemas locales necesarios; se bloquean objetos, framing y formularios externos. Los atributos de estilo inline solo se permiten mediante `style-src-attr` para anchos dinámicos de barras de progreso; los scripts y elementos de estilo inline siguen bloqueados. Los encabezados no habilitan HSTS para HTTP loopback. El servidor de Preview y el servidor de desarrollo aceptan hosts loopback explícitos y no habilitan CORS genérico.
+
+La API valida Host, Origin, Referer y Fetch Metadata antes de analizar el cuerpo o ejecutar una ruta. Los orígenes de navegador se comparan exactamente con `APP_ALLOWED_ORIGINS`; hosts externos, orígenes `null`, duplicados y peticiones marcadas `cross-site` se rechazan. Se admiten peticiones sin metadatos de navegador para herramientas locales, por lo que esta protección no sustituye autenticación.
+
+La aplicación no está aislada frente a malware, extensiones privilegiadas ni procesos que ya puedan ejecutarse con los permisos de la cuenta del usuario. El carácter local no equivale a una frontera entre usuarios o procesos. No se debe exponer el runtime a la LAN o Internet.
+
 ## Límites
 
 «Local» no equivale a «cifrado automáticamente». Los ficheros locales pueden ser leídos por otros procesos o usuarios con acceso al sistema. Protege la cuenta del sistema operativo y el disco, conserva la clave de backup en un lugar seguro y revisa las políticas de Docker Desktop, Windows, WSL y los proveedores de modelos/búsqueda.

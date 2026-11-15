@@ -18,6 +18,24 @@ flowchart TD
   M[MCP stdio · read-only] --> B
 ~~~
 
+## Frontera del navegador y runtime local
+
+El frontend compilado se sirve en loopback y entrega una CSP efectiva desde Vite Preview. La política permite scripts, hojas de estilo y conexiones del mismo origen, limita imágenes/fuentes a los esquemas locales necesarios y bloquea objetos, framing, bases y formularios externos. No habilita `unsafe-eval` ni `unsafe-inline` en scripts o elementos de estilo. La única excepción es `style-src-attr 'unsafe-inline'`, limitada a atributos dinámicos usados por barras de progreso; `style-src-elem` sigue restringido a recursos del mismo origen. El servidor de desarrollo y Preview aceptan solo los hosts loopback previstos y no habilitan CORS general.
+
+La API comprueba Host, Origin, Referer y Fetch Metadata mediante un hook `onRequest`, anterior al parseo del cuerpo y a los controladores. Host debe pertenecer a los hostnames loopback y puertos configurados. Origin debe coincidir exactamente con `APP_ALLOWED_ORIGINS`; `null`, duplicados y valores malformados se rechazan. Referer, cuando aparece, debe tener un origen permitido. Las peticiones marcadas como `cross-site` se rechazan.
+
+Las peticiones sin cabeceras de procedencia de navegador se conservan para herramientas locales/automatización. Esta decisión no autentica al llamante y no impide que un proceso local invoque la API directamente. No se confía en `X-Forwarded-Host` ni se habilita exposición LAN/Internet. CORS es una política de navegador, no el control de autorización del backend.
+
+### Actores y límites de confianza
+
+| Actor | Controles | Límite/riesgo residual |
+|---|---|---|
+| Sitio remoto en el mismo navegador | Host, Origin, Referer, Fetch Metadata y CSP | Un origen permitido comprometido forma parte de la base de confianza |
+| Origen local no autorizado | Allowlist exacta de hosts/puertos y orígenes; se rechazan aliases arbitrarios | No hay identidad de proceso local; DNS/Host externos no pueden suplantar un Host aceptado |
+| Dispositivo LAN | API y Vite ligados a loopback por defecto | Túneles o cambios del operador pueden ampliar el acceso |
+| Proceso local/malware | Validación de entradas y permisos de ficheros | No protege frente a código con los mismos permisos del usuario |
+| Dependencia comprometida | Acciones SHA, auditoría npm y Gitleaks por digest en contenedor aislado | Ningún escáner garantiza ausencia de vulnerabilidades |
+
 ## Componentes
 
 | Componente | Responsabilidad | Límite principal |
