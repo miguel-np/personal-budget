@@ -545,6 +545,8 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
 
   await app.register(helmet, {
     contentSecurityPolicy: false,
+    // The local runtime uses HTTP loopback; do not persist browser HSTS state.
+    strictTransportSecurity: false,
     crossOriginResourcePolicy: { policy: 'same-origin' },
   });
 

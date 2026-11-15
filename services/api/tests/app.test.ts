@@ -103,6 +103,7 @@ describe('local API', () => {
     const response = await app.inject({ method: 'GET', url: '/health' });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ status: 'ok', service: 'personal-budget-api' });
+    expect(response.headers['strict-transport-security']).toBeUndefined();
   });
 
   it('returns readiness without exposing settings', async () => {

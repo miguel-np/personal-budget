@@ -19,6 +19,12 @@ test('production preview sends restrictive security headers and CSP across every
   const response = await request.get('/');
   expect(response.ok()).toBe(true);
   const headers = response.headers();
+  expect(headers['strict-transport-security']).toBeUndefined();
+
+  const apiHealth = await request.get('/health');
+  expect(apiHealth.ok()).toBe(true);
+  expect(apiHealth.headers()['strict-transport-security']).toBeUndefined();
+
   const policy = headers['content-security-policy'] ?? '';
 
   for (const directive of [
