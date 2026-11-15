@@ -719,6 +719,7 @@ textarea::placeholder {
 /* Explicit light theme. System mode resolves to a concrete theme in App.tsx. */
 :root[data-theme="light"] {
   color-scheme: light;
+  --focus-ring: #275d9b;
   --text-primary: #172335;
   --text-secondary: #3e5065;
   --text-tertiary: #61748a;
