@@ -303,7 +303,9 @@ function aggregateRepeats(repeats) {
       statusCounts[status] = (statusCounts[status] ?? 0) + count;
     }
   }
-  const cleanRepeats = repeats.map(({ _latencies, ...rest }) => rest);
+  const cleanRepeats = repeats.map((repeat) => Object.fromEntries(
+    Object.entries(repeat).filter(([key]) => key !== '_latencies'),
+  ));
   return {
     repeats: cleanRepeats,
     aggregate: {
