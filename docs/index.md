@@ -68,3 +68,4 @@ Guías de implementación, operación, privacidad y arquitectura de `personal-bu
 - [ADR-0001: diseño local-first](decisions/0001-local-first.md)
 - [ADR-0002: Actual Budget como motor financiero](decisions/0002-actual-budget.md)
 - [ADR-0003: MCP con permisos limitados](decisions/0003-mcp-permissions.md)
+- [ADR-0004: dependencia de Actual Budget y evolución del proveedor](decisions/0004-actual-budget-dependency.md)
