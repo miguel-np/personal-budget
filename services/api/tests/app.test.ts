@@ -103,6 +103,7 @@ describe('local API', () => {
     const response = await app.inject({ method: 'GET', url: '/health' });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ status: 'ok', service: 'personal-budget-api' });
+    expect(response.headers['strict-transport-security']).toBeUndefined();
   });
 
   it('returns readiness without exposing settings', async () => {
@@ -513,6 +514,77 @@ describe('local API', () => {
     expect(blocked.statusCode).toBe(403);
     expect(blocked.json().error.code).toBe('ORIGIN_NOT_ALLOWED');
     expect(allowed.statusCode).toBe(200);
+  });
+
+  it('rejects hostile write requests before changing local preferences', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'api-request-boundary-'));
+    temporaryDirectories.push(root);
+    const dataDirectory = join(root, 'state');
+    const updateTransactionSafely = vi.fn();
+    const repository = createRepository({ updateTransactionSafely });
+    const app = await createTestApp(repository, { ...config, actualDataDir: dataDirectory });
+
+    const blockedOrigin = await app.inject({
+      method: 'PUT',
+      url: '/api/v1/preferences/app',
+      headers: { origin: 'https://attacker.example' },
+      payload: { theme: 'dark', locale: 'en-GB' },
+    });
+    const blockedHost = await app.inject({
+      method: 'PUT',
+      url: '/api/v1/preferences/app',
+      headers: { host: 'attacker.example:3000' },
+      payload: { theme: 'dark', locale: 'en-GB' },
+    });
+    const blockedFetchMetadata = await app.inject({
+      method: 'PUT',
+      url: '/api/v1/preferences/app',
+      headers: { 'sec-fetch-site': 'cross-site' },
+      payload: { theme: 'dark', locale: 'en-GB' },
+    });
+
+    const blockedMovement = await app.inject({
+      method: 'PUT',
+      url: '/api/v1/transactions/expense-1',
+      headers: { origin: 'https://attacker.example' },
+      payload: {
+        accountId: 'account-1',
+        startDate: '2026-10-01',
+        endDate: '2026-10-31',
+        changes: { notes: 'unauthorized synthetic change' },
+      },
+    });
+
+    expect(blockedOrigin.statusCode).toBe(403);
+    expect(blockedOrigin.json().error.code).toBe('ORIGIN_NOT_ALLOWED');
+    expect(blockedHost.statusCode).toBe(400);
+    expect(blockedHost.json().error.code).toBe('HOST_NOT_ALLOWED');
+    expect(blockedFetchMetadata.statusCode).toBe(403);
+    expect(blockedFetchMetadata.json().error.code).toBe('ORIGIN_NOT_ALLOWED');
+    expect(blockedMovement.statusCode).toBe(403);
+    expect(blockedMovement.json().error.code).toBe('ORIGIN_NOT_ALLOWED');
+    expect(updateTransactionSafely).not.toHaveBeenCalled();
+    await expect(readFile(join(dataDirectory, 'app-preferences.json'), 'utf8'))
+      .rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('rejects browser-simple and multipart cross-origin requests before body parsing', async () => {
+    const app = await createTestApp();
+    const contentTypes = [
+      'application/x-www-form-urlencoded',
+      'text/plain',
+      'multipart/form-data; boundary=synthetic-boundary',
+    ];
+    for (const contentType of contentTypes) {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/preferences/reset',
+        headers: { origin: 'https://attacker.example', 'content-type': contentType },
+        payload: 'confirmation=RESET_APP_PREFERENCES',
+      });
+      expect(response.statusCode, contentType).toBe(403);
+      expect(response.json().error.code).toBe('ORIGIN_NOT_ALLOWED');
+    }
   });
 
   it('calculates reports with finance-core and excludes internal transfers', async () => {

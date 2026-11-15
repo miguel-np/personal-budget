@@ -41,6 +41,11 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ OLLAMA_REQUEST_TIMEOUT_SECONDS: '0' })).toThrow();
     expect(() => loadConfig({ AI_MAX_CONTEXT_CHARS: '9000' })).toThrow();
   });
+
+  it('rejects non-canonical numeric loopback aliases for local service URLs', () => {
+    expect(() => loadConfig({ ACTUAL_SERVER_URL: 'http://127.1:5006' })).toThrow();
+    expect(() => loadConfig({ OLLAMA_BASE_URL: 'http://2130706433:11434' })).toThrow();
+  });
   it('trims and validates an explicitly configured Ollama model', () => {
     expect(loadConfig({ AI_ENABLED: 'true', OLLAMA_MODEL: ' llama3.2 ' })).toMatchObject({ aiEnabled: true, ollamaModel: 'llama3.2' });
     expect(() => loadConfig({ AI_ENABLED: 'yes' })).toThrow();
@@ -78,6 +83,17 @@ describe('loadConfig', () => {
   it('rejects non-loopback browser origins and URL paths', () => {
     expect(() => loadConfig({ APP_ALLOWED_ORIGINS: 'https://attacker.example' })).toThrow();
     expect(() => loadConfig({ APP_ALLOWED_ORIGINS: 'http://localhost:5173/path' })).toThrow();
+  });
+
+  it('rejects non-canonical numeric loopback aliases in browser origin configuration', () => {
+    for (const origin of [
+      'http://127.1:5173',
+      'http://2130706433:5173',
+      'http://0x7f000001:5173',
+      'http://127.0.0.2:5173',
+    ]) {
+      expect(() => loadConfig({ APP_ALLOWED_ORIGINS: origin })).toThrow();
+    }
   });
   it('ignores empty optional password and budget identifiers', () => {
     const config = loadConfig({ ACTUAL_SERVER_PASSWORD: '', ACTUAL_BUDGET_ID: '   ' });

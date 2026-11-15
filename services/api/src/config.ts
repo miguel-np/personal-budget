@@ -13,7 +13,37 @@ const DEFAULT_ALLOWED_ORIGINS = [
 function isLoopbackUrl(value: string): boolean {
   try {
     const parsed = new URL(value);
-    return LOCAL_HOSTS.has(parsed.hostname) && (parsed.protocol === 'http:' || parsed.protocol === 'https:');
+    const separator = value.indexOf('://');
+    if (separator < 0) return false;
+    const authorityText = value.slice(separator + 3).split(/[/?#]/, 1)[0]!;
+
+    let hostname: string | undefined;
+    let portText: string | undefined;
+    if (authorityText.startsWith('[')) {
+      const closingBracket = authorityText.indexOf(']');
+      if (closingBracket < 0) return false;
+      hostname = authorityText.slice(1, closingBracket).toLowerCase();
+      if (!/^[0-9a-f:]+$/i.test(hostname)) return false;
+      const suffix = authorityText.slice(closingBracket + 1);
+      if (suffix !== '') {
+        if (!suffix.startsWith(':')) return false;
+        portText = suffix.slice(1);
+        if (!/^[0-9]{1,5}$/.test(portText)) return false;
+      }
+    } else {
+      const authority = /^([a-z0-9.-]+)(?::([0-9]{1,5}))?$/i.exec(authorityText);
+      hostname = authority?.[1]?.toLowerCase();
+      portText = authority?.[2];
+      if (!authority) return false;
+    }
+
+    const port = portText === undefined ? undefined : Number(portText);
+    return Boolean(
+      hostname &&
+      LOCAL_HOSTS.has(hostname) &&
+      (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+      (port === undefined || (Number.isInteger(port) && port >= 1 && port <= 65_535 && String(port) === portText)),
+    );
   } catch {
     return false;
   }

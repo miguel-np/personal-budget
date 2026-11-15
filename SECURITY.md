@@ -32,6 +32,28 @@ La documentación previa registra verificaciones manuales del entorno objetivo W
 
 Las pruebas sintéticas de prompt injection, herramientas MCP desconocidas, confirmación de escrituras y aislamiento de datos son controles de regresión. No sustituyen pruebas de penetración, revisión independiente ni aceptación manual de una instalación concreta.
 
+## Frontera de seguridad del runtime local (#130)
+
+La API y el frontend compilado deben escuchar solo en loopback. El gate HTTP de la API valida el Host contra los hostnames/puertos loopback configurados y comprueba Origin, Referer y Fetch Metadata antes del parseo del cuerpo y de los controladores. Los orígenes de navegador se comparan exactamente con `APP_ALLOWED_ORIGINS`; CORS no se utiliza como mecanismo de autorización.
+
+El frontend servido por Vite Preview aplica una CSP efectiva: scripts, hojas de estilo, conexiones y recursos se restringen al mismo origen (con `data:`/`blob:` solo para imágenes y fuentes necesarias); se bloquean objetos, framing y bases/formularios externos. No se permite `unsafe-eval` ni `unsafe-inline` en scripts o elementos de estilo. La única excepción es `style-src-attr 'unsafe-inline'`, limitada a atributos dinámicos utilizados por las barras de progreso de React; no habilita scripts inline ni elementos/hojas de estilo inline. La API conserva cabeceras HTTP defensivas, pero la CSP que protege el documento se entrega desde el servidor del frontend. Helmet desactiva explícitamente HSTS porque el runtime sirve HTTP en loopback; el frontend Preview tampoco emite esa cabecera.
+
+Las peticiones locales sin Origin, Referer ni Fetch Metadata se admiten para clientes de automatización no navegador. Esto es compatibilidad, no autenticación: cualquier proceso con acceso a la misma cuenta del sistema puede conectarse al loopback. Las defensas de navegador tampoco protegen frente a malware, extensiones privilegiadas o un origen legítimo comprometido.
+
+### Modelo de amenazas y riesgo residual
+
+| Actor | Activo/ruta de ataque | Controles | Riesgo residual |
+|---|---|---|---|
+| Sitio remoto abierto en el mismo navegador | Formularios, solicitudes simples, navegación o contenido embebido hacia la API local | Host loopback exacto; Origin/Referer y Fetch Metadata; CSP; no se habilita CORS genérico | El navegador, sus extensiones y el origen permitido siguen siendo parte de la base de confianza |
+| Origen local no autorizado | Usar otro puerto/alias local o DNS rebinding para alcanzar la API | Host restringido a loopback y puertos configurados; comparación exacta del origen; aliases DNS arbitrarios rechazados | Un proceso local puede acceder directamente a loopback sin simular un navegador |
+| Dispositivo de la LAN | Acceso a API, frontend, Actual u Ollama desde otro equipo | Listeners locales ligados a loopback; puertos de servicios no publicados a interfaces externas por defecto | Túneles, proxy inverso o cambios manuales de binding pueden ampliar la exposición |
+| Proceso/usuario local distinto o malware | Lectura/escritura de ficheros, llamadas directas a la API y acceso a secretos del usuario | Permisos mínimos de ficheros, secretos locales y límites de la API | No existe autenticación de procesos ni aislamiento entre procesos con la misma cuenta |
+| Dependencia o herramienta comprometida | Código con privilegios de ejecución durante build/CI | Acciones fijadas por SHA; npm audit; Gitleaks fijado por digest, sin red, capacidades ni escritura del filesystem | Auditorías no prueban ausencia de vulnerabilidades; una dependencia ejecutada puede actuar con los permisos del job |
+
+La imagen del escáner se fija como `ghcr.io/gitleaks/gitleaks:v8.28.0@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854`. La ejecución del contenedor usa red deshabilitada, capacidades eliminadas, filesystem de solo lectura y un `/tmp` efímero limitado. Para actualizarla se verifica la versión y el digest publicados por el registro oficial y se revisa el cambio explícitamente.
+
+No se afirma que CORS, CSP o loopback protejan frente a malware/procesos locales ni que esta aplicación sea multiusuario o segura para exposición pública.
+
 ## Informar una vulnerabilidad
 
 No publiques detalles explotables, extractos financieros, archivos de presupuesto ni credenciales en issues públicas. Utiliza la función de comunicación privada de vulnerabilidades de GitHub si está habilitada. En otro caso, acuerda un canal privado con el propietario antes de compartir detalles.
