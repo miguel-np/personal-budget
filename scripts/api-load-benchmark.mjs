@@ -509,7 +509,8 @@ async function main() {
       results,
       outcome: {
         successful: totalHttp4xx === 0 && totalHttp5xx === 0 && totalTransportErrors === 0 &&
-          results.every((item) => item.aggregate.healthStatuses.every((status) => status === 200)),
+          results.every((item) => item.aggregate.logicalFailures === 0 && item.aggregate.healthStatuses.every((status) => status === 200)),
+        logicalFailures: results.reduce((sum, item) => sum + item.aggregate.logicalFailures, 0),
         http4xx: totalHttp4xx,
         http5xx: totalHttp5xx,
         transportErrors: totalTransportErrors,
@@ -543,9 +544,12 @@ async function main() {
     }, null, 2) + '\n');
     if (!report.outcome.successful) process.exitCode = 1;
   } finally {
-    if (appStarted && app) await app.close();
-    await repository.close().catch(() => undefined);
-    await rm(temporaryDirectory, { recursive: true, force: true });
+    try {
+      if (appStarted && app) await app.close();
+    } finally {
+      try { await repository.close().catch(() => undefined); }
+      finally { await rm(temporaryDirectory, { recursive: true, force: true }); }
+    }
   }
 }
 
