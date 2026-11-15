@@ -22,7 +22,7 @@ Aplicación local-first de finanzas personales basada en Actual Budget, con una 
 - **`services/api`:** API Fastify local; valida ámbito, configuración, persistencia local, límites y errores.
 - **`apps/web`:** shell React/Vite con paneles cargados bajo demanda.
 - **Estado propio:** almacenes versionados para preferencias, planificación, decisiones, revisiones, patrimonio y metadata documental; los binarios de justificantes se custodian fuera del directorio público.
-- **Ollama:** inferencia local opcional. El asistente financiero recibe agregados calculados en backend y no tiene herramientas.
+- **IA generativa:** contrato interno `ModelProvider` y adaptador Ollama local por defecto. El asistente financiero recibe agregados calculados en backend y no tiene herramientas; las tool calls de investigación son validadas y ejecutadas por la API.
 - **Búsqueda web:** la API ejecuta una única herramienta `web_search` sobre el texto exacto que el usuario autoriza. SearXNG puede ser local o remoto por HTTPS. Tras buscar, recupera como máximo tres documentos oficiales desde una allowlist HTTPS; para normas BOE-A obtiene metadatos y relaciones temporales. No consulta movimientos, cuentas ni agregados; resultados y textos externos se tratan como contenido no confiable.
 - **MCP:** servidor independiente, solo lectura y por stdio.
 

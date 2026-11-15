@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { OllamaProvider } from './ollama-provider.js';
+import type { ModelProvider, ModelProviderChatRequest, ModelProviderChatResponse } from './model-provider.js';
 import type { WebSearchProvider, WebSearchResponse } from './web-search.js';
 
 export interface LocalAiConfig {
@@ -164,28 +166,6 @@ interface SharedInference {
   readonly estimatedInputTokens: number;
   readonly submittedAt: number;
 }
-interface OllamaTagsPayload {
-  readonly models?: readonly { readonly name?: string; readonly model?: string }[];
-}
-interface OllamaChatPayload {
-  readonly message?: {
-    readonly content?: string;
-    readonly tool_calls?: readonly {
-      readonly function?: { readonly name?: string; readonly arguments?: unknown };
-    }[];
-  };
-}
-
-function isLoopback(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(url.hostname) &&
-      (url.protocol === 'http:' || url.protocol === 'https:') && url.username === '' && url.password === '';
-  } catch { return false; }
-}
-function urlWithPath(baseURL: string, path: string): string {
-  return new URL(path, baseURL.endsWith('/') ? baseURL : baseURL + '/').toString();
-}
 function sanitizeNarrative(value: string): string {
   return value.replace(/\d+(?:[.,]\d+)*(?:\s?%)?/g, 'el valor mostrado en los resultados')
     .replace(/https?:\/\/\S+/gi, '')
@@ -268,16 +248,17 @@ function createBoundedPrompt(context: AssistantContext, maxContextChars: number)
   if (estimatedInputTokens > MAX_ESTIMATED_INPUT_TOKENS) throw new LocalAiContextBudgetError();
   return { question, contextJSON, userMessage, estimatedInputTokens };
 }
-function fingerprint(model: string, context: AssistantContext, prompt: BoundedPrompt): string {
-  // The full aggregate payload and an internal account-scope fingerprint prevent cross-period or cross-account coalescing.
+function fingerprint(providerId: string, model: string, context: AssistantContext, prompt: BoundedPrompt): string {
+  // Provider identity, the full aggregate payload and the internal account-scope fingerprint
+  // prevent cross-provider, cross-period or cross-account coalescing.
   return createHash('sha256').update(JSON.stringify([
-    model, context.deduplicationKey ?? '', prompt.question, prompt.contextJSON,
+    providerId, model, context.deduplicationKey ?? '', prompt.question, prompt.contextJSON,
     MODEL_CONTEXT_TOKENS, MAX_OUTPUT_TOKENS,
   ])).digest('hex');
 }
 
 export class LocalAiClient {
-  private readonly baseURL: string;
+  private readonly provider: ModelProvider;
   private cachedStatus: { readonly value: LocalAiStatus; readonly expiresAt: number } | undefined;
   private statusInFlight: Promise<LocalAiStatus> | undefined;
   private statusGeneration = 0;
@@ -287,15 +268,15 @@ export class LocalAiClient {
 
   public constructor(
     private readonly config: LocalAiConfig,
-    private readonly fetcher: typeof fetch = fetch,
+    fetcher: typeof fetch = fetch,
     private readonly onMetric?: (metric: LocalAiMetric) => void,
+    provider?: ModelProvider,
   ) {
-    if (!isLoopback(config.baseURL)) throw new Error('Ollama must use a loopback URL.');
     if (!Number.isSafeInteger(config.timeoutMs) || config.timeoutMs < 1) throw new Error('AI timeout must be a positive integer.');
     if (!Number.isSafeInteger(config.maxContextChars) || config.maxContextChars < 256) {
       throw new Error('AI context budget must be an integer of at least 256 characters.');
     }
-    this.baseURL = config.baseURL.endsWith('/') ? config.baseURL : config.baseURL + '/';
+    this.provider = provider ?? new OllamaProvider({ baseURL: config.baseURL, fetcher });
   }
 
   public async status(callerSignal?: AbortSignal): Promise<LocalAiStatus> {
@@ -359,13 +340,9 @@ export class LocalAiClient {
     const submittedAt = Date.now();
     try {
       const extracted = await this.runLimited(async () => {
-        const response = await this.fetcher(urlWithPath(this.baseURL, 'api/chat'), {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', Accept: 'application/json' },
-          signal,
-          body: JSON.stringify({
-            model: this.config.model,
-            stream: false,
+        try {
+          const payload = await this.provider.chat({
+            model: this.config.model!,
             format: {
               type: 'object',
               properties: {
@@ -391,7 +368,9 @@ export class LocalAiClient {
               ],
               additionalProperties: false,
             },
-            options: { num_ctx: MODEL_CONTEXT_TOKENS, num_predict: 384, temperature: 0 },
+            contextWindowTokens: MODEL_CONTEXT_TOKENS,
+            maxOutputTokens: 384,
+            temperature: 0,
             messages: [
               {
                 role: 'system',
@@ -399,16 +378,18 @@ export class LocalAiClient {
               },
               { role: 'user', content: userMessage },
             ],
-          }),
-        });
-        if (!response.ok) throw new LocalAiUnavailableError();
-        let payload: OllamaChatPayload;
-        try { payload = await response.json() as OllamaChatPayload; }
-        catch { throw new LocalAiUnavailableError(); }
-        const raw = payload.message?.content ?? '';
-        if (!raw || raw.length > 8_000) throw new LocalAiUnavailableError();
-        try { return JSON.parse(raw) as unknown; }
-        catch { throw new LocalAiUnavailableError(); }
+          }, signal);
+          const raw = payload.content;
+          if (!raw || raw.length > 8_000) throw new LocalAiUnavailableError();
+          try { return JSON.parse(raw) as unknown; }
+          catch { throw new LocalAiUnavailableError(); }
+        } catch (error) {
+          if (error instanceof LocalAiBusyError || error instanceof LocalAiCancelledError ||
+            error instanceof LocalAiContextBudgetError || error instanceof LocalAiUnavailableError) {
+            throw error;
+          }
+          throw new LocalAiUnavailableError();
+        }
       }, signal);
       this.emitMetric({
         event: 'inference', outcome: 'success', modelCalls: 1,
@@ -438,7 +419,7 @@ export class LocalAiClient {
     if (!this.config.enabled || !this.config.model) throw new LocalAiUnavailableError();
     if (callerSignal?.aborted) throw new LocalAiCancelledError();
     const prompt = createBoundedPrompt(context, this.config.maxContextChars);
-    const key = fingerprint(this.config.model, context, prompt);
+    const key = fingerprint(this.provider.id, this.config.model, context, prompt);
     return this.infer(prompt, key, callerSignal, SYSTEM_PROMPT, MAX_OUTPUT_TOKENS, false);
   }
 
@@ -496,42 +477,21 @@ export class LocalAiClient {
         : 'No presentes la respuesta como asesoramiento financiero, fiscal o jurídico profesional.',
     ].join(' ');
     const tool = {
-      type: 'function',
-      function: {
-        name: 'web_search',
-        description: 'Search external sources using only the exact query approved by the user. One bounded search; no page fetching or other tools.',
-        parameters: {
-          type: 'object',
-          properties: { query: { type: 'string', minLength: 2, maxLength: 500 } },
-          required: ['query'],
-          additionalProperties: false,
-        },
+      name: 'web_search',
+      description: 'Search external sources using only the exact query approved by the user. One bounded search; no page fetching or other tools.',
+      parameters: {
+        type: 'object',
+        properties: { query: { type: 'string', minLength: 2, maxLength: 500 } },
+        required: ['query'],
+        additionalProperties: false,
       },
     };
-    const sendChat = async (body: Record<string, unknown>): Promise<OllamaChatPayload> => {
+    const sendChat = async (body: ModelProviderChatRequest): Promise<ModelProviderChatResponse> => {
       return this.runLimited(async () => {
-        let response: Response;
         try {
-          response = await this.fetcher(urlWithPath(this.baseURL, 'api/chat'), {
-            method: 'POST',
-            headers: { 'content-type': 'application/json', Accept: 'application/json' },
-            signal,
-            body: JSON.stringify(body),
-          });
+          return await this.provider.chat(body, signal);
         } catch {
           if (signal.aborted) throw errorForAbort(signal);
-          this.invalidateStatus();
-          throw new LocalAiUnavailableError();
-        }
-        if (!response.ok) {
-          this.invalidateStatus();
-          throw new LocalAiUnavailableError();
-        }
-        try {
-          const raw = await response.text();
-          if (raw.length > 24_000) throw new LocalAiUnavailableError();
-          return JSON.parse(raw) as OllamaChatPayload;
-        } catch {
           this.invalidateStatus();
           throw new LocalAiUnavailableError();
         }
@@ -539,18 +499,20 @@ export class LocalAiClient {
     };
 
     const firstPayload = await sendChat({
-      model: this.config.model,
-      stream: false,
+      model: this.config.model!,
+      maxResponseChars: 24_000,
       tools: [tool],
-      options: { num_ctx: MODEL_CONTEXT_TOKENS, num_predict: 384, temperature: 0 },
+      contextWindowTokens: MODEL_CONTEXT_TOKENS,
+      maxOutputTokens: 384,
+      temperature: 0,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMessage },
       ],
     });
-    const toolCalls = firstPayload.message?.tool_calls ?? [];
+    const toolCalls = firstPayload.toolCalls;
     if (toolCalls.length !== 1) throw new LocalAiToolCallUnsupportedError();
-    const functionCall = toolCalls[0]?.function;
+    const functionCall = toolCalls[0];
     if (functionCall?.name !== 'web_search' || !functionCall.arguments ||
       typeof functionCall.arguments !== 'object' || Array.isArray(functionCall.arguments)) {
       throw new LocalAiToolCallUnsupportedError();
@@ -627,22 +589,24 @@ export class LocalAiClient {
     });
     if (toolResult.length > this.config.maxContextChars) throw new LocalAiContextBudgetError();
     const finalPayload = await sendChat({
-      model: this.config.model,
-      stream: false,
-      options: { num_ctx: MODEL_CONTEXT_TOKENS, num_predict: 768, temperature: 0 },
+      model: this.config.model!,
+      maxResponseChars: 24_000,
+      contextWindowTokens: MODEL_CONTEXT_TOKENS,
+      maxOutputTokens: 768,
+      temperature: 0,
       messages: [
         { role: 'system', content: systemPrompt + ' Ya se ejecutó la búsqueda y, cuando ha sido posible, se recuperaron documentos oficiales. No solicites ni simules otra herramienta. Basa cada afirmación factual en evidencia recibida y conserva las referencias [S#]. Separa metadata del buscador, texto oficial recuperado y metadatos temporales oficiales. No conviertas la fecha de publicación del buscador en vigencia. Si un documento no aparece como retrieved o partial, no afirmes haber leído el texto completo. Declara expresamente la falta de contenido, metadatos ausentes, discrepancias y límites de la consolidación BOE. Si un fragmento literal no aparece en el texto recuperado o las fuentes discrepan, abstente de ofrecer una conclusión categórica: explica qué está documentado, qué falta y qué requiere contraste humano. Devuelve una afirmación por línea. Añade exactamente un marcador de clasificación por afirmación: [[CLAIM|documented_fact]] solo si el documento expresa directamente el hecho, [[CLAIM|metadata]] para fechas o datos descriptivos de la ficha/documento, [[CLAIM|interpretation]] para inferencias o síntesis y [[CLAIM|case_dependent]] cuando dependa de circunstancias no conocidas. Esta clasificación es orientativa y no supone validación jurídica. Si no puedes clasificar con seguridad, omite el marcador. Para cada afirmación factual material, conserva la cita visible [S1] y añade el marcador técnico [[EVIDENCE|S1|Artículo 32|fragmento literal copiado del documento]], usando entre 20 y 500 caracteres copiados exactamente del extracto documental recuperado o del bloque histórico BOE seleccionado. No uses snippets del buscador como prueba documental. Si no existe fragmento literal disponible, no inventes uno y deja la afirmación sin marcador de evidencia. El localizador debe ser artículo, apartado o título que aparezca en el propio texto; si no está disponible, déjalo vacío. Cuando dos fuentes parezcan discrepar, explica la diferencia en una afirmación y añade [[CONFLICT|S1|S2|motivo concreto]], junto con ambos marcadores EVIDENCE y sus citas. No declares una contradicción jurídica resuelta: indica qué evidencia difiere y por qué requiere revisión humana.' },
         { role: 'user', content: userMessage },
         {
           role: 'assistant',
-          content: firstPayload.message?.content ?? '',
-          tool_calls: toolCalls,
+          content: firstPayload.content,
+          toolCalls,
         },
-        { role: 'tool', tool_name: 'web_search', content: toolResult },
+        { role: 'tool', toolName: 'web_search', content: toolResult },
       ],
     });
-    if ((finalPayload.message?.tool_calls?.length ?? 0) > 0) throw new LocalAiToolCallUnsupportedError();
-    const rawAnswer = sanitizeWebNarrative(finalPayload.message?.content ?? '');
+    if (finalPayload.toolCalls.length > 0) throw new LocalAiToolCallUnsupportedError();
+    const rawAnswer = sanitizeWebNarrative(finalPayload.content);
     const validSourceIds = new Set(search.sources.map((source) => source.id));
     // Preserve every model citation in the private evidence payload so the backend
     // can explicitly mark unknown IDs as unresolved instead of silently losing them.
@@ -706,7 +670,7 @@ export class LocalAiClient {
       estimatedInputTokens,
     };
     const key = createHash('sha256').update(JSON.stringify([
-      'category-classification-v1', this.config.model, contextJSON, MODEL_CONTEXT_TOKENS, 512,
+      'category-classification-v1', this.provider.id, this.config.model, contextJSON, MODEL_CONTEXT_TOKENS, 512,
     ])).digest('hex');
     return this.infer(prompt, key, callerSignal, CATEGORY_CLASSIFICATION_SYSTEM_PROMPT, 512, true);
   }
@@ -789,45 +753,33 @@ export class LocalAiClient {
     const model = this.config.model;
     if (!model) return { enabled: true, status: 'not_configured' };
     try {
-      const response = await this.fetcher(urlWithPath(this.baseURL, 'api/tags'), {
-        method: 'GET', headers: { Accept: 'application/json' },
-        signal: AbortSignal.timeout(this.config.timeoutMs),
-      });
-      if (!response.ok) return { enabled: true, status: 'unavailable', model };
-      const payload = await response.json() as OllamaTagsPayload;
-      const found = (payload.models ?? []).some((item) => item.name === model || item.model === model);
-      return { enabled: true, status: found ? 'available' : 'model_missing', model };
-    } catch { return { enabled: true, status: 'unavailable', model }; }
+      const availability = await this.provider.probe(model, AbortSignal.timeout(this.config.timeoutMs));
+      return { enabled: true, status: availability, model };
+    } catch {
+      return { enabled: true, status: 'unavailable', model };
+    }
   }
 
   private async callModel(prompt: BoundedPrompt, signal: AbortSignal, systemPrompt = SYSTEM_PROMPT, maxOutputTokens = MAX_OUTPUT_TOKENS, jsonMode = false): Promise<string> {
-    let response: Response;
+    let rawAnswer: string;
     try {
-      response = await this.fetcher(urlWithPath(this.baseURL, 'api/chat'), {
-        method: 'POST', headers: { 'content-type': 'application/json', Accept: 'application/json' },
-        signal,
-        body: JSON.stringify({
-          model: this.config.model, stream: false,
-          options: { num_ctx: MODEL_CONTEXT_TOKENS, num_predict: maxOutputTokens },
-          ...(jsonMode ? { format: 'json' } : {}),
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: prompt.userMessage },
-          ],
-        }),
-      });
+      const payload = await this.provider.chat({
+        model: this.config.model!,
+        contextWindowTokens: MODEL_CONTEXT_TOKENS,
+        maxOutputTokens,
+        ...(jsonMode ? { format: 'json' } : {}),
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: prompt.userMessage },
+        ],
+      }, signal);
+      rawAnswer = payload.content;
     } catch {
       if (signal.aborted) throw errorForAbort(signal);
       this.invalidateStatus();
       throw new LocalAiUnavailableError();
     }
-    if (!response.ok) {
-      this.invalidateStatus();
-      throw new LocalAiUnavailableError();
-    }
     try {
-      const payload = await response.json() as OllamaChatPayload;
-      const rawAnswer = payload.message?.content ?? '';
       // Structured classification JSON must not pass through narrative sanitization,
       // because sanitization deliberately rewrites digits that are valid category IDs.
       const answer = jsonMode

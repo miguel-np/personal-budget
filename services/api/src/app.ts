@@ -5,6 +5,7 @@ import { buildFinancialAnomalyFindings, buildPeriodChangeFindings, buildUncatego
 import type { BudgetAlertCategory, BudgetAlertRule, BudgetImprovementCategoryPreference, CashFlowEvent, BudgetCategoryClassification, BudgetRepository, BudgetTransaction, CategorySuggestion as CoreCategorySuggestion, FinancialFinding, FindingPriority, ForecastScenario, ImportRecord, PlanningCommitment, TransactionStructureUpdate } from '@personal-budget/finance-core';
 import { z, ZodError } from 'zod';
 import type { AppConfig } from './config.js';
+import type { ModelProvider } from './model-provider.js';
 import { LocalAiBusyError, LocalAiCancelledError, LocalAiClient, LocalAiContextBudgetError, LocalAiToolCallUnsupportedError, LocalAiUnavailableError } from './local-ai.js';
 import type { AssistantContext, PlanningIntentDraft, WebResearchRequest } from './local-ai.js';
 import { OFFICIAL_SOURCE_DOMAINS, SearXNGSearchProvider, WebSearchResponseTooLargeError, WebSearchUnavailableError } from './web-search.js';
@@ -440,6 +441,8 @@ export interface AppDependencies {
   readonly logger?: FastifyServerOptions['logger'];
   /** Test seam; production defaults to the configured SearXNG provider. */
   readonly webSearchProvider?: WebSearchProvider;
+  /** Provider seam; production defaults to the loopback Ollama adapter. */
+  readonly modelProvider?: ModelProvider;
 }
 
 function isWithinMaximumPeriod(startDate: string, endDate: string): boolean {
@@ -524,7 +527,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     maxContextChars: config.aiMaxContextChars,
   }, fetch, (metric) => {
     app.log.info({ component: 'local-ai', ...metric }, 'Local AI request metrics.');
-  });
+  }, dependencies.modelProvider);
 
   const webSearchProvider = dependencies.webSearchProvider ?? new SearXNGSearchProvider({
     baseURL: config.webSearchBaseURL,

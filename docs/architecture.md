@@ -11,7 +11,8 @@ flowchart TD
   B --> A[Actual adapter]
   A --> AB[Actual Budget]
   B --> F[finance-core determinista]
-  B --> O[Ollama local opcional]
+  B --> L[LocalAiClient / ModelProvider]
+  L --> O[Ollama adapter · loopback]
   B --> S[SearXNG configurado · solo consentimiento]
   S --> X[Motores upstream del buscador]
   B --> P[Almacenes locales versionados]
@@ -30,7 +31,9 @@ flowchart TD
 | Estado propio | Preferencias, planificación, revisiones, alertas, patrimonio y metadata documental | No duplica movimientos; cada almacén se inventaría en backup. |
 | Asistente financiero | Explicación cualitativa de agregados calculados por backend | No recibe herramientas, filas de movimientos ni permisos de escritura. |
 | Investigación web | Buscar el texto explícito aprobado por el usuario y devolver fuentes acotadas | Una única herramienta backend; sin contexto financiero, navegación general ni fetch arbitrario de páginas. |
-| Ollama | Generación local y tool calling compatible cuando se habilita una herramienta concreta | Modelo/runtime compatible requerido; no se le da red directa. |
+| ModelProvider | Contrato normalizado para probe, capacidades y chat | No contiene lógica financiera ni ejecuta herramientas. |
+| Ollama adapter | Transporte específico para `/api/tags` y `/api/chat` | Loopback obligatorio; tool calls se devuelven como datos sin ejecutar. |
+| LocalAiClient | Orquestación de prompts, límites, cola, cancelación, caché y métricas | Usa Ollama por defecto; no cambia datos financieros ni el contrato HTTP. |
 | SearXNG | Adaptador de búsqueda configurado por el operador | Local loopback o remoto HTTPS; puede remitir la consulta a motores upstream. |
 | MCP | Herramientas revisadas para clientes locales | Transporte stdio, solo lectura. |
 
