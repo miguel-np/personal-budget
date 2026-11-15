@@ -45,3 +45,18 @@ No se certifica conformidad WCAG 2.2 AA completa mientras estas comprobaciones m
 ## Límites de alcance y privacidad
 
 No se modifican contratos API, cálculos financieros, persistencia, semántica de importes ni procesos de confirmación. No se introducen librerías de iconos, dependencias de auditoría, telemetría ni datos reales. La issue #84 permanece aparcada y la PR #123 queda fuera de esta intervención.
+
+
+## Seguimiento de integración — 2026-11-15
+
+La intervención automatizada descrita en este informe se integró mediante la [PR #125](https://github.com/miguel-np/personal-budget/pull/125), fusionada el 14 de noviembre de 2026 en `main`. Su commit de cambios de UI es `928c4062a3267733b7de036f97315675e8038b52`. Los diez archivos modificados por esa PR se verificaron con los mismos SHA tanto en `main` como en la rama de origen; no se requiere volver a integrar esa rama.
+
+Evidencia de GitHub Actions asociada al commit de la PR:
+
+- CI run [678](https://github.com/miguel-np/personal-budget/actions/runs/41985096656): cinco trabajos completados con éxito (`quality`, `actual-container-smoke`, `actual-update-acceptance`, `windows-quality` y `browser-e2e`).
+- Playwright Chromium: 42/42 pruebas superadas en ese commit.
+- Security run [611](https://github.com/miguel-np/personal-budget/actions/runs/41985096765): auditoría de dependencias y escaneo de secretos superados.
+
+Esta evidencia corresponde al commit indicado y no demuestra que se hayan ejecutado comprobaciones manuales ni equivale a una ejecución de esos checks sobre commits posteriores de `main`. La issue #36 está cerrada; el seguimiento de las verificaciones manuales restantes corresponde a la issue [#124](https://github.com/miguel-np/personal-budget/issues/124).
+
+El seguimiento adicional de #124 eleva a 12 px el tamaño base de las celdas de la proyección mensual de objetivos y conserva encabezados compactos de 11 px. Añade regresiones Playwright para comprobar esos tamaños renderizados y para abrir/cerrar el editor de movimientos mediante teclado, incluyendo el retorno del foco al control que lo abrió. Estas pruebas siguen siendo controles automatizados de regresión: no verifican NVDA/VoiceOver, zoom real del navegador ni contraste de todos los estados interactivos.
