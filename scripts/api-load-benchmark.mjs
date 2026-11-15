@@ -135,8 +135,20 @@ function createTrackedApi(inventory, month) {
     downloadBudget: async () => track(async () => undefined),
     sync: async () => track(async () => { state.syncCalls += 1; }),
     shutdown: async () => track(async () => undefined),
-    getAccounts: async () => track(async () => inventory.accounts),
-    getCategories: async () => track(async () => inventory.categories),
+    getAccounts: async () => track(async () => inventory.accounts.map((account) => ({
+      id: account.id,
+      name: account.name,
+      currency: account.currencyCode,
+      closed: account.closed,
+      offbudget: account.offBudget,
+      balance_current: account.currentBalanceMinor,
+    }))),
+    getCategories: async () => track(async () => inventory.categories.map((category) => ({
+      id: category.id,
+      name: category.name,
+      group_id: category.groupId,
+      is_income: category.isIncome,
+    }))),
     getTransactions: async (accountId, startDate, endDate) => track(async () =>
       (inventory.transactionsByAccount.get(accountId) ?? []).filter((row) => row.date >= startDate && row.date <= endDate)),
     getBudgetMonth: async () => track(async () => budgetMonth),
