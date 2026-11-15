@@ -813,17 +813,123 @@ test('primary action targets meet the 44px design target across all sections and
   }
 });
 
+test('goal projection keeps financial values readable in its keyboard-scroll region', async ({ page }) => {
+  await page.route((url) => url.pathname === '/api/v1/planning', async (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ data: {
+      asOfDate: '2026-11-15',
+      month: '2026-11',
+      currency: 'EUR',
+      accountScope: { label: 'Todas las cuentas abiertas', accountIds: [] },
+      history: {
+        startDate: '2025-11-15',
+        endDate: '2026-11-15',
+        monthlyIncomeMinor: 250000,
+        monthlyExpenseMinor: 175000,
+        emptyMonths: 0,
+        assumptions: ['Historial sintético para E2E.'],
+        warnings: [],
+      },
+      goals: [{
+        id: 'synthetic-goal-1',
+        name: 'Fondo de emergencia sintético',
+        targetAmountMinor: 1000000,
+        initialAmountMinor: 100000,
+        monthlyContributionMinor: 25000,
+        targetDate: '2026-12-31',
+        monthlyIncomeMinor: 250000,
+        monthlyExpenseMinor: 175000,
+        currency: 'EUR',
+        scope: { mode: 'all', accountIds: [] },
+        status: 'active',
+        createdAt: '2026-11-01T00:00:00.000Z',
+        updatedAt: '2026-11-01T00:00:00.000Z',
+        scopeMatches: true,
+        currencyMatches: true,
+        projection: {
+          isEstimate: true,
+          currency: 'EUR',
+          asOfDate: '2026-11-15',
+          targetDate: '2026-12-31',
+          targetAmountMinor: 1000000,
+          initialAmountMinor: 100000,
+          monthlyContributionMinor: 25000,
+          requiredMonthlyContributionMinor: 75000,
+          progressPercent: 10,
+          projectedBalanceMinor: 125000,
+          projectedProgressPercent: 12.5,
+          maximumAchievableBalanceMinor: 150000,
+          achievableUnderCashFlow: true,
+          goalReachedInitially: false,
+          estimatedCompletionDate: null,
+          months: 1,
+          monthlyProjection: [{
+            month: '2026-12',
+            incomeMinor: 250000,
+            expenseMinor: 175000,
+            commitmentIncomeMinor: 0,
+            commitmentExpenseMinor: 5000,
+            availableCashMinor: 75000,
+            plannedContributionMinor: 25000,
+            actualContributionMinor: 25000,
+            projectedBalanceMinor: 125000,
+          }],
+          assumptions: ['Proyección determinista sintética.'],
+          warnings: [],
+        },
+        planningWarnings: [],
+      }],
+      commitments: [],
+      calendarItems: [],
+      warnings: [],
+      notes: [],
+    } }),
+  }));
+
+  await page.goto('/goals');
+  await expect(page.getByRole('heading', { name: 'Tus objetivos (1)' })).toBeVisible();
+  await page.getByText('Ver evolución mensual y supuestos', { exact: true }).click();
+
+  const projection = page.getByRole('region', {
+    name: 'Proyección mensual de Fondo de emergencia sintético',
+    exact: true,
+  });
+  await expect(projection).toBeVisible();
+  const typography = await projection.evaluate((region) => ({
+    value: getComputedStyle(region.querySelector('tbody td')!).fontSize,
+    heading: getComputedStyle(region.querySelector('thead th')!).fontSize,
+  }));
+  expect(Number.parseFloat(typography.value)).toBeGreaterThanOrEqual(12);
+  expect(Number.parseFloat(typography.heading)).toBeGreaterThanOrEqual(11);
+});
+
 test('movement editor previews validated changes before writing to Actual', async ({ page, request }) => {
   await page.goto('/movements');
   await expect(page.getByRole('heading', { name: 'Transacciones' })).toBeVisible();
-  await page.getByRole('button', { name: 'Editar' }).first().click();
+
+  const editButton = page.getByRole('button', { name: 'Editar' }).first();
+  await editButton.focus();
+  await page.keyboard.press('Enter');
+
   const dialog = page.getByRole('dialog', { name: 'Revisar cambios' });
   await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel('Fecha')).toBeFocused();
+
+  // The first and last controls wrap in both directions; Escape closes without writing.
   await dialog.getByRole('button', { name: 'Cerrar' }).focus();
   await page.keyboard.press('Shift+Tab');
   await expect(dialog.getByRole('button', { name: 'Previsualizar cambios' })).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(dialog.getByRole('button', { name: 'Cerrar' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(editButton).toBeFocused();
+  expect((await (await request.get(fixtureApi + '/__test__/state')).json()).transactionWrites).toBe(0);
+
+  // Re-open from the restored trigger and exercise the explicit preview/commit path.
+  await page.keyboard.press('Enter');
+  await expect(dialog).toBeVisible();
   await dialog.getByLabel('Importe (unidades principales)').fill('-30,00');
   await dialog.getByRole('button', { name: 'Previsualizar cambios' }).click();
   await expect(dialog.getByText(/Previsualización — todavía sin guardar/)).toBeVisible();
