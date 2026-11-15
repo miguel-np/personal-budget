@@ -1,8 +1,13 @@
 # personal-budget
 
-Aplicación local-first de finanzas personales basada en Actual Budget, con una interfaz web única para cuentas, movimientos, presupuestos, planificación, inteligencia financiera, patrimonio y documentación.
+Aplicación local-first de finanzas personales basada en Actual Budget, con una interfaz web para cuentas, movimientos, presupuestos, planificación, inteligencia financiera, patrimonio y documentación.
 
-> **Estado a 4 de noviembre de 2026:** las fases de consolidación, inteligencia financiera útil y gestión patrimonial/portabilidad están integradas en `main`. La búsqueda web controlada de #84 incluye las PR [#97](https://github.com/miguel-np/personal-budget/pull/97), [#98](https://github.com/miguel-np/personal-budget/pull/98), [#111](https://github.com/miguel-np/personal-budget/pull/111), [#112](https://github.com/miguel-np/personal-budget/pull/112), [#116](https://github.com/miguel-np/personal-budget/pull/116), [#117](https://github.com/miguel-np/personal-budget/pull/117), [#118](https://github.com/miguel-np/personal-budget/pull/118) y [#119](https://github.com/miguel-np/personal-budget/pull/119), todas integradas. #107 está cerrada como completada. La trazabilidad fiscal comprueba citas y fragmentos literales, distingue procedencia y compara metadatos de fuentes y versiones históricas seleccionadas; si una cita solo coincide con la consolidación BOE informativa, no se presenta como evidencia primaria y la síntesis se abstiene cuando corresponde. La integración #121 añade herramientas MCP financieras agregadas de solo lectura y prompts/workflows reutilizables; el chat Ollama integrado continúa sin herramientas. #109 se cerró como `not_planned`: PDF y OCR no están soportados. La búsqueda sigue siendo opt-in y solo envía la consulta aprobada a SearXNG; el contexto fiscal explícito se entrega a Ollama local y no se añade automáticamente a la búsqueda externa ni se extrae del presupuesto. #84 permanece abierta por la aceptación live (#106), el corpus fiscal/legal revisado (#108) y la validación semántica/discrepancias (#110). No es un motor de dictamen ni certifica vigencia jurídica.
+## Estado y dirección
+
+- **Estado técnico verificado:** [Estado de implementación](docs/implementation-status.md). Distingue código integrado, checks automatizados, aceptación manual y limitaciones pendientes.
+- **Dirección del proyecto:** [Roadmap](docs/roadmap.md).
+- **Backlog y ciclo de vida:** [GitHub Issues](https://github.com/miguel-np/personal-budget/issues) y [Pull Requests](https://github.com/miguel-np/personal-budget/pulls). El estado abierto/cerrado de una tarea se consulta en GitHub; no se mantiene en copias de este README.
+- **Criterios para ampliar capacidades:** [Política de alcance](docs/scope-policy.md).
 
 ## Capacidades
 
@@ -12,7 +17,7 @@ Aplicación local-first de finanzas personales basada en Actual Budget, con una 
 - **Inteligencia financiera:** hallazgos verificables, anomalías, revisión semanal/mensual, flujo de caja estimado, propuestas presupuestarias simulables y alertas locales.
 - **Patrimonio y justificantes:** activos y pasivos externos, valoraciones manuales fechadas, clasificación explícita de cuentas de Actual, documentos privados y vínculos comprobados a movimientos.
 - **Portabilidad y recuperación:** exportación legible de conjuntos locales y backup/restauración cifrados de Actual más el estado propio inventariado.
-- **IA y herramientas locales:** Ollama opcional, MCP de solo lectura por stdio con herramientas financieras agregadas y prompts de workflow; búsqueda web explícita mediante SearXNG configurable. La investigación puede recuperar hasta tres documentos oficiales HTML/XHTML/texto; para BOE-A consulta metadatos/relaciones y puede reconstruir versiones históricas por bloque cuando se cita expresamente un artículo y se aporta `eventDate`. La consolidación es informativa, la selección se abstiene ante datos ambiguos y no sustituye la publicación primaria ni la revisión jurídica. PDF y OCR no están soportados.
+- **IA y herramientas locales:** Ollama opcional, MCP de solo lectura por stdio con herramientas financieras agregadas y prompts de workflow; búsqueda web explícita mediante SearXNG configurable. La investigación puede recuperar hasta tres documentos oficiales HTML/XHTML/texto; para BOE-A consulta metadatos/relaciones y puede reconstruir versiones históricas por bloque cuando se cita expresamente un artículo y se aporta `eventDate`. La consolidación es informativa y no sustituye la publicación primaria ni la revisión jurídica. PDF y OCR no están soportados.
 
 ## Arquitectura
 
@@ -83,13 +88,13 @@ Para probar el adaptador oficial contra un presupuesto local de prueba sin modif
 
 ~~~bash
 npm run doctor
-npm run test:e2e
 npm run lint
 npm run typecheck
 npm run test:coverage
 npm run build
 npm run audit
 npm run audit:production
+npm run test:e2e
 ~~~
 
 La CI ejecuta además aceptación sintética contra Actual aislado, pruebas de navegador, calidad Windows y escaneo de seguridad. La aceptación manual Windows + WSL2 de #31 se registró el 1-nov-2026; una instalación nueva debe repetir su propia matriz.
@@ -108,6 +113,8 @@ No subas `.env`, extractos, bases de datos financieras, logs sensibles, modelos 
 - [Workflows y Skills de IA](docs/ai-workflows.md)
 - [Estado de implementación](docs/implementation-status.md)
 - [Roadmap](docs/roadmap.md)
+- [Política de alcance](docs/scope-policy.md)
+- [Mantenibilidad y modularización](docs/maintainability.md)
 - [Configuración](docs/configuration.md)
 - [Privacidad](docs/privacy.md)
 - [Backup y restauración](docs/backup-restore.md)

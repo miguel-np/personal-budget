@@ -1,0 +1,57 @@
+name: Refinar una capacidad existente
+description: Mejorar una función ya implementada sin ampliar implícitamente su alcance.
+title: "[refinement] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Para cambios funcionales nuevos o ampliaciones de permisos, crea una propuesta separada conforme a la política de alcance. No incluyas datos financieros reales ni secretos.
+  - type: input
+    id: area
+    attributes:
+      label: Área o issue relacionada
+      description: Ruta funcional, módulo o número de issue.
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: Comportamiento actual y limitación
+      description: Qué hace hoy y qué problema concreto persiste.
+    validations:
+      required: true
+  - type: textarea
+    id: improvement
+    attributes:
+      label: Mejora propuesta
+      description: Cambio mínimo esperado y beneficio verificable.
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Contratos y restricciones que deben preservarse
+      description: API, cálculos, persistencia, privacidad, accesibilidad, compatibilidad o UX.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Criterios de aceptación
+      description: Regresiones y comprobaciones necesarias.
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Riesgos y dependencias
+      description: Efectos colaterales, bloqueos y validación manual necesaria.
+    validations:
+      required: false
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacidad
+      options:
+        - label: No incluyo datos financieros reales, datos personales ni secretos.
+          required: true

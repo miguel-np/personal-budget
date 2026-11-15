@@ -1,21 +1,32 @@
 # Changelog
 
-## Unreleased
+Este documento conserva el historial de cambios del producto. El estado de issues, el roadmap y las limitaciones de aceptación se mantienen en [GitHub Issues](https://github.com/miguel-np/personal-budget/issues), [Estado de implementación](docs/implementation-status.md) y [Roadmap](docs/roadmap.md), no aquí.
 
-- Añadido el centro de inteligencia financiera de la issue #68: hallazgos deterministas versionados, comparaciones de periodos equivalentes, prioridad explicada, revisión persistente, filtros, evidencia, IA local opcional y pruebas unitarias/API/E2E.
+## [Unreleased]
 
-- Añadido workspace npm/TypeScript con núcleo financiero, adaptador de Actual Budget, API local y shell web.
-- Añadido núcleo financiero determinista con importes en unidades menores, validación de fechas, exclusión de transferencias y normalización de transacciones divididas.
-- Añadido adaptador inyectable para la API oficial de Actual, operaciones serializadas y dry-run por defecto para importaciones.
-- Añadida API Fastify local con validación de configuración, host loopback, controles de Origin, respuestas saneadas y endpoints de lectura.
-- Añadida shell React/Vite que comprueba el estado del backend; el dashboard completo queda pendiente.
-- Añadido Compose con versión fijada de Actual Budget y puerto limitado a localhost.
-- Añadidas pruebas unitarias y de API, política de cobertura y CI para auditoría, lint, typecheck y build.
-- Añadido smoke test de Docker para validar la configuración y el arranque del servidor Actual Budget 26.10.0 en localhost.
-- CI verde: 40 pruebas aprobadas, 1 prueba live opcional omitida, cobertura global del 94,5 % de sentencias, 86,02 % de ramas y 96,1 % de líneas; `npm audit` y auditoría de dependencias de producción reportan cero vulnerabilidades conocidas.
-- Añadido lockfile npm inicial por CI.
-- Pendiente: validar resultados de CI, probar adaptador contra Actual local y completar funciones del producto en P1.
+### Added
+- Política explícita de alcance y criterios de entrada/salida para nuevas capacidades.
+- Presupuestos de tamaño y plan incremental de modularización para los módulos de API y web.
+- Plantillas estructuradas de issues y PR, y declaración de CODEOWNERS.
+- Evidencia fechada de CI, cobertura y auditorías de seguridad; política de contribución con comandos reales y uso de correo GitHub noreply.
 
-- Integrada en `main` (commit `9164741`) la fase 2 de inteligencia financiera: proyección de flujo de caja local con estados de conciliación disponibles, propuestas/simulaciones presupuestarias que respetan categorías protegidas y alertas in-app configurables (#73, #83, #74). El almacén `financial-actions.json` forma parte del backup cifrado unificado.
+### Changed
+- El README y el roadmap dejan de duplicar el estado operativo de GitHub.
+- Reorganizada la documentación de estado y el inventario documental para distinguir implementación, evidencia automatizada y aceptación externa/manual.
 
-- Ampliado el benchmark de paginación de movimientos (#28): datasets de mes denso y multi-cuenta, pico de heap muestreado durante la petición con máximo entre repeticiones y recorrido completo de páginas sin omisiones ni duplicados con fechas/importes idénticos, splits y filtros. La evaluación de ActualQL y los efectos de cambios concurrentes entre páginas quedan documentados en docs/transactions-and-imports.md.
+## Historial heredado (entradas sin versión asignada)
+
+### Added
+- Workspace npm/TypeScript con núcleo financiero, adaptador de Actual Budget, API local y shell web.
+- Núcleo financiero determinista con importes en unidades menores, validación de fechas, exclusión de transferencias y normalización de transacciones divididas.
+- Adaptador inyectable para la API oficial de Actual, operaciones serializadas y previsualización antes de escribir importaciones.
+- API Fastify local con validación de configuración, host loopback, controles de Origin, respuestas saneadas y endpoints de lectura.
+- Shell React/Vite y Compose con versión fijada de Actual Budget y puerto limitado a localhost.
+- Pruebas unitarias y de API, política de cobertura, CI de auditoría/lint/typecheck/build, smoke test de Docker para Actual y lockfile npm.
+- Centro de inteligencia financiera: hallazgos deterministas versionados, comparaciones de periodos equivalentes, prioridad explicada, revisión persistente, filtros, evidencia e IA local opcional.
+- Proyección local de flujo de caja, propuestas y simulaciones presupuestarias, y alertas in-app configurables (#73, #83 y #74).
+
+### Changed
+- Benchmark de paginación de movimientos ampliado con datasets densos y multicuentas, muestreo de heap y recorrido de páginas sin omisiones ni duplicados en conjuntos estáticos. Los límites de ActualQL y los efectos de cambios concurrentes entre páginas se documentan en [transacciones e importaciones](docs/transactions-and-imports.md).
+
+Las entradas heredadas se han conservado sin asignarles una fecha o versión que no estaba respaldada por el historial disponible.
