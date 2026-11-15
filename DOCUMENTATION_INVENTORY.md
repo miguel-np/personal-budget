@@ -60,3 +60,4 @@ Inventario de las guías y documentos versionados del repositorio. La navegació
 - docs/decisions/0001-local-first.md — decisión local-first.
 - docs/decisions/0002-actual-budget.md — Actual Budget como fuente de verdad.
 - docs/decisions/0003-mcp-permissions.md — límites y permisos MCP.
+- docs/decisions/0004-actual-budget-dependency.md — decisión sobre Actual Budget, consultas, contratos neutrales y criterios de reconsideración.
