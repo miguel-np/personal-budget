@@ -13,14 +13,18 @@ const DEFAULT_ALLOWED_ORIGINS = [
 function isLoopbackUrl(value: string): boolean {
   try {
     const parsed = new URL(value);
-    const authority = /^https?:\\/\\/(\\[[0-9a-f:]+\\]|[a-z0-9.-]+)(?::([0-9]{1,5}))?$/i.exec(value);
+    const separator = value.indexOf('://');
+    if (separator < 0) return false;
+    const authorityText = value.slice(separator + 3).split(/[/?#]/, 1)[0]!;
+    const authority = /^(\\[[0-9a-f:]+\\]|[a-z0-9.-]+)(?::([0-9]{1,5}))?$/i.exec(authorityText);
     const hostname = authority?.[1]?.replace(/^\\[|\\]$/g, '').toLowerCase();
-    const port = authority?.[2] === undefined ? undefined : Number(authority[2]);
+    const portText = authority?.[2];
+    const port = portText === undefined ? undefined : Number(portText);
     return Boolean(
       hostname &&
       LOCAL_HOSTS.has(hostname) &&
       (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
-      (port === undefined || (Number.isInteger(port) && port >= 1 && port <= 65_535 && String(port) === authority[2])),
+      (port === undefined || (Number.isInteger(port) && port >= 1 && port <= 65_535 && String(port) === portText)),
     );
   } catch {
     return false;
