@@ -36,12 +36,11 @@ describe('validateRequestBoundary', () => {
   it('accepts the API listen port while rejecting alternate loopback addresses and DNS aliases', () => {
     expect(validate({ headers: { host: 'localhost:3000' } })).toEqual({ allowed: true });
     expect(validate({ headers: { host: '127.0.0.2:3000' } })).toMatchObject({ allowed: false, code: 'HOST_NOT_ALLOWED' });
-    expect(validate({ headers: { host: '127.1:3000' } })).toMatchObject({ allowed: false, code: 'HOST_NOT_ALLOWED' });
     expect(validate({ headers: { host: 'attacker.example:3000' } })).toMatchObject({ allowed: false, code: 'HOST_NOT_ALLOWED' });
   });
 
   it('rejects malformed, ambiguous and unexpected Host values', () => {
-    for (const value of ['', 'localhost.evil:3000', 'localhost.:3000', 'localhost:3000, attacker.example', 'user@localhost:3000', 'localhost:99999']) {
+    for (const value of ['', 'localhost.evil:3000', 'localhost.:3000', 'localhost:3000, attacker.example', 'user@localhost:3000', 'localhost:99999', '127.1:3000', '2130706433:3000', '0x7f000001:3000']) {
       expect(validate({ headers: { host: value } })).toMatchObject({ allowed: false, code: 'HOST_NOT_ALLOWED' });
     }
     expect(validate({ rawHeaders: ['host', host, 'host', 'localhost:3000'] }))

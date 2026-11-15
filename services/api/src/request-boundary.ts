@@ -55,7 +55,7 @@ function readUniqueHeader(
 }
 
 function normalizedHostPort(hostname: string, port: number): string {
-  const normalizedHostname = hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  const normalizedHostname = hostname.toLowerCase();
   const host = normalizedHostname.includes(':') ? '[' + normalizedHostname + ']' : normalizedHostname;
   return host + ':' + port;
 }
@@ -66,7 +66,7 @@ function allowedHostValues(input: RequestBoundaryInput): ReadonlySet<string> {
     try {
       const parsed = new URL(origin);
       const port = Number(parsed.port || (parsed.protocol === 'https:' ? 443 : 80));
-      values.add(normalizedHostPort(parsed.hostname, port));
+      values.add(normalizedHostPort(parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase(), port));
     } catch {
       // Configuration validation rejects malformed origins before the server starts.
     }
@@ -82,19 +82,23 @@ function allowedHostValues(input: RequestBoundaryInput): ReadonlySet<string> {
   return values;
 }
 
+function parseHostAuthority(value: string): string | null {
+  const ipv6 = /^\[([0-9a-f:]+)\](?::([0-9]{1,5}))?$/i.exec(value);
+  const hostnameMatch = /^([a-z0-9.-]+)(?::([0-9]{1,5}))?$/i.exec(value);
+  const rawHostname = ipv6?.[1]?.toLowerCase() ?? hostnameMatch?.[1]?.toLowerCase();
+  if (!rawHostname || !LOOPBACK_HOSTNAMES.has(rawHostname)) return null;
+
+  const portText = ipv6?.[2] ?? hostnameMatch?.[2];
+  const port = portText === undefined ? 80 : Number(portText);
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) return null;
+  if (portText !== undefined && String(port) !== portText) return null;
+  return normalizedHostPort(rawHostname, port);
+}
+
 function isAllowedHost(value: string | undefined, input: RequestBoundaryInput): boolean {
-  if (!value || value.length > 255 || value !== value.trim() || /[\s,/@?#\\]/.test(value)) return false;
-  try {
-    const parsed = new URL('http://' + value);
-    if (parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash) return false;
-    if (parsed.hostname.endsWith('.')) return false;
-    const hostname = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase();
-    if (!LOOPBACK_HOSTNAMES.has(hostname)) return false;
-    const port = Number(parsed.port || 80);
-    return allowedHostValues(input).has(normalizedHostPort(hostname, port));
-  } catch {
-    return false;
-  }
+  if (!value || value.length > 255 || value !== value.trim()) return false;
+  const authority = parseHostAuthority(value);
+  return authority !== null && allowedHostValues(input).has(authority);
 }
 
 function isAllowedReferer(value: string, allowedOrigins: ReadonlySet<string>): boolean {

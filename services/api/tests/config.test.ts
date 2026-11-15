@@ -79,6 +79,17 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ APP_ALLOWED_ORIGINS: 'https://attacker.example' })).toThrow();
     expect(() => loadConfig({ APP_ALLOWED_ORIGINS: 'http://localhost:5173/path' })).toThrow();
   });
+
+  it('rejects non-canonical numeric loopback aliases in browser origin configuration', () => {
+    for (const origin of [
+      'http://127.1:5173',
+      'http://2130706433:5173',
+      'http://0x7f000001:5173',
+      'http://127.0.0.2:5173',
+    ]) {
+      expect(() => loadConfig({ APP_ALLOWED_ORIGINS: origin })).toThrow();
+    }
+  });
   it('ignores empty optional password and budget identifiers', () => {
     const config = loadConfig({ ACTUAL_SERVER_PASSWORD: '', ACTUAL_BUDGET_ID: '   ' });
     expect(config.actualServerPassword).toBeUndefined();
