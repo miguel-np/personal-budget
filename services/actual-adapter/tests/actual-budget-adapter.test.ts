@@ -34,6 +34,67 @@ describe('ActualBudgetAdapter', () => {
     });
   });
 
+  it('serializes concurrent provider reads and releases the queue after a slow operation', async () => {
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    let activeReads = 0;
+    let maximumConcurrentReads = 0;
+    const trackRead = async <T>(operation: () => Promise<T>): Promise<T> => {
+      activeReads += 1;
+      maximumConcurrentReads = Math.max(maximumConcurrentReads, activeReads);
+      try { return await operation(); }
+      finally { activeReads -= 1; }
+    };
+    const api = createApi({
+      getAccounts: vi.fn(async () => trackRead(async () => {
+        markStarted();
+        await firstGate;
+        return [{ id: 'account-1', name: 'Cuenta' }];
+      })),
+      getCategories: vi.fn(async () => trackRead(async () => [
+        { id: 'food', name: 'Alimentación', group_id: 'expenses' },
+      ])),
+    });
+    const adapter = new ActualBudgetAdapter(config, api);
+    const first = adapter.listAccounts();
+    try {
+      await started;
+      const second = adapter.listCategories();
+      await Promise.resolve();
+      expect(api.getCategories).not.toHaveBeenCalled();
+      releaseFirst();
+      await expect(first).resolves.toHaveLength(1);
+      await expect(second).resolves.toHaveLength(1);
+      expect(maximumConcurrentReads).toBe(1);
+      expect(api.sync).toHaveBeenCalledTimes(2);
+    } finally {
+      releaseFirst();
+      await adapter.close();
+    }
+  });
+
+  it('continues processing queued reads after an upstream operation fails', async () => {
+    let accountCalls = 0;
+    const api = createApi({
+      getAccounts: vi.fn(async () => {
+        accountCalls += 1;
+        if (accountCalls === 1) throw new Error('private synthetic upstream failure');
+        return [{ id: 'account-1', name: 'Cuenta' }];
+      }),
+    });
+    const adapter = new ActualBudgetAdapter(config, api);
+    await expect(adapter.listAccounts()).rejects.toMatchObject({
+      code: 'UPSTREAM_FAILURE',
+      message: 'Actual Budget operation failed.',
+    });
+    await expect(adapter.listCategories()).resolves.toHaveLength(1);
+    expect(api.getCategories).toHaveBeenCalledOnce();
+    expect(api.sync).toHaveBeenCalledTimes(2);
+    await adapter.close();
+  });
+
   it('cleans up the API session when budget initialization fails', async () => {
     const api = createApi({ downloadBudget: vi.fn(async () => { throw new Error('private sync failure'); }) });
     const adapter = new ActualBudgetAdapter(config, api);

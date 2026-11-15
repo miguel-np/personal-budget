@@ -43,6 +43,8 @@ jobs:
         run: node --test scripts/acceptance-endpoint.test.mjs
       - name: Typecheck and build
         run: npm run typecheck && npm run build
+      - name: Smoke synthetic API load harness
+        run: node scripts/api-load-benchmark.mjs --smoke
       - name: Smoke production runtime lifecycle (synthetic, unconfigured budget)
         shell: bash
         run: |

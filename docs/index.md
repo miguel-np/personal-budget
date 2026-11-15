@@ -15,6 +15,7 @@ Guías de implementación, operación, privacidad y arquitectura de `personal-bu
 ## Finanzas y planificación
 
 - [Movimientos, importación y rendimiento de historiales](transactions-and-imports.md)
+- [Rendimiento transversal y carga sintética del API](api-performance.md)
 - [Importación OFX local: perfiles, límites y seguridad](ofx-import.md)
 - [Ámbito global de cuentas](account-scope.md)
 - [Divisas, conversión y trazabilidad](multi-currency.md)

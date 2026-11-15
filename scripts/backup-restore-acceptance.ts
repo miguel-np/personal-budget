@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import { existsSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmod, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readAccountScope } from '../services/api/src/account-scope.js';
@@ -177,7 +178,9 @@ async function verifyAppState(): Promise<void> {
 
 async function roundtrip(): Promise<void> {
   await verifyAppState();
+  const backupStartedAt = performance.now();
   run('npm', ['run', 'backup:actual']);
+  const backupDurationMs = Math.round(performance.now() - backupStartedAt);
   const keyBefore = await readFile(keyFile);
 
   const archives = (await readdir(backupDir))
@@ -187,12 +190,16 @@ async function roundtrip(): Promise<void> {
   if (!archiveName) throw new Error('The unified backup command did not create an encrypted archive.');
   const archive = join(backupDir, archiveName);
   const relativeArchive = relative(root, archive);
+  const archiveSizeBytes = (await stat(archive)).size;
 
   // A wrong key must fail during authenticated decryption, before Actual or app state is touched.
+  let wrongKeyRejectionDurationMs = 0;
   try {
     await writeFile(keyFile, randomBytes(32), { mode: 0o600 });
     await chmod(keyFile, 0o600).catch(() => undefined);
+    const wrongKeyStartedAt = performance.now();
     expectFailure('npm', ['run', 'restore:actual', '--', relativeArchive, '--confirm-data-restore']);
+    wrongKeyRejectionDurationMs = Math.round(performance.now() - wrongKeyStartedAt);
   } finally {
     await writeFile(keyFile, keyBefore, { mode: 0o600 });
     await chmod(keyFile, 0o600).catch(() => undefined);
@@ -210,9 +217,24 @@ async function roundtrip(): Promise<void> {
   await mkdir(actualDataDir, { recursive: true, mode: 0o700 });
   for (const name of files) await rm(join(appDataDir, name), { force: true });
 
+  const restoreStartedAt = performance.now();
   run('npm', ['run', 'restore:actual', '--', relativeArchive, '--confirm-data-restore']);
   await verifyAppState();
   run('npm', ['run', 'test:update:acceptance', '--', 'verify']);
+  const restoreAndVerifyDurationMs = Math.round(performance.now() - restoreStartedAt);
+  process.stdout.write('BACKUP_RESTORE_SYNTHETIC_ACCEPTANCE ' + JSON.stringify({
+    node: process.version,
+    platform: process.platform,
+    architecture: process.arch,
+    stateFileCount: files.length,
+    documentFileCount: 1,
+    archiveSizeBytes,
+    backupDurationMs,
+    wrongKeyRejectionDurationMs,
+    restoreAndVerifyDurationMs,
+    measurementsAreSingleAcceptanceSamples: true,
+    disposableSyntheticActualRequired: true,
+  }) + '\n');
   process.stdout.write('Unified encrypted restore preserved the synthetic Actual inventory and all app-owned state.\n');
 }
 
