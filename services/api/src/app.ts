@@ -554,7 +554,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       headers: request.headers,
       rawHeaders: request.raw.rawHeaders,
       allowedOrigins: config.allowedOrigins,
-      apiPort: config.port,
+      apiPort: request.raw.socket.localPort || config.port,
       environment: config.environment,
     });
     if (!boundary.allowed) {

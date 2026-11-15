@@ -10,6 +10,7 @@ function validate(options: {
   headers?: IncomingHttpHeaders;
   rawHeaders?: string[];
   environment?: 'development' | 'test' | 'production';
+  apiPort?: number;
 } = {}) {
   const headers: IncomingHttpHeaders = { host, ...options.headers };
   const rawHeaders = options.rawHeaders ?? Object.entries(headers).flatMap(([name, value]) =>
@@ -20,7 +21,7 @@ function validate(options: {
     headers,
     rawHeaders,
     allowedOrigins,
-    apiPort: 3000,
+    apiPort: options.apiPort ?? 3000,
     environment: options.environment ?? 'production',
   });
 }
@@ -75,6 +76,10 @@ describe('validateRequestBoundary', () => {
     expect(validate({ method: 'POST', headers: { 'sec-fetch-site': 'same-origin' } })).toEqual({ allowed: true });
     expect(validate({ method: 'POST', headers: { 'sec-fetch-site': 'none' } }))
       .toMatchObject({ allowed: false, code: 'ORIGIN_NOT_ALLOWED' });
+  });
+
+  it('accepts the actual ephemeral socket port instead of the configured zero sentinel', () => {
+    expect(validate({ headers: { host: '127.0.0.1:43127' }, apiPort: 43127 })).toEqual({ allowed: true });
   });
 
   it('allows localhost:80 only for Fastify in-memory tests', () => {

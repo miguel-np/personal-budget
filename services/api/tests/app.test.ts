@@ -519,7 +519,9 @@ describe('local API', () => {
     const root = await mkdtemp(join(tmpdir(), 'api-request-boundary-'));
     temporaryDirectories.push(root);
     const dataDirectory = join(root, 'state');
-    const app = await createTestApp(createRepository(), { ...config, actualDataDir: dataDirectory });
+    const updateTransactionSafely = vi.fn();
+    const repository = createRepository({ updateTransactionSafely });
+    const app = await createTestApp(repository, { ...config, actualDataDir: dataDirectory });
 
     const blockedOrigin = await app.inject({
       method: 'PUT',
@@ -540,12 +542,27 @@ describe('local API', () => {
       payload: { theme: 'dark', locale: 'en-GB' },
     });
 
+    const blockedMovement = await app.inject({
+      method: 'PUT',
+      url: '/api/v1/transactions/expense-1',
+      headers: { origin: 'https://attacker.example' },
+      payload: {
+        accountId: 'account-1',
+        startDate: '2026-10-01',
+        endDate: '2026-10-31',
+        changes: { notes: 'unauthorized synthetic change' },
+      },
+    });
+
     expect(blockedOrigin.statusCode).toBe(403);
     expect(blockedOrigin.json().error.code).toBe('ORIGIN_NOT_ALLOWED');
     expect(blockedHost.statusCode).toBe(400);
     expect(blockedHost.json().error.code).toBe('HOST_NOT_ALLOWED');
     expect(blockedFetchMetadata.statusCode).toBe(403);
     expect(blockedFetchMetadata.json().error.code).toBe('ORIGIN_NOT_ALLOWED');
+    expect(blockedMovement.statusCode).toBe(403);
+    expect(blockedMovement.json().error.code).toBe('ORIGIN_NOT_ALLOWED');
+    expect(updateTransactionSafely).not.toHaveBeenCalled();
     await expect(readFile(join(dataDirectory, 'app-preferences.json'), 'utf8'))
       .rejects.toMatchObject({ code: 'ENOENT' });
   });
