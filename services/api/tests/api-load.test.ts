@@ -136,6 +136,7 @@ describe('synthetic API load and recovery contracts', () => {
     const responses = await Promise.all(Array.from({ length: 10 }, () =>
       fetch(baseUrl + '/health', { signal: AbortSignal.timeout(3_000) })));
     expect(responses.every((response) => response.status === 200)).toBe(true);
+    await Promise.all(responses.map((response) => response.arrayBuffer()));
     const finalHealth = await fetch(baseUrl + '/health');
     expect(finalHealth.status).toBe(200);
   }, 15_000);
