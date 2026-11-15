@@ -58,8 +58,12 @@ Guías de implementación, operación, privacidad y arquitectura de `personal-bu
 ## Desarrollo y gobernanza
 
 - [Entorno de desarrollo](development.md)
+- [Mantenibilidad y modularización](maintainability.md)
+- [Política de alcance](scope-policy.md)
+- [Inventario documental](../DOCUMENTATION_INVENTORY.md)
 - [Licencias y derechos sobre datos](licensing.md)
 - [Contribuciones](../CONTRIBUTING.md)
+- [Seguridad](../SECURITY.md)
 - [Soporte](../SUPPORT.md)
 - [Código de conducta](../CODE_OF_CONDUCT.md)
 - [Changelog](../CHANGELOG.md)

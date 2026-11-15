@@ -1,6 +1,6 @@
 # Baseline de versiones y política de seguridad
 
-**Baseline revisada: 25 de octubre de 2026.** Las dependencias directas están fijadas a versiones exactas para reproducir el entorno.
+**Baseline revisada: 25 de octubre de 2026.** Las dependencias directas están fijadas a versiones exactas para reproducir el entorno. La fecha de esta tabla identifica la revisión de versiones, no garantiza que sigan siendo las últimas disponibles.
 
 ## Versiones principales
 
@@ -23,14 +23,14 @@ Se selecciona TypeScript 6.0.3, no la versión 7.0.2, porque la versión estable
 
 ## Controles
 
-- .nvmrc fija Node.js 24.22.1.
+- `.nvmrc` fija Node.js 24.22.1.
 - Las GitHub Actions de checkout y setup-node están fijadas por SHA completo.
-- CI ejecuta npm audit --audit-level=high, lint, typecheck, pruebas con cobertura, build y auditoría de dependencias de producción.
+- CI ejecuta `npm audit --audit-level=moderate`, lint, typecheck, pruebas con cobertura, build y auditoría de dependencias de producción.
 - Ejecutar auditorías semanalmente y antes de cada release.
 - Actualizar dependencias de forma deliberada, revisar lockfile y ejecutar pruebas.
-- No aplicar npm audit fix --force sin evaluar cambios de major.
+- No aplicar `npm audit fix --force` sin evaluar cambios de major.
 - Actual Budget se fija en Compose a una versión explícita; actualizaciones requieren backup y pruebas.
 
 ## Sobre “libre de vulnerabilidades”
 
-No puede garantizarse ausencia de vulnerabilidades para siempre. Las bases de avisos pueden retrasarse, pueden existir fallos aún sin CVE y las dependencias indirectas también cuentan. Un npm audit sin hallazgos refleja únicamente los avisos conocidos del árbol de paquetes y el umbral elegido en el momento del análisis. CI debe revisarse antes de cerrar P0.
+No puede garantizarse ausencia de vulnerabilidades para siempre. Las bases de avisos pueden retrasarse, pueden existir fallos aún sin CVE y las dependencias indirectas también cuentan. Un `npm audit` sin hallazgos refleja únicamente los avisos conocidos del árbol de paquetes y el umbral elegido en el momento del análisis. Consulta [SECURITY.md](../SECURITY.md) para evidencias fechadas y límites.

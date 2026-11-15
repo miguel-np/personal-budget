@@ -1,0 +1,56 @@
+name: Reportar un error
+description: Informar de un comportamiento incorrecto con una reproducción segura y sintética.
+title: "[bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        No incluyas extractos, descripciones reales, saldos, nombres de cuentas, identificadores, credenciales, archivos de Actual, backups ni logs sin sanitizar. Reproduce el problema con datos sintéticos.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema observado
+      description: Qué ocurre y qué resultado esperabas.
+      placeholder: Describe el resultado sin incluir información financiera personal.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Pasos de reproducción
+      description: Pasos mínimos con presupuesto y movimientos sintéticos.
+      placeholder: |
+        1. Preparar datos sintéticos...
+        2. Abrir la sección...
+        3. Ejecutar la acción...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Commit o versión
+      description: SHA o versión probada.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Entorno
+      description: SO, WSL2/Docker, navegador y versión de Node cuando aplique.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnóstico sanitizado
+      description: Errores y logs mínimos una vez eliminados datos sensibles, tokens, rutas privadas y direcciones.
+      render: text
+    validations:
+      required: false
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacidad
+      options:
+        - label: He verificado que no incluyo datos financieros reales, información personal, secretos ni copias de seguridad.
+          required: true

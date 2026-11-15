@@ -1,0 +1,59 @@
+name: Proponer una capacidad
+description: Proponer una nueva función o integración con alcance y aceptación definidos.
+title: "[feature] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Las capacidades deben respetar el diseño local-first. No incluyas datos financieros reales, credenciales ni información personal.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema y necesidad
+      description: Quién necesita esta capacidad y qué tarea quiere resolver.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Resultado esperado
+      description: Comportamiento verificable desde la perspectiva del usuario.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Alcance y exclusiones
+      description: Qué entra, qué queda fuera y qué no debe hacer la capacidad.
+    validations:
+      required: true
+  - type: textarea
+    id: privacy
+    attributes:
+      label: Datos, privacidad y seguridad
+      description: Datos procesados, posibles conexiones externas, consentimiento, persistencia, permisos y amenazas.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Criterios de aceptación
+      description: Tests, validación manual, evidencia externa y responsable de cada aceptación.
+      placeholder: |
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternativas y dependencias
+      description: Alternativas consideradas, dependencias, coste operativo y condiciones previas.
+    validations:
+      required: false
+  - type: checkboxes
+    id: privacy-confirm
+    attributes:
+      label: Confirmación
+      options:
+        - label: La propuesta no contiene datos personales o financieros reales, secretos ni credenciales.
+          required: true
