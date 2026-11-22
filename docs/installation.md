@@ -140,7 +140,27 @@ No publiques ni compartas `.env`. Está excluido de Git porque puede contener cr
 
 El resto de valores puede conservar los defaults de `.env.example`. Las funciones de IA y búsqueda web deben permanecer desactivadas al principio.
 
-## 7. Comprobar la instalación
+## 7. Alinear el servidor Actual con el SDK
+
+El proyecto instala `@actual-app/api` 26.11.0. Compose inicia inicialmente Actual 26.10.0 de forma deliberada: esa es la versión de origen del procedimiento de actualización segura. **Antes de iniciar Personal Budget por primera vez, completa la transición verificada a 26.11.0** para mantener alineadas las versiones del servidor y del SDK.
+
+Ejecuta primero el preflight:
+
+```bash
+npm run update:actual -- preflight --to actualbudget/actual-server:26.11.0
+```
+
+Si termina correctamente, aplica la actualización:
+
+```bash
+npm run update:actual -- update --to actualbudget/actual-server:26.11.0 --confirm
+```
+
+El script crea y verifica un backup cifrado antes de cambiar la imagen y guarda la versión de destino en `.env`. Si el preflight indica que `ACTUAL_IMAGE` está exportada en la terminal, ejecuta `unset ACTUAL_IMAGE` y repite el preflight. No cambies manualmente el tag de Compose.
+
+Si Actual ya está en 26.11.0, omite este paso. Ante cualquier error, detente y sigue [Actualizaciones seguras](safe-updates.md); no borres datos ni backups.
+
+## 8. Comprobar la instalación
 
 Ejecuta el diagnóstico:
 
@@ -156,7 +176,7 @@ docker compose logs --tail=100 actual
 
 No compartas logs sin revisar y sanear su contenido. No borres `.local` para intentar reparar el servicio.
 
-## 8. Iniciar Personal Budget para uso diario
+## 9. Iniciar Personal Budget para uso diario
 
 Desde la raíz del proyecto:
 
@@ -184,7 +204,7 @@ npm run start:local
 
 No necesitas volver a ejecutar `npm ci` en cada arranque.
 
-## 9. Primeros pasos dentro de la aplicación
+## 10. Primeros pasos dentro de la aplicación
 
 1. Abre **Resumen** y comprueba el periodo y la divisa.
 2. Entra en **Cuentas** y verifica que aparecen las cuentas del presupuesto elegido.
@@ -195,7 +215,7 @@ No necesitas volver a ejecutar `npm ci` en cada arranque.
 
 Si no aparecen cuentas o movimientos, vuelve a comprobar `ACTUAL_BUDGET_ID`, `ACTUAL_SERVER_URL` y el estado del contenedor. No cambies datos en Actual para intentar corregir una conexión.
 
-## 10. Copias de seguridad: hazlo antes de depender de tus datos
+## 11. Copias de seguridad: hazlo antes de depender de tus datos
 
 Personal Budget dispone de backup cifrado unificado que incluye el volumen de Actual, los almacenes propios inventariados y los documentos binarios admitidos.
 
@@ -208,7 +228,7 @@ Antes de utilizarlo como sistema habitual:
 
 La restauración sustituye datos y requiere confirmación explícita. Nunca hagas pruebas destructivas con tu único presupuesto personal.
 
-## 11. Opcionales: IA, búsqueda web y MCP
+## 12. Opcionales: IA, búsqueda web y MCP
 
 No son necesarios para la instalación básica:
 
