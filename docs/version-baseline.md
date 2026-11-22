@@ -6,7 +6,8 @@
 
 | Tecnología | Versión fijada | Fuente oficial |
 |---|---:|---|
-| Node.js Maintenance LTS | 24.22.3 | [Release](https://nodejs.org/en/blog/release/v24.22.3) |
+| Node.js Active LTS | 26.13.1 | [Release de seguridad](https://nodejs.org/en/blog/release/v26.13.1) · [Calendario](https://nodejs.org/en/about/previous-releases) |
+| npm | 11.20.0 | [Incluido en Node.js 26.13.1](https://nodejs.org/en/download/archive/v26.13.1) |
 | Actual Budget server | 26.11.0 | [Release](https://github.com/actualbudget/actual/releases/tag/v26.11.0) |
 | @actual-app/api | 26.11.0 | [API oficial](https://actualbudget.org/docs/api/) |
 | Fastify | 5.12.8 | [Release](https://github.com/fastify/fastify/releases/tag/v5.12.8) · [Política LTS](https://fastify.dev/docs/latest/Reference/LTS/) |
@@ -15,6 +16,7 @@
 | React / React DOM | 19.3.1 | [Versiones React](https://react.dev/versions) |
 | Vite | 8.3.8 | [Release](https://github.com/vitejs/vite/releases/tag/v8.3.8) · [Lanzamientos](https://vite.dev/releases) |
 | TypeScript | 6.0.3 | [Release oficial](https://github.com/microsoft/TypeScript/releases) |
+| @types/node | 26.6.6 | [NPM](https://www.npmjs.com/package/@types/node) |
 | typescript-eslint | 8.72.0 | [Release](https://github.com/typescript-eslint/typescript-eslint/releases) |
 | Vitest + coverage | 5.0.5 | [Vitest](https://www.npmjs.com/package/vitest) |
 | ESLint | 10.13.0 | [Versiones ESLint](https://eslint.org/docs/latest/versions/) |
@@ -28,7 +30,7 @@
 
 ## Actualizaciones de seguridad de noviembre de 2026
 
-- **Node.js 24.22.3** incorpora las correcciones de seguridad publicadas el 11 de noviembre de 2026. Node.js 24 pasó a Maintenance LTS el 20 de octubre de 2026; se mantiene la línea 24 por compatibilidad declarada del proyecto.
+- **Node.js 26.13.1** es una publicación de seguridad del 11 de noviembre de 2026 con varias correcciones de severidad alta. Node.js 26 pasó a Active LTS el 28 de octubre de 2026 y recibe soporte previsto hasta abril de 2029. Node.js 26.13.1 incluye npm 11.20.0. [Release](https://nodejs.org/en/blog/release/v26.13.1) · [Calendario](https://nodejs.org/en/blog/announcements/evolving-the-nodejs-release-schedule) · [Archivo](https://nodejs.org/en/download/archive/v26.13.1).
 - **Fastify 5.12.8** corrige [GHSA-3qgw-9275-xf8w](https://github.com/fastify/fastify/security/advisories/GHSA-3qgw-9275-xf8w). El aviso requiere la combinación de `handlerTimeout` distinto de cero y respuestas de streaming; no se encontró esa configuración en el runtime auditado. Se actualiza igualmente para incorporar la versión corregida.
 - **Vite 8.3.8** incorpora la corrección para [GHSA-p4f5-76q4-ffq7](https://github.com/vitejs/vite/security/advisories/GHSA-p4f5-76q4-ffq7), que afecta a Vite 8.3.0–8.3.6 cuando el servidor de desarrollo está expuesto a la red. El script de desarrollo de este repositorio lo enlaza a `127.0.0.1`; la actualización elimina igualmente el uso de la versión afectada.
 
@@ -36,7 +38,8 @@ Se selecciona TypeScript 6.0.3, no la versión 7.0.2, porque la versión estable
 
 ## Controles
 
-- `.nvmrc` fija Node.js 24.22.3.
+- `.nvmrc` fija Node.js 26.13.1; `package.json` exige Node `>=26.13.1 <27` y npm `>=11.20.0`.
+- `@types/node` se alinea en 26.6.6; su dependencia `undici-types` queda fijada en 8.9.0 en el lockfile.
 - Las GitHub Actions de checkout y setup-node están fijadas por SHA completo.
 - CI ejecuta `npm audit --audit-level=moderate`, lint, typecheck, pruebas con cobertura, build y auditoría de dependencias de producción.
 - Ejecutar auditorías semanalmente y antes de cada release.
