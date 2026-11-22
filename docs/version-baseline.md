@@ -56,5 +56,6 @@ No puede garantizarse ausencia de vulnerabilidades para siempre. Las bases de av
 ## Tooling de CI y actualizaciones
 
 - GitHub CodeQL Action v4.39.4 se fija al commit 1bd86f2fdb4b86187fa4059f16f31a3202acc9ea; las actualizaciones semanales de GitHub Actions se gestionan con Dependabot y deben conservar el pin SHA completo.
-- Dependabot revisa semanalmente npm workspaces, imágenes Docker y GitHub Actions. Agrupa actualizaciones patch/minor y major por separado; todas llegan como PR y deben superar la CI antes de integrarse.
+- Dependabot revisa semanalmente npm workspaces y GitHub Actions. Agrupa actualizaciones patch/minor y major por separado; todas llegan como PR y deben superar la CI antes de integrarse.
+- Las imágenes de Actual Budget no se actualizan automáticamente con Dependabot: `compose.yaml` no es reconocido por el updater Docker configurado y, además, la actualización debe pasar por `scripts/safe-update.ts`, backup cifrado, preflight y aceptación sintética. Consulta [actualizaciones seguras](safe-updates.md).
 - Los informes de cobertura de Vitest se publican como artefactos de CI con retención de siete días. La cobertura ampliada incluye utilidades web ejercitadas por pruebas unitarias y diagnósticos runtime; los componentes visuales se verifican además mediante Playwright.
