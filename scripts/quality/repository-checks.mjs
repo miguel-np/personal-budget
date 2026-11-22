@@ -214,6 +214,20 @@ async function checkChangedFileBudgets() {
   return errors;
 }
 
+export function extractNpmCommands(markdown) {
+  const samples = [...markdown.matchAll(/```[\s\S]*?```|~~~[\s\S]*?~~~/g)].map((match) => match[0].slice(3, -3));
+  const backtick = String.fromCharCode(96);
+  const inlineCode = new RegExp(backtick + '([^' + backtick + '\n]+)' + backtick, 'g');
+  for (const match of markdown.matchAll(inlineCode)) samples.push(match[1] ?? '');
+  const commands = [];
+  const expression = /\bnpm\s+run\s+([a-zA-Z0-9:_-]+)([^\n]*)/g;
+  for (const sample of samples) {
+    for (const match of sample.matchAll(expression)) {
+      commands.push({ script: match[1], suffix: match[2] ?? '' });
+    }
+  }
+  return commands;
+}
 async function checkDocumentation() {
   const errors = [];
   const markdownFiles = await walkFiles(ROOT, (file) => file.toLowerCase().endsWith('.md'));
@@ -253,10 +267,7 @@ async function checkDocumentation() {
       if (!exists) errors.push(relative + ' links to a missing local path: ' + destination);
     }
 
-    const commandExpression = /\bnpm\s+run\s+([a-zA-Z0-9:_-]+)([^\n]*)/g;
-    for (const match of content.matchAll(commandExpression)) {
-      const script = match[1];
-      const suffix = match[2] ?? '';
+    for (const { script, suffix } of extractNpmCommands(content)) {
       const workspaceMatch = suffix.match(/(?:--workspace(?:=|\s+)|-w\s+)([^\s]+)/);
       if (workspaceMatch) {
         const scripts = workspaceScripts.get(workspaceMatch[1]);
