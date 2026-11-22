@@ -128,6 +128,33 @@ describe('development process supervisor', () => {
     expect(killProcess).toHaveBeenNthCalledWith(2, -302, 'SIGINT');
   });
 
+  it('stops an already-started service when the next process cannot spawn', () => {
+    const api = createChild(401);
+    const spawnProcess = vi.fn()
+      .mockReturnValueOnce(api)
+      .mockImplementationOnce(() => {
+        throw new Error('spawn failed');
+      });
+    const killProcess = vi.fn();
+    const onExitCode = vi.fn();
+    const onError = vi.fn();
+
+    const supervisor = startDevProcesses({
+      scripts: ['dev:api', 'dev:web'],
+      npmExecPath: '/npm/bin/npm-cli.js',
+      platform: 'linux',
+      spawnProcess,
+      killProcess,
+      onExitCode,
+      onError
+    });
+
+    expect(onExitCode).toHaveBeenCalledWith(1);
+    expect(onError).toHaveBeenCalledWith('Could not start npm script dev:web: spawn failed');
+    expect(killProcess).toHaveBeenCalledWith(-401, 'SIGTERM');
+    expect(supervisor.stopping).toBe(true);
+  });
+
   it('fails clearly when npm has not provided its executable path', () => {
     expect(() => startDevProcesses({
       scripts: ['dev:api'],

@@ -68,6 +68,7 @@ docker compose up -d actual
 Actual no se inicia automáticamente con `npm run dev`, porque es un servicio persistente y puede contener datos financieros. Si API o Vite terminan inesperadamente, el supervisor detiene el otro servicio. Pulsa `Ctrl+C` para cerrar ambos. El comando conserva el comportamiento en Windows, WSL2 y Linux.
 
 También puedes iniciar cada parte por separado con `npm run dev:api` y `npm run dev:web`. Para el uso cotidiano sin recarga en caliente, utiliza `npm run start:local`, que compila y sirve el runtime local de producción en el puerto 4173.
+
 ## 5. Comandos del proyecto
 
 | Comando | Qué hace |
@@ -95,6 +96,7 @@ También puedes iniciar cada parte por separado con `npm run dev:api` y `npm run
 
 Backup, restauración y actualización de Actual tienen efectos sobre datos persistentes. No los ejecutes como comandos de desarrollo sin leer sus guías específicas.
 
+
 ## 6. Validación antes de proponer cambios
 
 Desde la raíz del repositorio:
@@ -109,6 +111,7 @@ npm run setup:e2e
 `npm run setup:e2e` instala Chromium una vez por entorno. No forma parte de `validate` para evitar descargas implícitas o cambios del entorno durante una validación. Si Chromium ya está instalado, no necesitas repetirlo.
 
 La suite ordinaria usa datos sintéticos y no necesita una cuenta bancaria, un presupuesto personal ni un modelo Ollama real. Las pruebas live contra Actual, Ollama o SearXNG son optativas y deben utilizar entornos aislados y datos sintéticos.
+
 
 ## 7. Cómo abordar un cambio pequeño
 
