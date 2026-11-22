@@ -96,22 +96,32 @@ También puedes iniciar cada parte por separado con `npm run dev:api` y `npm run
 
 Backup, restauración y actualización de Actual tienen efectos sobre datos persistentes. No los ejecutes como comandos de desarrollo sin leer sus guías específicas.
 
-
 ## 6. Validación antes de proponer cambios
 
-Desde la raíz del repositorio:
+Desde la raíz del repositorio, prepara las dependencias y el navegador una vez por entorno:
 
 ```bash
 npm ci
 npm run setup:e2e
 ```
 
-`npm run check` es el ciclo habitual durante el desarrollo: lint, comprobación de tipos y tests con cobertura. Ejecuta ese comando cada vez que quieras validar tus cambios. Antes de abrir una PR, ejecuta `npm run validate`, que vuelve a ejecutar los controles y añade build, auditorías de dependencias y pruebas E2E.
+Durante el desarrollo, valida los cambios con:
 
-`npm run setup:e2e` instala Chromium una vez por entorno. No forma parte de `validate` para evitar descargas implícitas o cambios del entorno durante una validación. Si Chromium ya está instalado, no necesitas repetirlo.
+```bash
+npm run check
+```
+
+`check` ejecuta ESLint, la comprobación de tipos y Vitest con cobertura. Antes de abrir una PR, ejecuta la validación completa:
+
+```bash
+npm run validate
+```
+
+`validate` vuelve a ejecutar `check` y añade el build de producción, las auditorías de dependencias y Playwright E2E. La repetición es intencionada: proporciona un único control completo y reproducible antes de publicar cambios.
+
+`setup:e2e` instala Chromium explícitamente; no forma parte de `validate` para evitar descargas implícitas o cambios del entorno durante una validación. Si Chromium ya está instalado, no necesitas repetirlo.
 
 La suite ordinaria usa datos sintéticos y no necesita una cuenta bancaria, un presupuesto personal ni un modelo Ollama real. Las pruebas live contra Actual, Ollama o SearXNG son optativas y deben utilizar entornos aislados y datos sintéticos.
-
 
 ## 7. Cómo abordar un cambio pequeño
 

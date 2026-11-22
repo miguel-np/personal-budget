@@ -8,7 +8,7 @@ Este documento describe cómo iniciar, detener y comprobar los servicios una vez
 |---|---:|---|
 | Actual Budget | 5006 | Siempre que la API tenga que consultar el presupuesto. |
 | API Fastify | 3000 | Para todas las funciones de Personal Budget. |
-| Web de desarrollo (Vite) | 5173 | Solo durante desarrollo. |
+| Web de desarrollo (Vite) | 5173 | Durante desarrollo con `npm run dev` o `npm run dev:web`. |
 | Web compilada (runtime diario) | 4173 | Para uso cotidiano con `npm run start:local`. |
 | Ollama | 11434 | Solo si se activa IA local. |
 | MCP | stdio, sin puerto TCP | Solo cuando un cliente MCP compatible lo inicia. |
@@ -31,17 +31,21 @@ Abre http://127.0.0.1:4173. El runtime compila, inicia API y web y coordina el c
 
 ## Desarrollo
 
-En dos terminales separadas:
+Desde la raíz del repositorio, inicia API y frontend en una sola terminal:
 
 ```bash
-npm run dev:api
+npm run dev
 ```
+
+La web de Vite está en http://127.0.0.1:5173 y la API en http://127.0.0.1:3000. El supervisor inicia `dev:api` y `dev:web` en paralelo, muestra sus registros en la misma terminal y detiene el otro servicio si uno termina. Pulsa `Ctrl+C` para cerrar ambos.
+
+Actual Budget no se inicia automáticamente. Cuando necesites probar la integración con un presupuesto de prueba, inicia el contenedor por separado:
 
 ```bash
-npm run dev:web
+docker compose up -d actual
 ```
 
-La web de desarrollo está en http://127.0.0.1:5173. No ejecutes simultáneamente el runtime diario y procesos de desarrollo si utilizan los mismos puertos de API.
+También puedes iniciar cada parte por separado con `npm run dev:api` y `npm run dev:web`, cada una en su propia terminal. No ejecutes estas variantes junto con `npm run dev` ni con el runtime diario `npm run start:local`: comparten los puertos de la API.
 
 ## Diagnóstico y readiness
 
