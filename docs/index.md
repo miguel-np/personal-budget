@@ -6,11 +6,12 @@ Elige la ruta que corresponda a lo que quieres hacer. No necesitas leer toda la 
 
 1. [Qué es Personal Budget y qué necesito](../README.md)
 2. [Instalación paso a paso en Windows + WSL2](installation.md)
-3. [Primera configuración y primer arranque](installation.md#5-configurar-personal-budget)
-4. [Guía práctica de uso](usage.md)
-5. [Catálogo de las doce secciones y funciones adicionales](features.md)
-6. [Glosario para principiantes](glossary.md)
-7. [Resolución de problemas](troubleshooting.md)
+3. [Configurar Personal Budget](installation.md#6-configurar-personal-budget)
+4. [Alinear Actual con el SDK](installation.md#7-alinear-el-servidor-actual-con-el-sdk)
+5. [Guía práctica de uso](usage.md)
+6. [Catálogo de las doce secciones y funciones adicionales](features.md)
+7. [Glosario para principiantes](glossary.md)
+8. [Resolución de problemas](troubleshooting.md)
 
 ## Ya utilizo la aplicación
 
