@@ -40,7 +40,7 @@ export function sanitizePublicSourceUrl(value, expectedHost) {
   const sanitized = new URL(url.origin + url.pathname);
   if (['boe.es', 'www.boe.es'].includes(host) && url.pathname === '/buscar/act.php') {
     const identifier = url.searchParams.get('id');
-    if (typeof identifier === 'string' && /^BOE-A-\\d{4}-\\d{1,8}$/.test(identifier)) {
+    if (typeof identifier === 'string' && /^BOE-A-\d{4}-\d{1,8}$/.test(identifier)) {
       sanitized.searchParams.set('id', identifier);
     }
   }
