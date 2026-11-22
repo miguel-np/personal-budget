@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { DEFAULT_LOCAL_ACCEPTANCE_API_ORIGIN, validateLocalAcceptanceOrigin } from './local-acceptance-origin.mjs';
 import { WEB_SEARCH_ACCEPTANCE_GROUPS as groups } from './web-search-live-acceptance-config.mjs';
 import { evaluateNegativeProbe } from './web-search-live-acceptance-probes.mjs';
+import { buildSourceAcceptanceEvidence } from './web-search-live-acceptance-results.mjs';
 
 const baseValue = process.env.PERSONAL_BUDGET_LOCAL_ACCEPTANCE_API_ORIGIN ?? DEFAULT_LOCAL_ACCEPTANCE_API_ORIGIN;
 const base = validateLocalAcceptanceOrigin(baseValue);
@@ -167,34 +168,16 @@ for (let i = 0; i < groups.length; i += 1) {
     if (!result.response.ok || !data || data.provider !== 'SearXNG' || !Array.isArray(data.sources)) {
       throw new Error('The backend response does not satisfy the web-search contract.');
     }
-    const sourceRows = data.sources.map((source) => {
-      let url;
-      try { url = new URL(source.url); } catch { return { id: source.id ?? null, host: null, sourceObserved: false, documentAccepted: false, reason: 'invalid_url' }; }
-      const host = url.hostname.toLowerCase();
-      const hostAllowed = group.host === host;
-      if (hostAllowed) observedHosts.add(host);
-      const document = source.document ?? null;
-      const fetches = Array.isArray(document?.fetches) ? document.fetches : [];
-      const textFetchOk = fetches.some((fetch) => fetch?.outcome === 'completed' && fetch?.httpStatus === 200 &&
-        Number.isSafeInteger(fetch?.bytesReceived) && fetch.bytesReceived > 0 &&
-        (String(fetch?.contentType ?? '').toLowerCase().includes('text/html') ||
-          String(fetch?.contentType ?? '').toLowerCase().includes('application/xhtml+xml') ||
-          String(fetch?.contentType ?? '').toLowerCase().includes('text/plain')));
-      const hasText = Number.isSafeInteger(document?.textLength) && document.textLength > 0 && (document?.status === 'retrieved' || document?.status === 'partial');
-      const documentAccepted = hostAllowed && url.protocol === 'https:' && Boolean(source.title) && hasText && textFetchOk;
-      if (documentAccepted) acceptedHosts.add(host);
-      return {
-        id: source.id ?? null, host, sourceObserved: hostAllowed, documentAccepted,
-        publishedAt: source.publishedAt ?? null,
-        modifiedAt: source.modifiedAt ?? null,
-        documentStatus: document?.status ?? null, textLength: Number.isSafeInteger(document?.textLength) ? document.textLength : 0,
-        fetches: fetches.map((fetch) => ({ endpoint: fetch.endpoint ?? null, httpStatus: fetch.httpStatus ?? null,
-          contentType: fetch.contentType ?? null, bytesReceived: fetch.bytesReceived ?? 0, latencyMs: fetch.latencyMs ?? null, outcome: fetch.outcome ?? 'unknown' })),
-        limitationCount: Array.isArray(document?.limitations) ? document.limitations.length : null,
-      };
-    });
+    const sourceRows = data.sources.map((source) => buildSourceAcceptanceEvidence(source, group.host));
+    for (const row of sourceRows) {
+      if (row.sourceObserved && row.host) observedHosts.add(row.host);
+      if (row.documentAccepted && row.host) acceptedHosts.add(row.host);
+    }
     report.groups.push({
       domain: group.domain,
+      purpose: 'Verify public search and complete official-document extraction for this exact allowlisted host.',
+      checkedAt: new Date().toISOString(),
+      searchedAt: typeof data.searchedAt === 'string' ? data.searchedAt : null,
       expectedHosts: [group.host],
       httpStatus: result.response.status,
       responseMime: result.contentType,
@@ -202,7 +185,7 @@ for (let i = 0; i < groups.length; i += 1) {
       sourceCount: sourceRows.length,
       sources: sourceRows,
       acceptedHosts: sourceRows.filter((row) => row.documentAccepted).map((row) => row.host),
-      status: sourceRows.some((row) => row.documentAccepted) ? 'accepted' : sourceRows.some((row) => row.sourceObserved) ? 'document_not_accepted' : 'not_observed',
+      status: sourceRows.some((row) => row.documentAccepted) ? 'accepted' : sourceRows.some((row) => row.acceptanceStatus === 'partial') ? 'partial' : sourceRows.some((row) => row.sourceObserved) ? 'document_not_accepted' : 'not_observed',
     });
   } catch (error) {
     report.groups.push({
@@ -260,7 +243,7 @@ for (const probe of negativeProbes) {
 }
 const expectedHosts = groups.map((group) => group.host);
 report.finishedAt = new Date().toISOString();
-report.hostCoverage = expectedHosts.map((host) => ({ host, observed: observedHosts.has(host), documentAccepted: acceptedHosts.has(host) }));
+report.hostCoverage = expectedHosts.map((host) => ({ host, observed: observedHosts.has(host), documentAccepted: acceptedHosts.has(host), partial: report.groups.some((group) => group.expectedHosts.includes(host) && group.status === 'partial') }));
 report.observedHostCount = observedHosts.size;
 report.expectedHostCount = expectedHosts.length;
 report.acceptedHostCount = acceptedHosts.size;
