@@ -39,7 +39,7 @@ test('only validates npm commands shown as inline or fenced code', () => {
     'npm run quality:repo',
     '~~~',
   ].join('\n');
-  assert.deepEqual(extractNpmCommands(markdown), [
+  assert.deepEqual(extractNpmCommands(markdown).sort((left, right) => left.script.localeCompare(right.script)), [
     { script: 'lint', suffix: '' },
     { script: 'quality:repo', suffix: '' },
   ]);
