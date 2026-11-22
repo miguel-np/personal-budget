@@ -49,75 +49,67 @@ npm ci
 
 ## 4. Ejecutar en modo desarrollo
 
-Inicia Actual si necesitas datos financieros:
+Para desarrollar la interfaz y la API, utiliza una sola terminal desde la raíz:
+
+```bash
+npm run dev
+```
+
+Este comando inicia `dev:api` y `dev:web` en paralelo. La API compila primero `finance-core` y `actual-adapter`; después arranca Fastify con recarga de cambios. Vite sirve la interfaz con recarga en caliente.
+
+Abre http://127.0.0.1:5173. La API utiliza http://127.0.0.1:3000.
+
+Si necesitas datos de Actual Budget, inicia el contenedor en otra terminal antes o durante el desarrollo:
 
 ```bash
 docker compose up -d actual
 ```
 
-Terminal 1, API:
+Actual no se inicia automáticamente con `npm run dev`, porque es un servicio persistente y puede contener datos financieros. Si API o Vite terminan inesperadamente, el supervisor detiene el otro servicio. Pulsa `Ctrl+C` para cerrar ambos. El comando conserva el comportamiento en Windows, WSL2 y Linux.
 
-```bash
-npm run dev:api
-```
-
-Terminal 2, frontend:
-
-```bash
-npm run dev:web
-```
-
-Abre http://127.0.0.1:5173. La API utiliza http://127.0.0.1:3000.
-
-Para el uso cotidiano sin recarga en caliente, utiliza `npm run start:local`, que compila y sirve el frontend de producción local en el puerto 4173.
-
+También puedes iniciar cada parte por separado con `npm run dev:api` y `npm run dev:web`. Para el uso cotidiano sin recarga en caliente, utiliza `npm run start:local`, que compila y sirve el runtime local de producción en el puerto 4173.
 ## 5. Comandos del proyecto
 
 | Comando | Qué hace |
 |---|---|
 | `npm ci` | Instala las dependencias exactas del lockfile. |
 | `npm run doctor` | Diagnostica requisitos, configuración y servicios. |
-| `npm run dev:api` | Compila dependencias internas e inicia Fastify en desarrollo. |
+| `npm run dev` | Inicia API y frontend en paralelo desde una sola terminal. |
+| `npm run dev:api` | Compila las dependencias internas e inicia Fastify en desarrollo. |
 | `npm run dev:web` | Inicia Vite con recarga en caliente. |
 | `npm run start:local` | Compila y arranca el runtime local de uso diario. |
 | `npm run start:built` | Arranca el runtime ya compilado, sin reconstruir. |
-| `npm run build` | Construye los workspaces de producción. |
 | `npm run lint` | Ejecuta ESLint. |
 | `npm run typecheck` | Comprueba tipos de API, web y tests y construye dependencias internas. |
 | `npm run test` | Ejecuta Vitest. |
 | `npm run test:coverage` | Ejecuta Vitest con cobertura y umbrales configurados. |
-| `npm run test:e2e` | Ejecuta Playwright contra el frontend compilado y API sintética. |
+| `npm run check` | Agrupa lint, typecheck y tests con cobertura. |
+| `npm run build` | Construye los workspaces de producción. |
 | `npm run audit` | Audita dependencias con umbral moderate. |
 | `npm run audit:production` | Audita solo dependencias de producción. |
+| `npm run setup:e2e` | Instala Chromium para Playwright en el entorno actual. |
+| `npm run test:e2e` | Ejecuta Playwright contra el frontend compilado y API sintética. |
+| `npm run validate` | Ejecuta check, build, auditorías y E2E en secuencia. |
 | `npm run benchmark:api` | Ejecuta benchmark sintético de API; no usar datos reales. |
 | `npm run mcp:serve` | Inicia el servidor MCP por stdio; requiere API local. |
 
 Backup, restauración y actualización de Actual tienen efectos sobre datos persistentes. No los ejecutes como comandos de desarrollo sin leer sus guías específicas.
-
 ## 6. Validación antes de proponer cambios
 
-Desde la raíz:
+Desde la raíz del repositorio:
 
 ```bash
 npm ci
-npm run lint
-npm run typecheck
-npm run test:coverage
-npm run build
-npm run audit
-npm run audit:production
-npm run test:e2e
+npm run check
+npm run setup:e2e
+npm run validate
 ```
 
-Playwright puede necesitar Chromium:
+`npm run check` es el ciclo habitual durante el desarrollo: lint, comprobación de tipos y tests con cobertura. Antes de abrir una PR, ejecuta `npm run validate`, que vuelve a ejecutar los controles y añade build, auditorías de dependencias y pruebas E2E.
 
-```bash
-npx playwright install chromium
-npm run test:e2e
-```
+`npm run setup:e2e` instala Chromium una vez por entorno. No forma parte de `validate` para evitar descargas implícitas o cambios del entorno durante una validación. Si Chromium ya está instalado, no necesitas repetirlo.
 
 La suite ordinaria usa datos sintéticos y no necesita una cuenta bancaria, un presupuesto personal ni un modelo Ollama real. Las pruebas live contra Actual, Ollama o SearXNG son optativas y deben utilizar entornos aislados y datos sintéticos.
-
 ## 7. Cómo abordar un cambio pequeño
 
 1. Identifica la funcionalidad y lee su documentación.

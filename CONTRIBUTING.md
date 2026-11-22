@@ -30,20 +30,21 @@ Usa Node.js 26.13.1 y npm 11.20.0, las versiones fijadas por `.nvmrc` y `package
 
 ~~~bash
 npm ci
-npm run lint
-npm run typecheck
-npm run test:coverage
-npm run build
-npm run audit
-npm run audit:production
-npm run test:e2e
+npm run setup:e2e
+npm run validate
 ~~~
+
+`npm run setup:e2e` instala Chromium una vez por entorno. Durante el desarrollo, `npm run check` ejecuta lint, typecheck y tests con cobertura. Antes de abrir una PR, `npm run validate` agrupa esos controles, el build, las auditorías y E2E. La preparación del navegador se mantiene explícita para evitar descargas implícitas.
 
 Comandos y alcance:
 
 | Comando | Propósito |
 |---|---|
 | `npm ci` | Instala exactamente el árbol del lockfile. |
+| `npm run dev` | Inicia API y frontend en paralelo desde una sola terminal. |
+| `npm run check` | Ejecuta lint, typecheck y tests con cobertura. |
+| `npm run validate` | Ejecuta build, auditorías y E2E además de los controles de `check`. |
+| `npm run setup:e2e` | Instala Chromium para Playwright; basta con hacerlo una vez por entorno. |
 | `npm run lint` | ESLint sobre el repositorio. |
 | `npm run typecheck` | Compila los workspaces necesarios, comprueba tipos de API/web y tests. |
 | `npm run test:coverage` | Ejecuta las pruebas unitarias/de integración y aplica umbrales de cobertura. |

@@ -5,6 +5,10 @@ Este documento conserva el historial de cambios del producto. El estado de issue
 ## [Unreleased]
 
 ### Added
+- Comando `npm run dev` para iniciar API y frontend en paralelo, con cierre coordinado de procesos y pruebas multiplataforma del supervisor.
+- Comandos `npm run check`, `npm run validate` y `npm run setup:e2e` para simplificar la validación local y la preparación de Playwright.
+
+### Added
 - Política explícita de alcance y criterios de entrada/salida para nuevas capacidades.
 - Presupuestos de tamaño y plan incremental de modularización para los módulos de API y web.
 - Plantillas estructuradas de issues y PR, y declaración de CODEOWNERS.
