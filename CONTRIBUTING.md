@@ -57,7 +57,7 @@ Para ejecutar E2E en un entorno sin Chromium instalado:
 
 ~~~bash
 npm run build
-npx playwright install chromium
+npm run setup:e2e
 npm run test:e2e
 ~~~
 

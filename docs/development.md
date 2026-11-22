@@ -94,22 +94,22 @@ También puedes iniciar cada parte por separado con `npm run dev:api` y `npm run
 | `npm run mcp:serve` | Inicia el servidor MCP por stdio; requiere API local. |
 
 Backup, restauración y actualización de Actual tienen efectos sobre datos persistentes. No los ejecutes como comandos de desarrollo sin leer sus guías específicas.
+
 ## 6. Validación antes de proponer cambios
 
 Desde la raíz del repositorio:
 
 ```bash
 npm ci
-npm run check
 npm run setup:e2e
-npm run validate
 ```
 
-`npm run check` es el ciclo habitual durante el desarrollo: lint, comprobación de tipos y tests con cobertura. Antes de abrir una PR, ejecuta `npm run validate`, que vuelve a ejecutar los controles y añade build, auditorías de dependencias y pruebas E2E.
+`npm run check` es el ciclo habitual durante el desarrollo: lint, comprobación de tipos y tests con cobertura. Ejecuta ese comando cada vez que quieras validar tus cambios. Antes de abrir una PR, ejecuta `npm run validate`, que vuelve a ejecutar los controles y añade build, auditorías de dependencias y pruebas E2E.
 
 `npm run setup:e2e` instala Chromium una vez por entorno. No forma parte de `validate` para evitar descargas implícitas o cambios del entorno durante una validación. Si Chromium ya está instalado, no necesitas repetirlo.
 
 La suite ordinaria usa datos sintéticos y no necesita una cuenta bancaria, un presupuesto personal ni un modelo Ollama real. Las pruebas live contra Actual, Ollama o SearXNG son optativas y deben utilizar entornos aislados y datos sintéticos.
+
 ## 7. Cómo abordar un cambio pequeño
 
 1. Identifica la funcionalidad y lee su documentación.

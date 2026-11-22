@@ -107,14 +107,14 @@ Consulta [Arquitectura](docs/architecture.md), [estado de implementación](docs/
 | `npm run backup:actual` | Crea un backup cifrado unificado; requiere detener Personal Budget. |
 | `npm run update:actual` | Ejecuta el procedimiento de actualización segura de Actual. |
 
-Para el modo de desarrollo, Actual se inicia por separado solo cuando necesites probar la integración financiera:
+Para el modo de desarrollo, inicia `npm run dev`. Actual se inicia por separado solo cuando necesites probar la integración financiera:
 
 ```bash
 docker compose up -d actual
-npm run dev
 ```
 
 La validación E2E requiere haber ejecutado previamente `npm run setup:e2e`. Los comandos de backup, restauración y actualización tienen efectos sobre datos persistentes: consulta sus guías antes de ejecutarlos.
+
 ## Licencia
 
 El código y la documentación originales están bajo MIT. Los datos financieros del usuario no forman parte de esta licencia; las dependencias, componentes, modelos y servicios de terceros conservan sus propias licencias.
