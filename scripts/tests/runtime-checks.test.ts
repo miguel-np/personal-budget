@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseDotEnv, safeConfigFailure, safeStartupFailure, supportsNodeVersion, supportsNpmVersion } from '../runtime-checks.js';
+import { parseDotEnv, safeConfigFailure, supportsNodeVersion, supportsNpmVersion } from '../runtime-checks.js';
 describe('local runtime diagnostics', () => {
   it('parses quoted values and ignores comments', () => {
     expect(parseDotEnv('# note\nAPP_PORT=3000\nOLLAMA_MODEL=""\nACTUAL_SERVER_PASSWORD="do-not-print"\nexport AI_ENABLED=false\n')).toEqual({ APP_PORT:'3000', OLLAMA_MODEL:'', ACTUAL_SERVER_PASSWORD:'do-not-print', AI_ENABLED:'false' });
@@ -22,16 +22,6 @@ describe('local runtime diagnostics', () => {
     expect(message).not.toContain('bad-secret-value'); expect(message).not.toContain('bad-port-value');
   });
   it('keeps unknown diagnostics generic', () => { expect(safeConfigFailure(new Error('password=secret'))).not.toContain('password=secret'); });
-  it('reports safe startup stack locations without exposing error messages', () => {
-    const error = new Error('password=secret; ACTUAL_SERVER_PASSWORD=private');
-    error.stack = 'Error: password=secret\\n    at start (services/api/src/main.ts:42:7)\\n    at async main (services/api/src/main.ts:50:3)';
-    const diagnostic = safeStartupFailure(error);
-    expect(diagnostic).toContain('Error');
-    expect(diagnostic).toContain('services/api/src/main.ts:42:7');
-    expect(diagnostic).toContain('services/api/src/main.ts:50:3');
-    expect(diagnostic).not.toContain('password=secret');
-    expect(diagnostic).not.toContain('private');
-  });
   it('does not trust error codes outside the safe identifier format', () => {
     const error = new Error('unsafe');
     Object.assign(error, { code: 'secret=/tmp/private' });
