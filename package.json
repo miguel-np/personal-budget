@@ -5,8 +5,8 @@
   "type": "module",
   "description": "Local-first personal finance web application",
   "engines": {
-    "node": ">=24.22.3 <25",
-    "npm": ">=11.6.0"
+    "node": ">=26.13.1 <27",
+    "npm": ">=11.20.0"
   },
   "workspaces": [
     "packages/finance-core",
@@ -49,7 +49,7 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
-    "@types/node": "24.19.2",
+    "@types/node": "26.6.6",
     "@vitest/coverage-v8": "5.0.5",
     "eslint": "10.13.0",
     "tsx": "4.23.15",

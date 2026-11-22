@@ -22,13 +22,13 @@ export function supportsNodeVersion(version: string): boolean {
   const parts = versionParts(version);
   if (!parts) return false;
   const [major, minor, patch] = parts;
-  return major === 24 && (minor > 22 || (minor === 22 && patch >= 1));
+  return major === 26 && (minor > 13 || (minor === 13 && patch >= 1));
 }
 export function supportsNpmVersion(version: string): boolean {
   const parts = versionParts(version);
   if (!parts) return false;
   const [major, minor] = parts;
-  return major > 11 || (major === 11 && minor >= 6);
+  return major > 11 || (major === 11 && minor >= 20);
 }
 export function safeConfigFailure(error: unknown): string {
   const candidate = error as { issues?: readonly { path?: readonly (string | number)[] }[] };

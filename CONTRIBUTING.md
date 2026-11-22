@@ -26,7 +26,7 @@
 
 ## Entorno y validación
 
-Usa Node.js 24.22.3, la versión fijada en `.nvmrc`, y ejecuta los comandos desde la raíz del repositorio:
+Usa Node.js 26.13.1 y npm 11.20.0, las versiones fijadas por `.nvmrc` y `package.json`, y ejecuta los comandos desde la raíz del repositorio:
 
 ~~~bash
 npm ci

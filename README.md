@@ -35,7 +35,7 @@ Aplicación local-first de finanzas personales basada en Actual Budget, con una 
 
 - Windows + WSL2 (Ubuntu recomendado).
 - Docker/Compose.
-- Node.js 24.22.3 Maintenance LTS y npm compatible.
+- Node.js 26.13.1 Active LTS y npm 11.20.0.
 
 Consulta [baseline de versiones y política de auditoría](docs/version-baseline.md). Las versiones fijadas facilitan instalaciones reproducibles, pero no garantizan ausencia permanente de vulnerabilidades.
 

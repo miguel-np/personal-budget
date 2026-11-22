@@ -7,7 +7,7 @@ Esta guía describe una instalación local reproducible. La shell web incorpora 
 - Windows con WSL2 y una distribución Linux; Ubuntu recomendado.
 - Docker Desktop con integración WSL2 o Docker Engine + Compose en WSL.
 - Git.
-- Node.js 24.22.3 y npm compatible.
+- Node.js 26.13.1 LTS y npm 11.20.0.
 - Ollama solo para la fase de IA opcional (P2).
 
 Desde PowerShell:
@@ -31,7 +31,7 @@ npm --version
 npm ci
 ~~~
 
-Node debe indicar v24.22.3. El archivo package-lock.json está versionado; npm ci instala el grafo bloqueado y falla si manifiesto y lockfile no coinciden.
+Node debe indicar v26.13.1 y npm v11.20.0. El archivo package-lock.json está versionado; npm ci instala el grafo bloqueado y falla si manifiesto y lockfile no coinciden.
 
 ## 2. Instalar Docker y ejecutar Actual Budget
 
@@ -132,7 +132,7 @@ npm run audit
 npm run audit:production
 ~~~
 
-La versión esperada de Node es v24.22.3. El workflow `windows-quality` ejecuta esta instalación y los mismos controles en un runner `windows-latest`; comprueba que su ejecución asociada a la PR haya terminado en verde.
+La versión esperada de Node es v26.13.1 y npm v11.20.0. El workflow `windows-quality` ejecuta esta instalación y los mismos controles en un runner `windows-latest`; comprueba que su ejecución asociada a la PR haya terminado en verde.
 
 ### WSL2
 
@@ -186,6 +186,18 @@ Get-NetTCPConnection -State Listen | Where-Object { $_.LocalPort -in 3000,4173,5
 ~~~
 
 Vite usa `strictPort`: si 5173/4173 está ocupado, no elige otro puerto automáticamente. Libera el puerto o actualiza el puerto y los orígenes permitidos de forma coherente. Conserva los servicios ligados a `127.0.0.1`; no los publiques en `0.0.0.0` ni abras puertos al LAN.
+
+### Node.js en WSL2: dependencia libatomic
+
+Los binarios oficiales de Node.js para Linux desde la línea 25 enlazan con `libatomic`. En Ubuntu/WSL2, si `node --version` termina con un error indicando que falta `libatomic.so.1`, instala el paquete del sistema y vuelve a probar:
+
+~~~bash
+sudo apt-get update
+sudo apt-get install -y libatomic1
+node --version
+~~~
+
+No es necesario instalarlo si Node.js ya arranca correctamente. Consulta las [notas oficiales de Node.js 26.13.0](https://nodejs.org/en/blog/release/v26.13.0).
 
 ### Docker, memoria y Actual
 

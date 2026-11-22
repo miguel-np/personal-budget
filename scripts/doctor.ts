@@ -12,10 +12,10 @@ const effective: NodeJS.ProcessEnv = { ...fileValues, ...process.env };
 const checks: Check[] = [];
 const add = (name: string, severity: Severity, detail: string) => checks.push({ name, severity, detail });
 const nodeVersion = process.versions.node;
-add('Node.js', supportsNodeVersion(nodeVersion) ? 'OK' : 'ERROR', supportsNodeVersion(nodeVersion) ? 'versión compatible con la baseline 24.22.1' : 'se requiere Node.js 24.22.1 o superior de la serie 24.x');
+add('Node.js', supportsNodeVersion(nodeVersion) ? 'OK' : 'ERROR', supportsNodeVersion(nodeVersion) ? 'versión compatible con la baseline 26.13.1' : 'se requiere Node.js 26.13.1 o superior de la serie 26.x');
 const npmResult = spawnSync('npm', ['--version'], { encoding: 'utf8', timeout: 5_000, windowsHide: true });
 const npmVersion = npmResult.status === 0 ? npmResult.stdout.trim() : '';
-add('npm', npmVersion && supportsNpmVersion(npmVersion) ? 'OK' : 'ERROR', npmVersion && supportsNpmVersion(npmVersion) ? 'versión compatible' : 'se requiere npm 11.6.0 o superior');
+add('npm', npmVersion && supportsNpmVersion(npmVersion) ? 'OK' : 'ERROR', npmVersion && supportsNpmVersion(npmVersion) ? 'versión compatible' : 'se requiere npm 11.20.0 o superior');
 add('.env', existsSync(envFile) ? 'OK' : 'AVISO', existsSync(envFile) ? 'archivo presente; los valores no se muestran' : 'falta .env; copia .env.example y configura el presupuesto local');
 let config: ReturnType<typeof loadConfig> | undefined;
 try {
