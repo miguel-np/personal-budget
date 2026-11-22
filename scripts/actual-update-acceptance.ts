@@ -256,9 +256,7 @@ async function verifyLinkedTransactionEditing(): Promise<void> {
 
     // Create the transfer through the public API's transfer-payee path. runTransfers
     // lets Actual create the reciprocal leg; the on-budget side must retain its category.
-    sourceId = randomUUID();
     const createdIds = await api.addTransactions(sourceAccount.id, [{
-      id: sourceId,
       date: '2026-09-01',
       amount: -4_200,
       category: expected.categoryId,
@@ -266,9 +264,10 @@ async function verifyLinkedTransactionEditing(): Promise<void> {
       notes: 'Nota inicial sintética',
       cleared: false,
     }], { runTransfers: true });
-    if (!createdIds.includes(sourceId)) {
-      throw new Error('Actual did not report the synthetic on-budget transfer transaction as created.');
+    if (createdIds.length !== 1 || !createdIds[0]) {
+      throw new Error('Actual did not report exactly one created on-budget transfer transaction.');
     }
+    sourceId = createdIds[0];
     await api.sync();
     const createdSource = (await api.getTransactions(sourceAccount.id, '2026-09-01', '2026-09-30'))
       .find((item) => item.id === sourceId);
