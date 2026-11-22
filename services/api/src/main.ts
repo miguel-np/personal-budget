@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { ActualBudgetAdapter, createActualApiContract } from '@personal-budget/actual-adapter';
 import { buildApp } from './app.js';
 import { loadConfig } from './config.js';
+import { safeStartupFailure } from '../../../scripts/runtime-checks.js';
 
 const moduleDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(moduleDirectory, '../../..');
@@ -46,7 +47,7 @@ async function main(): Promise<void> {
   app.log.info({ host: config.host, port: config.port }, 'Local API is listening.');
 }
 
-main().catch(() => {
-  process.stderr.write('personal-budget API failed to start; verify local configuration.\n');
+main().catch((error: unknown) => {
+  process.stderr.write('personal-budget API failed to start; ' + safeStartupFailure(error) + '. Verify local configuration.\n');
   process.exitCode = 1;
 });
