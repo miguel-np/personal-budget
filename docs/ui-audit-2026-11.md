@@ -60,3 +60,19 @@ Evidencia de GitHub Actions asociada al commit de la PR:
 Esta evidencia corresponde al commit indicado y no demuestra que se hayan ejecutado comprobaciones manuales ni equivale a una ejecución de esos checks sobre commits posteriores de `main`. La issue #36 está cerrada; el seguimiento de las verificaciones manuales restantes corresponde a la issue [#124](https://github.com/miguel-np/personal-budget/issues/124).
 
 El seguimiento adicional de #124 eleva a 12 px el tamaño base de las celdas de la proyección mensual de objetivos y conserva encabezados compactos de 11 px. Añade regresiones Playwright para comprobar esos tamaños renderizados y para abrir/cerrar el editor de movimientos mediante teclado, incluyendo el retorno del foco al control que lo abrió. Estas pruebas siguen siendo controles automatizados de regresión: no verifican NVDA/VoiceOver, zoom real del navegador ni contraste de todos los estados interactivos.
+
+
+## Seguimiento adicional — 2026-11-22
+
+### Defectos reproducibles y correcciones
+
+- **Media — foco fuera del viewport tras navegación:** la shell enfocaba el encabezado de la nueva ruta con `preventScroll: true` sin desplazar después el documento. Si la persona navegaba desde el final de una página larga, el foco podía quedar fuera de pantalla. La shell conserva el foco programático y desplaza explícitamente el encabezado al inicio de la zona visible.
+- **Baja — movimiento residual con preferencia reducida:** el estado `:active` de los botones aplicaba una traslación vertical de 1 px aunque se hubiera solicitado movimiento reducido. Se elimina esa transformación en `prefers-reduced-motion: reduce` y se conserva el feedback de color.
+
+### Regresiones automatizadas añadidas
+
+- Cambio de ruta con foco de teclado desde una página desplazada, en 320, 768 y 1440 CSS px y en ambos temas; se comprueba que el encabezado enfocado está dentro del viewport y mantiene el indicador visible.
+- Contraste del indicador de foco de teclado en ambos temas, con mínimo 3:1 frente a la superficie adyacente y un contorno visible de al menos 2 CSS px.
+- Movimiento reducido: se comprueba que desaparece la traslación de botones activos, que el feedback de hover permanece y que las transiciones/scroll se reducen.
+
+La revisión manual continúa pendiente y no se declara conformidad WCAG 2.2 AA completa. Estas pruebas no sustituyen la inspección visual real de zoom de navegador al 200 % y 400 %, árbol de accesibilidad y NVDA/VoiceOver, ni la revisión humana de todos los estados hover/focus/disabled/error/empty y de cada flujo con scroll real. La PR y los checks CI deberán asociarse al SHA definitivo antes de considerar estas regresiones validadas.

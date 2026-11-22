@@ -349,7 +349,11 @@ export function App() {
   useEffect(() => {
     if (previousRoute.current !== route) {
       previousRoute.current = route;
-      document.querySelector<HTMLHeadingElement>('.page-header h1')?.focus({ preventScroll: true });
+      const pageHeading = document.querySelector<HTMLHeadingElement>('.page-header h1');
+      if (pageHeading) {
+        pageHeading.focus({ preventScroll: true });
+        pageHeading.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'auto' });
+      }
     }
     document.querySelector<HTMLElement>('.nav-list [aria-current="page"]')?.scrollIntoView({
       block: 'nearest',

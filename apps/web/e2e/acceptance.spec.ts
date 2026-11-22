@@ -557,6 +557,125 @@ test('skip navigation, route focus and horizontal navigation stay keyboard acces
   expect(position.linkRight).toBeLessThanOrEqual(position.navRight + 1);
 });
 
+test('route changes keep the destination heading visible when navigation begins from a scrolled page', async ({ page }) => {
+  for (const width of [320, 768, 1440] as const) {
+    await page.setViewportSize({ width, height: 600 });
+
+    for (const theme of ['dark', 'light'] as const) {
+      await page.goto('/goals');
+      await page.evaluate((selectedTheme) => {
+        document.documentElement.dataset.theme = selectedTheme;
+        // Provide a long synthetic document so the regression starts below the navigation.
+        document.body.style.minHeight = '200vh';
+      }, theme);
+
+      const navigation = page.getByRole('navigation', { name: 'Secciones de la aplicación' });
+      const movementsLink = navigation.getByRole('link', { name: 'Movimientos', exact: true });
+      await movementsLink.focus();
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+
+      await page.keyboard.press('Enter');
+      const heading = page.getByRole('heading', { name: 'Movimientos', level: 1 });
+      await expect(heading).toBeFocused();
+      const visibility = await heading.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+          top: rect.top,
+          bottom: rect.bottom,
+          viewportHeight: window.innerHeight,
+          focusVisible: element.matches(':focus-visible'),
+          outlineWidth: Number.parseFloat(style.outlineWidth),
+          outlineStyle: style.outlineStyle,
+        };
+      });
+      expect(visibility.top, 'Focused route heading is above the viewport at ' + width + 'px / ' + theme).toBeGreaterThanOrEqual(0);
+      expect(visibility.bottom, 'Focused route heading is below the viewport at ' + width + 'px / ' + theme).toBeLessThanOrEqual(visibility.viewportHeight);
+      expect(visibility.focusVisible).toBe(true);
+      expect(visibility.outlineStyle).toBe('solid');
+      expect(visibility.outlineWidth).toBeGreaterThanOrEqual(2);
+    }
+  }
+});
+
+test('keyboard focus indicators remain visible and meet 3:1 contrast in both themes', async ({ page }) => {
+  await page.goto('/');
+  const currentNavigationLink = page.locator('.nav-list [aria-current="page"]');
+  let focused = false;
+  for (let attempt = 0; attempt < 16; attempt += 1) {
+    focused = await currentNavigationLink.evaluate((element) => document.activeElement === element);
+    if (focused) break;
+    await page.keyboard.press('Tab');
+  }
+  await expect(currentNavigationLink).toBeFocused();
+
+  for (const theme of ['dark', 'light'] as const) {
+    await page.evaluate((selectedTheme) => {
+      document.documentElement.dataset.theme = selectedTheme;
+    }, theme);
+    const focusMetrics = await currentNavigationLink.evaluate((element) => {
+      type RGBA = { r: number; g: number; b: number; a: number };
+      const parseColor = (value: string): RGBA | null => {
+        const channels = value.match(/[\d.]+/g)?.map(Number);
+        if (!channels || channels.length < 3) return null;
+        return {
+          r: channels[0] ?? 0,
+          g: channels[1] ?? 0,
+          b: channels[2] ?? 0,
+          a: channels.length >= 4 ? channels[3] ?? 1 : 1,
+        };
+      };
+      const composite = (foreground: RGBA, background: RGBA): RGBA => {
+        const alpha = foreground.a + background.a * (1 - foreground.a);
+        if (alpha <= 0) return { r: 0, g: 0, b: 0, a: 0 };
+        return {
+          r: (foreground.r * foreground.a + background.r * background.a * (1 - foreground.a)) / alpha,
+          g: (foreground.g * foreground.a + background.g * background.a * (1 - foreground.a)) / alpha,
+          b: (foreground.b * foreground.a + background.b * background.a * (1 - foreground.a)) / alpha,
+          a: alpha,
+        };
+      };
+      const luminance = (color: RGBA): number => {
+        const channel = (value: number) => {
+          const srgb = value / 255;
+          return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+        };
+        return 0.2126 * channel(color.r) + 0.7152 * channel(color.g) + 0.0722 * channel(color.b);
+      };
+      const outline = getComputedStyle(element);
+      const outlineColor = parseColor(outline.outlineColor);
+      const ancestors: Element[] = [];
+      let current: Element | null = element.parentElement;
+      while (current) {
+        ancestors.push(current);
+        current = current.parentElement;
+      }
+      let adjacent = parseColor(getComputedStyle(document.documentElement).backgroundColor)
+        ?? { r: 255, g: 255, b: 255, a: 1 };
+      for (const ancestor of ancestors.reverse()) {
+        const background = parseColor(getComputedStyle(ancestor).backgroundColor);
+        if (background) adjacent = composite(background, adjacent);
+      }
+      const ratio = (a: RGBA, b: RGBA) => {
+        const first = luminance(a);
+        const second = luminance(b);
+        return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+      };
+      return {
+        focusVisible: element.matches(':focus-visible'),
+        outlineWidth: Number.parseFloat(outline.outlineWidth),
+        outlineStyle: outline.outlineStyle,
+        contrast: outlineColor ? ratio(outlineColor, adjacent) : 0,
+      };
+    });
+    expect(focusMetrics.focusVisible, 'Keyboard focus style missing in ' + theme + ' theme').toBe(true);
+    expect(focusMetrics.outlineStyle).toBe('solid');
+    expect(focusMetrics.outlineWidth).toBeGreaterThanOrEqual(2);
+    expect(focusMetrics.contrast, 'Focus indicator contrast in ' + theme + ' theme').toBeGreaterThanOrEqual(3);
+  }
+});
+
 test('movement sorting exposes its direction through table semantics and a decorative SVG', async ({ page }) => {
   await page.goto('/movements');
   const dateColumn = page.getByRole('columnheader', { name: 'Fecha', exact: true });
@@ -627,6 +746,32 @@ test('reduced motion preserves state while removing non-essential movement', asy
   expect(motion.preferenceHonored).toBe(true);
   expect(motion.transitionMilliseconds.every((duration) => duration <= 0.1)).toBe(true);
   expect(motion.scrollBehavior).toBe('auto');
+
+  await page.evaluate(() => {
+    const button = document.createElement('button');
+    button.id = 'reduced-motion-action-probe';
+    button.type = 'button';
+    button.className = 'button primary';
+    button.textContent = 'Acción sintética';
+    const container = document.querySelector<HTMLElement>('.main-content');
+    if (!container) throw new Error('Main content container is missing');
+    container.append(button);
+  });
+  const action = page.locator('#reduced-motion-action-probe');
+  await action.hover();
+  const hoverBackground = await action.evaluate((element) => getComputedStyle(element).backgroundColor);
+  await page.mouse.down();
+  const activeState = await action.evaluate((element) => ({
+    active: element.matches(':active'),
+    transform: getComputedStyle(element).transform,
+    background: getComputedStyle(element).backgroundColor,
+  }));
+  await page.mouse.up();
+
+  expect(activeState.active).toBe(true);
+  expect(activeState.transform).toBe('none');
+  expect(activeState.background).toBe(hoverBackground);
+  await action.evaluate((element) => element.remove());
 });
 
 test('visible form controls have programmatic labels across core sections', async ({ page }) => {
