@@ -76,3 +76,18 @@ Antes de cada extracción:
 - Pruebas que demuestren equivalencia de comportamiento antes/después.
 - PR pequeñas por dominio, revisables y reversibles.
 - Excepciones heredadas con reducción progresiva y sin refactor masivo.
+
+
+## Enforcement en CI
+
+El gate npm run quality:repo convierte en comprobaciones automáticas parte de estas reglas:
+
+- Los workspaces no pueden importar internals de capas superiores ni dependencias reservadas a otro componente. La API puede depender de finance-core y actual-adapter; el adaptador puede depender de finance-core; el frontend y MCP permanecen aislados de los paquetes de backend.
+- Los paquetes internos declarados en los manifiestos deben respetar la misma dirección de dependencias.
+- Los ficheros nuevos de código no pueden superar 600 líneas ni 40 KiB.
+- Un fichero heredado que ya supere alguno de esos límites no puede crecer en líneas ni bytes en una contribución.
+- Los enlaces locales de Markdown y los comandos npm run documentados deben apuntar a destinos existentes.
+
+La comparación de tamaño usa el merge-base del PR (o el commit anterior en un push) y solo evalúa los ficheros de código modificados. Los módulos heredados grandes siguen siendo deuda técnica: el gate evita ampliarlos, pero no afirma que estén modularizados ni que SOLID se pueda certificar automáticamente.
+
+ESLint se ejecuta sin tolerancia a warnings y TypeScript mantiene strict, noUnusedLocals y noUnusedParameters. La complejidad y la duplicación siguen requiriendo revisión técnica; no se introducen reglas AST aproximadas que puedan producir falsos positivos sobre el código financiero.
