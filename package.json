@@ -39,7 +39,8 @@
     "test:runtime:lifecycle": "node scripts/runtime-lifecycle-smoke.mjs",
     "test:backup:acceptance": "tsx scripts/backup-restore-acceptance.ts",
     "test:planning-ai:acceptance": "vitest run services/api/tests/planning-intent-live-acceptance.test.ts",
-    "benchmark:api": "npm run build --workspace=@personal-budget/finance-core && npm run build --workspace=@personal-budget/actual-adapter && npm run build --workspace=@personal-budget/api && node scripts/api-load-benchmark.mjs"
+    "benchmark:api": "npm run build --workspace=@personal-budget/finance-core && npm run build --workspace=@personal-budget/actual-adapter && npm run build --workspace=@personal-budget/api && node scripts/api-load-benchmark.mjs",
+    "acceptance:web-search": "node scripts/web-search-live-acceptance.mjs"
   },
   "dependencies": {
     "@actual-app/api": "26.11.0",

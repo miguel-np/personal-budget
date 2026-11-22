@@ -1,66 +1,156 @@
-import { writeFile } from 'node:fs/promises';
-import { validateAcceptanceEndpoint } from './acceptance-endpoint.mjs';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { DEFAULT_LOCAL_ACCEPTANCE_API_ORIGIN, validateLocalAcceptanceOrigin } from './local-acceptance-origin.mjs';
+import { WEB_SEARCH_ACCEPTANCE_GROUPS as groups } from './web-search-live-acceptance-config.mjs';
 
-const baseValue = process.env.PERSONAL_BUDGET_ACCEPTANCE_API_URL;
-const bearer = process.env.PERSONAL_BUDGET_ACCEPTANCE_BEARER_TOKEN;
-if (!baseValue) throw new Error('PERSONAL_BUDGET_ACCEPTANCE_API_URL is required.');
-const base = await validateAcceptanceEndpoint(baseValue);
+const baseValue = process.env.PERSONAL_BUDGET_LOCAL_ACCEPTANCE_API_ORIGIN ?? DEFAULT_LOCAL_ACCEPTANCE_API_ORIGIN;
+const base = validateLocalAcceptanceOrigin(baseValue);
 const headers = {
   accept: 'application/json',
   'content-type': 'application/json',
-  ...(bearer ? { authorization: 'Bearer ' + bearer } : {}),
 };
-const groups = [
-  { host: 'boe.es', domain: 'boe.es', allowedDomains: ['boe.es'], query: 'site:boe.es texto consolidado Ley 39/2015 BOE' },
-  { host: 'www.boe.es', domain: 'boe.es', allowedDomains: ['boe.es'], query: 'site:www.boe.es publicación oficial Ley 39/2015' },
-  { host: 'sede.agenciatributaria.gob.es', domain: 'agenciatributaria.gob.es', allowedDomains: ['agenciatributaria.gob.es'], query: 'site:sede.agenciatributaria.gob.es manual IRPF información oficial' },
-  { host: 'hacienda.gob.es', domain: 'hacienda.gob.es', allowedDomains: ['hacienda.gob.es'], query: 'site:hacienda.gob.es normativa tributaria publicaciones oficiales' },
-  { host: 'www.hacienda.gob.es', domain: 'hacienda.gob.es', allowedDomains: ['hacienda.gob.es'], query: 'site:www.hacienda.gob.es información tributaria oficial' },
-  { host: 'petete.tributos.hacienda.gob.es', domain: 'petete.tributos.hacienda.gob.es', allowedDomains: ['petete.tributos.hacienda.gob.es'], query: 'site:petete.tributos.hacienda.gob.es consultas vinculantes DGT IRPF' },
-  { host: 'sede.tributos.hacienda.gob.es', domain: 'sede.tributos.hacienda.gob.es', allowedDomains: ['hacienda.gob.es'], query: 'site:sede.tributos.hacienda.gob.es consultas tributarias DGT' },
-  { host: 'serviciostelematicosext.hacienda.gob.es', domain: 'serviciostelematicosext.hacienda.gob.es', allowedDomains: ['serviciostelematicosext.hacienda.gob.es'], query: 'site:serviciostelematicosext.hacienda.gob.es resoluciones TEAC' },
-  { host: 'sede.tea.hacienda.gob.es', domain: 'sede.tea.hacienda.gob.es', allowedDomains: ['sede.tea.hacienda.gob.es'], query: 'site:sede.tea.hacienda.gob.es criterios y resoluciones TEAC' },
-  { host: 'seg-social.es', domain: 'seg-social.es', allowedDomains: ['seg-social.es'], query: 'site:seg-social.es cotización Seguridad Social normativa' },
-  { host: 'www.seg-social.es', domain: 'seg-social.es', allowedDomains: ['seg-social.es'], query: 'site:www.seg-social.es información oficial Seguridad Social' },
-  { host: 'sede.seg-social.gob.es', domain: 'sede.seg-social.gob.es', allowedDomains: ['seg-social.gob.es'], query: 'site:sede.seg-social.gob.es sede electrónica Seguridad Social cotización' },
-  { host: 'portal.seg-social.gob.es', domain: 'seg-social.gob.es', allowedDomains: ['seg-social.gob.es'], query: 'site:portal.seg-social.gob.es portal importass cotización' },
-  { host: 'xunta.gal', domain: 'xunta.gal', allowedDomains: ['xunta.gal'], query: 'site:xunta.gal Diario Oficial de Galicia DOG normativa' },
-  { host: 'www.xunta.gal', domain: 'xunta.gal', allowedDomains: ['xunta.gal'], query: 'site:www.xunta.gal Diario Oficial de Galicia publicación' },
-  { host: 'sede.xunta.gal', domain: 'sede.xunta.gal', allowedDomains: ['xunta.gal'], query: 'site:sede.xunta.gal sede electrónica Xunta normativa' },
-  { host: 'facenda.xunta.gal', domain: 'facenda.xunta.gal', allowedDomains: ['xunta.gal'], query: 'site:facenda.xunta.gal Facenda Galicia normativa tributaria' },
-  { host: 'lex.gal', domain: 'lex.gal', allowedDomains: ['lex.gal'], query: 'site:lex.gal normativa gallega consolidada' },
-  { host: 'www.lex.gal', domain: 'lex.gal', allowedDomains: ['lex.gal'], query: 'site:www.lex.gal legislación de Galicia texto consolidado' },
-  { host: 'cnmv.es', domain: 'cnmv.es', allowedDomains: ['cnmv.es'], query: 'site:cnmv.es normativa CNMV inversores' },
-  { host: 'www.cnmv.es', domain: 'cnmv.es', allowedDomains: ['cnmv.es'], query: 'site:www.cnmv.es información y normativa CNMV' },
-  { host: 'bde.es', domain: 'bde.es', allowedDomains: ['bde.es'], query: 'site:bde.es normativa Banco de España' },
-  { host: 'www.bde.es', domain: 'bde.es', allowedDomains: ['bde.es'], query: 'site:www.bde.es publicaciones Banco de España' },
-  { host: 'sedeelectronica.bde.es', domain: 'bde.es', allowedDomains: ['bde.es'], query: 'site:sedeelectronica.bde.es sede electrónica Banco de España normativa' }
-];
-const report = { startedAt: new Date().toISOString(), apiOrigin: base.origin, status: null, groups: [], privacy: {
-  acceptanceRequestsUseOnlyStaticPublicQueries: true,
-  acceptanceRequestsContainNoUserFinancialData: true,
-  bearerTokenOmittedFromReport: true,
-  backendOutboundPayloadObserved: false,
-  deployedApiLogsInspected: false,
-  searxngLogsInspected: false,
-  status: 'requires_manual_review',
-  pendingChecks: [
-    'Inspect the deployed API outbound request at the SearXNG boundary and confirm it contains only the explicitly approved query and configured filters.',
-    'Inspect deployed API and SearXNG logs for accidental financial context, identifiers, conversation text, document bodies or sensitive snippets.',
-  ],
-}, outcome: 'incomplete', hostOutcome: 'incomplete', acceptanceComplete: false };
+const maximumJsonBytes = 1_048_576;
+const report = {
+  startedAt: new Date().toISOString(),
+  executionBoundary: 'loopback-only',
+  apiOrigin: base.origin,
+  status: null,
+  groups: [],
+  privacy: {
+    executionBoundary: 'loopback-only',
+    acceptanceRequestsUseOnlyStaticPublicQueries: true,
+    acceptanceRequestsContainNoUserFinancialData: true,
+    backendOutboundPayloadObserved: false,
+    applicationLogsInspected: false,
+    searxngLogsInspected: false,
+    status: 'requires_manual_review',
+    pendingChecks: [
+      'Inspect the actual API-to-SearXNG request at the configured SearXNG boundary and confirm that the q value is one of the fixed public acceptance queries, with only the expected search-control parameters.',
+      'Inspect the local API and SearXNG logs for accidental financial context, account or transaction identifiers, conversation text, credentials, document bodies or sensitive snippets.',
+    ],
+  },
+  outcome: 'incomplete',
+  hostOutcome: 'incomplete',
+  acceptanceComplete: false,
+};
+
+const reportDirectory = '.local/acceptance';
+const reportStamp = report.startedAt.replace(/[:.]/g, '-');
+const reportJsonPath = reportDirectory + '/web-search-' + reportStamp + '.json';
+const reportSummaryPath = reportDirectory + '/web-search-' + reportStamp + '.md';
+
+async function writeReport() {
+  report.finishedAt ??= new Date().toISOString();
+  await mkdir(reportDirectory, { recursive: true, mode: 0o700 });
+  const summary = [
+    '# Local web-search acceptance',
+    '',
+    '- Started: ' + report.startedAt,
+    '- Finished: ' + report.finishedAt,
+    '- API origin: ' + report.apiOrigin + ' (validated literal loopback address)',
+    '- Provider: ' + (report.status?.provider ?? 'unavailable'),
+    '- Host outcome: ' + (report.hostOutcome ?? 'not_run'),
+    '- Overall outcome: ' + (report.outcome ?? 'incomplete'),
+    '- Exact approved hosts with successful document extraction: ' + (report.acceptedHostCount ?? 0) + '/' + (report.expectedHostCount ?? groups.length),
+    '- Acceptance requests use only fixed public test queries; no user financial data is submitted by this script.',
+    '- Privacy review: pending; this script cannot inspect the API outbound request or the local API/SearXNG log sinks.',
+    '- Required manual checks: ' + report.privacy.pendingChecks.join(' '),
+    '- Raw query text, document bodies, credentials and response snippets are not included in this report.',
+    '',
+    '| Expected host | HTTP / MIME | Sources | Result |',
+    '|---|---|---:|---|',
+    ...report.groups.map((group) => '| ' + group.expectedHosts.join(', ') + ' | ' +
+      (group.httpStatus ?? '—') + ' / ' + (group.responseMime ?? '—') + ' | ' +
+      (group.sourceCount ?? 0) + ' | ' + group.status + ' |'),
+    '',
+    '## Negative and classification probes',
+    ...((report.negativeProbes ?? []).map((probe) => '- ' + probe.id + ': ' + probe.status + ' (' + (probe.sourceCount ?? 0) + ' sources)')),
+    '',
+    'A host not observed is not accepted; it is not evidence that the host is unavailable or unsafe.',
+    'Exit code 0 means the host sweep passed. Overall acceptance remains incomplete until the manual privacy review is recorded.',
+    '',
+  ].join('\n') + '\n';
+  await Promise.all([
+    writeFile(reportJsonPath, JSON.stringify(report, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 }),
+    writeFile(reportSummaryPath, summary, { encoding: 'utf8', mode: 0o600 }),
+  ]);
+  console.log('Sanitized acceptance evidence: ' + reportJsonPath + ' and ' + reportSummaryPath);
+}
+
+async function readJsonBounded(response) {
+  const declaredLength = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declaredLength) && declaredLength > maximumJsonBytes) {
+    if (response.body) await response.body.cancel().catch(() => {});
+    throw new Error('Acceptance API response exceeded its configured size limit.');
+  }
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('Acceptance API returned an empty response body.');
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const item = await reader.read();
+      if (item.done) break;
+      total += item.value.byteLength;
+      if (total > maximumJsonBytes) {
+        await reader.cancel().catch(() => {});
+        throw new Error('Acceptance API response exceeded its configured size limit.');
+      }
+      chunks.push(item.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+  } catch {
+    throw new Error('Acceptance API returned invalid JSON.');
+  }
+}
+
 const fetchJson = async (url, options = {}) => {
-  const response = await fetch(url, { ...options, headers: { ...headers, ...(options.headers ?? {}) }, signal: AbortSignal.timeout(30_000), redirect: 'error' });
+  const response = await fetch(url, {
+    ...options,
+    headers: { ...headers, ...(options.headers ?? {}) },
+    signal: AbortSignal.timeout(30_000),
+    redirect: 'error',
+  });
   const contentType = response.headers.get('content-type') ?? '';
-  if (!contentType.toLowerCase().includes('application/json')) throw new Error('Expected application/json response.');
-  const body = await response.json();
+  if (!contentType.toLowerCase().includes('application/json')) {
+    if (response.body) await response.body.cancel().catch(() => {});
+    throw new Error('Expected application/json response.');
+  }
+  const body = await readJsonBounded(response);
   return { response, contentType, body };
 };
-const statusResult = await fetchJson(new URL('/api/v1/assistant/web-search/status', base));
-report.status = { httpStatus: statusResult.response.status, enabled: statusResult.body.enabled === true, provider: statusResult.body.provider ?? null };
-if (!statusResult.response.ok || statusResult.body.enabled !== true || statusResult.body.provider !== 'SearXNG') {
-  throw new Error('The deployed backend does not report enabled SearXNG-backed web research.');
+
+let statusReady = false;
+try {
+  const statusResult = await fetchJson(new URL('/api/v1/assistant/web-search/status', base));
+  report.status = {
+    httpStatus: statusResult.response.status,
+    enabled: statusResult.body.enabled === true,
+    provider: statusResult.body.provider ?? null,
+  };
+  if (!statusResult.response.ok || statusResult.body.enabled !== true || statusResult.body.provider !== 'SearXNG') {
+    throw new Error('The local backend does not report enabled SearXNG-backed web research.');
+  }
+  statusReady = true;
+} catch (error) {
+  report.setupFailureType = error instanceof Error ? error.name : 'UnknownError';
+  report.hostOutcome = 'not_run';
+  report.outcome = 'unavailable';
+  await writeReport();
+  console.error('Local acceptance could not reach an API with SearXNG-backed web research enabled. No remote API endpoint was contacted.');
+  process.exitCode = 1;
 }
+
+if (statusReady) {
 const observedHosts = new Set();
 const acceptedHosts = new Set();
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -157,6 +247,7 @@ report.finishedAt = new Date().toISOString();
 report.hostCoverage = expectedHosts.map((host) => ({ host, observed: observedHosts.has(host), documentAccepted: acceptedHosts.has(host) }));
 report.observedHostCount = observedHosts.size;
 report.expectedHostCount = expectedHosts.length;
+report.acceptedHostCount = acceptedHosts.size;
 const allGroupsHealthy = report.groups.every((group) => group.status === 'accepted');
 const allNegativeProbesHealthy = report.negativeProbes.every((probe) => probe.status === 'accepted');
 report.hostOutcome = allGroupsHealthy && allNegativeProbesHealthy && acceptedHosts.size === expectedHosts.length ? 'accepted' : 'partial';
@@ -164,35 +255,11 @@ report.hostOutcome = allGroupsHealthy && allNegativeProbesHealthy && acceptedHos
 // into a claim about the deployed API's outbound payload or its production log sinks.
 report.outcome = report.hostOutcome === 'accepted' ? 'hosts_accepted_privacy_review_pending' : 'partial';
 report.acceptanceComplete = false;
-await writeFile('web-search-live-acceptance-report.json', JSON.stringify(report, null, 2) + '\n', { flag: 'w' });
-await writeFile('web-search-live-acceptance-summary.md', [
-  '# Live web-search acceptance', '',
-  '- Started: ' + report.startedAt,
-  '- Finished: ' + report.finishedAt,
-  '- Backend: ' + report.apiOrigin,
-  '- Provider: ' + report.status.provider,
-  '- Host outcome: ' + report.hostOutcome,
-  '- Overall outcome: ' + report.outcome,
-  '- Exact approved hosts with successful document extraction: ' + acceptedHosts.size + '/' + expectedHosts.length,
-  '- Acceptance requests contain only fixed public test queries; no user financial data is submitted by this script.',
-  '- Privacy review: pending (the runner cannot inspect the deployed API outbound payload or production API/SearXNG logs).',
-  '- Required manual checks: ' + report.privacy.pendingChecks.join(' '),
-  '- Raw query text, document bodies and credentials are not included in this report.',
-  '',
-  '| Filter | Expected hosts | HTTP / MIME | Sources | Result |',
-  '|---|---|---|---:|---|',
-  ...report.groups.map((group) => '| ' + group.domain + ' | ' + group.expectedHosts.join(', ') + ' | ' +
-    (group.httpStatus ?? '—') + ' / ' + (group.responseMime ?? '—') + ' | ' + (group.sourceCount ?? 0) + ' | ' + group.status + ' |'),
-  '',
-  '## Negative and classification probes',
-  ...report.negativeProbes.map((probe) => '- ' + probe.id + ': ' + probe.status + ' (' + (probe.sourceCount ?? 0) + ' sources)'),
-  '',
-  'The report is an operational observation for this run. A host not observed is not accepted; it is not evidence that the host is unavailable or unsafe.',
-  '',
-].join('\n') + '\n');
+await writeReport();
 if (report.hostOutcome !== 'accepted') {
-  console.error('Live host acceptance was partial. Missing or rejected hosts remain unaccepted in the report.');
+  console.error('Local live host acceptance was partial. Missing or rejected hosts remain unaccepted in the report.');
   process.exitCode = 1;
 } else {
-  console.log('All configured host checks passed. Overall acceptance remains incomplete until the manual privacy review is recorded.');
+  console.log('All exact host checks passed. Overall acceptance remains incomplete until the manual privacy review is recorded.');
+}
 }

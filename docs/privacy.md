@@ -24,6 +24,8 @@ La investigación web es un flujo independiente y desactivado por defecto (WEB_S
 
 No se adjuntan conversaciones, preguntas del chat financiero, movimientos, cuentas, importes, categorías, objetivos, compromisos ni agregados. La síntesis se realiza con Ollama local a partir de resultados de búsqueda acotados. Las respuestas y consultas no se guardan como historial y los logs no registran la consulta ni los fragmentos.
 
+La aceptación operativa de búsqueda se ejecuta desde el equipo del operador hacia la API de `127.0.0.1`, con consultas públicas fijas. No se necesita publicar la API ni configurar credenciales de despliegue. El informe automático no inspecciona por sí solo el tráfico API→SearXNG ni los destinos de logs; esa revisión manual sigue siendo obligatoria antes de considerar aceptada la privacidad.
+
 El proveedor por defecto es una instancia SearXNG configurada por el operador:
 - **SearXNG local:** puede ejecutarse en loopback. Aunque se autohospede, SearXNG puede remitir la consulta a motores upstream según sus preferencias, configuración y motores habilitados.
 - **SearXNG remoto:** solo se admite mediante HTTPS. El operador debe revisar la política del servicio y las condiciones de sus motores upstream.
