@@ -23,6 +23,7 @@
 
 - El servidor y `@actual-app/api` se actualizan conjuntamente a 26.11.0. La versión corrige actualizaciones parciales de categorías/grupos que omitían `name`, preserva la categoría en transferencias entre cuentas on-budget/off-budget y conserva el importe y categoría de hijos de movimientos divididos en actualizaciones parciales. También corrige el guardado seguro del presupuesto y mejora el uso de memoria con presupuestos grandes. [Notas oficiales](https://actualbudget.org/blog/release-26.11.0/).
 - La release restringe los puentes SimpleFIN privados mediante una allowlist administrativa para mitigar SSRF. Este proyecto no configura un puente SimpleFIN privado ni inicia sincronización bancaria; no se habilita una excepción de allowlist.
+- `compose.yaml` mantiene 26.10.0 como origen predeterminado para impedir que un `docker compose up` omita el preflight y el backup cifrado. `scripts/safe-update.ts` fija `ACTUAL_IMAGE=26.11.0` en `.env` solo después de crear y verificar el backup.
 - La transición 26.10.0 → 26.11.0 debe considerarse candidata hasta que la aceptación sintética CI verifique actualización, integridad financiera y recuperación explícita.
 
 ## Actualizaciones de seguridad de noviembre de 2026

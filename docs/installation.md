@@ -7,7 +7,7 @@ Esta guía describe una instalación local reproducible. La shell web incorpora 
 - Windows con WSL2 y una distribución Linux; Ubuntu recomendado.
 - Docker Desktop con integración WSL2 o Docker Engine + Compose en WSL.
 - Git.
-- Node.js 24.22.1 y npm compatible.
+- Node.js 24.22.3 y npm compatible.
 - Ollama solo para la fase de IA opcional (P2).
 
 Desde PowerShell:
@@ -31,7 +31,7 @@ npm --version
 npm ci
 ~~~
 
-Node debe indicar v24.22.1. El archivo package-lock.json está versionado; npm ci instala el grafo bloqueado y falla si manifiesto y lockfile no coinciden.
+Node debe indicar v24.22.3. El archivo package-lock.json está versionado; npm ci instala el grafo bloqueado y falla si manifiesto y lockfile no coinciden.
 
 ## 2. Instalar Docker y ejecutar Actual Budget
 
@@ -50,7 +50,7 @@ docker compose up -d
 docker compose ps
 ~~~
 
-Compose usa actualbudget/actual-server:26.10.0, publica el servicio en 127.0.0.1:5006 y guarda los datos en .local/actual-server-data. Abre http://localhost:5006 desde Windows y completa el inicio de Actual. No borres el directorio de datos para reparar el contenedor.
+Compose usa actualbudget/actual-server:26.10.0, publica el servicio en 127.0.0.1:5006 y guarda los datos en .local/actual-server-data. Abre http://localhost:5006 desde Windows y completa el inicio de Actual. No borres el directorio de datos para reparar el contenedor. La imagen 26.10.0 se conserva deliberadamente como origen predeterminado para que la actualización a 26.11.0 pase por el preflight y el backup cifrado de [actualización segura](safe-updates.md). No cambies el tag ni ejecutes un pull directo de 26.11.0.
 
 Consulta la [guía oficial de instalación de Actual](https://actualbudget.org/docs/install/).
 
@@ -132,7 +132,7 @@ npm run audit
 npm run audit:production
 ~~~
 
-La versión esperada de Node es v24.22.1. El workflow `windows-quality` ejecuta esta instalación y los mismos controles en un runner `windows-latest`; comprueba que su ejecución asociada a la PR haya terminado en verde.
+La versión esperada de Node es v24.22.3. El workflow `windows-quality` ejecuta esta instalación y los mismos controles en un runner `windows-latest`; comprueba que su ejecución asociada a la PR haya terminado en verde.
 
 ### WSL2
 
