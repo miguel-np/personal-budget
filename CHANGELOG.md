@@ -11,6 +11,7 @@ Este documento conserva el historial de cambios del producto. El estado de issue
 - Evidencia fechada de CI, cobertura y auditorías de seguridad; política de contribución con comandos reales y uso de correo GitHub noreply.
 
 ### Changed
+- Se reorganizan las guías para principiantes, se documentan las doce secciones de la interfaz y se añade un glosario; se corrigen referencias de instalación, puertos, versiones y aceptación.
 - El runtime de desarrollo, CI y diagnóstico pasa a Node.js 26.13.1 Active LTS con npm 11.20.0; se actualizan los tipos de Node y los requisitos de instalación.
 - Actual Budget server y `@actual-app/api` pasan conjuntamente a 26.11.0, con aceptación sintética de integridad financiera y recuperación.
 - Se actualizan Vitest y `@vitest/coverage-v8` a 5.1.1 y Playwright Test a 1.65.1; se alinea el árbol transitivo del runner y del proveedor de cobertura.

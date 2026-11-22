@@ -1,125 +1,109 @@
-# personal-budget
+# Personal Budget
 
-Aplicación local-first de finanzas personales basada en Actual Budget, con una interfaz web para cuentas, movimientos, presupuestos, planificación, inteligencia financiera, patrimonio y documentación.
+**Personal Budget** es una aplicación web local para entender, organizar y planificar tus finanzas personales. Utiliza [Actual Budget](https://actualbudget.org/) como fuente de verdad para cuentas, movimientos y presupuestos, y añade informes, planificación, inteligencia financiera y patrimonio.
 
-## Estado y dirección
+No necesitas saber programar para utilizarla. Sí necesitas seguir la instalación inicial y mantener una copia de seguridad. La aplicación está pensada para ejecutarse en tu propio equipo, no como un servicio web público.
 
-- **Estado técnico verificado:** [Estado de implementación](docs/implementation-status.md). Distingue código integrado, checks automatizados, aceptación manual y limitaciones pendientes.
-- **Dirección del proyecto:** [Roadmap](docs/roadmap.md).
-- **Backlog y ciclo de vida:** [GitHub Issues](https://github.com/miguel-np/personal-budget/issues) y [Pull Requests](https://github.com/miguel-np/personal-budget/pulls). El estado abierto/cerrado de una tarea se consulta en GitHub; no se mantiene en copias de este README.
-- **Criterios para ampliar capacidades:** [Política de alcance](docs/scope-policy.md).
+## Empieza aquí
 
-## Capacidades
+Si es la primera vez que instalas el proyecto, sigue estos pasos en orden:
 
-- **Finanzas diarias:** dashboard, cuentas, categorías, alta/edición de movimientos, transferencias, splits, presupuestos e informes comparativos.
-- **Importación y exportación:** CSV y OFX local con previsualización; exportaciones de movimientos e informes a CSV, JSON, PDF imprimible y XLSX.
-- **Planificación:** pagos recurrentes candidatos, sugerencias híbridas de categoría con reglas e IA local optativa, previsiones, objetivos, compromisos, planificador conversacional y escenarios.
-- **Inteligencia financiera:** hallazgos verificables, anomalías, revisión semanal/mensual, flujo de caja estimado, propuestas presupuestarias simulables y alertas locales.
-- **Patrimonio y justificantes:** activos y pasivos externos, valoraciones manuales fechadas, clasificación explícita de cuentas de Actual, documentos privados y vínculos comprobados a movimientos.
-- **Portabilidad y recuperación:** exportación legible de conjuntos locales y backup/restauración cifrados de Actual más el estado propio inventariado.
-- **IA y herramientas locales:** Ollama opcional, MCP de solo lectura por stdio con herramientas financieras agregadas y prompts de workflow; búsqueda web explícita mediante SearXNG configurable. La investigación puede recuperar hasta tres documentos oficiales HTML/XHTML/texto; para BOE-A consulta metadatos/relaciones y puede reconstruir versiones históricas por bloque cuando se cita expresamente un artículo y se aporta `eventDate`. La consolidación es informativa y no sustituye la publicación primaria ni la revisión jurídica. PDF y OCR no están soportados.
+1. Lee [qué necesitas antes de instalar](docs/installation.md#antes-de-empezar).
+2. Sigue la [instalación paso a paso para Windows + WSL2](docs/installation.md).
+3. Consulta la [guía de uso](docs/usage.md) para aprender a utilizar la aplicación.
+4. Abre el [catálogo de funcionalidades](docs/features.md) si quieres saber qué hace cada sección.
+5. Si algo falla, consulta [resolución de problemas](docs/troubleshooting.md).
 
-## Arquitectura
+**Tiempo de instalación:** depende de si ya tienes WSL2, Docker y Node.js instalados. La primera descarga de dependencias e imágenes puede tardar varios minutos.
 
-- **Actual Budget:** fuente de verdad de cuentas, categorías, presupuestos y movimientos.
-- **`services/actual-adapter`:** frontera única del SDK oficial `@actual-app/api` y mapeo de estructuras/errores del proveedor.
-- **`packages/finance-core`:** contratos de dominio neutrales, normalización y cálculos deterministas con importes en unidades monetarias menores.
-- **`services/api`:** API Fastify local; valida ámbito, configuración, persistencia local, límites y errores.
-- **`apps/web`:** shell React/Vite con paneles cargados bajo demanda.
-- **Estado propio:** almacenes versionados para preferencias, planificación, decisiones, revisiones, patrimonio y metadata documental; los binarios de justificantes se custodian fuera del directorio público.
-- **Ollama:** inferencia local opcional. El asistente financiero recibe agregados calculados en backend y no tiene herramientas.
-- **Búsqueda web:** la API ejecuta una única herramienta `web_search` sobre el texto exacto que el usuario autoriza. SearXNG puede ser local o remoto por HTTPS. Tras buscar, recupera como máximo tres documentos oficiales desde una allowlist HTTPS; para normas BOE-A obtiene metadatos y relaciones temporales. No consulta movimientos, cuentas ni agregados; resultados y textos externos se tratan como contenido no confiable.
-- **MCP:** servidor independiente, solo lectura y por stdio.
+## Qué puedes hacer
+
+- Consultar ingresos, gastos, ahorro y evolución de tus finanzas.
+- Gestionar y revisar movimientos, cuentas, categorías y presupuestos.
+- Importar movimientos CSV y OFX con previsualización y confirmación.
+- Comparar periodos y exportar informes a PDF imprimible, Excel, CSV y JSON.
+- Planificar pagos recurrentes candidatos, objetivos de ahorro y compromisos futuros.
+- Revisar alertas, anomalías, tendencias y propuestas presupuestarias.
+- Registrar patrimonio externo y justificantes.
+- Consultar un asistente opcional con Ollama local.
+- Investigar información pública mediante una búsqueda web separada, desactivada por defecto y con consentimiento por consulta.
+- Conectar clientes compatibles mediante MCP local de solo lectura.
+
+Consulta el [catálogo completo](docs/features.md), con el alcance y las limitaciones de cada función.
 
 ## Requisitos
 
-- Windows + WSL2 (Ubuntu recomendado).
-- Docker/Compose.
-- Node.js 26.13.1 Active LTS y npm 11.20.0.
+El entorno objetivo documentado es Windows + WSL2 (Ubuntu recomendado), Docker/Compose, Git y:
 
-Consulta [baseline de versiones y política de auditoría](docs/version-baseline.md). Las versiones fijadas facilitan instalaciones reproducibles, pero no garantizan ausencia permanente de vulnerabilidades.
+| Herramienta | Versión fijada |
+|---|---:|
+| Node.js | 26.13.1 |
+| npm | 11.20.0 |
+| Actual Budget server / API | 26.11.0 como versión objetivo; Compose conserva 26.10.0 como origen del flujo de actualización segura |
 
-## Uso diario (frontend compilado)
+Las versiones exactas y sus razones están en la [baseline de versiones](docs/version-baseline.md). No actualices Actual cambiando directamente el tag de Docker: utiliza el procedimiento de [actualización segura](docs/safe-updates.md).
 
-Desde WSL, en la raíz del repositorio:
+## Uso diario
 
-~~~bash
-nvm install
-nvm use
-npm ci
-cp .env.example .env
-mkdir -p .local/actual-server-data .local/actual-api .local/backups
+Después de completar la instalación inicial, desde WSL y la carpeta del repositorio:
+
+```bash
 docker compose up -d actual
 npm run doctor
 npm run start:local
-~~~
+```
 
-Abre http://127.0.0.1:4173. El comando compila la aplicación, inicia la API y sirve el frontend compilado; Ctrl+C coordina el cierre. `npm run doctor` revisa requisitos y servicios sin mostrar secretos.
+Abre **http://127.0.0.1:4173** en el navegador. El comando inicia la API y sirve el frontend compilado. Para detener Personal Budget, pulsa `Ctrl+C` en esa terminal. Actual puede permanecer en ejecución.
 
-## Desarrollo local
+La primera instalación y la configuración del presupuesto se explican en [Instalación](docs/installation.md). No vuelvas a ejecutar `npm ci` en cada arranque: solo es necesario al instalar o cambiar dependencias.
 
-~~~bash
-nvm install
-nvm use
-npm ci
-cp .env.example .env
-mkdir -p .local/actual-server-data .local/actual-api .local/backups
-docker compose up -d
-npm run dev:api
-~~~
+## Qué datos salen del equipo
 
-En otra terminal WSL:
+La aplicación está diseñada para uso local:
 
-~~~bash
-npm run dev:web
-~~~
+- Actual Budget mantiene las cuentas, categorías, movimientos y presupuestos.
+- La API y la interfaz se enlazan a loopback; no están pensadas para exponerse a Internet o a la red local.
+- Ollama es opcional y se configura para inferencia local.
+- La búsqueda web es otro permiso: permanece desactivada por defecto y solo envía la consulta que confirmes. SearXNG y los motores upstream pueden recibir esa consulta.
+- MCP se ejecuta por stdio y sus herramientas financieras son de consulta o simulación no persistente.
 
-Abre http://127.0.0.1:5173. La aplicación incluye Resumen, Movimientos, Cuentas, Patrimonio y documentos, Informes, Presupuestos, Planificación, Inteligencia financiera, Revisión financiera, Objetivos, Asistente y Configuración. Configura `ACTUAL_BUDGET_ID` con el Sync ID del presupuesto de Actual.
+Lee [Privacidad](docs/privacy.md), [Seguridad](SECURITY.md) y [Búsqueda web](docs/web-search.md) antes de activar integraciones externas. No introduzcas credenciales bancarias ni compartas extractos, backups o archivos `.env` para pedir ayuda.
 
-En Movimientos, el registro y las importaciones CSV/OFX requieren previsualización y confirmación antes de escribir en Actual. OFX admite perfiles SGML 1.02/1.03 y XML OFX 2.x delimitados; consulta [la guía OFX](docs/ofx-import.md). Planificación diferencia recurrencias confirmadas de candidatos estimados. Las alertas presupuestarias son locales e in-app; no hay daemon ni notificaciones del sistema operativo.
+## Documentación por perfil
 
-El asistente de Ollama está desactivado por defecto (`AI_ENABLED=false`). La búsqueda externa tiene otro interruptor (`WEB_SEARCH_ENABLED=false`) y, además, requiere consentimiento explícito para cada consulta. Consulta [IA local](docs/local-ai.md) y [búsqueda web](docs/web-search.md).
+| Si eres… | Empieza por |
+|---|---|
+| Usuario nuevo | [Instalación](docs/installation.md) → [Guía de uso](docs/usage.md) |
+| Quieres conocer todas las funciones | [Catálogo de funcionalidades](docs/features.md) |
+| Necesitas configurar servicios | [Configuración](docs/configuration.md) |
+| Quieres solucionar un error | [Resolución de problemas](docs/troubleshooting.md) |
+| Desarrollador junior | [Guía de desarrollo](docs/development.md) |
+| Colaborador | [CONTRIBUTING](CONTRIBUTING.md) |
+| Necesitas detalles técnicos | [Índice de documentación](docs/index.md) |
 
-## Prueba con un presupuesto de Actual existente
+## Arquitectura, calidad y estado
 
-Para la aceptación live de búsqueda web, ejecuta `npm run acceptance:web-search` desde el equipo local: solo contacta con la API ligada a `127.0.0.1` y usa consultas públicas fijas. No requiere backend público ni secrets de GitHub; la revisión manual de tráfico y logs sigue siendo obligatoria. Para probar el adaptador oficial contra un presupuesto local de prueba sin modificar transacciones, sigue la [guía de instalación](docs/installation.md#9-prueba-de-aceptación-con-un-presupuesto-local-existente-opcional).
+- **Actual Budget** es la fuente de verdad financiera.
+- `services/actual-adapter` encapsula el SDK oficial de Actual.
+- `packages/finance-core` contiene contratos y cálculos financieros deterministas.
+- `services/api` ofrece la API local Fastify.
+- `apps/web` contiene la interfaz React/Vite.
+- Los datos propios de Personal Budget se guardan en almacenes locales separados y se incluyen en el backup unificado cuando están inventariados.
 
-## Calidad
+Consulta [Arquitectura](docs/architecture.md), [estado de implementación](docs/implementation-status.md) y [roadmap](docs/roadmap.md). El estado de issues y PR se consulta siempre en GitHub; no se deduce de un snapshot documental.
 
-~~~bash
-npm run doctor
-npm run lint
-npm run typecheck
-npm run test:coverage
-npm run build
-npm run audit
-npm run audit:production
-npm run test:e2e
-~~~
+## Comandos útiles
 
-La CI ejecuta además aceptación sintética contra Actual aislado, pruebas de navegador, calidad Windows y escaneo de seguridad. La aceptación manual Windows + WSL2 de #31 se registró el 1-nov-2026; una instalación nueva debe repetir su propia matriz.
+| Comando | Para qué sirve |
+|---|---|
+| `npm run doctor` | Comprueba requisitos, configuración y servicios locales. |
+| `npm run start:local` | Compila e inicia la aplicación para uso diario. |
+| `npm run dev:api` | Inicia la API en modo desarrollo. |
+| `npm run dev:web` | Inicia Vite en modo desarrollo. |
+| `npm run backup:actual` | Crea un backup cifrado unificado; requiere detener Personal Budget. |
+| `npm run update:actual` | Ejecuta el procedimiento de actualización segura de Actual. |
 
-## Privacidad
-
-No se configura sincronización bancaria automática ni se requieren credenciales bancarias. Actual Budget y la API se vinculan a localhost; Ollama es local cuando se habilita. La búsqueda web permanece desactivada por defecto y exige consentimiento por petición. SearXNG recibe únicamente el texto confirmado, no conversaciones ni datos financieros. Para resultados oficiales admitidos, el backend puede realizar hasta tres peticiones de lectura a los organismos enlazados; esos organismos ven la IP pública de salida del servidor y la URL consultada. Un SearXNG autohospedado puede remitir la consulta a sus motores upstream según su configuración. Lee [privacidad](docs/privacy.md), [seguridad](SECURITY.md) y [búsqueda web](docs/web-search.md).
-
-No subas `.env`, extractos, bases de datos financieras, logs sensibles, modelos ni copias de seguridad a Git.
-
-## Documentación
-
-- [Índice completo](docs/index.md)
-- [Instalación Windows + WSL2](docs/installation.md)
-- [Arquitectura](docs/architecture.md)
-- [Workflows y Skills de IA](docs/ai-workflows.md)
-- [Estado de implementación](docs/implementation-status.md)
-- [Roadmap](docs/roadmap.md)
-- [Política de alcance](docs/scope-policy.md)
-- [Mantenibilidad y modularización](docs/maintainability.md)
-- [Configuración](docs/configuration.md)
-- [Privacidad](docs/privacy.md)
-- [Backup y restauración](docs/backup-restore.md)
-- [Patrimonio, justificantes y portabilidad](docs/wealth-and-evidence.md)
-- [Exportación PDF/XLSX/CSV/JSON](docs/export-formats.md)
+Los comandos de desarrollo, backup y actualización tienen requisitos adicionales: consulta [Desarrollo](docs/development.md), [Backup](docs/backup-restore.md) y [Actualizaciones seguras](docs/safe-updates.md).
 
 ## Licencia
 

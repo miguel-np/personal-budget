@@ -1,66 +1,129 @@
 # Resolución de problemas
 
-## Actual Budget no abre
+Esta guía reúne comprobaciones seguras para los errores más habituales. Antes de cambiar configuración o borrar archivos, identifica el problema. **No borres `.local`, volúmenes Docker ni bases de datos para intentar reparar un servicio.**
 
-- Comprueba que el contenedor/servicio está en ejecución.
-- Revisa `docker ps` y los logs de `actual-budget`.
-- Confirma que el puerto 5006 no está ocupado y que está ligado a localhost.
-- No borres el directorio de datos para reparar el servicio.
+## 1. La aplicación web no abre
 
-## El adaptador no puede abrir el presupuesto
+Comprueba que el runtime está iniciado y que has abierto la dirección correcta:
 
-- Confirma que `ACTUAL_SERVER_URL` apunta al servidor correcto.
-- Comprueba el identificador del presupuesto y la contraseña del servidor, si está configurada.
-- Sigue la guía de la versión de `@actual-app/api` usada por la implementación.
-- No inventes endpoints REST; Actual no ofrece una REST API general para consultar el presupuesto.
-- Revisa si el servidor de Actual y la API programática usan versiones compatibles.
-- Comprueba que el directorio de datos de la API (`ACTUAL_DATA_DIR`) existe y es escribible por tu usuario.
+- Uso diario: http://127.0.0.1:4173
+- Desarrollo Vite: http://127.0.0.1:5173
 
-## `.local` aparece propiedad de root tras `docker compose up`
+Si utilizas `npm run start:local`, deja abierta la terminal donde se ejecuta. Revisa si el comando ha mostrado un error y ejecuta `npm run doctor` en otra terminal.
 
-Cuando Docker crea el directorio de montaje de un bind mount, puede dejarlo propiedad de root, y el contenedor de Actual escribe sus archivos como root. Si `.local` queda inaccesible:
+## 2. La API no responde
 
-- Crea los directorios con tu usuario **antes** del primer `docker compose up`:
+La API local utiliza `127.0.0.1:3000`.
 
-  ~~~bash
-  mkdir -p .local/actual-server-data .local/actual-api .local/backups
-  docker compose up -d
-  ~~~
+```bash
+curl http://127.0.0.1:3000/health
+curl http://127.0.0.1:3000/ready
+```
 
-- Si ya los creó Docker, corrígelos una vez con:
+`/health` comprueba que la API responde. `/ready` informa del estado de configuración del presupuesto; un estado `not_configured` no significa que el proceso esté apagado.
 
-  ~~~bash
-  sudo chown -R "$(id -u):$(id -g)" .local
-  ~~~
+Comprueba el puerto antes de detener procesos:
 
-- Los archivos que escriba después el contenedor dentro de `.local/actual-server-data` pueden volver a quedar propiedad de root; el acceso de lectura y el backup con tar siguen funcionando, pero el usuario necesita poder crear `.local/actual-api` y `.local/backups`.
+```bash
+ss -ltnp | grep ':3000'
+```
 
-- No uses `sudo npm ci` ni ejecutes los scripts de Node como root; mantén el resto del repositorio propiedad de tu usuario.
+No mates procesos desconocidos. Si hay una instancia de Personal Budget en ejecución, deténla desde su terminal con Ctrl+C.
 
-## Ollama no responde
+## 3. Actual Budget no abre
 
-- Comprueba `ollama list` y `curl http://127.0.0.1:11434/api/tags` desde el entorno del backend.
-- Verifica que `OLLAMA_MODEL` coincide exactamente con un modelo instalado.
-- Comprueba memoria disponible y tiempo de carga del modelo.
-- Si el chat no puede usar herramientas, valida el soporte de tool calling del modelo y runtime con datos sintéticos.
-- La ausencia de IA no debe impedir registrar o consultar datos mediante funciones deterministas.
+```bash
+docker compose ps
+docker compose logs --tail=100 actual
+```
 
-## La importación falla o crea duplicados
+Comprueba que el contenedor está activo y que el puerto 5006 no está ocupado. Actual se publica en loopback, no en la red local.
 
-- Revisa el formato y los campos de fecha/importe.
-- Prueba primero con pocos movimientos.
-- Verifica el signo de cargos y abonos.
-- Compara identificadores y fechas con el historial previo.
-- Haz copia antes de volver a importar un periodo completo.
+No elimines `.local/actual-server-data` ni el contenedor con volúmenes para solucionar un fallo. Si necesitas recuperar datos, sigue el procedimiento de [backup y restauración](backup-restore.md).
 
-## Los totales no coinciden
+## 4. Personal Budget no encuentra el presupuesto
 
-- Asegúrate de comparar el mismo intervalo, cuenta y divisa.
-- Comprueba que los traspasos internos no se cuentan como ingresos o gastos.
-- Revisa reembolsos, transacciones pendientes y movimientos duplicados.
-- No combines divisas sin una conversión explícita.
-- Contrasta el saldo de Actual con el saldo mostrado por el banco.
+Comprueba en `.env`:
 
-## Información que puedes compartir para pedir ayuda
+- `ACTUAL_SERVER_URL=http://127.0.0.1:5006`
+- `ACTUAL_BUDGET_ID` contiene el Sync ID correcto.
+- `ACTUAL_SERVER_PASSWORD` coincide con la contraseña configurada en el servidor, si existe.
 
-Comparte versiones de software, mensajes de error saneados, comandos usados y datos sintéticos mínimos. Nunca compartas CSV real, descripciones, IBAN, saldos, tokens, contraseñas ni la base de datos completa.
+El Sync ID no es una contraseña. No inventes endpoints REST: la integración utiliza el SDK oficial `@actual-app/api`.
+
+## 5. Error de permisos en .local
+
+Crea los directorios con tu usuario antes de iniciar Docker:
+
+```bash
+mkdir -p .local/actual-server-data .local/actual-api .local/backups
+```
+
+Si Docker ya creó directorios propiedad de root y tu usuario no puede acceder, revisa primero qué rutas son propiedad del contenedor. Solo si confirmas que `.local` es el directorio de datos de este checkout y que no hay procesos escribiendo, puedes corregir la propiedad:
+
+```bash
+sudo chown -R "$(id -u):$(id -g)" .local
+```
+
+No ejecutes `npm ci` ni scripts Node con sudo. Los archivos creados por el contenedor pueden volver a quedar bajo el usuario del contenedor; no cambies permisos recursivamente fuera de `.local`.
+
+## 6. Node.js o npm tienen una versión incorrecta
+
+Desde la raíz del repositorio:
+
+```bash
+nvm install
+nvm use
+node --version
+npm --version
+```
+
+Debes obtener Node 26.13.1 y npm 11.20.0. Si `nvm` no existe, revisa su instalación y vuelve a abrir Ubuntu.
+
+## 7. Docker no responde desde WSL2
+
+Comprueba `docker --version`, `docker compose version` y `docker info`. Si usas Docker Desktop, revisa que la integración WSL2 esté activada para tu distribución Ubuntu. No arranques dos motores Docker distintos sin saber cuál gestiona el contenedor de Actual.
+
+## 8. Ollama no responde
+
+Ollama es opcional. Comprueba:
+
+```bash
+ollama list
+curl http://127.0.0.1:11434/api/tags
+```
+
+Verifica que `OLLAMA_MODEL` coincide con un modelo instalado y que `AI_ENABLED=true`. Si falla, desactiva la IA y continúa utilizando las funciones deterministas; el resto de la aplicación no debe depender del modelo.
+
+## 9. La búsqueda web no funciona
+
+La búsqueda requiere `AI_ENABLED=true`, `WEB_SEARCH_ENABLED=true`, un modelo compatible con tool calling y SearXNG accesible. Además, cada consulta necesita consentimiento explícito.
+
+Un error de compatibilidad del modelo no debe provocar una búsqueda alternativa ni enviar una consulta no confirmada. Consulta [Búsqueda web](web-search.md) y revisa el proveedor sin compartir consultas privadas o logs sensibles.
+
+## 10. La importación falla o aparecen duplicados
+
+- Comprueba el formato y las columnas del archivo.
+- Revisa fechas, separadores decimales y signo de cargos/abonos.
+- Comienza con un periodo pequeño.
+- Revisa la previsualización y los posibles duplicados.
+- Haz backup antes de repetir una importación amplia.
+
+No compartas el extracto real para pedir ayuda. Utiliza un ejemplo sintético que reproduzca el formato.
+
+## 11. Los totales no coinciden
+
+Comprueba que comparas el mismo periodo, ámbito de cuentas y divisa. Revisa transferencias internas, reembolsos, movimientos divididos, categorías ausentes y tipos de cambio manuales.
+
+Los importes sin moneda conocida o sin conversión válida no se agregan como si fueran EUR. Un saldo desconocido no se sustituye por cero.
+
+## 12. Información segura para solicitar ayuda
+
+Puedes compartir:
+- Sistema operativo y versión de WSL2.
+- Versiones de Node, npm, Docker y Compose.
+- Comandos ejecutados.
+- Mensaje de error después de retirar rutas privadas, tokens, identificadores y datos financieros.
+- Pasos de reproducción con datos sintéticos.
+
+No compartas CSV/OFX reales, descripciones, IBAN, saldos, Sync IDs privados, tokens, contraseñas, `.env`, backups, bases de datos ni documentos justificativos.
