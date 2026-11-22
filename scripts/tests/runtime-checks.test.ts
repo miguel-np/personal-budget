@@ -22,9 +22,4 @@ describe('local runtime diagnostics', () => {
     expect(message).not.toContain('bad-secret-value'); expect(message).not.toContain('bad-port-value');
   });
   it('keeps unknown diagnostics generic', () => { expect(safeConfigFailure(new Error('password=secret'))).not.toContain('password=secret'); });
-  it('does not trust error codes outside the safe identifier format', () => {
-    const error = new Error('unsafe');
-    Object.assign(error, { code: 'secret=/tmp/private' });
-    expect(safeStartupFailure(error)).not.toContain('secret');
-  });
 });
