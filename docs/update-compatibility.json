@@ -9,8 +9,8 @@
     {
       "from": "26.10.0",
       "to": "26.11.0",
-      "status": "candidate",
-      "evidence": "Candidate transition under synthetic acceptance in PR #138; disabled by default until all CI acceptance and recovery steps pass."
+      "status": "verified",
+      "evidence": "Verified in PR #139: CI run 712 on 2026-11-22 completed the isolated 26.10.0 → 26.11.0 upgrade, financial inventory and linked-transaction acceptance, category batch acceptance, explicit backup restoration, injected post-start failure and second explicit recovery; all steps passed."
     }
   ]
 }
