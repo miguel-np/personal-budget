@@ -51,3 +51,10 @@ Se selecciona TypeScript 6.0.3, no la versión 7.0.2, porque la versión estable
 ## Sobre “libre de vulnerabilidades”
 
 No puede garantizarse ausencia de vulnerabilidades para siempre. Las bases de avisos pueden retrasarse, pueden existir fallos aún sin CVE y las dependencias indirectas también cuentan. Un `npm audit` sin hallazgos refleja únicamente los avisos conocidos del árbol de paquetes y el umbral elegido en el momento del análisis. Consulta [SECURITY.md](../SECURITY.md) para evidencias fechadas y límites.
+
+
+## Tooling de CI y actualizaciones
+
+- GitHub CodeQL Action v4.39.4 se fija al commit 1bd86f2fdb4b86187fa4059f16f31a3202acc9ea; las actualizaciones semanales de GitHub Actions se gestionan con Dependabot y deben conservar el pin SHA completo.
+- Dependabot revisa semanalmente npm workspaces, imágenes Docker y GitHub Actions. Agrupa actualizaciones patch/minor y major por separado; todas llegan como PR y deben superar la CI antes de integrarse.
+- Los informes de cobertura de Vitest se publican como artefactos de CI con retención de siete días. La cobertura ampliada incluye utilidades web ejercitadas por pruebas unitarias y diagnósticos runtime; los componentes visuales se verifican además mediante Playwright.
