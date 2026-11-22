@@ -34,15 +34,45 @@ jobs:
         shell: bash
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PUSH_BEFORE_SHA: ${{ github.event.before }}
           CURRENT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
-            scan_range="${PR_BASE_SHA}..${CURRENT_SHA}"
-          elif [ -n "$PUSH_BEFORE_SHA" ] && [ "$PUSH_BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            scan_range="${PR_BASE_SHA}..${PR_HEAD_SHA}"
+          elif [ "$GITHUB_EVENT_NAME" = "push" ] && [ -n "$PUSH_BEFORE_SHA" ] && [ "$PUSH_BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
             scan_range="${PUSH_BEFORE_SHA}..${CURRENT_SHA}"
           else
-            scan_range="${CURRENT_SHA}^..${CURRENT_SHA}"
+            # Scheduled and manually dispatched runs deliberately scan the complete Git history.
+            scan_range=""
           fi
-          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m --pids-limit 128 --user "$(id -u):$(id -g)" -v "$PWD:/repo:ro" ghcr.io/gitleaks/gitleaks:v8.28.0@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854 detect --source=/repo --log-opts="$scan_range" --redact --exit-code 1
+
+          gitleaks_args=(detect --source=/repo --redact --exit-code 1)
+          if [ -n "$scan_range" ]; then
+            gitleaks_args+=(--log-opts="$scan_range")
+          fi
+
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m --pids-limit 128 --user "$(id -u):$(id -g)" -v "$PWD:/repo:ro" ghcr.io/gitleaks/gitleaks:v8.28.0@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854 "${gitleaks_args[@]}"
+
+  codeql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
+        with:
+          languages: javascript-typescript
+          build-mode: none
+      - name: Analyze JavaScript and TypeScript
+        uses: github/codeql-action/analyze@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
+        with:
+          category: /language:javascript-typescript

@@ -77,3 +77,12 @@ No publiques detalles explotables, extractos financieros, archivos de presupuest
 Las amenazas incluyen acceso desde otro dispositivo en la red, malware local, extensión de navegador maliciosa, dependencia comprometida, prompt injection en descripciones de movimientos, acceso excesivo del modelo a herramientas, pérdida o robo de copias y errores de importación que dupliquen movimientos.
 
 El carácter local no protege frente a alguien que ya tenga acceso a la cuenta de Windows/WSL o a archivos sin cifrar. Utiliza cifrado de disco, una cuenta del sistema protegida y copias cifradas.
+
+
+## Gates automatizados de CI
+
+El workflow de seguridad ejecuta CodeQL para JavaScript/TypeScript con la Action fijada a un SHA completo, además de las auditorías npm y Gitleaks. Los permisos de escritura de resultados de CodeQL se conceden solo al job que publica el análisis; el resto del workflow conserva lectura de contenido.
+
+Gitleaks analiza el rango de commits entrante en pull requests y pushes. Las ejecuciones programadas y manuales omiten el rango incremental para volver a inspeccionar el historial Git completo. Esto puede volver a detectar secretos históricos aunque se hayan eliminado del árbol actual; una detección debe investigarse y corregirse mediante el procedimiento privado de incidentes.
+
+La auditoría automática no sustituye revisión de código, pruebas de penetración ni análisis de riesgos de despliegue. Los resultados de CodeQL y npm deben revisarse para el SHA que se pretenda integrar.

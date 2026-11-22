@@ -51,7 +51,9 @@ Comandos y alcance:
 | `npm run build` | Construye los workspaces de producción. |
 | `npm run audit` | `npm audit --audit-level=moderate` para el árbol completo. |
 | `npm run audit:production` | Auditoría de dependencias de producción. |
-| `npm run test:e2e` | Playwright contra el frontend compilado y API sintética. |
+| `npm run test:e2e` | Playwright contra el frontend compilado y API sintética, incluyendo smoke semántico de accesibilidad. |
+| `npm run quality:repo:test` | Pruebas unitarias de los validadores de arquitectura, documentación y mantenibilidad. |
+| `npm run quality:repo` | Comprueba enlaces y comandos documentados, límites entre workspaces y presupuestos de tamaño para los ficheros modificados. |
 
 Para ejecutar E2E en un entorno sin Chromium instalado:
 
@@ -59,6 +61,8 @@ Para ejecutar E2E en un entorno sin Chromium instalado:
 npm run build
 npm run setup:e2e
 npm run test:e2e
+npm run quality:repo:test
+npm run quality:repo
 ~~~
 
 La CI también ejecuta aceptación sintética de Actual, smoke de contenedor, validación de ciclo de vida y escaneo de secretos. No confundas estas pruebas con aceptación manual contra servicios externos o una instalación Windows + WSL2 concreta. Las pruebas live de Ollama, SearXNG y Actual son opt-in y deben usar datos sintéticos o un presupuesto de prueba aislado.

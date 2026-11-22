@@ -21,10 +21,14 @@ jobs:
   quality:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      QUALITY_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+      QUALITY_HEAD_SHA: ${{ github.sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
+          fetch-depth: 0
           persist-credentials: false
       - name: Set up Node.js LTS
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -37,7 +41,9 @@ jobs:
         run: npm ci
       - name: Dependency audit
         run: npm run audit
-      - name: Lint
+      - name: Repository architecture and documentation tests
+        run: npm run quality:repo:test && npm run quality:repo
+      - name: Lint (zero warnings)
         run: npm run lint
       - name: Test local web-search acceptance boundary and host inventory
         run: node --test scripts/local-acceptance-origin.test.mjs scripts/web-search-live-acceptance-config.test.mjs scripts/web-search-live-acceptance-probes.test.mjs scripts/web-search-live-acceptance-results.test.mjs
@@ -54,6 +60,17 @@ jobs:
           npm run test:runtime:lifecycle
       - name: Unit and integration tests with coverage
         run: npm run test:coverage
+      - name: Upload sanitized coverage report
+        if: always() && hashFiles('coverage/lcov.info') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: personal-budget-coverage
+          path: |
+            coverage/lcov.info
+            coverage/coverage-summary.json
+            coverage/index.html
+          if-no-files-found: error
+          retention-days: 7
       - name: Production dependency audit
         run: npm run audit:production
 
@@ -140,7 +157,9 @@ jobs:
         run: npm ci
       - name: Dependency audit
         run: npm run audit
-      - name: Lint
+      - name: Repository architecture and documentation checks
+        run: npm run quality:repo:test && npm run quality:repo
+      - name: Lint (zero warnings)
         run: npm run lint
       - name: Typecheck and build
         run: npm run typecheck && npm run build
