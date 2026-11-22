@@ -1,4 +1,8 @@
 const SUPPORTED_DOCUMENT_MIMES = new Set(['text/html', 'application/xhtml+xml', 'text/plain']);
+const OFFICIAL_AUTHORITIES = new Set([
+  'legislation', 'legal_consolidation', 'dgt_criteria', 'teac_criteria',
+  'tax_administration', 'tax_agency_guidance', 'official_information',
+]);
 
 function mimeType(value) {
   return typeof value === 'string' ? value.split(';', 1)[0].trim().toLowerCase() : '';
@@ -100,7 +104,7 @@ export function buildSourceAcceptanceEvidence(source, expectedHost) {
   const metadataValid = publishedAt.status !== 'invalid' && modifiedAt.status !== 'invalid';
 
   let acceptanceStatus = 'not_retrieved';
-  if (!sourceUrl || source?.sourceAuthority === 'external' || !metadataValid ||
+  if (!sourceUrl || !OFFICIAL_AUTHORITIES.has(source?.sourceAuthority) || !metadataValid ||
       typeof source?.title !== 'string' || source.title.trim().length === 0) {
     acceptanceStatus = 'rejected';
   } else if (document?.status === 'partial') {
@@ -110,7 +114,9 @@ export function buildSourceAcceptanceEvidence(source, expectedHost) {
   } else if (document?.status === 'retrieved') {
     const validType = document?.documentType === 'boe_consolidated_legislation' ||
       document?.documentType === 'official_html';
-    acceptanceStatus = validType && retrievedAt.status === 'valid' &&
+    const boeTemporalEvidencePresent = document?.documentType !== 'boe_consolidated_legislation' ||
+      Boolean(document?.temporal && typeof document.temporal === 'object');
+    acceptanceStatus = validType && boeTemporalEvidencePresent && retrievedAt.status === 'valid' &&
       SUPPORTED_DOCUMENT_MIMES.has(documentMime) && hasDocumentText && hasSuccessfulTextFetch
       ? 'accepted'
       : 'rejected';
