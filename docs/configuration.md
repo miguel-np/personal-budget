@@ -1,61 +1,88 @@
 # Configuración
 
-La configuración de runtime se valida mediante Zod en services/api/src/config.ts. Mantén los valores reales en .env (excluido de Git); .env.example contiene únicamente defaults seguros.
+La aplicación valida la configuración de runtime mediante Zod. Los valores privados se guardan en `.env`, que no debe añadirse a Git. Empieza con `.env.example` y modifica solo lo necesario.
 
-## API local y Actual Budget
+## Configuración mínima para empezar
 
-| Variable | Propósito | Default / límite |
+| Variable | Para qué sirve | Valor habitual |
 |---|---|---|
-| NODE_ENV | Entorno de Node | development, test o production |
-| APP_HOST | Interfaz de escucha | 127.0.0.1; solo loopback |
-| APP_PORT | Puerto de la API | 3000; 1024–65535 |
-| LOG_LEVEL | Nivel de log | info |
-| APP_ALLOWED_ORIGINS | Orígenes de navegador permitidos | Origins localhost exactos; no URLs con path |
-| ACTUAL_SERVER_URL | Servidor Actual | http://127.0.0.1:5006; loopback |
-| ACTUAL_SERVER_PASSWORD | Contraseña de la instancia Actual local | Vacío; no es contraseña bancaria |
-| ACTUAL_BUDGET_ID | Sync ID del presupuesto seleccionado | Sin configurar hasta elegir |
-| ACTUAL_DATA_DIR | Datos de trabajo locales del adaptador/estado propio | ./.local/actual-api |
-| BUDGET_CURRENCY | Divisa base de configuración | EUR; código ISO de tres letras |
+| `APP_HOST` | Interfaz de red de la API | `127.0.0.1` |
+| `APP_PORT` | Puerto de la API | `3000` |
+| `APP_ALLOWED_ORIGINS` | Orígenes web autorizados | Origins localhost definidos en la plantilla |
+| `ACTUAL_SERVER_URL` | Dirección del servidor Actual | `http://127.0.0.1:5006` |
+| `ACTUAL_SERVER_PASSWORD` | Contraseña del servidor Actual, si configuraste una | Vacío por defecto |
+| `ACTUAL_BUDGET_ID` | Sync ID del presupuesto elegido | Debes introducirlo |
+| `ACTUAL_SERVER_DATA_DIR` | Volumen persistente de Actual en Compose | `./.local/actual-server-data` |
+| `ACTUAL_DATA_DIR` | Directorio de datos propios/API | `./.local/actual-api` |
+| `BUDGET_CURRENCY` | Divisa base de configuración | `EUR` |
 
-El directorio de datos del servidor Actual se configura también en Compose mediante ACTUAL_SERVER_DATA_DIR; debe coincidir con la ruta que el script de backup lee.
+No confundas `ACTUAL_SERVER_PASSWORD` con una contraseña bancaria. Personal Budget no necesita ni solicita tus credenciales bancarias.
 
-## Ollama e IA local
+## Runtime y diagnóstico
 
-| Variable | Propósito | Default / límite |
+| Variable | Para qué sirve | Valor habitual |
 |---|---|---|
-| AI_ENABLED | Habilitar funciones de IA local | false |
-| OLLAMA_BASE_URL | Endpoint de Ollama | http://127.0.0.1:11434; loopback |
-| OLLAMA_MODEL | Modelo ya instalado | Vacío hasta configurar; 1–128 caracteres |
-| OLLAMA_REQUEST_TIMEOUT_SECONDS | Timeout de inferencia | 120; 1–180 segundos |
-| AI_MAX_CONTEXT_CHARS | Presupuesto de contexto | 4000; 512–8000 |
-| AI_CATEGORY_CLASSIFICATION_ENABLED | Activar clasificación híbrida | false |
-| AI_CATEGORY_CLASSIFICATION_INCLUDE_PAYEE | Permitir etiquetas normalizadas de beneficiario para clasificación local | true; no habilita la función por sí solo |
+| `NODE_ENV` | Entorno Node | `development` |
+| `LOG_LEVEL` | Nivel de registro | `info` |
+| `APP_HOST` | Host de escucha | `127.0.0.1` |
+| `APP_PORT` | Puerto API | `3000` |
+| `APP_ALLOWED_ORIGINS` | Lista exacta de orígenes permitidos | Localhost de la plantilla |
 
-La URL remota de Ollama se rechaza. Desactivar AI_ENABLED no afecta a las funciones deterministas de finanzas.
+La API y la web deben permanecer en loopback salvo que exista un diseño de seguridad y despliegue distinto expresamente aprobado. No publiques los puertos en LAN o Internet.
 
-## Búsqueda web externa controlada (#84)
+## IA local opcional: Ollama
 
-La búsqueda requiere tanto AI_ENABLED=true como WEB_SEARCH_ENABLED=true, un modelo local con tool calling compatible y consentimiento por petición. Se mantiene desactivada por defecto.
+La IA está desactivada por defecto. Para activarla, instala Ollama, descarga un modelo compatible y configura:
 
-| Variable | Propósito | Default / límite |
+| Variable | Para qué sirve | Valor inicial |
 |---|---|---|
-| WEB_SEARCH_ENABLED | Habilitar la búsqueda externa | false |
-| WEB_SEARCH_BASE_URL | Origin del proveedor SearXNG | http://127.0.0.1:8080 local; remoto solo HTTPS |
-| WEB_SEARCH_TIMEOUT_SECONDS | Timeout de proveedor | 8; 1–30 segundos |
-| WEB_SEARCH_MAX_RESULTS | Máximo de resultados visibles | 5; 1–8 |
-| WEB_SEARCH_MAX_QUERY_CHARS | Longitud máxima de consulta | 300; 20–500 |
-| WEB_SEARCH_MAX_RESPONSE_KB | Máximo de JSON recibido | 128; 8–256 KiB |
+| `AI_ENABLED` | Habilita funciones de IA local | `false` |
+| `OLLAMA_BASE_URL` | Endpoint de Ollama | `http://127.0.0.1:11434` |
+| `OLLAMA_MODEL` | Nombre exacto del modelo instalado | Vacío hasta configurarlo |
+| `OLLAMA_REQUEST_TIMEOUT_SECONDS` | Tiempo máximo de inferencia | `120` |
+| `AI_MAX_CONTEXT_CHARS` | Límite de contexto | `4000` |
+| `AI_CATEGORY_CLASSIFICATION_ENABLED` | Activa clasificación híbrida | `false` |
+| `AI_CATEGORY_CLASSIFICATION_INCLUDE_PAYEE` | Permite etiquetas normalizadas de beneficiario para clasificación local | `true` |
 
-Para una instancia autohospedada, configura SearXNG para servir JSON y limita el acceso a loopback o a la red privada del host. Para un proveedor alojado compatible, utiliza solo HTTPS y revisa su política de datos. SearXNG puede remitir la consulta a motores upstream; el hecho de autohospedarlo no significa que la consulta permanezca en esa máquina. Véase web-search.md.
+La URL remota de Ollama se rechaza. La clasificación híbrida requiere tanto `AI_ENABLED=true` como `AI_CATEGORY_CLASSIFICATION_ENABLED=true`. Desactivar la IA no desactiva los cálculos financieros deterministas.
+
+## Investigación web opcional: SearXNG
+
+La búsqueda externa es un permiso independiente de la IA. Requiere IA habilitada, búsqueda habilitada, un modelo compatible con tool calling, proveedor SearXNG y consentimiento explícito para cada consulta.
+
+| Variable | Para qué sirve | Valor inicial |
+|---|---|---|
+| `WEB_SEARCH_ENABLED` | Habilita el flujo de búsqueda | `false` |
+| `WEB_SEARCH_BASE_URL` | Origin del proveedor | `http://127.0.0.1:8080` |
+| `WEB_SEARCH_TIMEOUT_SECONDS` | Timeout | `8` |
+| `WEB_SEARCH_MAX_RESULTS` | Máximo de resultados | `5` |
+| `WEB_SEARCH_MAX_QUERY_CHARS` | Longitud máxima de consulta | `300` |
+| `WEB_SEARCH_MAX_RESPONSE_KB` | Tamaño máximo de respuesta | `128` |
+
+Los endpoints remotos requieren HTTPS. Una instancia SearXNG autohospedada puede reenviar consultas a motores upstream; revisa su configuración y privacidad antes de habilitarla. No se envían movimientos, cuentas ni agregados financieros a este flujo.
+
+## MCP
+
+MCP es opcional y se ejecuta por stdio; no abre un puerto TCP por defecto.
+
+- `MCP_ENABLED`: interruptor de configuración, desactivado por defecto.
+- `PERSONAL_BUDGET_API_URL`: URL de la API local cuando la configure el cliente MCP; solo se permiten hosts loopback.
+- `PERSONAL_BUDGET_MCP_API_TIMEOUT_MS`: timeout de llamadas, con límites validados por el servidor.
+
+Consulta [MCP](mcp.md) para configurar un cliente compatible y conocer el catálogo de herramientas.
+
+## Variables operativas de backup
+
+Los scripts de backup utilizan variables adicionales como `BACKUP_DIR`, `BACKUP_ENCRYPTION_KEY_FILE` y `BACKUP_RETENTION_DAYS`. Las rutas relativas se resuelven desde la raíz del repositorio. Consulta [Backup y restauración](backup-restore.md) antes de cambiarlas.
 
 ## Seguridad de configuración
 
-- No añadas claves bancarias, extractos ni credenciales en variables no documentadas.
-- Mantén la API y Actual en loopback; no publiques puertos en LAN/Internet.
-- No configures proveedores remotos de IA si la política exige inferencia local.
-- La búsqueda externa es un permiso distinto de la IA: habilitar Ollama no habilita automáticamente la búsqueda.
-- La herramienta no acepta direcciones, URLs ni dominios arbitrarios como destino; el proveedor es una configuración del operador.
+- Mantén `.env` fuera de Git y no lo compartas.
+- Mantén los servicios en loopback.
+- No configures proveedores remotos de IA si necesitas inferencia local.
+- Habilitar Ollama no habilita automáticamente la búsqueda web.
+- La búsqueda externa exige consentimiento por petición.
 - No habilites operaciones de escritura por IA.
-- Las variables desconocidas o inválidas deben fallar claramente, no modificar el comportamiento de forma silenciosa.
+- No uses valores desconocidos ni copies configuraciones de Internet sin entender su efecto.
 
-Los valores de .env.example deben mantenerse sincronizados con el esquema de runtime y los tests de configuración.
+Los valores exactos y límites validados viven en `services/api/src/config.ts` y `.env.example`; esos archivos son la referencia al modificar el runtime.

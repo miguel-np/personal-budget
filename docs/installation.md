@@ -1,249 +1,242 @@
-# Instalación: Windows + WSL2
+# Instalación paso a paso: Windows + WSL2
 
-Esta guía describe una instalación local reproducible. La shell web incorpora resumen financiero, consulta y filtrado de movimientos, registro manual, importación CSV/OFX local con previsualización, informes comparativos y seguimiento de presupuestos. Las escrituras pasan por la API local y requieren una acción explícita.
+Esta guía está escrita para alguien que instala Personal Budget por primera vez. Sigue el orden indicado y no omitas la configuración de las copias de seguridad.
 
-## Requisitos
+Personal Budget se ejecuta en tu equipo. Actual Budget almacena los datos financieros y Personal Budget añade una interfaz y funciones de análisis.
 
-- Windows con WSL2 y una distribución Linux; Ubuntu recomendado.
-- Docker Desktop con integración WSL2 o Docker Engine + Compose en WSL.
+## Antes de empezar
+
+Necesitas:
+
+- Un equipo con Windows 11 y WSL2. Ubuntu es la distribución recomendada.
+- Docker Desktop con integración WSL2 activada, o Docker Engine y Compose instalados dentro de Ubuntu.
 - Git.
-- Node.js 26.13.1 LTS y npm 11.20.0.
-- Ollama solo para la fase de IA opcional (P2).
+- Node.js 26.13.1 y npm 11.20.0.
+- Conexión a Internet para descargar dependencias e imágenes durante la instalación.
 
-Desde PowerShell:
+Ollama, SearXNG y un cliente MCP son opcionales. No los instales para empezar: la aplicación financiera básica no los necesita.
 
-~~~powershell
+Consulta la [baseline de versiones](version-baseline.md) para conocer las versiones fijadas.
+
+## 1. Preparar WSL2
+
+Abre PowerShell en Windows y comprueba WSL:
+
+```powershell
 wsl --status
 wsl -l -v
-~~~
+```
 
-Guarda el repositorio en el filesystem Linux, por ejemplo ~/projects/personal-budget, no en /mnt/c/..., para reducir problemas de rendimiento y permisos.
+Si todavía no tienes WSL, sigue la [guía oficial de instalación de WSL](https://learn.microsoft.com/windows/wsl/install). Instala Ubuntu y vuelve a comprobar que la distribución utiliza la versión 2.
 
-## 1. Instalar Node.js y dependencias
+Abre Ubuntu desde el menú Inicio. Los comandos siguientes se ejecutan en esa terminal, salvo que se indique expresamente PowerShell.
 
-Instala nvm para Linux siguiendo su documentación oficial. Desde WSL, en la raíz del repositorio:
+## 2. Instalar herramientas en Ubuntu
 
-~~~bash
+Instala Git y las herramientas básicas con el gestor de paquetes de tu distribución. En Ubuntu:
+
+```bash
+sudo apt update
+sudo apt install -y git curl build-essential
+```
+
+Instala nvm siguiendo sus [instrucciones oficiales](https://github.com/nvm-sh/nvm#installing-and-updating). Cierra y vuelve a abrir la terminal si el instalador lo solicita.
+
+Comprueba que nvm responde:
+
+```bash
+command -v nvm
+```
+
+## 3. Descargar el proyecto
+
+Guarda el repositorio dentro del filesystem Linux de WSL, no en `/mnt/c`. Por ejemplo:
+
+```bash
+mkdir -p ~/projects
+cd ~/projects
+git clone https://github.com/miguel-np/personal-budget.git
+cd personal-budget
+```
+
+Comprueba que estás en la raíz del repositorio:
+
+```bash
+pwd
+ls
+```
+
+Deberías ver, entre otros, `package.json`, `compose.yaml`, `.nvmrc`, `apps`, `services`, `packages` y `docs`.
+
+## 4. Instalar Node.js y dependencias
+
+Desde la raíz del repositorio:
+
+```bash
 nvm install
 nvm use
 node --version
 npm --version
 npm ci
-~~~
+```
 
-Node debe indicar v26.13.1 y npm v11.20.0. El archivo package-lock.json está versionado; npm ci instala el grafo bloqueado y falla si manifiesto y lockfile no coinciden.
+Resultados esperados:
 
-## 2. Instalar Docker y ejecutar Actual Budget
+- Node: `v26.13.1`.
+- npm: `11.20.0`.
 
-Instala Docker Desktop y activa la integración WSL2, o instala Docker Engine/Compose en la distribución. Comprueba:
+Si las versiones no coinciden, no continúes: comprueba que nvm está activo y que estás dentro de la carpeta del proyecto. `npm ci` instala exactamente las dependencias del lockfile; no lo sustituyas por `npm install` para una instalación reproducible.
 
-~~~bash
+## 5. Instalar y arrancar Actual Budget
+
+Instala Docker Desktop y activa la integración con tu distribución Ubuntu, o configura Docker Engine/Compose en WSL. Sigue la [documentación oficial de Docker Desktop con WSL](https://docs.docker.com/desktop/features/wsl/).
+
+Comprueba Docker:
+
+```bash
 docker --version
 docker compose version
-~~~
+docker info
+```
 
-Desde la raíz, crea primero los directorios de datos con tu usuario para que Docker no los deje propiedad de root:
+Si `docker info` falla, revisa la integración WSL2 o el servicio Docker antes de continuar.
 
-~~~bash
+Crea los directorios persistentes antes del primer arranque:
+
+```bash
 mkdir -p .local/actual-server-data .local/actual-api .local/backups
-docker compose up -d
+```
+
+Inicia únicamente el servicio Actual:
+
+```bash
+docker compose up -d actual
 docker compose ps
-~~~
+```
 
-Compose usa actualbudget/actual-server:26.10.0, publica el servicio en 127.0.0.1:5006 y guarda los datos en .local/actual-server-data. Abre http://localhost:5006 desde Windows y completa el inicio de Actual. No borres el directorio de datos para reparar el contenedor. La imagen 26.10.0 se conserva deliberadamente como origen predeterminado para que la actualización a 26.11.0 pase por el preflight y el backup cifrado de [actualización segura](safe-updates.md). No cambies el tag ni ejecutes un pull directo de 26.11.0.
+Abre **http://localhost:5006** en el navegador de Windows. Completa la configuración inicial de Actual y crea un presupuesto de prueba o el presupuesto que quieras utilizar. No introduzcas credenciales bancarias: Actual no las necesita para esta integración.
 
-Consulta la [guía oficial de instalación de Actual](https://actualbudget.org/docs/install/).
+En los ajustes avanzados del presupuesto, localiza su **Sync ID**. Lo necesitarás en el siguiente paso.
 
-## 3. Configurar la API local
+**Importante sobre versiones:** Compose conserva Actual Budget 26.10.0 como versión de origen para que las actualizaciones pasen por el procedimiento seguro. La API del proyecto está fijada a 26.11.0. No cambies manualmente el tag de la imagen ni ejecutes un `docker pull` para saltarte el backup y las comprobaciones. Utiliza [Actualizaciones seguras](safe-updates.md).
 
-Copia y edita la plantilla:
+Consulta también la [instalación oficial de Actual Budget](https://actualbudget.org/docs/install/).
 
-~~~bash
+## 6. Configurar Personal Budget
+
+Crea el fichero local de configuración:
+
+```bash
 cp .env.example .env
-~~~
+```
 
-Configura ACTUAL_BUDGET_ID con el Sync ID del presupuesto que aparece en los ajustes avanzados de Actual. ACTUAL_SERVER_PASSWORD, si configuras contraseña en el servidor, no es la contraseña del banco. Mantén ACTUAL_SERVER_URL en loopback.
+Abre `.env` con un editor de texto y establece:
 
-Arranca la API:
+- `ACTUAL_BUDGET_ID`: el Sync ID del presupuesto de Actual que acabas de crear o seleccionar.
+- `ACTUAL_SERVER_PASSWORD`: solo si configuraste una contraseña para el servidor Actual. No es la contraseña del banco.
+- Mantén `ACTUAL_SERVER_URL=http://127.0.0.1:5006` y `APP_HOST=127.0.0.1`.
 
-~~~bash
-npm run dev:api
-~~~
+No publiques ni compartas `.env`. Está excluido de Git porque puede contener credenciales.
 
-En otra terminal:
+El resto de valores puede conservar los defaults de `.env.example`. Las funciones de IA y búsqueda web deben permanecer desactivadas al principio.
 
-~~~bash
-curl http://127.0.0.1:3000/health
-curl http://127.0.0.1:3000/ready
-~~~
+## 7. Comprobar la instalación
 
-/ready indica si hay un presupuesto configurado, pero no sustituye una prueba completa de conectividad con Actual. La API accede al presupuesto mediante @actual-app/api, no mediante rutas REST inventadas.
+Ejecuta el diagnóstico:
 
-## 4. Arrancar la shell web
+```bash
+npm run doctor
+```
 
-En otra terminal:
+Lee el resultado. Si indica que Actual no responde, comprueba el contenedor con `docker compose ps` y sus logs con:
 
-~~~bash
-npm run dev:web
-~~~
-
-Abre http://127.0.0.1:5173. La aplicación usa solo la API local: Resumen, Movimientos, Informes, Presupuestos y Configuración. El Asistente aparece como no conectado y no envía movimientos a ningún modelo. Para registrar movimientos e importar extractos, revisa la previsualización y confirma la operación. CSV y OFX se procesan localmente en el navegador; consulta la [guía OFX](ofx-import.md) para conocer las variantes admitidas. La API local envía a Actual solo los registros normalizados confirmados y Actual realiza la conciliación final.
-
-## 5. IA local, MCP y recuperación
-
-Para activar IA opcional, instala Ollama local, descarga el modelo elegido y configura AI_ENABLED=true y OLLAMA_MODEL en .env. Solo se permiten endpoints loopback; si la IA no está disponible la gestión financiera sigue funcionando.
-
-MCP se lanza por stdio con npm run mcp:serve después de arrancar la API. No abre un puerto de red y sus herramientas son de solo lectura.
-
-Antes de crear una copia unificada o restaurar, detén Personal Budget con Ctrl+C para que la API no escriba durante la operación. Ejecuta `npm run backup:actual` para respaldar el volumen de Actual y los seis almacenes JSON propios inventariados. Para restaurar, usa `npm run restore:actual -- <ruta-de-copia-cifrada.tar.gz.enc> --confirm-data-restore`; la restauración exige confirmación explícita y conserva copias pre-restore. Revisa [Backup y restauración](backup-restore.md) para las exclusiones, custodia de la clave y ensayo de recuperación. No pruebes la restauración sobre el único presupuesto personal.
-
-## 6. Validar calidad
-
-~~~bash
-npm run lint
-npm run typecheck
-npm run test:coverage
-npm run build
-npm run test:runtime:lifecycle
-npm run audit
-npm run audit:production
-~~~
-
-El comando `npm run test:runtime:lifecycle` necesita que los puertos 3000 y 4173 estén libres. Detén antes cualquier instancia de desarrollo o de uso diario; la prueba utiliza un presupuesto no configurado y un directorio temporal, sin conectar con Actual ni modificar datos financieros.
-
-La CI ejecuta los controles en Linux y en Windows nativo. Para cerrar la validación de instalación también hay que ejecutar estos comandos en un checkout limpio de WSL2 y completar la prueba opcional de aceptación con un presupuesto de prueba de Actual. Un workflow Windows verde no prueba por sí solo la integración WSL2 ni el acceso a un servidor Actual real.
-
-
-## 7. Matriz de aceptación: Windows nativo y WSL2
-
-### Windows nativo
-
-Desde PowerShell, en un checkout limpio del repositorio, ejecuta:
-
-~~~powershell
-node --version
-npm --version
-npm ci
-npm run lint
-npm run typecheck
-npm run test:coverage
-npm run build
-npm run audit
-npm run audit:production
-~~~
-
-La versión esperada de Node es v26.13.1 y npm v11.20.0. El workflow `windows-quality` ejecuta esta instalación y los mismos controles en un runner `windows-latest`; comprueba que su ejecución asociada a la PR haya terminado en verde.
-
-### WSL2
-
-Comprueba desde PowerShell:
-
-~~~powershell
-wsl --status
-wsl -l -v
-~~~
-
-La distribución usada debe indicar versión 2. Guarda el checkout en el filesystem Linux de la distribución (por ejemplo, `~/projects/personal-budget`) y, desde su raíz, ejecuta:
-
-~~~bash
-nvm install
-nvm use
-node --version
-npm --version
-npm ci
-docker compose config --quiet
-npm run lint
-npm run typecheck
-npm run test:coverage
-npm run build
-npm run test:runtime:lifecycle
-npm run audit
-npm run audit:production
-~~~
-
-Antes del smoke de runtime, detén otras instancias de la aplicación y comprueba que los puertos 3000 y 4173 estén libres. La prueba arranca/parada la aplicación dos veces con un presupuesto sintético no configurado y un directorio temporal; no debe conectarse a una cuenta de Actual ni modificar datos financieros reales.
-
-Después, valida el contenedor y la API con las secciones anteriores. Registra las pruebas manuales con un presupuesto exclusivamente sintético; no uses datos financieros reales para una importación de validación.
-
-**Estado de validación:** la CI automatizada crea un servidor Actual aislado con contraseña exclusiva de CI y un presupuesto sintético; verifica la cuenta, las categorías, los identificadores, las fechas y los importes de las transacciones después de parar y volver a arrancar el contenedor, además de cubrir actualización y recuperación. Esto prueba la persistencia en el entorno de aceptación automatizado, pero no demuestra que la instalación se haya ejecutado en una distribución WSL2 concreta ni valida una instancia de Actual local del usuario. La aceptación manual de Windows + WSL2 sigue pendiente hasta ejecutar y registrar el flujo en ese entorno; no marques la issue de instalación como terminada antes de hacerlo.
-
-## 7. Resolución de problemas
-
-### Puertos ocupados
-
-Los procesos usan estos puertos por defecto: Actual `5006`, API `3000`, Vite `5173` y Vite preview `4173`. En WSL, identifica el proceso que escucha antes de detenerlo:
-
-~~~bash
-ss -ltnp | grep -E ':(3000|4173|5006|5173)\\b' || true
-docker compose ps
+```bash
 docker compose logs --tail=100 actual
-~~~
+```
 
-En PowerShell puedes inspeccionar puertos con:
+No compartas logs sin revisar y sanear su contenido. No borres `.local` para intentar reparar el servicio.
 
-~~~powershell
-Get-NetTCPConnection -State Listen | Where-Object { $_.LocalPort -in 3000,4173,5006,5173 }
-~~~
+## 8. Iniciar Personal Budget para uso diario
 
-Vite usa `strictPort`: si 5173/4173 está ocupado, no elige otro puerto automáticamente. Libera el puerto o actualiza el puerto y los orígenes permitidos de forma coherente. Conserva los servicios ligados a `127.0.0.1`; no los publiques en `0.0.0.0` ni abras puertos al LAN.
+Desde la raíz del proyecto:
 
-### Node.js en WSL2: dependencia libatomic
+```bash
+npm run start:local
+```
 
-Los binarios oficiales de Node.js para Linux desde la línea 25 enlazan con `libatomic`. En Ubuntu/WSL2, si `node --version` termina con un error indicando que falta `libatomic.so.1`, instala el paquete del sistema y vuelve a probar:
+Este comando compila el proyecto, inicia la API y sirve el frontend compilado. Abre:
 
-~~~bash
-sudo apt-get update
-sudo apt-get install -y libatomic1
-node --version
-~~~
+**http://127.0.0.1:4173**
 
-No es necesario instalarlo si Node.js ya arranca correctamente. Consulta las [notas oficiales de Node.js 26.13.0](https://nodejs.org/en/blog/release/v26.13.0).
+La API local utiliza el puerto 3000. No necesitas abrirla manualmente para usar la interfaz.
 
-### Docker, memoria y Actual
+Para detener Personal Budget, vuelve a la terminal donde se está ejecutando y pulsa `Ctrl+C`. El runtime coordina la parada de la API y la web. Actual puede permanecer activo.
 
-Si Actual no inicia, consulta `docker compose ps` y `docker compose logs --tail=100 actual`. Comprueba que Docker Desktop tiene integración con la distribución WSL2 correcta y suficiente memoria asignada para el contenedor. No borres `.local/actual-server-data` como método de reparación: contiene los datos persistentes de Actual. Para reiniciar el servicio, usa `docker compose restart actual` y vuelve a comprobar la interfaz en `http://127.0.0.1:5006`.
+En los siguientes días, el arranque habitual es:
 
-### Permisos y dependencias
+```bash
+cd ~/projects/personal-budget
+nvm use
+docker compose up -d actual
+npm run doctor
+npm run start:local
+```
 
-Guarda el checkout en el filesystem Linux y ejecuta los comandos de Node con tu usuario normal; evita `sudo npm ci`, que puede crear archivos propiedad de root. Si aparece `EACCES`, inspecciona primero `ls -ld . .local` y corrige únicamente los archivos del proyecto afectados. Tras modificar dependencias, usa `npm ci` para respetar el lockfile y vuelve a ejecutar los controles de calidad.
+No necesitas volver a ejecutar `npm ci` en cada arranque.
 
-### Ollama opcional
+## 9. Primeros pasos dentro de la aplicación
 
-La aplicación financiera no necesita Ollama: `AI_ENABLED=false` y `MCP_ENABLED=false` son los valores de plantilla. Si en el futuro habilitas la IA local, consulta `ollama --version`, `ollama list` y `curl http://127.0.0.1:11434/api/tags`; configura el modelo solo después de revisar sus requisitos de memoria y almacenamiento. Mantén el endpoint en loopback y no uses un endpoint remoto para el requisito local-first.
+1. Abre **Resumen** y comprueba el periodo y la divisa.
+2. Entra en **Cuentas** y verifica que aparecen las cuentas del presupuesto elegido.
+3. En **Movimientos**, comprueba que aparecen operaciones del periodo esperado.
+4. Revisa **Presupuestos** e **Informes**.
+5. Ajusta el ámbito de cuentas y la divisa si lo necesitas.
+6. Consulta la [guía de uso](usage.md) y el [catálogo de funcionalidades](features.md).
 
-## 8. IA local (opcional, P2)
+Si no aparecen cuentas o movimientos, vuelve a comprobar `ACTUAL_BUDGET_ID`, `ACTUAL_SERVER_URL` y el estado del contenedor. No cambies datos en Actual para intentar corregir una conexión.
 
-La integración con Ollama aún no está conectada a la shell P0. Para prepararla, instala Ollama desde la [web oficial](https://ollama.com/download) y consulta su [API](https://docs.ollama.com/api). La descarga del modelo requiere red; no configures endpoints alojados si el requisito es mantener las consultas en el equipo.
+## 10. Copias de seguridad: hazlo antes de depender de tus datos
 
+Personal Budget dispone de backup cifrado unificado que incluye el volumen de Actual, los almacenes propios inventariados y los documentos binarios admitidos.
 
-## 9. Prueba de aceptación con un presupuesto local existente (opcional)
+Antes de utilizarlo como sistema habitual:
 
-Cuando Actual Budget esté iniciado y hayas creado/configurado un presupuesto de prueba, puedes probar el adaptador real en modo solo lectura. Esta prueba consulta cuentas, categorías y movimientos del año configurado, pero no crea ni modifica transacciones.
+1. Lee [Backup y restauración](backup-restore.md).
+2. Conserva la clave de cifrado separada del equipo o checkout.
+3. Crea una copia con `npm run backup:actual` siguiendo los requisitos de parada.
+4. Planifica una restauración de ensayo en un entorno aislado con datos sintéticos.
 
-~~~bash
-ACTUAL_SERVER_URL=http://127.0.0.1:5006 \
-ACTUAL_BUDGET_ID='<sync-id-de-tu-presupuesto-de-prueba>' \
-PERSONAL_BUDGET_RUN_ACTUAL_ACCEPTANCE=1 \
-npm test -- services/actual-adapter/tests/actual-live-acceptance.test.ts
-~~~
+La restauración sustituye datos y requiere confirmación explícita. Nunca hagas pruebas destructivas con tu único presupuesto personal.
 
-Si el servidor tiene contraseña, añade `ACTUAL_SERVER_PASSWORD` en el entorno antes de ejecutar la prueba; no la pongas en la línea de comandos ni la compartas. Si hay cifrado end-to-end del presupuesto, esta prueba necesitará una ampliación para recibir la contraseña de cifrado. La suite normal omite esta prueba cuando no se activa explícitamente.
+## 11. Opcionales: IA, búsqueda web y MCP
+
+No son necesarios para la instalación básica:
+
+- **Ollama:** instala un runtime local y un modelo compatible si quieres utilizar el asistente. Consulta [IA local](local-ai.md).
+- **Búsqueda web:** requiere SearXNG, configuración separada y consentimiento para cada consulta. Consulta [Búsqueda web](web-search.md).
+- **MCP:** permite conectar un cliente compatible a herramientas de lectura por stdio. Consulta [MCP](mcp.md).
+
+Activa estas funciones solo después de entender qué datos procesan y qué sale del equipo.
+
+## Solución de problemas iniciales
+
+| Problema | Qué comprobar |
+|---|---|
+| `nvm: command not found` | Revisa la instalación de nvm y vuelve a abrir Ubuntu. |
+| Node/npm no coinciden | Ejecuta `nvm use` desde la raíz del repositorio y comprueba `.nvmrc`. |
+| Docker no responde | Comprueba Docker Desktop, la integración WSL2 y `docker info`. |
+| Actual no abre | Comprueba `docker compose ps`, el puerto 5006 y los logs saneados. |
+| No aparecen cuentas | Comprueba el Sync ID en `ACTUAL_BUDGET_ID` y la contraseña del servidor si existe. |
+| Puerto ocupado | Identifica primero qué proceso lo utiliza; no mates procesos desconocidos. |
+| Directorio .local inaccesible | Consulta la sección de permisos en [Resolución de problemas](troubleshooting.md). |
 
 ## Datos privados
 
-Usa primero un presupuesto de prueba. Nunca añadas extractos, bases de datos, backups, .env ni logs sensibles al repositorio. No introduzcas credenciales bancarias en Actual, Ollama, MCP ni personal-budget.
+No subas a Git ni compartas:
 
+- `.env`, contraseñas o claves de cifrado.
+- CSV/OFX bancarios, movimientos, saldos o identificadores personales.
+- Bases de datos de Actual o directorios `.local`.
+- Backups, documentos justificativos o logs sin sanear.
 
-## Modo diario y diagnóstico
-
-Tras completar la configuración inicial, utiliza el siguiente flujo en WSL2:
-
-~~~bash
-npm ci
-npm run doctor
-npm run start:local
-~~~
-
-Abre `http://127.0.0.1:4173`. El comando compila la aplicación, inicia la API y sirve el frontend de producción. Ctrl+C realiza el apagado coordinado. Si Actual aún no está listo o falta el presupuesto, la shell presenta un estado accionable sin inventar datos; Ollama es opcional.
-
-`npm run doctor` revisa la baseline de Node/npm, la configuración, Docker/Actual y la disponibilidad de API, web y asistente. Identifica variables que necesitan corrección sin imprimir valores sensibles. Consulta [Operación local](operations.md) para comprobar readiness, recuperación tras reiniciar WSL2 y procedimientos de parada.
+Para solicitar ayuda, comparte versiones, comandos ejecutados y errores saneados. Consulta [Privacidad](privacy.md) y [Seguridad](../SECURITY.md).

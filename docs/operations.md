@@ -1,56 +1,84 @@
 # Operación local
 
-## Servicios esperados
+Este documento describe cómo iniciar, detener y comprobar los servicios una vez completada la instalación.
 
-- Actual Budget server.
-- Backend local de `personal-budget`.
-- Frontend web de `personal-budget`.
-- Ollama cuando se utilice el asistente.
-- Servidor MCP por stdio, solo si hay un cliente MCP que lo necesite.
+## Servicios
 
-No todos los componentes necesitan ejecutarse si solo quieres usar Actual Budget. Para dashboard y chat, se necesitarán el backend y frontend cuando estén implementados.
-
-## Puertos locales previstos
-
-| Servicio | Puerto habitual | Recomendación |
+| Servicio | Puerto | Cuándo se necesita |
 |---|---:|---|
-| Actual Budget | 5006 | Publicar en `127.0.0.1` únicamente |
-| Aplicación web | 3000 | Publicar en `127.0.0.1` únicamente |
-| API local de Ollama | 11434 | Acceso desde el backend local; no exponer a la LAN |
-| MCP stdio | Sin puerto TCP por defecto | Iniciar como proceso hijo/cliente local |
+| Actual Budget | 5006 | Siempre que la API tenga que consultar el presupuesto. |
+| API Fastify | 3000 | Para todas las funciones de Personal Budget. |
+| Web de desarrollo (Vite) | 5173 | Solo durante desarrollo. |
+| Web compilada (runtime diario) | 4173 | Para uso cotidiano con `npm run start:local`. |
+| Ollama | 11434 | Solo si se activa IA local. |
+| MCP | stdio, sin puerto TCP | Solo cuando un cliente MCP compatible lo inicia. |
+| SearXNG | 8080 por defecto en configuración local | Solo si se activa investigación web y se configura el proveedor. |
 
-El modo de uso diario fija y comprueba los puertos locales de la API y del frontend descritos a continuación; no publiques estos servicios en interfaces LAN.
+Los servicios de Personal Budget y Actual deben permanecer ligados a loopback. No publiques sus puertos en LAN o Internet.
 
-## Arranque y parada
+## Arranque diario
 
-El orden de inicio es: Actual, confirmar el presupuesto, Ollama si se usa IA, y después backend/frontend. Antes de crear o restaurar un backup unificado, cierra Personal Budget con Ctrl+C para detener la API; el script falla antes de tocar datos si detecta el puerto local de la API activo. No borres volúmenes ni carpetas de datos para solucionar errores antes de realizar una copia.
+Desde WSL, en la raíz del repositorio:
+
+```bash
+nvm use
+docker compose up -d actual
+npm run doctor
+npm run start:local
+```
+
+Abre http://127.0.0.1:4173. El runtime compila, inicia API y web y coordina el cierre. Para detenerlo, pulsa Ctrl+C en la terminal del runtime.
+
+## Desarrollo
+
+En dos terminales separadas:
+
+```bash
+npm run dev:api
+```
+
+```bash
+npm run dev:web
+```
+
+La web de desarrollo está en http://127.0.0.1:5173. No ejecutes simultáneamente el runtime diario y procesos de desarrollo si utilizan los mismos puertos de API.
+
+## Diagnóstico y readiness
+
+- `npm run doctor` comprueba versiones, configuración y disponibilidad de servicios sin imprimir secretos.
+- `GET /health` comprueba que la API responde.
+- `GET /ready` informa de si la API está lista y de si hay un presupuesto configurado.
+- `not_configured` no significa que el proceso esté apagado.
+- La ausencia de Ollama no debe impedir las funciones financieras deterministas.
+
+## Parada y persistencia
+
+Detén Personal Budget con Ctrl+C antes de backup o restauración. No mates procesos hijos de forma aislada y no borres los directorios persistentes para solucionar errores.
+
+Actual puede seguir funcionando después de detener Personal Budget. Para detener solo el contenedor de Actual:
+
+```bash
+docker compose stop actual
+```
+
+Para volver a iniciarlo:
+
+```bash
+docker compose start actual
+```
+
+No utilices `docker compose down -v` como solución rutinaria: puede eliminar volúmenes administrados por Docker. El directorio persistente del proyecto está en `.local/actual-server-data`.
+
+## Backup y restauración
+
+El backup unificado requiere que la API esté parada y cubre el volumen de Actual, los nueve almacenes JSON propios inventariados y documentos binarios incluidos en el manifiesto. Lee [Backup y restauración](backup-restore.md) antes de ejecutar los comandos. Conserva la clave fuera del equipo y prueba restauraciones en un entorno aislado.
 
 ## Actualizaciones
 
-1. Crea y verifica una copia de seguridad.
-2. Lee notas de versión de Actual, Ollama y dependencias.
-3. Actualiza un componente cada vez.
-4. Revisa migraciones, adaptador y compatibilidad de tool calling.
-5. Verifica informes y conciliación en un presupuesto de prueba.
+Actual Budget se actualiza mediante [Actualizaciones seguras](safe-updates.md). No cambies el tag de Compose ni descargues una imagen nueva manualmente para saltarte el backup, el preflight o las pruebas de recuperación.
 
-No uses `latest` indefinidamente para un sistema con datos importantes; fija versiones conocidas y actualiza con un procedimiento controlado.
+Actualiza un componente cada vez. Comprueba la compatibilidad de la versión del servidor y `@actual-app/api`, revisa el backup y ejecuta las pruebas aplicables antes de depender del nuevo runtime.
 
+## Límites de aceptación
 
-## Modo diario implementado
-
-Desde la raíz del repositorio en WSL2:
-
-~~~bash
-npm run doctor
-npm run start:local
-~~~
-
-La interfaz compilada se abre en `http://127.0.0.1:4173` y la API en `http://127.0.0.1:3000`. El comando arranca los dos procesos, comprueba su respuesta y los detiene de forma coordinada al recibir Ctrl+C. Usa `npm run dev:api` y `npm run dev:web` solo durante desarrollo. No mates procesos secundarios de forma aislada ni borres los directorios persistentes para resolver un fallo.
-
-- `GET /health` comprueba que la API responde.
-- `GET /ready` distingue API activa de presupuesto configurado; un estado `not_configured` no equivale a que el runtime esté apagado.
-- `npm run doctor` diferencia requisitos inválidos de servicios no iniciados. No imprime variables sensibles, credenciales ni datos financieros.
-- La UI financiera básica sigue disponible cuando Ollama está desactivado; solo el asistente local queda no disponible.
-- Los tests E2E usan fixtures sintéticos aislados y no tocan el directorio `.local`, el presupuesto real ni backups.
-
-La actualización del servidor está automatizada de forma conservadora en [Actualizaciones seguras](safe-updates.md). Las versiones deben estar fijadas y la transición exacta debe estar validada; la restauración unificada de Actual + estado propio requiere confirmación explícita y se documenta en [Backup y restauración](backup-restore.md). La aceptación manual de Windows + WSL2 de issue #31 no se considera completada por los workflows de CI.
+La CI usa servicios sintéticos y runners Linux/Windows; no demuestra por sí sola que un nuevo equipo tenga Docker, WSL2, permisos y conectividad configurados correctamente. La aceptación manual de Windows + WSL2 se registró para el entorno de referencia el 1 de noviembre de 2026. Cada instalación nueva debe seguir su propio diagnóstico y comprobar su presupuesto de prueba antes de utilizar datos importantes.

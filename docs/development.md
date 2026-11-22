@@ -1,42 +1,104 @@
-# Desarrollo
+# Desarrollo para principiantes
 
-## Entorno
+Esta guía explica cómo orientarte en el repositorio y ejecutar el proyecto en modo desarrollo. Si solo quieres utilizar Personal Budget, sigue [Instalación](installation.md) y no necesitas estos comandos.
 
-- Windows + WSL2, Ubuntu recomendado.
-- Node.js 24.22.1 y npm compatibles.
-- Docker/Compose para Actual Budget.
-- Ollama es opcional; no es requisito de las pruebas normales.
-- Mantén el código y las instalaciones de desarrollo dentro del filesystem Linux de WSL. No uses datos financieros reales en fixtures o ejemplos.
+## 1. Preparar el entorno
 
-## Estructura
+Entorno objetivo: Windows + WSL2 con Ubuntu, Node.js 26.13.1, npm 11.20.0, Git y Docker/Compose.
 
-~~~text
+Mantén el checkout dentro del filesystem Linux de WSL, por ejemplo `~/projects/personal-budget`. No uses datos financieros reales en pruebas, fixtures, capturas ni logs.
+
+## 2. Entender las carpetas
+
+```text
 personal-budget/
-├── apps/web/                 # React/Vite shell
-├── services/api/             # Fastify local
-├── services/actual-adapter/  # adaptador @actual-app/api
-├── packages/finance-core/    # tipos y cálculos puros
-├── docs/
-└── compose.yaml
-~~~
+├── apps/
+│   └── web/                 # Interfaz React + Vite
+├── services/
+│   ├── api/                 # API local Fastify
+│   ├── actual-adapter/      # Integración oficial con Actual
+│   └── mcp/                 # Servidor MCP por stdio
+├── packages/
+│   └── finance-core/        # Dominio financiero y cálculos puros
+├── scripts/                 # Diagnóstico, runtime, backup y actualización
+├── docs/                    # Documentación funcional y técnica
+├── compose.yaml             # Servicio Actual Budget
+├── package.json             # Workspaces y comandos raíz
+└── package-lock.json        # Árbol reproducible de dependencias
+```
 
-## Uso diario
+### Qué hace cada workspace
 
-~~~bash
+| Workspace | Responsabilidad | Qué no debe hacer |
+|---|---|---|
+| `packages/finance-core` | Tipos neutrales, contratos financieros, validaciones y cálculos deterministas. | Depender de React, Fastify o del SDK de Actual. |
+| `services/actual-adapter` | Encapsular `@actual-app/api`, mapear datos y errores de Actual. | Propagar tipos crudos del SDK a la web o al núcleo. |
+| `services/api` | Exponer endpoints Fastify, validar entradas, aplicar ámbito y coordinar dominio/adaptador. | Acceder directamente a SQLite de Actual o permitir herramientas arbitrarias a modelos. |
+| `apps/web` | Interfaz React/Vite y consumo de la API local. | Conectarse directamente al almacén financiero o a proveedores externos. |
+| `services/mcp` | Publicar herramientas y prompts MCP acotados sobre la API local. | Ofrecer shell, SQL libre, filesystem o escrituras no autorizadas. |
+
+Para entender dependencias y flujos, lee [Arquitectura](architecture.md) y [Contratos del proveedor](provider-contracts.md).
+
+## 3. Instalar dependencias
+
+```bash
+nvm install
+nvm use
 npm ci
-npm run doctor
-npm run start:local
-~~~
+```
 
-El uso diario compila y sirve la aplicación en `127.0.0.1:4173`, con API en `127.0.0.1:3000`. Ctrl+C detiene ambos procesos. No se requieren comandos de desarrollo ni Ollama para las funciones financieras básicas.
+## 4. Ejecutar en modo desarrollo
 
-Para desarrollo con recarga en caliente, ejecuta `npm run dev:api` y `npm run dev:web` en terminales separadas.
+Inicia Actual si necesitas datos financieros:
 
-## Validación
+```bash
+docker compose up -d actual
+```
 
-Desde la raíz del repositorio y con Node.js 24.22.1:
+Terminal 1, API:
 
-~~~bash
+```bash
+npm run dev:api
+```
+
+Terminal 2, frontend:
+
+```bash
+npm run dev:web
+```
+
+Abre http://127.0.0.1:5173. La API utiliza http://127.0.0.1:3000.
+
+Para el uso cotidiano sin recarga en caliente, utiliza `npm run start:local`, que compila y sirve el frontend de producción local en el puerto 4173.
+
+## 5. Comandos del proyecto
+
+| Comando | Qué hace |
+|---|---|
+| `npm ci` | Instala las dependencias exactas del lockfile. |
+| `npm run doctor` | Diagnostica requisitos, configuración y servicios. |
+| `npm run dev:api` | Compila dependencias internas e inicia Fastify en desarrollo. |
+| `npm run dev:web` | Inicia Vite con recarga en caliente. |
+| `npm run start:local` | Compila y arranca el runtime local de uso diario. |
+| `npm run start:built` | Arranca el runtime ya compilado, sin reconstruir. |
+| `npm run build` | Construye los workspaces de producción. |
+| `npm run lint` | Ejecuta ESLint. |
+| `npm run typecheck` | Comprueba tipos de API, web y tests y construye dependencias internas. |
+| `npm run test` | Ejecuta Vitest. |
+| `npm run test:coverage` | Ejecuta Vitest con cobertura y umbrales configurados. |
+| `npm run test:e2e` | Ejecuta Playwright contra el frontend compilado y API sintética. |
+| `npm run audit` | Audita dependencias con umbral moderate. |
+| `npm run audit:production` | Audita solo dependencias de producción. |
+| `npm run benchmark:api` | Ejecuta benchmark sintético de API; no usar datos reales. |
+| `npm run mcp:serve` | Inicia el servidor MCP por stdio; requiere API local. |
+
+Backup, restauración y actualización de Actual tienen efectos sobre datos persistentes. No los ejecutes como comandos de desarrollo sin leer sus guías específicas.
+
+## 6. Validación antes de proponer cambios
+
+Desde la raíz:
+
+```bash
 npm ci
 npm run lint
 npm run typecheck
@@ -45,38 +107,39 @@ npm run build
 npm run audit
 npm run audit:production
 npm run test:e2e
-~~~
+```
 
-Para E2E en un entorno sin Chromium:
+Playwright puede necesitar Chromium:
 
-~~~bash
-npm run build
+```bash
 npx playwright install chromium
 npm run test:e2e
-~~~
+```
 
-La suite Playwright se ejecuta contra el frontend compilado y una API con fixtures sintéticas; no accede al presupuesto local, backups ni Ollama. Consulta [pruebas de navegador](browser-testing.md) y [sistema de diseño](design-system.md).
+La suite ordinaria usa datos sintéticos y no necesita una cuenta bancaria, un presupuesto personal ni un modelo Ollama real. Las pruebas live contra Actual, Ollama o SearXNG son optativas y deben utilizar entornos aislados y datos sintéticos.
 
-## Pruebas mínimas según el cambio
+## 7. Cómo abordar un cambio pequeño
 
-- Cálculos exactos en unidades monetarias menores, límites de mes/año y años bisiestos.
-- Transferencias internas excluidas del gasto consolidado, reembolsos, categorías ausentes, importes extremos y transacciones divididas.
-- Validación del adaptador, ciclo de vida y errores del proveedor.
-- Configuración que prohíbe hosts y URLs remotos cuando no están permitidos.
-- Errores de API saneados, límites de parámetros y autorización del ámbito.
-- Escrituras con previsualización, confirmación, idempotencia y recuperación ante fallo.
-- Integración contra una instancia aislada de Actual con datos sintéticos cuando se toque el adaptador, update o backup.
-- Auditoría de dependencias y escaneo de secretos en CI.
-- E2E de navegador y comprobaciones manuales de teclado, responsive y lector de pantalla cuando el cambio afecte UI.
+1. Identifica la funcionalidad y lee su documentación.
+2. Localiza el componente web, ruta API o contrato de dominio correspondiente.
+3. Comprueba si la lógica pertenece a `finance-core`, al adaptador, a la API o a la web.
+4. Añade primero una prueba que reproduzca el comportamiento esperado o el defecto.
+5. Implementa el cambio mínimo dentro de la responsabilidad correcta.
+6. Ejecuta las pruebas relevantes y los controles generales.
+7. Revisa el diff para detectar archivos accidentales, secretos o datos reales.
+8. Actualiza la documentación y el changelog cuando cambie el comportamiento visible.
 
-La suite ordinaria no debe necesitar credenciales, banco real, Internet ni un modelo real. Las aceptaciones live de Ollama/Actual/SearXNG pueden ser optativas, pero necesarias antes de afirmar que esa integración real está validada.
+## 8. Reglas que no debes romper
 
-## Clean Code y SOLID
+- Actual Budget sigue siendo la fuente de verdad financiera.
+- No accedas directamente a SQLite ni a los ficheros internos de Actual.
+- No importes `@actual-app/api` fuera de `services/actual-adapter` y las excepciones operativas documentadas.
+- No envíes movimientos, saldos ni datos financieros a proveedores externos.
+- No registres datos sensibles en logs ni fixtures.
+- No permitas que un modelo ejecute código, shell o SQL arbitrario.
+- Toda escritura debe validar entradas y conservar previsualización/confirmación cuando corresponda.
+- Mantén los cálculos monetarios exactos y distingue los datos desconocidos de cero.
+- Añade pruebas para límites, fallos y casos de divisas/transferencias.
+- No añadas dependencias ni workflows de CI sin justificar y aprobar su necesidad.
 
-Las rutas HTTP dependen de la interfaz `BudgetRepository`, no de Actual directamente. El núcleo financiero no depende del framework web, de Actual ni de IA. El adaptador encapsula el ciclo de vida y serializa el uso de la API de Actual. Los cambios de contrato deben incluir pruebas y documentación. Prioriza funciones pequeñas, nombres explícitos, validación en fronteras y abstracciones justificadas.
-
-Consulta [mantenibilidad](maintainability.md) antes de extraer o crear módulos grandes.
-
-## Prueba opcional contra Actual Budget
-
-La suite unitaria usa un contrato inyectable para que CI no necesite un presupuesto real. Para demostrar compatibilidad con el servidor y API fijados, prepara un presupuesto local de prueba y sigue el procedimiento de [instalación](installation.md#9-prueba-de-aceptación-con-un-presupuesto-local-existente-opcional). La prueba es de solo lectura y no debe usar un presupuesto con datos sensibles para CI o capturas.
+Consulta [CONTRIBUTING](../CONTRIBUTING.md), [Privacidad](privacy.md), [Seguridad](../SECURITY.md) y [Mantenibilidad](maintainability.md) antes de abrir una PR.
