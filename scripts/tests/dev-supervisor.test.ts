@@ -1,7 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 
-// @ts-ignore The supervisor is an executable MJS module without a public TS surface.
 import { startDevProcesses } from '../dev-supervisor.mjs';
 
 function createChild(pid: number) {
