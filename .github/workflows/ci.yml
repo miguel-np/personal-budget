@@ -169,7 +169,7 @@ jobs:
         run: npm ci
       - name: Start the pinned previous Actual version
         run: |
-          printf 'ACTUAL_IMAGE=actualbudget/actual-server:26.9.0\n' > .env
+          printf 'ACTUAL_IMAGE=actualbudget/actual-server:26.10.0\n' > .env
           mkdir -p .local/actual-server-data
           docker compose config --quiet
           docker compose up -d actual
@@ -185,16 +185,16 @@ jobs:
         run: |
           curl --silent --show-error --fail --retry 5 --retry-delay 1 -X POST http://127.0.0.1:5006/account/bootstrap -H 'content-type: application/json' --data "$(node -e 'process.stdout.write(JSON.stringify({password:process.env.ACTUAL_SERVER_PASSWORD}))')"
       - name: Install Actual API matching the previous server version
-        run: npm install --prefix "$RUNNER_TEMP/actual-api-269" --no-save --no-package-lock @actual-app/api@26.9.0
+        run: npm install --prefix "$RUNNER_TEMP/actual-api-2610" --no-save --no-package-lock @actual-app/api@26.10.0
       - name: Seed synthetic financial inventory
         env:
-          ACTUAL_API_PACKAGE_DIR: ${{ runner.temp }}/actual-api-269
+          ACTUAL_API_PACKAGE_DIR: ${{ runner.temp }}/actual-api-2610
         run: npm run test:update:acceptance -- seed
       - name: Seed synthetic Personal Budget application state
         run: npm run test:backup:acceptance -- seed
       - name: Verify encrypted unified backup and full restore
         env:
-          ACTUAL_API_PACKAGE_DIR: ${{ runner.temp }}/actual-api-269
+          ACTUAL_API_PACKAGE_DIR: ${{ runner.temp }}/actual-api-2610
         run: npm run test:backup:acceptance -- roundtrip
       - name: Stop and restart Actual without deleting its data volume
         run: |
@@ -213,12 +213,18 @@ jobs:
           exit 1
       - name: Verify synthetic inventory after container restart
         env:
-          ACTUAL_API_PACKAGE_DIR: ${{ runner.temp }}/actual-api-269
+          ACTUAL_API_PACKAGE_DIR: ${{ runner.temp }}/actual-api-2610
         run: npm run test:update:acceptance -- verify
-      - name: Verify update preflight
-        run: npm run update:actual -- preflight --to actualbudget/actual-server:26.10.0
-      - name: Update from 26.9.0 to 26.10.0
-        run: npm run update:actual -- update --to actualbudget/actual-server:26.10.0 --confirm
+      - name: Verify candidate update preflight
+        env:
+          NODE_ENV: test
+          PERSONAL_BUDGET_ALLOW_CANDIDATE_ACTUAL_TRANSITION: '1'
+        run: npm run update:actual -- preflight --to actualbudget/actual-server:26.11.0
+      - name: Update from 26.10.0 to candidate 26.11.0
+        env:
+          NODE_ENV: test
+          PERSONAL_BUDGET_ALLOW_CANDIDATE_ACTUAL_TRANSITION: '1'
+        run: npm run update:actual -- update --to actualbudget/actual-server:26.11.0 --confirm
       - name: Compare synthetic inventory after update
         run: npm run test:update:acceptance -- verify
       - name: Verify linked transfer and split edits against isolated synthetic Actual
@@ -231,13 +237,13 @@ jobs:
         if: always() && hashFiles('.local/update-state.json') != ''
         run: |
           BACKUP_PATH="$(node -e "const s=require('./.local/update-state.json');process.stdout.write(s.backupArchive)")"
-          npm run update:actual -- restore-backup --backup "$BACKUP_PATH" --to-image actualbudget/actual-server:26.9.0 --confirm-data-restore
+          npm run update:actual -- restore-backup --backup "$BACKUP_PATH" --to-image actualbudget/actual-server:26.10.0 --confirm-data-restore
       - name: Verify inventory after explicit recovery
         if: always() && hashFiles('.local/update-acceptance/expected-inventory.json') != ''
         run: npm run test:update:acceptance -- verify
       - name: Inject a failure after the target container starts
         run: |
-          if NODE_ENV=test PERSONAL_BUDGET_TEST_FAIL_AFTER_SWITCH=1 npm run update:actual -- update --to actualbudget/actual-server:26.10.0 --confirm; then
+          if NODE_ENV=test PERSONAL_BUDGET_ALLOW_CANDIDATE_ACTUAL_TRANSITION=1 PERSONAL_BUDGET_TEST_FAIL_AFTER_SWITCH=1 npm run update:actual -- update --to actualbudget/actual-server:26.11.0 --confirm; then
             echo "The injected update failure did not occur." >&2
             exit 1
           else
@@ -246,7 +252,7 @@ jobs:
       - name: Explicitly restore after the injected failure
         run: |
           BACKUP_PATH="$(node -e "const s=require('./.local/update-state.json');process.stdout.write(s.backupArchive)")"
-          npm run update:actual -- restore-backup --backup "$BACKUP_PATH" --to-image actualbudget/actual-server:26.9.0 --confirm-data-restore
+          npm run update:actual -- restore-backup --backup "$BACKUP_PATH" --to-image actualbudget/actual-server:26.10.0 --confirm-data-restore
       - name: Compare recovered synthetic inventory
         run: npm run test:update:acceptance -- verify
       - name: Stop Actual test service

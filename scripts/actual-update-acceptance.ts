@@ -21,6 +21,8 @@ interface AcceptanceTransaction {
   readonly amount: number;
   readonly account?: string;
   readonly transfer_id?: string | null;
+  readonly payee?: string | null;
+  readonly category?: string | null;
   readonly notes?: string | null;
   readonly cleared?: boolean;
   readonly is_parent?: boolean;
@@ -36,6 +38,12 @@ interface AcceptanceFixture {
   readonly transactionIds: readonly string[];
   readonly transactions: readonly AcceptanceTransaction[];
   readonly categories: readonly AcceptanceCategory[];
+  readonly categoryId: string;
+  readonly categoryName: string;
+  readonly categoryGroupId: string;
+  readonly categoryGroupName: string;
+  readonly categoryTargetGroupId: string;
+  readonly categoryTargetGroupName: string;
   readonly transactionBalanceMinor: number;
 }
 interface ActualBudgetListing {
@@ -48,14 +56,20 @@ interface ActualApiClient {
   shutdown(): Promise<void>;
   runImport(name: string, callback: () => Promise<void>): Promise<void>;
   createAccount(account: { readonly name: string; readonly offbudget?: boolean }): Promise<string>;
-  addTransactions(accountId: string, transactions: readonly Record<string, unknown>[], options?: {
-    readonly runTransfers?: boolean;
-    readonly learnCategories?: boolean;
-  }): Promise<readonly string[]>;
+  addTransactions(
+    accountId: string,
+    transactions: readonly Record<string, unknown>[],
+    options?: { readonly runTransfers?: boolean; readonly learnCategories?: boolean },
+  ): Promise<string>;
   getBudgets(): Promise<readonly ActualBudgetListing[]>;
   downloadBudget(syncId: string): Promise<void>;
   getAccounts(): Promise<readonly { readonly id: string; readonly name: string }[]>;
-  getCategories(): Promise<readonly { readonly id: string; readonly name: string }[]>;
+  getCategories(): Promise<readonly { readonly id: string; readonly name: string; readonly group_id?: string; readonly is_income?: boolean }[]>;
+  createCategoryGroup(group: { readonly name: string; readonly is_income?: boolean }): Promise<string>;
+  getCategoryGroups(options?: { readonly hidden?: boolean }): Promise<readonly { readonly id: string; readonly name: string; readonly is_income?: boolean }[]>;
+  updateCategoryGroup(id: string, fields: Readonly<Record<string, unknown>>): Promise<string>;
+  createCategory(category: { readonly name: string; readonly group_id: string; readonly is_income?: boolean }): Promise<string>;
+  updateCategory(id: string, fields: Readonly<Record<string, unknown>>): Promise<null>;
   getPayees(): Promise<readonly { readonly id: string; readonly name: string; readonly transfer_acct?: string | null }[]>;
   getTransactions(accountId: string, startDate: string, endDate: string): Promise<readonly AcceptanceTransaction[]>;
   updateTransaction(transactionId: string, fields: Readonly<Record<string, unknown>>): Promise<unknown>;
@@ -102,6 +116,12 @@ async function seed(): Promise<void> {
       seededTransactions = await api.getTransactions(accountId, '2026-01-01', '2026-01-31');
       transactionIds = seededTransactions.map((transaction) => transaction.id);
     });
+    const categoryGroupName = 'Grupo sintético original';
+    const categoryTargetGroupName = 'Grupo sintético destino';
+    const categoryName = 'Categoría sintética actualización';
+    const categoryGroupId = await api.createCategoryGroup({ name: categoryGroupName });
+    const categoryTargetGroupId = await api.createCategoryGroup({ name: categoryTargetGroupName });
+    const categoryId = await api.createCategory({ name: categoryName, group_id: categoryGroupId });
     await api.sync();
     const seededCategories = await api.getCategories();
     const budgets = await api.getBudgets();
@@ -119,6 +139,7 @@ async function seed(): Promise<void> {
         id: transaction.id, date: transaction.date, amount: transaction.amount,
       })),
       categories: seededCategories.map((category) => ({ id: category.id, name: category.name })).sort((a, b) => a.id.localeCompare(b.id)),
+      categoryId, categoryName, categoryGroupId, categoryGroupName, categoryTargetGroupId, categoryTargetGroupName,
       transactionBalanceMinor: seededTransactions.reduce((sum, transaction) => sum + transaction.amount, 0),
     };
     await writeFile(fixturePath, JSON.stringify(expected, null, 2) + '\n', { mode: 0o600 });
@@ -146,6 +167,19 @@ async function verify(): Promise<void> {
     if (JSON.stringify(categories) !== JSON.stringify(expected.categories)) {
       throw new Error('Synthetic category IDs or names changed after update/recovery; expected ' +
         expected.categories.length + ', got ' + categories.length + '.');
+    }
+    const category = (await api.getCategories()).find((item) => item.id === expected.categoryId);
+    if (!category || category.name !== expected.categoryName || category.group_id !== expected.categoryGroupId) {
+      throw new Error('Synthetic category identity, name, or original group changed after update/recovery.');
+    }
+    const categoryGroups = await api.getCategoryGroups();
+    for (const expectedGroup of [
+      { id: expected.categoryGroupId, name: expected.categoryGroupName },
+      { id: expected.categoryTargetGroupId, name: expected.categoryTargetGroupName },
+    ]) {
+      if (!categoryGroups.some((group) => group.id === expectedGroup.id && group.name === expectedGroup.name)) {
+        throw new Error('Synthetic category group identity or name changed after update/recovery.');
+      }
     }
     const actual = await api.getTransactions(account.id, '2026-01-01', '2026-01-31');
     const expectedIds = [...expected.transactionIds].sort();
@@ -190,40 +224,65 @@ async function verifyLinkedTransactionEditing(): Promise<void> {
     const sourceAccount = accounts.find((candidate) => candidate.id === expected.accountId);
     if (!sourceAccount) throw new Error('Synthetic source account could not be downloaded for linked-edit acceptance.');
 
-    counterpartAccountId = await api.createAccount({ name: 'Cuenta sintética contraparte ' + randomUUID().slice(0, 8), offbudget: false });
+    // Actual 26.11.0: partial category/group updates must not require a name field.
+    await api.updateCategory(expected.categoryId, { group_id: expected.categoryTargetGroupId });
+    await api.sync();
+    let category = (await api.getCategories()).find((item) => item.id === expected.categoryId);
+    if (!category || category.name !== expected.categoryName || category.group_id !== expected.categoryTargetGroupId) {
+      throw new Error('A partial category group_id update did not retain the category name and ID.');
+    }
+    await api.updateCategory(expected.categoryId, { group_id: expected.categoryGroupId });
+    await api.updateCategoryGroup(expected.categoryTargetGroupId, { hidden: true });
+    await api.sync();
+    const hiddenTargetGroups = await api.getCategoryGroups({ hidden: true });
+    if (!hiddenTargetGroups.some((group) => group.id === expected.categoryTargetGroupId && group.name === expected.categoryTargetGroupName)) {
+      throw new Error('A partial category-group hidden update did not retain the group name and ID.');
+    }
+    await api.updateCategoryGroup(expected.categoryTargetGroupId, { hidden: false });
+    await api.sync();
+    const visibleTargetGroups = await api.getCategoryGroups({ hidden: false });
+    if (!visibleTargetGroups.some((group) => group.id === expected.categoryTargetGroupId && group.name === expected.categoryTargetGroupName)) {
+      throw new Error('The synthetic target category group did not become visible again after a partial update.');
+    }
+    category = (await api.getCategories()).find((item) => item.id === expected.categoryId);
+    if (!category || category.name !== expected.categoryName || category.group_id !== expected.categoryGroupId) {
+      throw new Error('The category was not restored to its original group after partial-update acceptance.');
+    }
+    counterpartAccountId = await api.createAccount({ name: 'Cuenta sintética contraparte ' + randomUUID().slice(0, 8), offbudget: true });
     await api.sync();
     const payees = await api.getPayees();
     const transferPayeeToCounterpart = payees.find((payee) => payee.transfer_acct === counterpartAccountId);
-    const transferPayeeToSource = payees.find((payee) => payee.transfer_acct === sourceAccount.id);
-    if (!transferPayeeToCounterpart || !transferPayeeToSource) {
-      throw new Error('Actual did not expose reciprocal transfer payees for the synthetic accounts.');
+    if (!transferPayeeToCounterpart) {
+      throw new Error('Actual did not expose a transfer payee for the synthetic off-budget account.');
     }
 
-    // Seed the linked pair through the public API in direct-insert mode, with explicit
-    // reciprocal transfer IDs. This avoids testing Actual's import matcher instead of
-    // the application's edit behavior. Subsequent updates go through the real transfer
-    // update hooks and must keep both records coherent.
-    sourceId = randomUUID();
-    counterpartId = randomUUID();
-    await api.addTransactions(sourceAccount.id, [{
-      id: sourceId,
-      transfer_id: counterpartId,
+    // Create the transfer through the public API's transfer-payee path. runTransfers
+    // lets Actual create the reciprocal leg; the on-budget side must retain its category.
+    const addResult = await api.addTransactions(sourceAccount.id, [{
       date: '2026-09-01',
       amount: -4_200,
+      category: expected.categoryId,
       payee: transferPayeeToCounterpart.id,
       notes: 'Nota inicial sintética',
       cleared: false,
-    }]);
-    await api.addTransactions(counterpartAccountId, [{
-      id: counterpartId,
-      transfer_id: sourceId,
-      date: '2026-09-01',
-      amount: 4_200,
-      payee: transferPayeeToSource.id,
-      notes: 'Nota inicial sintética',
-      cleared: false,
-    }]);
+    }], { runTransfers: true });
+    if (addResult !== 'ok') {
+      throw new Error('Actual did not acknowledge creation of the synthetic transfer transaction.');
+    }
     await api.sync();
+    const sourceRows = await api.getTransactions(sourceAccount.id, '2026-09-01', '2026-09-30');
+    const createdSource = sourceRows.find((item) =>
+      item.amount === -4_200 && item.category === expected.categoryId &&
+      item.payee === transferPayeeToCounterpart.id &&
+      typeof item.transfer_id === 'string' && item.transfer_id.length > 0);
+    if (!createdSource) {
+      throw new Error('Actual did not persist the synthetic source-account transfer with its requested payee, amount, category, and reciprocal link.');
+    }
+    sourceId = createdSource.id;
+    counterpartId = createdSource.transfer_id ?? '';
+    if (!counterpartId) {
+      throw new Error('Actual did not create the reciprocal transfer leg for the off-budget account.');
+    }
 
     const transferPair = async (): Promise<{ source: AcceptanceTransaction; counterpart: AcceptanceTransaction }> => {
       const [sourceRows, counterpartRows] = await Promise.all([
@@ -232,7 +291,7 @@ async function verifyLinkedTransactionEditing(): Promise<void> {
       ]);
       const source = sourceRows.find((item) => item.id === sourceId);
       const counterpart = counterpartRows.find((item) => item.id === counterpartId);
-      if (!source || source.transfer_id !== counterpartId || !counterpart || counterpart.transfer_id !== sourceId) {
+      if (!source || source.transfer_id !== counterpartId || !counterpart || counterpart.transfer_id !== sourceId || source.category !== expected.categoryId) {
         throw new Error('Actual did not persist the reciprocal synthetic transfer links.');
       }
       return { source, counterpart };
@@ -247,7 +306,7 @@ async function verifyLinkedTransactionEditing(): Promise<void> {
     await api.updateTransaction(counterpartId, { amount: 5_100, notes: sharedNotes });
     await api.sync();
     pair = await transferPair();
-    if (pair.source.amount !== -5_100 || pair.counterpart.amount !== 5_100 ||
+    if (pair.source.amount !== -5_100 || pair.counterpart.amount !== 5_100 || pair.source.category !== expected.categoryId ||
         pair.source.notes !== sharedNotes || pair.counterpart.notes !== sharedNotes) {
       throw new Error('Actual did not persist the explicit amount/note updates on both synthetic transfer legs.');
     }
@@ -283,8 +342,8 @@ async function verifyLinkedTransactionEditing(): Promise<void> {
       payee_name: 'Compra dividida sintética',
       is_parent: true,
       subtransactions: [
-        { id: splitChildIds[0], account: sourceAccount.id, date: '2026-09-10', amount: -3_000, parent_id: splitParentId, is_child: true, is_parent: false, notes: 'Parte sintética A' },
-        { id: splitChildIds[1], account: sourceAccount.id, date: '2026-09-10', amount: -4_000, parent_id: splitParentId, is_child: true, is_parent: false, notes: 'Parte sintética B' },
+        { id: splitChildIds[0], account: sourceAccount.id, date: '2026-09-10', amount: -3_000, parent_id: splitParentId, is_child: true, is_parent: false, category: expected.categoryId, notes: 'Parte sintética A' },
+        { id: splitChildIds[1], account: sourceAccount.id, date: '2026-09-10', amount: -4_000, parent_id: splitParentId, is_child: true, is_parent: false, category: expected.categoryId, notes: 'Parte sintética B' },
       ],
     }]);
     await api.sync();
@@ -300,7 +359,8 @@ async function verifyLinkedTransactionEditing(): Promise<void> {
     let split = await splitParent();
     if (split.amount !== -7_000 ||
         JSON.stringify(split.subtransactions?.map((item) => item.id).sort()) !== JSON.stringify([...splitChildIds].sort()) ||
-        split.subtransactions?.reduce((sum, item) => sum + item.amount, 0) !== split.amount) {
+        split.subtransactions?.reduce((sum, item) => sum + item.amount, 0) !== split.amount ||
+        split.subtransactions?.some((item) => item.category !== expected.categoryId)) {
       throw new Error('The synthetic split baseline has missing IDs or a parent/child total mismatch.');
     }
     const changedChildren = split.subtransactions.map((child) => ({
@@ -323,8 +383,18 @@ async function verifyLinkedTransactionEditing(): Promise<void> {
         JSON.stringify(split.subtransactions?.map((item) => item.id).sort()) !== JSON.stringify([...splitChildIds].sort()) ||
         split.subtransactions?.reduce((sum, item) => sum + item.amount, 0) !== split.amount ||
         split.subtransactions?.find((item) => item.id === splitChildIds[0])?.amount !== -3_500 ||
-        split.subtransactions?.find((item) => item.id === splitChildIds[0])?.notes !== 'Parte sintética A revisada') {
+        split.subtransactions?.find((item) => item.id === splitChildIds[0])?.notes !== 'Parte sintética A revisada' ||
+        split.subtransactions?.some((item) => item.category !== expected.categoryId)) {
       throw new Error('Actual did not persist the split edit without losing child IDs or parent/child balance.');
+    }
+    await api.updateTransaction(splitChildIds[0], { notes: 'Parte sintética A anotada parcialmente' });
+    await api.sync();
+    split = await splitParent();
+    const partiallyUpdatedChild = split.subtransactions?.find((item) => item.id === splitChildIds[0]);
+    if (split.amount !== -7_500 || !partiallyUpdatedChild || partiallyUpdatedChild.amount !== -3_500 ||
+        partiallyUpdatedChild.category !== expected.categoryId || partiallyUpdatedChild.notes !== 'Parte sintética A anotada parcialmente' ||
+        split.subtransactions?.reduce((sum, item) => sum + item.amount, 0) !== split.amount) {
+      throw new Error('A partial child update lost its split amount/category or broke the parent/child total.');
     }
     process.stdout.write('LINKED_TRANSACTION_EDIT_OK: synthetic transfer fields, independent/synchronized dates, independent reconciliation, and split IDs/totals are verified in Actual.\n');
   } finally {
@@ -347,12 +417,12 @@ async function verifyLinkedTransactionEditing(): Promise<void> {
     const split = splitRows.find((item) => item.id === splitParentId);
     const persistedChildIds = split?.subtransactions?.map((item) => item.id).sort() ?? [];
     const persistedTargetChild = split?.subtransactions?.find((item) => item.id === splitChildIds[0]);
-    if (!source || source.amount !== -5_100 || source.date !== '2026-09-05' || source.notes !== sharedNotes || !source.cleared ||
+    if (!source || source.amount !== -5_100 || source.date !== '2026-09-05' || source.category !== expected.categoryId || source.notes !== sharedNotes || !source.cleared ||
         !counterpart || counterpart.amount !== 5_100 || counterpart.date !== '2026-09-05' || counterpart.notes !== sharedNotes || Boolean(counterpart.cleared) ||
         !split || split.amount !== -7_500 ||
         JSON.stringify(persistedChildIds) !== JSON.stringify([...splitChildIds].sort()) ||
         split.subtransactions?.reduce((sum, item) => sum + item.amount, 0) !== split.amount ||
-        persistedTargetChild?.amount !== -3_500 || persistedTargetChild.notes !== 'Parte sintética A revisada') {
+        persistedTargetChild?.amount !== -3_500 || persistedTargetChild.category !== expected.categoryId || persistedTargetChild.notes !== 'Parte sintética A anotada parcialmente') {
       throw new Error('A fresh Actual client could not verify linked edits after server synchronization.');
     }
     process.stdout.write('LINKED_TRANSACTION_SYNC_OK: updated transfer and split persisted after a fresh budget download.\n');

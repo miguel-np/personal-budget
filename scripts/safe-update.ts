@@ -26,6 +26,15 @@ const compatibilityPath = join(root, 'docs/update-compatibility.json');
 const MIN_FREE_BYTES = 256 * 1024 * 1024;
 const READY_TIMEOUT_MS = 90_000;
 const TEST_FAILURE_ENV = 'PERSONAL_BUDGET_TEST_FAIL_AFTER_SWITCH';
+const ALLOW_CANDIDATE_TRANSITION_ENV = 'PERSONAL_BUDGET_ALLOW_CANDIDATE_ACTUAL_TRANSITION';
+
+function allowCandidateTransitionForAcceptance(): boolean {
+  if (process.env[ALLOW_CANDIDATE_TRANSITION_ENV] !== '1') return false;
+  if (process.env.NODE_ENV !== 'test' || process.env.CI !== 'true' || process.env.GITHUB_ACTIONS !== 'true') {
+    throw new Error('Candidate Actual transitions can only be enabled for the isolated synthetic acceptance job in GitHub Actions.');
+  }
+  return true;
+}
 
 interface UpdateState {
   readonly status: 'updated' | 'pre-switch-failed' | 'recovery-required' | 'restore-in-progress' | 'restored';
@@ -204,7 +213,7 @@ export async function preflight(targetImage: string): Promise<{ readonly current
   if (currentImage !== running) {
     throw new Error('The running Actual image differs from the Compose configuration. Reconcile the current installation before updating.');
   }
-  assertSupportedTransition(currentImage, targetImage, transitions);
+  assertSupportedTransition(currentImage, targetImage, transitions, { allowCandidate: allowCandidateTransitionForAcceptance() });
   await stat(dataDir);
   await assertDiskSpace();
   await waitForReady(10_000);
@@ -222,7 +231,7 @@ async function update(targetInput: string): Promise<void> {
   const { currentImage } = await preflight(targetImage);
   const oldEnvContents = await readEnvContents();
   const policy = await imageTransitions();
-  assertSupportedTransition(currentImage, targetImage, policy);
+  assertSupportedTransition(currentImage, targetImage, policy, { allowCandidate: allowCandidateTransitionForAcceptance() });
 
   process.stdout.write('Preflight passed for ' + currentImage + ' -> ' + targetImage + '. Creating and verifying an encrypted backup.\n');
   const archive = await createVerifiedBackup();

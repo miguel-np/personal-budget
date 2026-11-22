@@ -1,7 +1,7 @@
 export interface TestedTransition {
   readonly from: string;
   readonly to: string;
-  readonly status: 'verified';
+  readonly status: 'verified' | 'candidate';
   readonly evidence: string;
 }
 
@@ -20,12 +20,13 @@ export function assertSupportedTransition(
   currentImage: string,
   targetImage: string,
   transitions: readonly TestedTransition[],
+  options: { readonly allowCandidate?: boolean } = {},
 ): { readonly current: string; readonly target: string } {
   const current = parseActualImage(currentImage);
   const target = parseActualImage(targetImage);
   if (current.version === target.version) throw new Error('Target image is already configured; there is no update to apply.');
   const supported = transitions.some((transition) =>
-    transition.status === 'verified' &&
+    (transition.status === 'verified' || (options.allowCandidate === true && transition.status === 'candidate')) &&
     transition.from === current.version &&
     transition.to === target.version,
   );

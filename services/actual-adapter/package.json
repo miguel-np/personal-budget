@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@personal-budget/finance-core": "0.1.0",
-    "@actual-app/api": "26.10.0",
+    "@actual-app/api": "26.11.0",
     "zod": "4.6.7"
   },
   "scripts": {

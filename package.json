@@ -42,7 +42,7 @@
     "benchmark:api": "npm run build --workspace=@personal-budget/finance-core && npm run build --workspace=@personal-budget/actual-adapter && npm run build --workspace=@personal-budget/api && node scripts/api-load-benchmark.mjs"
   },
   "dependencies": {
-    "@actual-app/api": "26.10.0",
+    "@actual-app/api": "26.11.0",
     "@fastify/helmet": "13.2.0",
     "fastify": "5.12.8",
     "zod": "4.6.7"

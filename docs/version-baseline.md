@@ -7,8 +7,8 @@
 | Tecnología | Versión fijada | Fuente oficial |
 |---|---:|---|
 | Node.js Maintenance LTS | 24.22.3 | [Release](https://nodejs.org/en/blog/release/v24.22.3) |
-| Actual Budget server | 26.10.0 | [Release](https://github.com/actualbudget/actual/releases/tag/v26.10.0) |
-| @actual-app/api | 26.10.0 | [API oficial](https://actualbudget.org/docs/api/) |
+| Actual Budget server | 26.11.0 | [Release](https://github.com/actualbudget/actual/releases/tag/v26.11.0) |
+| @actual-app/api | 26.11.0 | [API oficial](https://actualbudget.org/docs/api/) |
 | Fastify | 5.12.8 | [Release](https://github.com/fastify/fastify/releases/tag/v5.12.8) · [Política LTS](https://fastify.dev/docs/latest/Reference/LTS/) |
 | @fastify/helmet | 13.2.0 | [NPM](https://www.npmjs.com/package/@fastify/helmet) |
 | Zod | 4.6.7 | [NPM](https://www.npmjs.com/package/zod) |
@@ -18,6 +18,13 @@
 | typescript-eslint | 8.72.0 | [Release](https://github.com/typescript-eslint/typescript-eslint/releases) |
 | Vitest + coverage | 5.0.5 | [Vitest](https://www.npmjs.com/package/vitest) |
 | ESLint | 10.13.0 | [Versiones ESLint](https://eslint.org/docs/latest/versions/) |
+
+## Actual Budget 26.11.0
+
+- El servidor y `@actual-app/api` se actualizan conjuntamente a 26.11.0. La versión corrige actualizaciones parciales de categorías/grupos que omitían `name`, preserva la categoría en transferencias entre cuentas on-budget/off-budget y conserva el importe y categoría de hijos de movimientos divididos en actualizaciones parciales. También corrige el guardado seguro del presupuesto y mejora el uso de memoria con presupuestos grandes. [Notas oficiales](https://actualbudget.org/blog/release-26.11.0/).
+- La release restringe los puentes SimpleFIN privados mediante una allowlist administrativa para mitigar SSRF. Este proyecto no configura un puente SimpleFIN privado ni inicia sincronización bancaria; no se habilita una excepción de allowlist.
+- `compose.yaml` mantiene 26.10.0 como origen predeterminado para impedir que un `docker compose up` omita el preflight y el backup cifrado. `scripts/safe-update.ts` fija `ACTUAL_IMAGE=26.11.0` en `.env` solo después de crear y verificar el backup.
+- La transición 26.10.0 → 26.11.0 está verificada por CI en PR #139 (run 712, 22-nov-2026): upgrade sintético, inventario, transferencias, splits, edición de categorías, restauración explícita del backup y recuperación tras un fallo inyectado. La evidencia queda registrada en `docs/update-compatibility.json`.
 
 ## Actualizaciones de seguridad de noviembre de 2026
 
