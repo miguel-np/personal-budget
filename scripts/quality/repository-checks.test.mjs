@@ -16,15 +16,15 @@ test('extracts local Markdown links and ignores code examples and external URLs'
 
 test('enforces workspace dependency direction', () => {
   assert.match(getImportBoundaryViolation('packages/finance-core/src/domain.ts', '@personal-budget/actual-adapter') ?? '', /forbidden workspace boundary/u);
-  assert.match(getImportBoundaryViolation('apps/web/src/App.tsx', '@actual-app/api') ?? '', /exclusively to services\\/actual-adapter/u);
+  assert.match(getImportBoundaryViolation('apps/web/src/App.tsx', '@actual-app/api') ?? '', /exclusively to services\/actual-adapter/u);
   assert.equal(getImportBoundaryViolation('services/api/src/app.ts', '@personal-budget/finance-core'), undefined);
   assert.equal(getImportBoundaryViolation('services/actual-adapter/src/adapter.ts', '@actual-app/api'), undefined);
 });
 
 test('applies file budgets to new files and prevents growth of inherited exceptions', () => {
-  const withinBudget = Buffer.from('const value = 1;\\n');
-  const oversized = Buffer.from('x\\n'.repeat(601));
-  const slightlyLarger = Buffer.from('x\\n'.repeat(602));
+  const withinBudget = Buffer.from('const value = 1;\n');
+  const oversized = Buffer.from('x\n'.repeat(601));
+  const slightlyLarger = Buffer.from('x\n'.repeat(602));
   assert.equal(evaluateFileBudget(null, withinBudget, 'new-file.ts'), undefined);
   assert.match(evaluateFileBudget(null, oversized, 'new-file.ts') ?? '', /new and exceeds/u);
   assert.equal(evaluateFileBudget(oversized, oversized, 'legacy.ts'), undefined);
