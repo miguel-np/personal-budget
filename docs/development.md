@@ -148,3 +148,15 @@ La suite ordinaria usa datos sintéticos y no necesita una cuenta bancaria, un p
 - No añadas dependencias ni workflows de CI sin justificar y aprobar su necesidad.
 
 Consulta [CONTRIBUTING](../CONTRIBUTING.md), [Privacidad](privacy.md), [Seguridad](../SECURITY.md) y [Mantenibilidad](maintainability.md) antes de abrir una PR.
+
+
+## Gates de arquitectura y documentación
+
+Antes de abrir una PR, ejecuta:
+
+```bash
+npm run quality:repo:test
+npm run quality:repo
+```
+
+Estas comprobaciones verifican límites entre workspaces, rutas Markdown locales, comandos npm documentados y presupuestos de tamaño para ficheros nuevos o modificados. En CI, la comparación de tamaño utiliza el commit base del PR. No acceden a Actual Budget ni requieren credenciales o datos financieros.
