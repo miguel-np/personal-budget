@@ -8,29 +8,38 @@ type BudgetQueryResult = { readonly data?: readonly BudgetAllocationRow[] };
 /**
  * Builds the official SDK-backed contract for the adapter.
  *
- * The optional getBudgetAllocations capability is implemented with Actual's AQL
- * query language and lives here, inside the adapter package, so no consumer
- * outside this boundary needs to know the provider's query dialect or the SDK
- * namespace. The injected namespace keeps the factory testable.
+ * Only SDK methods used by the adapter are read. Avoid enumerating the module
+ * namespace: SDK namespace exports are live read-only bindings, and evaluating
+ * unrelated getters is unnecessary and can make startup depend on SDK internals.
  */
 export function createActualApiContract(
   namespace: typeof ActualApiNamespace = ActualApiNamespace,
 ): ActualApiContract {
-  // Module namespace exports are read-only own properties. Copy them to a plain
-  // object before adding adapter capabilities, rather than inheriting their
-  // descriptors through Object.create (which makes collisions non-writable).
-  const api = { ...namespace } as unknown as ActualApiContract;
-  api.getBudgetAllocations = async (month: string): Promise<readonly BudgetAllocation[]> => {
-    const monthId = Number(month.replace('-', ''));
-    const [zeroBudgetRaw, trackingBudgetRaw] = await Promise.all([
-      namespace.aqlQuery(namespace.q('zero_budgets').filter({ month: monthId }).select(['category', 'amount'])),
-      namespace.aqlQuery(namespace.q('reflect_budgets').filter({ month: monthId }).select(['category', 'amount'])),
-    ]);
-    const rows = [
-      ...((zeroBudgetRaw as BudgetQueryResult).data ?? []),
-      ...((trackingBudgetRaw as BudgetQueryResult).data ?? []),
-    ];
-    return rows.map((row) => ({ categoryId: row.category, amountMinor: row.amount }));
-  };
+  const api = {
+    init: namespace.init,
+    downloadBudget: namespace.downloadBudget,
+    sync: namespace.sync,
+    shutdown: namespace.shutdown,
+    getAccounts: namespace.getAccounts,
+    getCategories: namespace.getCategories,
+    getTransactions: namespace.getTransactions,
+    importTransactions: namespace.importTransactions,
+    ...(namespace.getPayees ? { getPayees: namespace.getPayees } : {}),
+    ...(namespace.getBudgetMonth ? { getBudgetMonth: namespace.getBudgetMonth } : {}),
+    ...(namespace.setBudgetAmount ? { setBudgetAmount: namespace.setBudgetAmount } : {}),
+    ...(namespace.updateTransaction ? { updateTransaction: namespace.updateTransaction } : {}),
+    getBudgetAllocations: async (month: string): Promise<readonly BudgetAllocation[]> => {
+      const monthId = Number(month.replace('-', ''));
+      const [zeroBudgetRaw, trackingBudgetRaw] = await Promise.all([
+        namespace.aqlQuery(namespace.q('zero_budgets').filter({ month: monthId }).select(['category', 'amount'])),
+        namespace.aqlQuery(namespace.q('reflect_budgets').filter({ month: monthId }).select(['category', 'amount'])),
+      ]);
+      const rows = [
+        ...((zeroBudgetRaw as BudgetQueryResult).data ?? []),
+        ...((trackingBudgetRaw as BudgetQueryResult).data ?? []),
+      ];
+      return rows.map((row) => ({ categoryId: row.category, amountMinor: row.amount }));
+    },
+  } as unknown as ActualApiContract;
   return api;
 }
