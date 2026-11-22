@@ -9,7 +9,9 @@ Comprueba que el runtime está iniciado y que has abierto la dirección correcta
 - Uso diario: http://127.0.0.1:4173
 - Desarrollo Vite: http://127.0.0.1:5173
 
-Si utilizas `npm run start:local`, deja abierta la terminal donde se ejecuta. Revisa si el comando ha mostrado un error y ejecuta `npm run doctor` en otra terminal.
+Deja abierta la terminal donde ejecutas la aplicación. En desarrollo, `npm run dev` muestra los registros de API y Vite en esa misma terminal; si uno de los procesos termina, el supervisor detiene el otro. En uso diario, `npm run start:local` mantiene el runtime compilado activo.
+
+Si la web no responde, revisa los mensajes de esa terminal y ejecuta `npm run doctor` en otra. Comprueba también que no haya otra instancia de Personal Budget ocupando los puertos 3000, 4173 o 5173. No mates procesos desconocidos para liberar un puerto.
 
 ## 2. La API no responde
 
