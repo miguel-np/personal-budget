@@ -45,22 +45,21 @@ function relativePath(file) {
 }
 
 function stripCodeExamples(markdown) {
-  const backtick = String.fromCharCode(96);
-  const fence = backtick.repeat(3);
-  const fencedCode = new RegExp(fence + '[\\\\s\\\\S]*?' + fence, 'g');
-  const inlineCode = new RegExp(backtick + '[^' + backtick + '\\\\n]*' + backtick, 'g');
-  return markdown.replace(fencedCode, '').replace(/~~~[\\\\s\\\\S]*?~~~/g, '').replace(inlineCode, '');
+  const backtickFence = String.fromCharCode(96).repeat(3);
+  return markdown
+    .split(backtickFence).filter((_, index) => index % 2 === 0).join('')
+    .split('~~~').filter((_, index) => index % 2 === 0).join('');
 }
 
 export function extractMarkdownLinks(markdown) {
   const source = stripCodeExamples(markdown);
   const links = [];
-  for (const match of source.matchAll(/!?\\\\[[^\\\\]]*\\\\]\\\\(([^)\\\\n]+)\\\\)/g)) {
+  for (const match of source.matchAll(/!?\[[^\]]*\]\(([^)\n]+)\)/g)) {
     let destination = (match[1] ?? '').trim();
     if (destination.startsWith('<') && destination.includes('>')) {
       destination = destination.slice(1, destination.indexOf('>'));
     } else {
-      destination = destination.split(/\\\\s+/u, 1)[0] ?? '';
+      destination = destination.split(/\s+/u, 1)[0] ?? '';
     }
     if (!destination || destination.startsWith('#')) continue;
     if (/^(?:https?:|mailto:|tel:|data:|javascript:)/i.test(destination)) continue;
@@ -106,10 +105,10 @@ export function getImportBoundaryViolation(filePath, specifier) {
 function extractImportSpecifiers(source) {
   const specifiers = new Set();
   const expressions = [
-    /\\\\bimport\\\\s+(?:type\\\\s+)?(?:[^'";]*?\\\\s+from\\\\s*)?['"]([^'"]+)['"]/g,
-    /\\\\bexport\\\\s+(?:type\\\\s+)?[^'";]*?\\\\s+from\\\\s*['"]([^'"]+)['"]/g,
-    /\\\\bimport\\\\s*\\\\(\\\\s*['"]([^'"]+)['"]\\\\s*\\\\)/g,
-    /\\\\brequire\\\\s*\\\\(\\\\s*['"]([^'"]+)['"]\\\\s*\\\\)/g,
+    /\bimport\s+(?:type\s+)?(?:[^'";]*?\s+from\s*)?['"]([^'"]+)['"]/g,
+    /\bexport\s+(?:type\s+)?[^'";]*?\s+from\s*['"]([^'"]+)['"]/g,
+    /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
+    /\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
   ];
   for (const expression of expressions) {
     for (const match of source.matchAll(expression)) {
@@ -151,8 +150,8 @@ async function checkArchitecture() {
 }
 
 function lineCount(content) {
-  const lines = content.split(/\\\\r?\\\\n/u);
-  return lines.length - (content.endsWith('\\\\n') ? 1 : 0);
+  const lines = content.split(/\r?\n/u);
+  return lines.length - (content.endsWith('\n') ? 1 : 0);
 }
 
 export function evaluateFileBudget(previous, current, filePath) {
@@ -191,7 +190,7 @@ async function checkChangedFileBudgets() {
   const changedOutput = execFileSync('git', [
     'diff', '--name-only', '--diff-filter=ACMR', '-z', base + '...' + head,
   ], { cwd: ROOT, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
-  const changedPaths = changedOutput.split('\\\\0').filter((file) => file && SOURCE_EXTENSIONS.has(path.extname(file)));
+  const changedPaths = changedOutput.split('\0').filter((file) => file && SOURCE_EXTENSIONS.has(path.extname(file)));
   const errors = [];
 
   for (const filePath of changedPaths) {
@@ -223,7 +222,7 @@ async function checkDocumentation() {
   const workspaceScripts = new Map();
 
   for (const workspacePattern of rootManifest.workspaces ?? []) {
-    const workspaceRoot = workspacePattern.replace(/\\\\/\\\\*$/, '');
+    const workspaceRoot = workspacePattern.replace(/\/\*$/, '');
     try {
       const manifest = JSON.parse(await readFile(path.join(ROOT, workspaceRoot, 'package.json'), 'utf8'));
       workspaceScripts.set(manifest.name, new Set(Object.keys(manifest.scripts ?? {})));
@@ -254,11 +253,11 @@ async function checkDocumentation() {
       if (!exists) errors.push(relative + ' links to a missing local path: ' + destination);
     }
 
-    const commandExpression = /\\\\bnpm\\\\s+run\\\\s+([a-zA-Z0-9:_-]+)([^\\\\n]*)/g;
+    const commandExpression = /\bnpm\s+run\s+([a-zA-Z0-9:_-]+)([^\n]*)/g;
     for (const match of content.matchAll(commandExpression)) {
       const script = match[1];
       const suffix = match[2] ?? '';
-      const workspaceMatch = suffix.match(/(?:--workspace(?:=|\\\\s+)|-w\\\\s+)([^\\\\s]+)/);
+      const workspaceMatch = suffix.match(/(?:--workspace(?:=|\s+)|-w\s+)([^\s]+)/);
       if (workspaceMatch) {
         const scripts = workspaceScripts.get(workspaceMatch[1]);
         if (scripts && !scripts.has(script)) {
