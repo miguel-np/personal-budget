@@ -14,6 +14,7 @@ Este documento conserva el historial de cambios del producto. El estado de issue
 - El runtime de desarrollo, CI y diagnóstico pasa a Node.js 26.13.1 Active LTS con npm 11.20.0; se actualizan los tipos de Node y los requisitos de instalación.
 - Actual Budget server y `@actual-app/api` pasan conjuntamente a 26.11.0, con aceptación sintética de integridad financiera y recuperación.
 - Se actualizan Vitest y `@vitest/coverage-v8` a 5.1.1 y Playwright Test a 1.65.1; se alinea el árbol transitivo del runner y del proveedor de cobertura.
+- Se actualiza ESLint a 10.15.0, `@eslint/config-array` a 0.23.6 y `minimatch` a 11.0.9, alineando el matcher transitivo con los requisitos de la release y las correcciones de seguridad publicadas.
 - El README y el roadmap dejan de duplicar el estado operativo de GitHub.
 - Reorganizada la documentación de estado y el inventario documental para distinguir implementación, evidencia automatizada y aceptación externa/manual.
 
