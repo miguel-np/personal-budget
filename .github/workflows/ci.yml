@@ -40,7 +40,7 @@ jobs:
       - name: Lint
         run: npm run lint
       - name: Test local web-search acceptance boundary and host inventory
-        run: node --test scripts/local-acceptance-origin.test.mjs scripts/web-search-live-acceptance-config.test.mjs scripts/web-search-live-acceptance-probes.test.mjs
+        run: node --test scripts/local-acceptance-origin.test.mjs scripts/web-search-live-acceptance-config.test.mjs scripts/web-search-live-acceptance-probes.test.mjs scripts/web-search-live-acceptance-results.test.mjs
       - name: Typecheck and build
         run: npm run typecheck && npm run build
       - name: Smoke synthetic API load harness
