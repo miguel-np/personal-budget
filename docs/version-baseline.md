@@ -20,7 +20,7 @@
 | typescript-eslint | 8.72.0 | [Release](https://github.com/typescript-eslint/typescript-eslint/releases) |
 | Vitest + coverage | 5.1.1 | [Vitest 5.1](https://vitest.dev/blog/vitest-5-1) · [NPM](https://www.npmjs.com/package/vitest) |
 | Playwright Test | 1.65.1 | [Release notes](https://playwright.dev/docs/release-notes) |
-| ESLint | 10.13.0 | [Versiones ESLint](https://eslint.org/docs/latest/versions/) |
+| ESLint | 10.15.0 | [Release oficial](https://eslint.org/blog/2026/11/eslint-v10.15.0-released/) · [Versiones ESLint](https://eslint.org/docs/latest/versions/) |
 
 ## Actual Budget 26.11.0
 
