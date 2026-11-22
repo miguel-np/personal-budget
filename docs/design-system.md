@@ -33,9 +33,9 @@ La referencia viva es la propia aplicación con sus pruebas de navegador sintét
 ## Aplicación de accesibilidad y pruebas de aceptación (#36)
 
 - El primer elemento de la shell es un enlace visible al recibir foco para saltar la navegación; el destino principal es enfocable.
-- Al navegar entre secciones, el foco pasa al título principal actualizado, sin robar el foco durante la carga inicial.
+- Al navegar entre secciones, el foco pasa al título principal actualizado y el título se desplaza a la zona visible incluso cuando la navegación comienza tras recorrer una página larga. No debe usarse `preventScroll` sin un desplazamiento explícito posterior.
 - Las regiones de tablas anchas tienen nombre accesible y pueden recibir foco para desplazamiento horizontal local; la tabla de proyección debe seguir esta misma regla. La página completa no debe desbordarse.
 - Los controles de acción frecuentes usan un objetivo de 44 × 44 CSS px cuando corresponde. Los campos visibles deben tener una etiqueta programática; los placeholders no sustituyen a una etiqueta.
 - El contraste de los textos financieros prioritarios se comprueba en tema claro y oscuro sobre el color de fondo compuesto por sus ancestros, con 4,5:1 para texto normal y 3:1 para texto grande. La comprobación automatizada es una señal de regresión, no una certificación completa.
-- Se respetan las preferencias de movimiento reducido existentes. La revisión manual sigue comprobando teclado, foco, zoom, árbol de accesibilidad/lector de pantalla y tareas completas.
+- `prefers-reduced-motion: reduce` elimina animaciones, transiciones y desplazamientos espaciales no esenciales (incluido el desplazamiento vertical de botones activos), conservando el feedback no espacial y los cambios funcionales. La revisión manual sigue comprobando teclado, foco, zoom, árbol de accesibilidad/lector de pantalla y tareas completas.
 - La regresión responsive recorre las doce secciones en ambos temas y en 320, 375, 390, 768, 1024 y 1440 CSS px. Los datos de las pruebas y capturas de aceptación son sintéticos.
