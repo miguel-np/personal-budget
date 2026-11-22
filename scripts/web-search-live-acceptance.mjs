@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { DEFAULT_LOCAL_ACCEPTANCE_API_ORIGIN, validateLocalAcceptanceOrigin } from './local-acceptance-origin.mjs';
 import { WEB_SEARCH_ACCEPTANCE_GROUPS as groups } from './web-search-live-acceptance-config.mjs';
+import { evaluateNegativeProbe } from './web-search-live-acceptance-probes.mjs';
 
 const baseValue = process.env.PERSONAL_BUDGET_LOCAL_ACCEPTANCE_API_ORIGIN ?? DEFAULT_LOCAL_ACCEPTANCE_API_ORIGIN;
 const base = validateLocalAcceptanceOrigin(baseValue);
@@ -215,9 +216,26 @@ for (let i = 0; i < groups.length; i += 1) {
   if (i < groups.length - 1) await delay(10_500);
 }
 const negativeProbes = [
-  { id: 'dog-gal-not-trusted-as-dog', domains: ['xunta.gal'], query: 'site:dog.gal Diario Oficial de Galicia DOG', forbiddenHosts: ['dog.gal'] },
-  { id: 'external-host-excluded-by-boe-filter', domains: ['boe.es'], query: 'site:example.com Example Domain public information', forbiddenHosts: ['example.com'] },
-  { id: 'unfiltered-secondary-source-classification', domains: [], query: 'site:example.com Example Domain public information', requireExternalClassification: true },
+  {
+    id: 'dog-gal-not-trusted-as-dog',
+    domains: ['xunta.gal'],
+    query: 'site:xunta.gal/diario-oficial-galicia Diario Oficial de Galicia DOG normativa',
+    requiredHosts: ['xunta.gal', 'www.xunta.gal'],
+    forbiddenHosts: ['dog.gal'],
+  },
+  {
+    id: 'external-host-excluded-by-boe-filter',
+    domains: ['boe.es'],
+    query: 'site:boe.es texto consolidado Ley 39/2015 Boletín Oficial del Estado',
+    requiredHosts: ['boe.es', 'www.boe.es'],
+    forbiddenHosts: ['example.com'],
+  },
+  {
+    id: 'unfiltered-secondary-source-classification',
+    domains: [],
+    query: 'site:example.com Example Domain public information',
+    expectedExternalHost: 'example.com',
+  },
 ];
 report.negativeProbes = [];
 for (const probe of negativeProbes) {
@@ -231,12 +249,10 @@ for (const probe of negativeProbes) {
       let host = null; try { host = new URL(source.url).hostname.toLowerCase(); } catch { /* Invalid source URL remains visible as a failed probe. */ }
       return { host, sourceAuthority: source.sourceAuthority ?? null, documentRetrieved: Boolean(source.document && source.document.status === 'retrieved') };
     });
-    const forbiddenObserved = probe.forbiddenHosts?.filter((forbidden) => observed.some((source) => source.host === forbidden || source.host?.endsWith('.' + forbidden))) ?? [];
-    const externalClassified = observed.some((source) => source.host === 'example.com' && source.sourceAuthority === 'external' && !source.documentRetrieved);
-    const accepted = probe.requireExternalClassification ? externalClassified : forbiddenObserved.length === 0;
+    const evaluation = evaluateNegativeProbe(probe, observed);
     report.negativeProbes.push({ id: probe.id, httpStatus: response.response.status, responseMime: response.contentType,
-      sourceCount: observed.length, sources: observed, forbiddenHostsObserved: forbiddenObserved,
-      status: accepted ? 'accepted' : observed.length === 0 ? 'not_observed' : 'rejected' });
+      sourceCount: observed.length, sources: observed, forbiddenHostsObserved: evaluation.forbiddenHostsObserved,
+      status: evaluation.status });
   } catch (error) {
     report.negativeProbes.push({ id: probe.id, status: 'failed', errorType: error instanceof Error ? error.name : 'UnknownError' });
   }
