@@ -5,6 +5,12 @@
       "to": "26.10.0",
       "status": "verified",
       "evidence": "The actual-update-acceptance CI job upgrades an isolated synthetic Actual Budget instance and checks its account and transaction inventory."
+    },
+    {
+      "from": "26.10.0",
+      "to": "26.11.0",
+      "status": "candidate",
+      "evidence": "Candidate transition under synthetic acceptance in PR #138; disabled by default until all CI acceptance and recovery steps pass."
     }
   ]
 }

@@ -6,6 +6,10 @@ const transitions: readonly TestedTransition[] = [
   { from: '26.9.0', to: '26.10.0', status: 'verified', evidence: 'Synthetic upgrade acceptance workflow' },
 ];
 
+const candidateTransitions: readonly TestedTransition[] = [
+  { from: '26.10.0', to: '26.11.0', status: 'candidate', evidence: 'Synthetic acceptance required before production use' },
+];
+
 describe('Actual safe-update policy', () => {
   it('accepts only the exact official image repository and pinned version', () => {
     expect(parseActualImage('actualbudget/actual-server:26.10.0')).toEqual({
@@ -23,6 +27,15 @@ describe('Actual safe-update policy', () => {
       .toThrow(/not in the tested compatibility matrix/i);
     expect(() => assertSupportedTransition('actualbudget/actual-server:26.10.0', 'actualbudget/actual-server:26.10.0', transitions))
       .toThrow(/already configured/i);
+  });
+
+  it('rejects candidate transitions by default and allows them only when explicitly opted in', () => {
+    expect(() => assertSupportedTransition('actualbudget/actual-server:26.10.0', 'actualbudget/actual-server:26.11.0', candidateTransitions))
+      .toThrow(/not in the tested compatibility matrix/i);
+    expect(assertSupportedTransition('actualbudget/actual-server:26.10.0', 'actualbudget/actual-server:26.11.0', candidateTransitions, { allowCandidate: true }))
+      .toEqual({ current: '26.10.0', target: '26.11.0' });
+    expect(() => assertSupportedTransition('actualbudget/actual-server:26.9.0', 'actualbudget/actual-server:26.11.0', candidateTransitions, { allowCandidate: true }))
+      .toThrow(/not in the tested compatibility matrix/i);
   });
 
   it('never attempts automatic old-image start after the new image may have touched data', () => {

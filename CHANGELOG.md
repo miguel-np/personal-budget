@@ -11,6 +11,7 @@ Este documento conserva el historial de cambios del producto. El estado de issue
 - Evidencia fechada de CI, cobertura y auditorías de seguridad; política de contribución con comandos reales y uso de correo GitHub noreply.
 
 ### Changed
+- Actual Budget server y `@actual-app/api` pasan conjuntamente a 26.11.0, con aceptación sintética de integridad financiera y recuperación.
 - El README y el roadmap dejan de duplicar el estado operativo de GitHub.
 - Reorganizada la documentación de estado y el inventario documental para distinguir implementación, evidencia automatizada y aceptación externa/manual.
 
