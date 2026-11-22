@@ -250,37 +250,32 @@ async function verifyLinkedTransactionEditing(): Promise<void> {
     await api.sync();
     const payees = await api.getPayees();
     const transferPayeeToCounterpart = payees.find((payee) => payee.transfer_acct === counterpartAccountId);
-    const transferPayeeToSource = payees.find((payee) => payee.transfer_acct === sourceAccount.id);
-    if (!transferPayeeToCounterpart || !transferPayeeToSource) {
-      throw new Error('Actual did not expose reciprocal transfer payees for the synthetic accounts.');
+    if (!transferPayeeToCounterpart) {
+      throw new Error('Actual did not expose a transfer payee for the synthetic off-budget account.');
     }
 
-    // Seed the linked pair through the public API in direct-insert mode, with explicit
-    // reciprocal transfer IDs. This avoids testing Actual's import matcher instead of
-    // the application's edit behavior. Subsequent updates go through the real transfer
-    // update hooks and must keep both records coherent.
+    // Create the transfer through the public API's transfer-payee path. runTransfers
+    // lets Actual create the reciprocal leg; the on-budget side must retain its category.
     sourceId = randomUUID();
-    counterpartId = randomUUID();
-    await api.addTransactions(sourceAccount.id, [{
+    const createdIds = await api.addTransactions(sourceAccount.id, [{
       id: sourceId,
-      transfer_id: counterpartId,
       date: '2026-09-01',
       amount: -4_200,
       category: expected.categoryId,
       payee: transferPayeeToCounterpart.id,
       notes: 'Nota inicial sintética',
       cleared: false,
-    }]);
-    await api.addTransactions(counterpartAccountId, [{
-      id: counterpartId,
-      transfer_id: sourceId,
-      date: '2026-09-01',
-      amount: 4_200,
-      payee: transferPayeeToSource.id,
-      notes: 'Nota inicial sintética',
-      cleared: false,
-    }]);
+    }], { runTransfers: true });
+    if (!createdIds.includes(sourceId)) {
+      throw new Error('Actual did not report the synthetic on-budget transfer transaction as created.');
+    }
     await api.sync();
+    const createdSource = (await api.getTransactions(sourceAccount.id, '2026-09-01', '2026-09-30'))
+      .find((item) => item.id === sourceId);
+    counterpartId = createdSource?.transfer_id ?? '';
+    if (!counterpartId) {
+      throw new Error('Actual did not create the reciprocal transfer leg for the off-budget account.');
+    }
 
     const transferPair = async (): Promise<{ source: AcceptanceTransaction; counterpart: AcceptanceTransaction }> => {
       const [sourceRows, counterpartRows] = await Promise.all([
