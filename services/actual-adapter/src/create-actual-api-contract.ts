@@ -19,7 +19,7 @@ export function createActualApiContract(
   // Module namespace exports are read-only own properties. Copy them to a plain
   // object before adding adapter capabilities, rather than inheriting their
   // descriptors through Object.create (which makes collisions non-writable).
-  const api = { ...namespace } as ActualApiContract;
+  const api = { ...namespace } as unknown as ActualApiContract;
   api.getBudgetAllocations = async (month: string): Promise<readonly BudgetAllocation[]> => {
     const monthId = Number(month.replace('-', ''));
     const [zeroBudgetRaw, trackingBudgetRaw] = await Promise.all([
