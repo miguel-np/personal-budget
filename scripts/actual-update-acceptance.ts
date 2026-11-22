@@ -55,10 +55,12 @@ interface ActualApiClient {
   shutdown(): Promise<void>;
   runImport(name: string, callback: () => Promise<void>): Promise<void>;
   createAccount(account: { readonly name: string; readonly offbudget?: boolean }): Promise<string>;
-  addTransactions(accountId: string, transactions: readonly Record<string, unknown>[], options?: {
-    readonly runTransfers?: boolean;
-    readonly learnCategories?: boolean;
-  }): Promise<readonly string[]>;
+  addTransactions(
+    accountId: string,
+    transactions: readonly Record<string, unknown>[],
+    runTransfers?: boolean,
+    learnCategories?: boolean,
+  ): Promise<readonly string[]>;
   getBudgets(): Promise<readonly ActualBudgetListing[]>;
   downloadBudget(syncId: string): Promise<void>;
   getAccounts(): Promise<readonly { readonly id: string; readonly name: string }[]>;
@@ -263,15 +265,17 @@ async function verifyLinkedTransactionEditing(): Promise<void> {
       payee: transferPayeeToCounterpart.id,
       notes: 'Nota inicial sintética',
       cleared: false,
-    }], { runTransfers: true });
-    if (createdIds.length !== 1 || !createdIds[0]) {
-      throw new Error('Actual did not report exactly one created on-budget transfer transaction.');
-    }
-    sourceId = createdIds[0];
+    }], true);
     await api.sync();
-    const createdSource = (await api.getTransactions(sourceAccount.id, '2026-09-01', '2026-09-30'))
-      .find((item) => item.id === sourceId);
-    counterpartId = createdSource?.transfer_id ?? '';
+    const sourceRows = await api.getTransactions(sourceAccount.id, '2026-09-01', '2026-09-30');
+    const createdSource = sourceRows.find((item) =>
+      createdIds.includes(item.id) && item.amount === -4_200 && item.category === expected.categoryId &&
+      typeof item.transfer_id === 'string' && item.transfer_id.length > 0);
+    if (!createdSource) {
+      throw new Error('Actual did not persist a source-account transfer with the returned ID, requested amount, and category.');
+    }
+    sourceId = createdSource.id;
+    counterpartId = createdSource.transfer_id ?? '';
     if (!counterpartId) {
       throw new Error('Actual did not create the reciprocal transfer leg for the off-budget account.');
     }
