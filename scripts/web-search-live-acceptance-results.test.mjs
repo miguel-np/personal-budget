@@ -91,6 +91,20 @@ test('rejects invalid provider date metadata and unsupported MIME values', () =>
   assert.equal(invalidMime.acceptanceStatus, 'rejected');
 });
 
+
+test('rejects non-official source classification and incomplete BOE temporal evidence', () => {
+  const external = buildSourceAcceptanceEvidence(source({ sourceAuthority: 'external' }), 'www.boe.es');
+  assert.equal(external.acceptanceStatus, 'rejected');
+
+  const unclassified = buildSourceAcceptanceEvidence(source({ sourceAuthority: 'unknown' }), 'www.boe.es');
+  assert.equal(unclassified.acceptanceStatus, 'rejected');
+
+  const missingTemporal = buildSourceAcceptanceEvidence(source({
+    document: { ...source().document, temporal: null },
+  }), 'www.boe.es');
+  assert.equal(missingTemporal.acceptanceStatus, 'rejected');
+});
+
 test('does not accept a document without a successful bounded extractor fetch', () => {
   const evidence = buildSourceAcceptanceEvidence(source({
     document: { ...source().document, fetches: [{ ...source().document.fetches[0], httpStatus: 302 }] },
