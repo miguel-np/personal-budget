@@ -251,8 +251,8 @@ report.acceptedHostCount = acceptedHosts.size;
 const allGroupsHealthy = report.groups.every((group) => group.status === 'accepted');
 const allNegativeProbesHealthy = report.negativeProbes.every((probe) => probe.status === 'accepted');
 report.hostOutcome = allGroupsHealthy && allNegativeProbesHealthy && acceptedHosts.size === expectedHosts.length ? 'accepted' : 'partial';
-// Network/log privacy evidence is not available to this runner. Never turn static test inputs
-// into a claim about the deployed API's outbound payload or its production log sinks.
+// This local script cannot inspect the API process's outbound payload or configured log sinks.
+// Keep privacy acceptance pending until the operator completes the documented manual checks.
 report.outcome = report.hostOutcome === 'accepted' ? 'hosts_accepted_privacy_review_pending' : 'partial';
 report.acceptanceComplete = false;
 await writeReport();
