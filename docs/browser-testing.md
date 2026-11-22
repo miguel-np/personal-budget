@@ -9,11 +9,11 @@ La suite Playwright se ejecuta contra el frontend construido por `npm run build`
 ~~~bash
 npm ci
 npm run build
-npx playwright install chromium
+npm run setup:e2e
 npm run test:e2e
 ~~~
 
-La suite levanta y detiene sus servidores automáticamente. Chromium se instala por separado de lint/unit/integration para facilitar el diagnóstico. CI instala también las dependencias de sistema del navegador.
+La suite levanta y detiene sus servidores automáticamente. `npm run setup:e2e` instala Chromium por separado de lint, tests unitarios e integración para facilitar el diagnóstico y evitar descargas implícitas en `npm run validate`. CI instala también las dependencias de sistema del navegador. Para ejecutar el ciclo local completo antes de abrir una PR, utiliza `npm run validate` después de preparar Chromium.
 
 ## Cobertura
 

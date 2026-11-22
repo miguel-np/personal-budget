@@ -97,13 +97,23 @@ Consulta [Arquitectura](docs/architecture.md), [estado de implementación](docs/
 | Comando | Para qué sirve |
 |---|---|
 | `npm run doctor` | Comprueba requisitos, configuración y servicios locales. |
+| `npm run dev` | Inicia API y frontend en modo desarrollo desde una sola terminal. |
 | `npm run start:local` | Compila e inicia la aplicación para uso diario. |
-| `npm run dev:api` | Inicia la API en modo desarrollo. |
-| `npm run dev:web` | Inicia Vite en modo desarrollo. |
+| `npm run dev:api` | Inicia la API en modo desarrollo de forma independiente. |
+| `npm run dev:web` | Inicia Vite en modo desarrollo de forma independiente. |
+| `npm run check` | Ejecuta lint, TypeScript y tests con cobertura. |
+| `npm run validate` | Ejecuta la validación local completa, incluidos build, auditorías y E2E. |
+| `npm run setup:e2e` | Instala Chromium para las pruebas de navegador (una vez por entorno). |
 | `npm run backup:actual` | Crea un backup cifrado unificado; requiere detener Personal Budget. |
 | `npm run update:actual` | Ejecuta el procedimiento de actualización segura de Actual. |
 
-Los comandos de desarrollo, backup y actualización tienen requisitos adicionales: consulta [Desarrollo](docs/development.md), [Backup](docs/backup-restore.md) y [Actualizaciones seguras](docs/safe-updates.md).
+Para el modo de desarrollo, inicia `npm run dev`. Actual se inicia por separado solo cuando necesites probar la integración financiera:
+
+```bash
+docker compose up -d actual
+```
+
+La validación E2E requiere haber ejecutado previamente `npm run setup:e2e`. Los comandos de backup, restauración y actualización tienen efectos sobre datos persistentes: consulta sus guías antes de ejecutarlos.
 
 ## Licencia
 
