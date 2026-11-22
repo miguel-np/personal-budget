@@ -21,6 +21,7 @@ interface AcceptanceTransaction {
   readonly amount: number;
   readonly account?: string;
   readonly transfer_id?: string | null;
+  readonly payee?: string | null;
   readonly category?: string | null;
   readonly notes?: string | null;
   readonly cleared?: boolean;
@@ -58,9 +59,8 @@ interface ActualApiClient {
   addTransactions(
     accountId: string,
     transactions: readonly Record<string, unknown>[],
-    runTransfers?: boolean,
-    learnCategories?: boolean,
-  ): Promise<readonly string[]>;
+    options?: { readonly runTransfers?: boolean; readonly learnCategories?: boolean },
+  ): Promise<string>;
   getBudgets(): Promise<readonly ActualBudgetListing[]>;
   downloadBudget(syncId: string): Promise<void>;
   getAccounts(): Promise<readonly { readonly id: string; readonly name: string }[]>;
@@ -258,21 +258,25 @@ async function verifyLinkedTransactionEditing(): Promise<void> {
 
     // Create the transfer through the public API's transfer-payee path. runTransfers
     // lets Actual create the reciprocal leg; the on-budget side must retain its category.
-    const createdIds = await api.addTransactions(sourceAccount.id, [{
+    const addResult = await api.addTransactions(sourceAccount.id, [{
       date: '2026-09-01',
       amount: -4_200,
       category: expected.categoryId,
       payee: transferPayeeToCounterpart.id,
       notes: 'Nota inicial sintética',
       cleared: false,
-    }], true);
+    }], { runTransfers: true });
+    if (addResult !== 'ok') {
+      throw new Error('Actual did not acknowledge creation of the synthetic transfer transaction.');
+    }
     await api.sync();
     const sourceRows = await api.getTransactions(sourceAccount.id, '2026-09-01', '2026-09-30');
     const createdSource = sourceRows.find((item) =>
-      createdIds.includes(item.id) && item.amount === -4_200 && item.category === expected.categoryId &&
+      item.amount === -4_200 && item.category === expected.categoryId &&
+      item.payee === transferPayeeToCounterpart.id &&
       typeof item.transfer_id === 'string' && item.transfer_id.length > 0);
     if (!createdSource) {
-      throw new Error('Actual did not persist a source-account transfer with the returned ID, requested amount, and category.');
+      throw new Error('Actual did not persist the synthetic source-account transfer with its requested payee, amount, category, and reciprocal link.');
     }
     sourceId = createdSource.id;
     counterpartId = createdSource.transfer_id ?? '';
