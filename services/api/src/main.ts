@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { ActualBudgetAdapter, createActualApiContract } from '@personal-budget/actual-adapter';
 import { buildApp } from './app.js';
 import { loadConfig } from './config.js';
-import { safeStartupFailure } from '../../../scripts/runtime-checks.js';
+import { safeStartupFailure } from './startup-diagnostics.js';
 
 const moduleDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(moduleDirectory, '../../..');
