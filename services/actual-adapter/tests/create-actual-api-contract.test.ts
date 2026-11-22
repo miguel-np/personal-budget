@@ -1,4 +1,4 @@
-import * as ActualApiNamespace from '@actual-app/api';
+import type * as ActualApiNamespace from '@actual-app/api';
 import { describe, expect, it, vi } from 'vitest';
 import { createActualApiContract } from '../src/create-actual-api-contract.js';
 
