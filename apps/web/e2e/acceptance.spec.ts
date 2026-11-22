@@ -753,7 +753,9 @@ test('reduced motion preserves state while removing non-essential movement', asy
     button.type = 'button';
     button.className = 'button primary';
     button.textContent = 'Acción sintética';
-    document.body.append(button);
+    const container = document.querySelector<HTMLElement>('.main-content');
+    if (!container) throw new Error('Main content container is missing');
+    container.append(button);
   });
   const action = page.locator('#reduced-motion-action-probe');
   await action.hover();
