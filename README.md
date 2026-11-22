@@ -82,7 +82,7 @@ El asistente de Ollama está desactivado por defecto (`AI_ENABLED=false`). La b�
 
 ## Prueba con un presupuesto de Actual existente
 
-Para probar el adaptador oficial contra un presupuesto local de prueba sin modificar transacciones, sigue la [guía de instalación](docs/installation.md#9-prueba-de-aceptación-con-un-presupuesto-local-existente-opcional). La aceptación live se omite en CI salvo habilitación explícita y utiliza presupuestos sintéticos.
+Para la aceptación live de búsqueda web, ejecuta `npm run acceptance:web-search` desde el equipo local: solo contacta con la API ligada a `127.0.0.1` y usa consultas públicas fijas. No requiere backend público ni secrets de GitHub; la revisión manual de tráfico y logs sigue siendo obligatoria. Para probar el adaptador oficial contra un presupuesto local de prueba sin modificar transacciones, sigue la [guía de instalación](docs/installation.md#9-prueba-de-aceptación-con-un-presupuesto-local-existente-opcional).
 
 ## Calidad
 

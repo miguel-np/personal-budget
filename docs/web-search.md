@@ -118,7 +118,28 @@ Las PR #99–#104 endurecieron la frontera de confianza de hosts, el contexto fi
 
 **Lex.gal:** se trata como recurso de información/consolidación jurídica desarrollado conjuntamente por el Parlamento de Galicia, la Xunta, la Universidade de Santiago de Compostela y AMTEGA, no como sustituto de la publicación formal en el [Diario Oficial de Galicia](https://www.xunta.gal/diario-oficial-galicia). La [Xunta lo identifica en su portal de transparencia como base de normativa gallega vigente consolidada](https://transparencia.xunta.gal/es/tema/informacion-de-relevancia-xuridica/normativa-consolidada). Para acreditar publicación, fecha y texto promulgado debe comprobarse la edición oficial del DOG. Una ficha consolidada de [Lex.gal](https://www.lex.gal/es/lex.gal) puede servir como ayuda de localización, pero no prevalece por sí misma sobre la publicación original ni demuestra vigencia completa.
 
-La aceptación real sigue pendiente y está desglosada en [#106](https://github.com/miguel-np/personal-budget/issues/106): ejecutar el backend con una instancia SearXNG configurada y comprobar las respuestas efectivas de BOE, AEAT, DGT, TEAC, Xunta/DOG, Seguridad Social y Lex.gal, registrando endpoint, fecha, formato, estado y limitaciones sin capturar datos financieros. Abrir una URL desde un navegador independiente no valida el contrato de red del backend.
+### Aceptación operativa local (#106)
+
+La aceptación live se ejecuta desde el equipo del operador o WSL2, con la API limitada a `127.0.0.1` y SearXNG configurado en el proceso API. **No requiere un backend público, túnel, URL HTTPS de despliegue, bearer token ni secreto de GitHub.** La aceptación no forma parte de la CI ordinaria: un runner hospedado no puede acceder al loopback del equipo del usuario.
+
+Con Node.js y npm del baseline y la aplicación configurada con `AI_ENABLED=true`, `WEB_SEARCH_ENABLED=true`, Ollama local y una instancia SearXNG, ejecuta desde la raíz:
+
+```bash
+npm run acceptance:web-search
+```
+
+El destino predeterminado es `http://127.0.0.1:3000`. Para un puerto local diferente puede definirse `PERSONAL_BUDGET_LOCAL_ACCEPTANCE_API_ORIGIN=http://127.0.0.1:PUERTO`. El validador acepta exclusivamente la IP literal `127.0.0.1`, HTTP, puerto explícito y origen raíz; rechaza DNS, otras IP, HTTPS, credenciales, rutas, query strings y fragmentos. La petición no usa token ni cabecera de autorización.
+
+El comando envía únicamente las consultas públicas, fijas y versionadas de aceptación. Revisa cada host exacto de `OFFICIAL_SOURCE_HOSTS`, los documentos recuperados y pruebas negativas. Espacia las solicitudes para respetar el límite de la API. Es opt-in: ejecutarlo autoriza el envío de esas consultas de prueba a SearXNG y, según su configuración, a sus motores upstream. No utiliza el presupuesto, el historial, las cuentas ni datos personales. Limita las respuestas JSON y rechaza redirects.
+
+Los informes sanitizados se guardan con permisos restrictivos en `.local/acceptance/` (excluido de Git) y no contienen el texto de las consultas ni los cuerpos documentales. Un host no observado o un documento no recuperado queda como no aceptado; no se relaja la allowlist para forzar el resultado. El código de salida 0 indica que el barrido técnico de hosts pasó, **no** que la aceptación global haya terminado.
+
+#### Revisión manual de privacidad obligatoria
+
+Después de una ejecución satisfactoria, inspecciona el límite API→SearXNG usando los registros locales de SearXNG o una captura/proxy local controlado. Verifica que cada petición GET a `/search` contiene solo una consulta del inventario público, `format=json`, `safesearch=2` y `pageno=1`; no debe contener conversaciones, prompts financieros, movimientos, cuentas, importes, identificadores, cookies ni credenciales. Comprueba también los logs operativos de la API y SearXNG. El proveedor no envía cabeceras Authorization ni cookies; SearXNG puede seguir mostrando la consulta a motores upstream según su configuración.
+
+Conserva por separado los informes de las pruebas de fallo: repite la aceptación con SearXNG detenido y con un host/documento oficial inaccesible en un entorno de prueba controlado. Deben quedar como resultados parciales/no disponibles, sin fallos abiertos ni datos sensibles. No publiques logs ni capturas sin sanitizarlos. Marca `privacyOutcome` aceptado únicamente después de inspeccionar la petición saliente y ambos destinos de logs; el script nunca lo marca por sí solo.
+
 
 La PR [#111](https://github.com/miguel-np/personal-budget/pull/111) se integró en `main` y añade recuperación histórica BOE por bloques para artículos explícitos, distinguiendo `fecha_publicacion` y `fecha_vigencia`, con parser XML acotado sin DTD/entidades declaradas y abstención ante fechas ausentes, ambigüedad o posible retroactividad. La regresión del artículo 32 de la Ley 39/2015 parte del ejemplo oficial de la [FAQ de la API de legislación consolidada del BOE](https://www.boe.es/datosabiertos/faq/consolidada.php), que documenta el bloque `a32`, las versiones `BOE-A-2015-10565` y `BOE-A-2022-4972`, sus fechas y la estructura del bloque; se contrasta con la [publicación oficial del Real Decreto-ley 6/2022](https://www.boe.es/diario_boe/txt.php?id=BOE-A-2022-4972). La prueba selecciona la versión anterior el 30-03-2022 y la modificada desde el 31-03-2022. La PR [#112](https://github.com/miguel-np/personal-budget/pull/112) completó las pruebas de XML malformado, DTD/XXE, tamaño, profundidad/nodos y fronteras temporales; #107 está cerrada como completada. La consolidación sigue siendo informativa; no cubre transitorias, derogaciones tácitas ni aplicabilidad al supuesto. La aceptación HTTP live del backend contra SearXNG y los hosts oficiales es un criterio separado de [#106](https://github.com/miguel-np/personal-budget/issues/106).
 

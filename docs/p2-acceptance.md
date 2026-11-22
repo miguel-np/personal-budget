@@ -61,3 +61,20 @@ El checksum demuestra integridad respecto al sidecar, no autenticidad ni cifrado
 - **#28:** paginación eficiente de movimientos con ventanas mensuales, límite de 100.000 presentados, selección acotada y desempate por ID. ✅ Benchmark reproducible en `services/api/tests/app.test.ts` con datasets repartido/mes denso/multi-cuenta, pico de heap muestreado durante la petición (PR #63, integrada), techos de regresión fijos (mediana < 3 s, heap < 128 MiB) y recorrido completo de páginas sin omisiones ni duplicados con fechas/importes idénticos, splits y filtros. Evaluación de ActualQL y efectos de cambios concurrentes registrados en docs/transactions-and-imports.md.
 
 No cerrar una issue solo por tener pruebas unitarias o un workflow verde si su criterio exige una prueba live o manual. La aceptación sintética de #64 en CI no completa #31: Windows nativo y una distribución WSL2 son entornos diferentes; el último necesita una ejecución manual documentada.
+
+
+## 5. Aceptación live local de búsqueda web (#106)
+
+Esta comprobación es manual, opt-in y no se ejecuta desde un runner hospedado. Requiere una API configurada con `AI_ENABLED=true`, `WEB_SEARCH_ENABLED=true`, Ollama local y SearXNG. El backend permanece en `127.0.0.1`; no se publica, no se usa túnel y no se configuran secrets de URL o bearer token en GitHub.
+
+Ejecuta:
+
+```bash
+npm run acceptance:web-search
+```
+
+El destino predeterminado es `http://127.0.0.1:3000`. La variable opcional `PERSONAL_BUDGET_LOCAL_ACCEPTANCE_API_ORIGIN` solo admite `http://127.0.0.1:PUERTO` con puerto explícito. El script usa consultas sintéticas públicas fijas, separadas por más de diez segundos para respetar el rate limit. Recorre el inventario exacto de hosts oficiales, filtros positivos y negativos, extracción documental y metadatos. Los informes sanitizados se escriben en `.local/acceptance/`, con permisos restrictivos y excluidos de Git.
+
+La ejecución debe repetirse de forma controlada con SearXNG no disponible y con un host/documento oficial inaccesible; ambos escenarios deben terminar como resultados parciales/no aceptados, sin ampliar la allowlist. No adjuntes datos del presupuesto ni introduzcas consultas personales.
+
+El script valida cobertura funcional y host, pero no puede observar el tráfico API→SearXNG ni los destinos de logs. Para cerrar la aceptación, inspecciona los parámetros reales de las peticiones salientes y los logs locales de API y SearXNG, confirmando que contienen únicamente la consulta pública aprobada y metadatos operativos. Hasta documentar esa comprobación, `privacyOutcome` y la aceptación global permanecen pendientes. La CI ejecuta exclusivamente las pruebas deterministas de loopback y coherencia entre los hosts de aceptación y la allowlist; no intenta conectarse a servicios reales.
