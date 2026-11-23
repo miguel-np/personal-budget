@@ -86,65 +86,572 @@ async function api(path, options = {}) {
 const q=(p,params)=>'/api/v1/'+p+'?'+new URLSearchParams(params);
 async function sum(a,b){period(a,b);const r=await api(q('reports/summary',{startDate:a,endDate:b}));if(!r.data||typeof r.data.expenseMinor!=='number')throw Error('Invalid summary.');return r.data;}
 async function rows(a,b,uncat=false){period(a,b);const p={startDate:a,endDate:b,limit:'200',offset:'0',sortBy:'date',order:'asc'};if(uncat)p.uncategorized='true';const r=await api(q('transactions',p));if(!Array.isArray(r.data))throw Error('Invalid transactions.');return r.data;}
-function parse(name,a){
- switch(name){
- case 'get_monthly_summary':exact(a,['month']);return monthRange(a.month);
- case 'get_spending_by_category':case 'get_uncategorized_transactions':exact(a,['startDate','endDate']);period(a.startDate,a.endDate);return a;
- case 'compare_periods':exact(a,['currentStartDate','currentEndDate','previousStartDate','previousEndDate']);period(a.currentStartDate,a.currentEndDate);period(a.previousStartDate,a.previousEndDate);return a;
- case 'get_yearly_overview':exact(a,['year']);if(!Number.isInteger(a.year)||a.year<2000||a.year>2100)throw Error('year must be an integer from 2000 to 2100.');return a;
- case 'get_recurring_candidates':exact(a,['startDate','endDate','limit']);period(a.startDate,a.endDate);if(a.limit!==undefined&&(!Number.isInteger(a.limit)||a.limit<1||a.limit>50))throw Error('limit must be from 1 to 50.');return {...a,limit:a.limit??20};
- case 'simulate_budget_change':exact(a,['startDate','endDate','categoryName','reductionPercent']);period(a.startDate,a.endDate);text(a.categoryName,'categoryName');if(typeof a.reductionPercent!=='number'||!Number.isFinite(a.reductionPercent)||a.reductionPercent<0||a.reductionPercent>100)throw Error('reductionPercent must be from 0 to 100.');return a;
- case 'get_financial_findings':exact(a,['startDate','endDate']);period(a.startDate,a.endDate);return a;
- case 'get_budget_alerts':exact(a,['month']);if(a.month!==undefined)monthRange(a.month);return a;
- case 'get_budget_improvement_context':exact(a,['periodMonths']);if(a.periodMonths!==undefined&&![3,6,12].includes(a.periodMonths))throw Error('periodMonths must be 3, 6 or 12.');return {...a,periodMonths:a.periodMonths??6};
- case 'project_cash_flow':exact(a,['horizonDays','reserveMinor','recurringCandidateIds']);if(a.horizonDays!==undefined&&![7,30,90].includes(a.horizonDays))throw Error('horizonDays must be 7, 30 or 90.');if(a.reserveMinor!==undefined&&(!Number.isSafeInteger(a.reserveMinor)||a.reserveMinor<0))throw Error('reserveMinor must be a non-negative safe integer.');if(a.recurringCandidateIds!==undefined&&(!Array.isArray(a.recurringCandidateIds)||a.recurringCandidateIds.length>50||a.recurringCandidateIds.some(id=>typeof id!=='string'||!/^rc_[a-f0-9]{24}$/.test(id))))throw Error('recurringCandidateIds are invalid.');return {...a,horizonDays:a.horizonDays??30,recurringCandidateIds:a.recurringCandidateIds??[]};
- case 'get_net_worth_summary':exact(a,[]);return {};
- default:throw Error('Unknown tool.');
+function parseMonthlySummary(args) {
+ exact(args, ['month']);
+ return monthRange(args.month);
+}
+
+function parsePeriodRange(args) {
+ exact(args, ['startDate', 'endDate']);
+ period(args.startDate, args.endDate);
+ return args;
+}
+
+function parseComparisonPeriods(args) {
+ exact(args, ['currentStartDate', 'currentEndDate', 'previousStartDate', 'previousEndDate']);
+ period(args.currentStartDate, args.currentEndDate);
+ period(args.previousStartDate, args.previousEndDate);
+ return args;
+}
+
+function parseYear(args) {
+ exact(args, ['year']);
+ if (!Number.isInteger(args.year) || args.year < 2000 || args.year > 2100) {
+  throw Error('year must be an integer from 2000 to 2100.');
+ }
+ return args;
+}
+
+function parseRecurringCandidates(args) {
+ exact(args, ['startDate', 'endDate', 'limit']);
+ period(args.startDate, args.endDate);
+ if (args.limit !== undefined && (!Number.isInteger(args.limit) || args.limit < 1 || args.limit > 50)) {
+  throw Error('limit must be from 1 to 50.');
+ }
+ return { ...args, limit: args.limit ?? 20 };
+}
+
+function parseBudgetSimulation(args) {
+ exact(args, ['startDate', 'endDate', 'categoryName', 'reductionPercent']);
+ period(args.startDate, args.endDate);
+ text(args.categoryName, 'categoryName');
+ const reduction = args.reductionPercent;
+ if (typeof reduction !== 'number' || !Number.isFinite(reduction) || reduction < 0 || reduction > 100) {
+  throw Error('reductionPercent must be from 0 to 100.');
+ }
+ return args;
+}
+
+function parseFinancialFindings(args) {
+ return parsePeriodRange(args);
+}
+
+function parseBudgetAlerts(args) {
+ exact(args, ['month']);
+ if (args.month !== undefined) monthRange(args.month);
+ return args;
+}
+
+function parseBudgetImprovements(args) {
+ exact(args, ['periodMonths']);
+ if (args.periodMonths !== undefined && ![3, 6, 12].includes(args.periodMonths)) {
+  throw Error('periodMonths must be 3, 6 or 12.');
+ }
+ return { ...args, periodMonths: args.periodMonths ?? 6 };
+}
+
+function parseCashFlowProjection(args) {
+ exact(args, ['horizonDays', 'reserveMinor', 'recurringCandidateIds']);
+ if (args.horizonDays !== undefined && ![7, 30, 90].includes(args.horizonDays)) {
+  throw Error('horizonDays must be 7, 30 or 90.');
+ }
+ if (args.reserveMinor !== undefined && (!Number.isSafeInteger(args.reserveMinor) || args.reserveMinor < 0)) {
+  throw Error('reserveMinor must be a non-negative safe integer.');
+ }
+ const ids = args.recurringCandidateIds;
+ if (ids !== undefined && (!Array.isArray(ids) || ids.length > 50 || ids.some((id) => typeof id !== 'string' || !/^rc_[a-f0-9]{24}$/.test(id)))) {
+  throw Error('recurringCandidateIds are invalid.');
+ }
+ return { ...args, horizonDays: args.horizonDays ?? 30, recurringCandidateIds: ids ?? [] };
+}
+
+function parseNetWorthSummary(args) {
+ exact(args, []);
+ return {};
+}
+
+const argumentParsers = {
+ get_monthly_summary: parseMonthlySummary,
+ get_spending_by_category: parsePeriodRange,
+ get_uncategorized_transactions: parsePeriodRange,
+ compare_periods: parseComparisonPeriods,
+ get_yearly_overview: parseYear,
+ get_recurring_candidates: parseRecurringCandidates,
+ simulate_budget_change: parseBudgetSimulation,
+ get_financial_findings: parseFinancialFindings,
+ get_budget_alerts: parseBudgetAlerts,
+ get_budget_improvement_context: parseBudgetImprovements,
+ project_cash_flow: parseCashFlowProjection,
+ get_net_worth_summary: parseNetWorthSummary
+};
+
+function parse(name, args) {
+ const parser = argumentParsers[name];
+ if (!parser) throw Error('Unknown tool.');
+ return parser(args);
+}
+
+async function invokeMonthlySummary(args) {
+ return sum(args.startDate, args.endDate);
+}
+
+async function invokeSpendingByCategory(args) {
+ const summary = await sum(args.startDate, args.endDate);
+ return {
+  currency: summary.currency,
+  startDate: summary.startDate,
+  endDate: summary.endDate,
+  expensesByCategory: summary.expensesByCategory,
+  warnings: summary.warnings
+ };
+}
+
+async function invokePeriodComparison(args) {
+ const [current, previous] = await Promise.all([
+  sum(args.currentStartDate, args.currentEndDate),
+  sum(args.previousStartDate, args.previousEndDate)
+ ]);
+ return {
+  currency: current.currency,
+  current,
+  previous,
+  delta: {
+   incomeMinor: current.incomeMinor - previous.incomeMinor,
+   expenseMinor: current.expenseMinor - previous.expenseMinor,
+   savingsMinor: current.savingsMinor - previous.savingsMinor
+  }
+ };
+}
+
+async function invokeYearlyOverview(args) {
+ const months = Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, '0'));
+ const summaries = await Promise.all(months.map((month) => {
+  const startDate = args.year + '-' + month + '-01';
+  const endDate = new Date(Date.UTC(args.year, Number(month), 0)).toISOString().slice(0, 10);
+  return sum(startDate, endDate);
+ }));
+ return {
+  year: args.year,
+  currency: summaries[0]?.currency,
+  months: summaries.map((summary) => ({
+   month: summary.startDate.slice(0, 7),
+   incomeMinor: summary.incomeMinor,
+   expenseMinor: summary.expenseMinor,
+   savingsMinor: summary.savingsMinor,
+   transactionCount: summary.transactionCount
+  }))
+ };
+}
+
+async function invokeUncategorizedTransactions(args) {
+ const records = await rows(args.startDate, args.endDate, true);
+ return {
+  truncated: records.length >= 200,
+  transactions: records.slice(0, 200).map((transaction) => ({
+   id: transaction.id,
+   date: transaction.date,
+   amount: transaction.amount,
+   account: transaction.account,
+   category: transaction.category ?? null
+  }))
+ };
+}
+
+function recurringPayee(transaction) {
+ if (typeof transaction.payee_name === 'string') return transaction.payee_name;
+ if (typeof transaction.imported_payee === 'string') return transaction.imported_payee;
+ return '';
+}
+
+function groupRecurringTransactions(records) {
+ const groups = new Map();
+ for (const transaction of records) {
+  const payee = recurringPayee(transaction);
+  const key = payee.trim().toLocaleLowerCase('es').replace(/\s+/g, ' ');
+  if (!key || !date(transaction.date) || !Number.isSafeInteger(transaction.amount)) continue;
+  const group = groups.get(key) ?? { label: payee.slice(0, 100), items: [] };
+  group.items.push({ date: transaction.date, amount: Math.abs(transaction.amount) });
+  groups.set(key, group);
+ }
+ return groups;
+}
+
+function buildRecurringCandidate(group) {
+ const items = group.items.sort((left, right) => left.date.localeCompare(right.date));
+ if (items.length < 3) return null;
+ const gaps = items.slice(1).map((item, index) => (
+  (Date.parse(item.date + 'T00:00:00Z') - Date.parse(items[index].date + 'T00:00:00Z')) / 86400000
+ ));
+ const interval = gaps.reduce((total, gap) => total + gap, 0) / gaps.length;
+ const mean = items.reduce((total, item) => total + item.amount, 0) / items.length;
+ const deviation = mean ? Math.max(...items.map((item) => Math.abs(item.amount - mean) / mean)) : 0;
+ if (interval < 20 || interval > 45 || deviation > 0.2) return null;
+ return {
+  payee: group.label,
+  occurrenceCount: items.length,
+  estimatedIntervalDays: Math.round(interval),
+  meanAbsoluteAmountMinor: Math.round(mean),
+  dates: items.slice(-12).map((item) => item.date),
+  confidence: 'candidate_only',
+  warning: 'Historical pattern only; future payment is not guaranteed.'
+ };
+}
+
+async function invokeRecurringCandidates(args) {
+ const records = await rows(args.startDate, args.endDate);
+ const candidates = [...groupRecurringTransactions(records).values()]
+  .map(buildRecurringCandidate)
+  .filter(Boolean);
+ return {
+  candidates: candidates.slice(0, args.limit),
+  sourceRecords: records.length,
+  truncated: records.length >= 200
+ };
+}
+
+async function invokeBudgetSimulation(args) {
+ const summary = await sum(args.startDate, args.endDate);
+ const category = summary.expensesByCategory.find((item) => (
+  item.categoryName.toLocaleLowerCase('es') === args.categoryName.toLocaleLowerCase('es')
+ ));
+ if (!category) throw Error('Category was not found in the selected period.');
+ const baseline = Math.max(0, category.amountMinor);
+ const reduction = Math.round(baseline * args.reductionPercent / 100);
+ return {
+  isEstimate: true,
+  persisted: false,
+  currency: summary.currency,
+  startDate: summary.startDate,
+  endDate: summary.endDate,
+  categoryName: category.categoryName,
+  baselineExpenseMinor: baseline,
+  reductionPercent: args.reductionPercent,
+  estimatedReductionMinor: reduction,
+  estimatedExpenseMinorAfterChange: Math.max(0, summary.expenseMinor - reduction)
+ };
+}
+
+async function invokeFinancialFindings(args) {
+ const response = await api(q('intelligence/findings', { startDate: args.startDate, endDate: args.endDate }));
+ const data = response.data;
+ if (!data || !Array.isArray(data.findings)) throw Error('Invalid financial findings response.');
+ return {
+  period: data.period,
+  currency: data.currency,
+  accountScopeLabel: data.accountScope?.label ?? null,
+  findings: data.findings.slice(0, 50).map((finding) => ({
+   id: finding.id,
+   type: finding.type,
+   title: finding.title,
+   explanation: finding.explanation,
+   period: finding.period,
+   currency: finding.currency,
+   confidence: finding.confidence,
+   priority: finding.priority,
+   priorityReason: finding.priorityReason,
+   impactMinor: finding.impactMinor,
+   metrics: finding.metrics,
+   evidence: finding.evidence,
+   limitations: finding.limitations,
+   calculatedAt: finding.calculatedAt,
+   reviewStatus: finding.reviewStatus
+  })),
+  truncated: data.findings.length > 50,
+  warnings: data.warnings ?? []
+ };
+}
+
+async function invokeBudgetAlerts(args) {
+ const params = args.month ? { month: args.month } : {};
+ const response = await api(q('budget-alerts', params));
+ const data = response.data;
+ if (!data || !Array.isArray(data.alerts) || !Array.isArray(data.categories)) {
+  throw Error('Invalid budget alerts response.');
+ }
+ return {
+  month: data.month,
+  currency: data.currency,
+  alerts: data.alerts.slice(0, 50).map((alert) => ({
+   categoryName: alert.categoryName,
+   metric: alert.metric,
+   threshold: alert.threshold,
+   observedValue: alert.observedValue,
+   message: alert.message,
+   status: alert.status
+  })),
+  categories: data.categories.slice(0, 100).map((category) => ({
+   categoryName: category.categoryName,
+   budgetedMinor: category.budgetedMinor,
+   spentMinor: category.spentMinor,
+   availableMinor: category.availableMinor,
+   state: category.state
+  })),
+  truncated: data.categories.length > 100,
+  warnings: data.warnings ?? []
+ };
+}
+
+function mapBudgetProposal(proposal) {
+ return {
+  categoryName: proposal.categoryName,
+  kind: proposal.kind,
+  suggestedReductionPercent: proposal.suggestedReductionPercent,
+  observedMonthlyExpenseMinor: proposal.observedMonthlyExpenseMinor,
+  estimatedMonthlySavingsMinor: proposal.estimatedMonthlySavingsMinor,
+  estimatedAnnualSavingsMinor: proposal.estimatedAnnualSavingsMinor,
+  confidence: proposal.confidence,
+  explanation: proposal.explanation,
+  evidence: proposal.evidence,
+  assumptions: proposal.assumptions,
+  warnings: proposal.warnings,
+  priorityRank: proposal.priorityRank,
+  priorityReason: proposal.priorityReason,
+  goalImpact: proposal.goalImpact ? {
+   goalName: proposal.goalImpact.goalName,
+   monthlyContributionGapMinor: proposal.goalImpact.monthlyContributionGapMinor,
+   estimatedGapCoveredMinor: proposal.goalImpact.estimatedGapCoveredMinor,
+   estimatedGapRemainingMinor: proposal.goalImpact.estimatedGapRemainingMinor
+  } : null
+ };
+}
+
+function mapSavingsGoal(goal) {
+ const projection = goal.projection;
+ return {
+  name: goal.name,
+  targetDate: goal.targetDate,
+  targetAmountMinor: goal.targetAmountMinor,
+  initialAmountMinor: goal.initialAmountMinor,
+  monthlyContributionMinor: goal.monthlyContributionMinor,
+  currency: goal.currency,
+  status: goal.status,
+  projection: projection ? {
+   projectedBalanceMinor: projection.projectedBalanceMinor,
+   projectedProgressPercent: projection.projectedProgressPercent,
+   requiredMonthlyContributionMinor: projection.requiredMonthlyContributionMinor,
+   estimatedCompletionDate: projection.estimatedCompletionDate,
+   achievableUnderCashFlow: projection.achievableUnderCashFlow
+  } : null,
+  warnings: goal.warnings ?? []
+ };
+}
+
+async function invokeBudgetImprovements(args) {
+ const response = await api(q('budget-improvements', { periodMonths: String(args.periodMonths) }));
+ const data = response.data;
+ if (!data || !data.baseline || !Array.isArray(data.proposals)) {
+  throw Error('Invalid budget improvement response.');
+ }
+ return {
+  asOfDate: data.asOfDate,
+  currency: data.currency,
+  goal: data.goal,
+  baseline: {
+   startDate: data.baseline.startDate,
+   endDate: data.baseline.endDate,
+   periodMonths: data.baseline.periodMonths,
+   monthlyIncomeMinor: data.baseline.monthlyIncomeMinor,
+   monthlyExpenseMinor: data.baseline.monthlyExpenseMinor,
+   monthlySavingsMinor: data.baseline.monthlySavingsMinor,
+   savingsRatePercent: data.baseline.savingsRatePercent,
+   transactionCount: data.baseline.transactionCount,
+   unconvertedTransactionCount: data.baseline.unconvertedTransactionCount
+  },
+  proposals: data.proposals.slice(0, 25).map(mapBudgetProposal),
+  savingsGoals: (data.savingsGoals ?? []).slice(0, 25).map(mapSavingsGoal),
+  truncated: data.proposals.length > 25,
+  warnings: data.warnings ?? []
+ };
+}
+
+function mapCashFlowTimelinePoint(point) {
+ return {
+  date: point.date,
+  netChangeMinor: point.netChangeMinor,
+  totalInflowMinor: point.totalInflowMinor,
+  totalOutflowMinor: point.totalOutflowMinor,
+  totalTransferInflowMinor: point.totalTransferInflowMinor,
+  totalTransferOutflowMinor: point.totalTransferOutflowMinor,
+  projectedBalanceMinor: point.projectedBalanceMinor,
+  belowReserve: point.belowReserve
+ };
+}
+
+function mapRecurringProjectionCandidate(candidate) {
+ return {
+  candidateId: candidate.id,
+  payee: candidate.payee,
+  occurrenceCount: candidate.occurrenceCount,
+  estimatedIntervalDays: candidate.estimatedIntervalDays,
+  estimatedFrequency: candidate.estimatedFrequency,
+  meanAbsoluteAmountMinor: candidate.meanAbsoluteAmountMinor,
+  amountDeviationPercent: candidate.amountDeviationPercent,
+  nextDate: candidate.nextDate,
+  upcomingEventsCount: candidate.upcomingEventsCount,
+  confidence: 'candidate_only',
+  warnings: candidate.warnings ?? []
+ };
+}
+
+async function invokeCashFlowProjection(args) {
+ const body = {
+  horizonDays: args.horizonDays,
+  recurringCandidateIds: args.recurringCandidateIds,
+  ...(args.reserveMinor === undefined ? {} : { reserveMinor: args.reserveMinor })
+ };
+ const response = await api('/api/v1/cash-flow/project', { method: 'POST', body });
+ const data = response.data;
+ const projection = data?.projection;
+ if (!data || !projection || !Array.isArray(projection.timeline)) {
+  throw Error('Invalid cash-flow projection response.');
+ }
+ const recurring = data.recurringCandidates ?? [];
+ return {
+  asOfDate: data.asOfDate,
+  endDate: data.endDate,
+  currency: data.currency,
+  openingBalanceMinor: data.openingBalanceMinor,
+  unknownOpeningAccountCount: Array.isArray(data.unknownOpeningAccounts) ? data.unknownOpeningAccounts.length : 0,
+  projection: {
+   isEstimate: true,
+   openingBalanceMinor: projection.openingBalanceMinor,
+   endingBalanceMinor: projection.endingBalanceMinor,
+   minimumProjectedBalanceMinor: projection.minimumProjectedBalanceMinor,
+   minimumBalanceDate: projection.minimumBalanceDate,
+   firstDeficitDate: projection.firstDeficitDate,
+   reserveMinor: projection.reserveMinor,
+   firstReserveBreachDate: projection.firstReserveBreachDate,
+   totalInflowMinor: projection.totalInflowMinor,
+   totalOutflowMinor: projection.totalOutflowMinor,
+   netChangeMinor: projection.netChangeMinor,
+   sourceTotals: projection.sourceTotals,
+   timeline: projection.timeline.map(mapCashFlowTimelinePoint),
+   assumptions: projection.assumptions ?? [],
+   warnings: projection.warnings ?? []
+  },
+  recurringCandidates: recurring.slice(0, 30).map(mapRecurringProjectionCandidate),
+  truncated: recurring.length > 30,
+  warnings: data.warnings ?? [],
+  notes: data.notes ?? []
+ };
+}
+
+async function invokeNetWorthSummary() {
+ const response = await api('/api/v1/wealth/summary');
+ const data = response.data;
+ if (!data || !data.actual || !data.external || !data.coverage) {
+  throw Error('Invalid net-worth summary response.');
+ }
+ return {
+  asOfDate: data.asOfDate,
+  currency: data.currency,
+  status: data.status,
+  netWorthMinor: data.netWorthMinor,
+  actual: data.actual,
+  external: data.external,
+  liquidity: data.liquidity,
+  coverage: {
+   includedActualAccounts: data.coverage.includedActualAccounts,
+   unclassifiedAccountCount: data.coverage.unclassifiedAccountIds?.length ?? 0,
+   unconvertibleAccountCount: data.coverage.unconvertibleAccountIds?.length ?? 0,
+   staleAssetCount: data.coverage.staleAssetIds?.length ?? 0,
+   missingValuationCount: data.coverage.missingValuationIds?.length ?? 0,
+   excludedDuplicateOrOptOutCount: data.coverage.excludedDuplicateOrOptOutIds?.length ?? 0
+  },
+  warnings: data.warnings ?? []
+ };
+}
+
+const toolExecutors = {
+ get_monthly_summary: invokeMonthlySummary,
+ get_spending_by_category: invokeSpendingByCategory,
+ compare_periods: invokePeriodComparison,
+ get_yearly_overview: invokeYearlyOverview,
+ get_uncategorized_transactions: invokeUncategorizedTransactions,
+ get_recurring_candidates: invokeRecurringCandidates,
+ simulate_budget_change: invokeBudgetSimulation,
+ get_financial_findings: invokeFinancialFindings,
+ get_budget_alerts: invokeBudgetAlerts,
+ get_budget_improvement_context: invokeBudgetImprovements,
+ project_cash_flow: invokeCashFlowProjection,
+ get_net_worth_summary: invokeNetWorthSummary
+};
+
+async function invoke(name, args) {
+ const normalized = parse(name, args);
+ const executor = toolExecutors[name];
+ if (!executor) throw Error('Unknown tool.');
+ return executor(normalized);
+}
+
+async function promptResponse(id, params) {
+ const name = params?.name;
+ const prompt = prompts.find((candidate) => candidate.name === name);
+ if (!prompt) return error(id ?? null, -32602, 'Unknown prompt.');
+ try {
+  const args = parsePrompt(name, params?.arguments ?? {});
+  return {
+   jsonrpc: '2.0',
+   id,
+   result: {
+    description: prompt.description,
+    messages: [{ role: 'user', content: { type: 'text', text: promptText(name, args) } }]
+   }
+  };
+ } catch (cause) {
+  const message = cause instanceof Error && /invalid|must |unsupported|period|date|limit|unknown/i.test(cause.message)
+   ? cause.message
+   : 'Invalid prompt arguments.';
+  return error(id ?? null, -32602, message);
  }
 }
-async function invoke(name,a){
- const x=parse(name,a);
- switch(name){
- case 'get_monthly_summary':return sum(x.startDate,x.endDate);
- case 'get_spending_by_category':{const s=await sum(x.startDate,x.endDate);return {currency:s.currency,startDate:s.startDate,endDate:s.endDate,expensesByCategory:s.expensesByCategory,warnings:s.warnings};}
- case 'compare_periods':{const [current,previous]=await Promise.all([sum(x.currentStartDate,x.currentEndDate),sum(x.previousStartDate,x.previousEndDate)]);return {currency:current.currency,current,previous,delta:{incomeMinor:current.incomeMinor-previous.incomeMinor,expenseMinor:current.expenseMinor-previous.expenseMinor,savingsMinor:current.savingsMinor-previous.savingsMinor}};}
- case 'get_yearly_overview':{const m=Array.from({length:12},(_,i)=>String(i+1).padStart(2,'0'));const sums=await Promise.all(m.map(mm=>sum(x.year+'-'+mm+'-01',new Date(Date.UTC(x.year,Number(mm),0)).toISOString().slice(0,10))));return {year:x.year,currency:sums[0]?.currency,months:sums.map(s=>({month:s.startDate.slice(0,7),incomeMinor:s.incomeMinor,expenseMinor:s.expenseMinor,savingsMinor:s.savingsMinor,transactionCount:s.transactionCount}))};}
- case 'get_uncategorized_transactions':{const r=await rows(x.startDate,x.endDate,true);return {truncated:r.length>=200,transactions:r.slice(0,200).map(t=>({id:t.id,date:t.date,amount:t.amount,account:t.account,category:t.category??null}))};}
- case 'get_recurring_candidates':{const r=await rows(x.startDate,x.endDate);const groups=new Map();for(const t of r){const p=typeof t.payee_name==='string'?t.payee_name:typeof t.imported_payee==='string'?t.imported_payee:'';const k=p.trim().toLocaleLowerCase('es').replace(/\s+/g,' ');if(!k||!date(t.date)||!Number.isSafeInteger(t.amount))continue;const g=groups.get(k)??{label:p.slice(0,100),items:[]};g.items.push({date:t.date,amount:Math.abs(t.amount)});groups.set(k,g);}const candidates=[];for(const g of groups.values()){const z=g.items.sort((a,b)=>a.date.localeCompare(b.date));if(z.length<3)continue;const gaps=z.slice(1).map((t,i)=>(Date.parse(t.date+'T00:00:00Z')-Date.parse(z[i].date+'T00:00:00Z'))/86400000);const interval=gaps.reduce((a,b)=>a+b,0)/gaps.length;const mean=z.reduce((a,b)=>a+b.amount,0)/z.length;const deviation=mean?Math.max(...z.map(t=>Math.abs(t.amount-mean)/mean)):0;if(interval>=20&&interval<=45&&deviation<=.2)candidates.push({payee:g.label,occurrenceCount:z.length,estimatedIntervalDays:Math.round(interval),meanAbsoluteAmountMinor:Math.round(mean),dates:z.slice(-12).map(t=>t.date),confidence:'candidate_only',warning:'Historical pattern only; future payment is not guaranteed.'});}return {candidates:candidates.slice(0,x.limit),sourceRecords:r.length,truncated:r.length>=200};}
- case 'simulate_budget_change':{const s=await sum(x.startDate,x.endDate);const c=s.expensesByCategory.find(t=>t.categoryName.toLocaleLowerCase('es')===x.categoryName.toLocaleLowerCase('es'));if(!c)throw Error('Category was not found in the selected period.');const baseline=Math.max(0,c.amountMinor), reduction=Math.round(baseline*x.reductionPercent/100);return {isEstimate:true,persisted:false,currency:s.currency,startDate:s.startDate,endDate:s.endDate,categoryName:c.categoryName,baselineExpenseMinor:baseline,reductionPercent:x.reductionPercent,estimatedReductionMinor:reduction,estimatedExpenseMinorAfterChange:Math.max(0,s.expenseMinor-reduction)};}
 
- case 'get_financial_findings':{
-  const r=await api(q('intelligence/findings',{startDate:x.startDate,endDate:x.endDate}));const d=r.data;
-  if(!d||!Array.isArray(d.findings))throw Error('Invalid financial findings response.');
-  return {period:d.period,currency:d.currency,accountScopeLabel:d.accountScope?.label??null,findings:d.findings.slice(0,50).map(f=>({id:f.id,type:f.type,title:f.title,explanation:f.explanation,period:f.period,currency:f.currency,confidence:f.confidence,priority:f.priority,priorityReason:f.priorityReason,impactMinor:f.impactMinor,metrics:f.metrics,evidence:f.evidence,limitations:f.limitations,calculatedAt:f.calculatedAt,reviewStatus:f.reviewStatus})),truncated:d.findings.length>50,warnings:d.warnings??[]};
+async function toolCallResponse(id, params, incrementCalls) {
+ if (incrementCalls() > MAX_CALLS) {
+  return { jsonrpc: '2.0', id, result: { isError: true, content: [{ type: 'text', text: 'Session tool-call limit reached.' }] } };
  }
- case 'get_budget_alerts':{
-  const r=await api(q('budget-alerts',x.month?{month:x.month}:{}));const d=r.data;
-  if(!d||!Array.isArray(d.alerts)||!Array.isArray(d.categories))throw Error('Invalid budget alerts response.');
-  return {month:d.month,currency:d.currency,alerts:d.alerts.slice(0,50).map(v=>({categoryName:v.categoryName,metric:v.metric,threshold:v.threshold,observedValue:v.observedValue,message:v.message,status:v.status})),categories:d.categories.slice(0,100).map(v=>({categoryName:v.categoryName,budgetedMinor:v.budgetedMinor,spentMinor:v.spentMinor,availableMinor:v.availableMinor,state:v.state})),truncated:d.categories.length>100,warnings:d.warnings??[]};
+ const name = params?.name;
+ if (!tools.some((candidate) => candidate.name === name)) {
+  return { jsonrpc: '2.0', id, result: { isError: true, content: [{ type: 'text', text: 'Unknown tool; no action was taken.' }] } };
  }
- case 'get_budget_improvement_context':{
-  const r=await api(q('budget-improvements',{periodMonths:String(x.periodMonths)}));const d=r.data;
-  if(!d||!d.baseline||!Array.isArray(d.proposals))throw Error('Invalid budget improvement response.');
-  return {asOfDate:d.asOfDate,currency:d.currency,goal:d.goal,baseline:{startDate:d.baseline.startDate,endDate:d.baseline.endDate,periodMonths:d.baseline.periodMonths,monthlyIncomeMinor:d.baseline.monthlyIncomeMinor,monthlyExpenseMinor:d.baseline.monthlyExpenseMinor,monthlySavingsMinor:d.baseline.monthlySavingsMinor,savingsRatePercent:d.baseline.savingsRatePercent,transactionCount:d.baseline.transactionCount,unconvertedTransactionCount:d.baseline.unconvertedTransactionCount},
-   proposals:d.proposals.slice(0,25).map(p=>({categoryName:p.categoryName,kind:p.kind,suggestedReductionPercent:p.suggestedReductionPercent,observedMonthlyExpenseMinor:p.observedMonthlyExpenseMinor,estimatedMonthlySavingsMinor:p.estimatedMonthlySavingsMinor,estimatedAnnualSavingsMinor:p.estimatedAnnualSavingsMinor,confidence:p.confidence,explanation:p.explanation,evidence:p.evidence,assumptions:p.assumptions,warnings:p.warnings,priorityRank:p.priorityRank,priorityReason:p.priorityReason,goalImpact:p.goalImpact?{goalName:p.goalImpact.goalName,monthlyContributionGapMinor:p.goalImpact.monthlyContributionGapMinor,estimatedGapCoveredMinor:p.goalImpact.estimatedGapCoveredMinor,estimatedGapRemainingMinor:p.goalImpact.estimatedGapRemainingMinor}:null})),
-   savingsGoals:(d.savingsGoals??[]).slice(0,25).map(g=>({name:g.name,targetDate:g.targetDate,targetAmountMinor:g.targetAmountMinor,initialAmountMinor:g.initialAmountMinor,monthlyContributionMinor:g.monthlyContributionMinor,currency:g.currency,status:g.status,projection:g.projection?{projectedBalanceMinor:g.projection.projectedBalanceMinor,projectedProgressPercent:g.projection.projectedProgressPercent,requiredMonthlyContributionMinor:g.projection.requiredMonthlyContributionMinor,estimatedCompletionDate:g.projection.estimatedCompletionDate,achievableUnderCashFlow:g.projection.achievableUnderCashFlow}:null,warnings:g.warnings??[]})),truncated:d.proposals.length>25,warnings:d.warnings??[]};
+ try {
+  const data = await invoke(name, params?.arguments ?? {});
+  const serialized = JSON.stringify(data);
+  if (serialized.length > MAX_OUTPUT) throw Error('Tool response exceeds size limit.');
+  return { jsonrpc: '2.0', id, result: { isError: false, structuredContent: data, content: [{ type: 'text', text: serialized }] } };
+ } catch (cause) {
+  const message = cause instanceof Error && /invalid|must |found|unsupported|unknown|limit|period|date|category|year|month|size/i.test(cause.message)
+   ? cause.message
+   : 'Local finance tool failed.';
+  return { jsonrpc: '2.0', id, result: { isError: true, content: [{ type: 'text', text: message }] } };
  }
- case 'project_cash_flow':{
-  const body={horizonDays:x.horizonDays,recurringCandidateIds:x.recurringCandidateIds,...(x.reserveMinor===undefined?{}:{reserveMinor:x.reserveMinor})};
-  const r=await api('/api/v1/cash-flow/project',{method:'POST',body});const d=r.data;const p=d?.projection;
-  if(!d||!p||!Array.isArray(p.timeline))throw Error('Invalid cash-flow projection response.');
-  return {asOfDate:d.asOfDate,endDate:d.endDate,currency:d.currency,openingBalanceMinor:d.openingBalanceMinor,unknownOpeningAccountCount:Array.isArray(d.unknownOpeningAccounts)?d.unknownOpeningAccounts.length:0,
-   projection:{isEstimate:true,openingBalanceMinor:p.openingBalanceMinor,endingBalanceMinor:p.endingBalanceMinor,minimumProjectedBalanceMinor:p.minimumProjectedBalanceMinor,minimumBalanceDate:p.minimumBalanceDate,firstDeficitDate:p.firstDeficitDate,reserveMinor:p.reserveMinor,firstReserveBreachDate:p.firstReserveBreachDate,totalInflowMinor:p.totalInflowMinor,totalOutflowMinor:p.totalOutflowMinor,netChangeMinor:p.netChangeMinor,sourceTotals:p.sourceTotals,timeline:p.timeline.map(v=>({date:v.date,netChangeMinor:v.netChangeMinor,totalInflowMinor:v.totalInflowMinor,totalOutflowMinor:v.totalOutflowMinor,totalTransferInflowMinor:v.totalTransferInflowMinor,totalTransferOutflowMinor:v.totalTransferOutflowMinor,projectedBalanceMinor:v.projectedBalanceMinor,belowReserve:v.belowReserve})),assumptions:p.assumptions??[],warnings:p.warnings??[]},
-   recurringCandidates:(d.recurringCandidates??[]).slice(0,30).map(v=>({candidateId:v.id,payee:v.payee,occurrenceCount:v.occurrenceCount,estimatedIntervalDays:v.estimatedIntervalDays,estimatedFrequency:v.estimatedFrequency,meanAbsoluteAmountMinor:v.meanAbsoluteAmountMinor,amountDeviationPercent:v.amountDeviationPercent,nextDate:v.nextDate,upcomingEventsCount:v.upcomingEventsCount,confidence:'candidate_only',warnings:v.warnings??[]})),truncated:(d.recurringCandidates??[]).length>30,warnings:d.warnings??[],notes:d.notes??[]};
- }
- case 'get_net_worth_summary':{
-  const r=await api('/api/v1/wealth/summary');const d=r.data;
-  if(!d||!d.actual||!d.external||!d.coverage)throw Error('Invalid net-worth summary response.');
-  return {asOfDate:d.asOfDate,currency:d.currency,status:d.status,netWorthMinor:d.netWorthMinor,actual:d.actual,external:d.external,liquidity:d.liquidity,coverage:{includedActualAccounts:d.coverage.includedActualAccounts,unclassifiedAccountCount:d.coverage.unclassifiedAccountIds?.length??0,unconvertibleAccountCount:d.coverage.unconvertibleAccountIds?.length??0,staleAssetCount:d.coverage.staleAssetIds?.length??0,missingValuationCount:d.coverage.missingValuationIds?.length??0,excludedDuplicateOrOptOutCount:d.coverage.excludedDuplicateOrOptOutIds?.length??0},warnings:d.warnings??[]};
- }
- }
- throw Error('Unknown tool.');
+}
+
+export function createMcpHandler() {
+ let calls = 0;
+ return async function handle(message) {
+  if (!message || typeof message !== 'object' || message.jsonrpc !== '2.0' || typeof message.method !== 'string') {
+   return error(message?.id ?? null, -32600, 'Invalid Request');
+  }
+  const id = message.id;
+  if (id === undefined && message.method.startsWith('notifications/')) return null;
+  switch (message.method) {
+   case 'initialize':
+    return { jsonrpc: '2.0', id, result: { protocolVersion: VERSION, capabilities: { tools: {}, prompts: {} }, serverInfo: { name: 'personal-budget-readonly', version: '0.2.0' } } };
+   case 'ping':
+    return { jsonrpc: '2.0', id, result: {} };
+   case 'tools/list':
+    return { jsonrpc: '2.0', id, result: { tools } };
+   case 'prompts/list':
+    return { jsonrpc: '2.0', id, result: { prompts } };
+   case 'prompts/get':
+    return promptResponse(id, message.params);
+   case 'tools/call':
+    return toolCallResponse(id, message.params, () => ++calls);
+   default:
+    return error(id ?? null, -32601, 'Method not found');
+  }
+ };
 }
 
 function parsePrompt(name,args) {
