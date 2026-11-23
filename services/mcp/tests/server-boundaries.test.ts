@@ -153,7 +153,11 @@ describe('MCP runtime configuration and startup', () => {
     const result = await new Promise<{ code: number | null; stderr: string }>((resolve, reject) => {
       const child = spawn(process.execPath, [entrypoint], {
         env: {
-          ...process.env,
+          PATH: process.env.PATH ?? '',
+          SystemRoot: process.env.SystemRoot,
+          WINDIR: process.env.WINDIR,
+          TEMP: process.env.TEMP,
+          TMP: process.env.TMP,
           PERSONAL_BUDGET_MCP_API_TIMEOUT_MS: '5000',
           PERSONAL_BUDGET_API_URL: 'https://example.invalid'
         },
