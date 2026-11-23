@@ -83,16 +83,26 @@ describe('MCP runtime configuration and startup', () => {
     const { startMcpStdio } = await import('../server.mjs');
     const input = new PassThrough();
     const output = new PassThrough();
+    let writtenOutput = '';
+    output.on('data', chunk => { writtenOutput += chunk.toString(); });
     const reader = createInterface({ input: output, crlfDelay: Infinity });
     const server = startMcpStdio({
       inputStream: input,
       outputStream: output,
-      handler: async () => { throw new Error('sensitive internal detail'); }
+      handler: async (message: unknown) => {
+        if (
+          typeof message === 'object'
+          && message !== null
+          && 'method' in message
+          && message.method === 'notifications/initialized'
+        ) return null;
+        throw new Error('sensitive internal detail');
+      }
     });
 
     input.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
     await new Promise(resolve => setImmediate(resolve));
-    expect(output.read()).toBeNull();
+    expect(writtenOutput).toBe('');
 
     const responseLine = once(reader, 'line');
     input.write(JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'ping' }) + '\n');
@@ -120,6 +130,10 @@ describe('MCP runtime configuration and startup', () => {
         stdio: ['ignore', 'ignore', 'pipe']
       });
       let stderr = '';
+      if (!child.stderr) {
+        reject(new Error('Unable to capture the MCP child-process stderr.'));
+        return;
+      }
       child.stderr.setEncoding('utf8');
       child.stderr.on('data', chunk => { stderr += chunk; });
       child.once('error', reject);
