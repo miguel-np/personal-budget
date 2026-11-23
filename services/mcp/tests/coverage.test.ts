@@ -107,7 +107,7 @@ describe('MCP protocol logic coverage', () => {
  });
 
  it('builds all prompts and validates prompt arguments', async () => {
-  const prompts = [
+  const prompts: Array<[string, Record<string, unknown>]> = [
    ['monthly_financial_review', { startDate: '2026-10-01', endDate: '2026-10-31', previousStartDate: '2026-09-01', previousEndDate: '2026-09-30' }],
    ['budget_coaching', {}], ['cash_flow_review', {}],
    ['recurring_payment_audit', { startDate: '2026-08-01', endDate: '2026-10-31' }], ['wealth_review', {}]
@@ -121,7 +121,7 @@ describe('MCP protocol logic coverage', () => {
  });
 
  it('executes every tool using synthetic API responses', async () => {
-  const cases = [
+  const cases: Array<[string, Record<string, unknown>]> = [
    ['get_monthly_summary', { month: '2026-10' }],
    ['get_spending_by_category', { startDate: '2026-10-01', endDate: '2026-10-31' }],
    ['compare_periods', { currentStartDate: '2026-10-01', currentEndDate: '2026-10-31', previousStartDate: '2026-09-01', previousEndDate: '2026-09-30' }],
