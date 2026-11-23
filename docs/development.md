@@ -123,6 +123,8 @@ npm run validate
 
 La suite ordinaria usa datos sintéticos y no necesita una cuenta bancaria, un presupuesto personal ni un modelo Ollama real. Las pruebas live contra Actual, Ollama o SearXNG son optativas y deben utilizar entornos aislados y datos sintéticos.
 
+El alcance exacto de cobertura de líneas, las exclusiones y la diferencia entre Vitest, `node:test` y Playwright están documentados en [Cobertura de pruebas](test-coverage.md). No interpretes el porcentaje global como cobertura de componentes visuales ni como certificación de seguridad.
+
 ## 7. Cómo abordar un cambio pequeño
 
 1. Identifica la funcionalidad y lee su documentación.

@@ -35,6 +35,7 @@ Este inventario facilita encontrar la documentación versionada. La ruta de entr
 - docs/architecture.md — componentes, límites y flujos de datos.
 - docs/provider-contracts.md — contratos financieros neutrales y conformidad.
 - docs/development.md — guía de desarrollo para principiantes.
+- docs/test-coverage.md — alcance de instrumentación, ejecutores de pruebas, exclusiones y límites de interpretación.
 - docs/maintainability.md — presupuestos de tamaño y modularización.
 - docs/design-system.md — sistema visual y accesibilidad.
 - docs/api-performance.md — rendimiento y carga sintética.

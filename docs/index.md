@@ -29,13 +29,14 @@ Elige la ruta que corresponda a lo que quieres hacer. No necesitas leer toda la 
 ## Quiero desarrollar o contribuir
 
 1. [Guía de desarrollo para empezar](development.md)
-2. [Contribuir al repositorio](../CONTRIBUTING.md)
-3. [Arquitectura](architecture.md)
-4. [Contratos financieros y proveedor](provider-contracts.md)
-5. [Mantenibilidad y modularización](maintainability.md)
-6. [Sistema de diseño](design-system.md)
-7. [Pruebas E2E](browser-testing.md)
-8. [Baseline de versiones](version-baseline.md)
+2. [Alcance de cobertura automatizada](test-coverage.md)
+3. [Contribuir al repositorio](../CONTRIBUTING.md)
+4. [Arquitectura](architecture.md)
+5. [Contratos financieros y proveedor](provider-contracts.md)
+6. [Mantenibilidad y modularización](maintainability.md)
+7. [Sistema de diseño](design-system.md)
+8. [Pruebas E2E](browser-testing.md)
+9. [Baseline de versiones](version-baseline.md)
 
 ## Funciones financieras y planificación
 
