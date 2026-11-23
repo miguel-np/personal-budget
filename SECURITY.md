@@ -22,7 +22,7 @@ Esta política define requisitos de diseño y operación. **No certifica que una
 | Functions | 90,50 % | 80 % |
 | Lines | 90,73 % | 80 % |
 
-Los umbrales están definidos en `vitest.config.ts`; el alcance de instrumentación incluye `packages/finance-core/src`, `services/actual-adapter/src` y `services/api/src`, excluyendo los entrypoints `index.ts` y `main.ts`. La cobertura mide ejecución de código, no probabilidad de ausencia de vulnerabilidades ni suficiencia de pruebas de seguridad.
+En ese SHA histórico, el alcance de instrumentación incluía `packages/finance-core/src`, `services/actual-adapter/src` y `services/api/src`, excluyendo los entrypoints `index.ts` y `main.ts`. Ese dato describe únicamente la configuración de aquel commit. La instrumentación vigente y sus exclusiones se mantienen en [docs/test-coverage.md](docs/test-coverage.md); no deben inferirse desde esta ejecución histórica. La cobertura mide ejecución de código, no probabilidad de ausencia de vulnerabilidades ni suficiencia de pruebas de seguridad.
 
 Estas métricas describen una ejecución y un SHA concretos. No se deben copiar como métricas actuales de otro commit: consulta el workflow correspondiente al HEAD que se vaya a integrar.
 

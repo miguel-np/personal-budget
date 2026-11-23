@@ -1,17 +1,16 @@
 import { createInterface } from 'node:readline';
+import { pathToFileURL } from 'node:url';
 const VERSION = '2024-11-05', MAX_LINE = 8192, MAX_OUTPUT = 65536, MAX_CALLS = 24;
 const configuredTimeout = process.env.PERSONAL_BUDGET_MCP_API_TIMEOUT_MS;
-const TIMEOUT = configuredTimeout === undefined ? 5000 : Number(configuredTimeout);
-if (!Number.isInteger(TIMEOUT) || TIMEOUT < 100 || TIMEOUT > 30000) {
- process.stderr.write('PERSONAL_BUDGET_MCP_API_TIMEOUT_MS must be an integer from 100 to 30000.\n');
- process.exit(2);
-}
-let calls = 0;
-const base = process.env.PERSONAL_BUDGET_API_URL || 'http://127.0.0.1:3000';
+const parsedTimeout = configuredTimeout === undefined ? 5000 : Number(configuredTimeout);
+const timeoutValid = Number.isInteger(parsedTimeout) && parsedTimeout >= 100 && parsedTimeout <= 30000;
 function loopback(value) {
   try { const u = new URL(value); return ['127.0.0.1','localhost','::1','[::1]'].includes(u.hostname) && ['http:','https:'].includes(u.protocol) && !u.username && !u.password; } catch { return false; }
 }
-if (!loopback(base)) { process.stderr.write('MCP API URL must use loopback.\n'); process.exit(2); }
+const configuredBase = process.env.PERSONAL_BUDGET_API_URL || 'http://127.0.0.1:3000';
+const baseValid = loopback(configuredBase);
+const TIMEOUT = timeoutValid ? parsedTimeout : 5000;
+const base = baseValid ? configuredBase : 'http://127.0.0.1:3000';
 function date(v) { if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false; const d=new Date(v+'T00:00:00.000Z'); return Number.isFinite(d.getTime()) && d.toISOString().slice(0,10)===v; }
 function period(a,b) { if(!date(a)||!date(b)) throw Error('Dates must use valid YYYY-MM-DD values.'); const n=Date.parse(b+'T00:00:00Z')-Date.parse(a+'T00:00:00Z'); if(n<0||n/86400000>366*5) throw Error('Period must be ordered and at most five years.'); }
 function exact(a,keys) { if(!a||typeof a!=='object'||Array.isArray(a)||Object.keys(a).some(k=>!keys.includes(k))) throw Error('Tool arguments contain unsupported fields.'); }
@@ -165,7 +164,9 @@ function promptText(name,args) {
 }
 
 function error(id,code,message){return {jsonrpc:'2.0',id,error:{code,message}};}
-async function handle(m){
+export function createMcpHandler() {
+ let calls = 0;
+ async function handle(m){
  if(!m||typeof m!=='object'||m.jsonrpc!=='2.0'||typeof m.method!=='string')return error(m?.id??null,-32600,'Invalid Request');
  const id=m.id;if(id===undefined&&m.method.startsWith('notifications/'))return null;
  if(m.method==='initialize')return {jsonrpc:'2.0',id,result:{protocolVersion:VERSION,capabilities:{tools:{},prompts:{}},serverInfo:{name:'personal-budget-readonly',version:'0.2.0'}}};
@@ -187,9 +188,41 @@ async function handle(m){
  }
  return error(id??null,-32601,'Method not found');
 }
-const input=createInterface({input:process.stdin,crlfDelay:Infinity});
-input.on('line',async line=>{
- if(line.length>MAX_LINE){process.stdout.write(JSON.stringify(error(null,-32600,'Request too large.'))+'\n');return;}
- let m;try{m=JSON.parse(line);}catch{process.stdout.write(JSON.stringify(error(null,-32700,'Parse error'))+'\n');return;}
- const r=await handle(m).catch(()=>error(m?.id??null,-32603,'Internal error'));if(r)process.stdout.write(JSON.stringify(r)+'\n');
-});
+ return handle;
+}
+
+export function startMcpStdio({
+ inputStream = process.stdin,
+ outputStream = process.stdout,
+ errorStream = process.stderr,
+ handler = createMcpHandler()
+} = {}) {
+ if (!timeoutValid) {
+  errorStream.write('PERSONAL_BUDGET_MCP_API_TIMEOUT_MS must be an integer from 100 to 30000.\\n');
+  process.exitCode = 2;
+  return null;
+ }
+ if (!baseValid) {
+  errorStream.write('MCP API URL must use loopback.\\n');
+  process.exitCode = 2;
+  return null;
+ }
+ const input = createInterface({ input: inputStream, crlfDelay: Infinity });
+ input.on('line', async line => {
+  if (line.length > MAX_LINE) {
+   outputStream.write(JSON.stringify(error(null, -32600, 'Request too large.')) + '\\n');
+   return;
+  }
+  let message;
+  try { message = JSON.parse(line); }
+  catch {
+   outputStream.write(JSON.stringify(error(null, -32700, 'Parse error')) + '\\n');
+   return;
+  }
+  const result = await handler(message).catch(() => error(message?.id ?? null, -32603, 'Internal error'));
+  if (result) outputStream.write(JSON.stringify(result) + '\\n');
+ });
+ return input;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) startMcpStdio();

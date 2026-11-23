@@ -29,6 +29,7 @@ Elige la ruta que corresponda a lo que quieres hacer. No necesitas leer toda la 
 ## Quiero desarrollar o contribuir
 
 1. [Guía de desarrollo para empezar](development.md)
+2. [Alcance de cobertura automatizada](test-coverage.md)
 2. [Contribuir al repositorio](../CONTRIBUTING.md)
 3. [Arquitectura](architecture.md)
 4. [Contratos financieros y proveedor](provider-contracts.md)
