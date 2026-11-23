@@ -225,4 +225,7 @@ export function startMcpStdio({
  return input;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) startMcpStdio();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+ const input = startMcpStdio();
+ if (input === null) process.exit(process.exitCode ?? 2);
+}
