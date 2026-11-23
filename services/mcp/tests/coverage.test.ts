@@ -55,8 +55,10 @@ function firstContentText(responseValue: unknown): string {
 function promptTextFrom(responseValue: unknown): string {
  const messages = rpcResult(responseValue).messages;
  if (!Array.isArray(messages)) throw new Error('Expected prompt messages.');
- const text = asObject(asObject(asObject(messages[0]).content).text);
- return String(text);
+ const content = asObject(messages[0]).content;
+ const text = asObject(content).text;
+ if (typeof text !== 'string') throw new Error('Expected prompt text.');
+ return text;
 }
 
 async function callTool(
