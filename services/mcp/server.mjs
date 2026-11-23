@@ -15,6 +15,96 @@ const prompts = [
  {name:'wealth_review',title:'Net-worth review',description:'Review net-worth totals together with completeness and valuation coverage.',arguments:[]},
 ];
 
+function error(id, code, message) {
+ return { jsonrpc: '2.0', id, error: { code, message } };
+}
+
+async function promptResponse(id, params) {
+ const name = params?.name;
+ const prompt = prompts.find((candidate) => candidate.name === name);
+ if (!prompt) return error(id ?? null, -32602, 'Unknown prompt.');
+ try {
+  const args = parsePrompt(name, params?.arguments ?? {});
+  return {
+   jsonrpc: '2.0',
+   id,
+   result: {
+    description: prompt.description,
+    messages: [{ role: 'user', content: { type: 'text', text: promptText(name, args) } }]
+   }
+  };
+ } catch (cause) {
+  const message = cause instanceof Error && /invalid|must |unsupported|period|date|limit|unknown/i.test(cause.message)
+   ? cause.message
+   : 'Invalid prompt arguments.';
+  return error(id ?? null, -32602, message);
+ }
+}
+
+async function toolCallResponse(id, params, incrementCalls) {
+ if (incrementCalls() > MAX_CALLS) {
+  return {
+   jsonrpc: '2.0',
+   id,
+   result: { isError: true, content: [{ type: 'text', text: 'Session tool-call limit reached.' }] }
+  };
+ }
+ const name = params?.name;
+ if (!tools.some((candidate) => candidate.name === name)) {
+  return {
+   jsonrpc: '2.0',
+   id,
+   result: { isError: true, content: [{ type: 'text', text: 'Unknown tool; no action was taken.' }] }
+  };
+ }
+ try {
+  const data = await invoke(name, params?.arguments ?? {});
+  const serialized = JSON.stringify(data);
+  if (serialized.length > MAX_OUTPUT) throw Error('Tool response exceeds size limit.');
+  return {
+   jsonrpc: '2.0',
+   id,
+   result: { isError: false, structuredContent: data, content: [{ type: 'text', text: serialized }] }
+  };
+ } catch (cause) {
+  const message = cause instanceof Error && /invalid|must |found|unsupported|unknown|limit|period|date|category|year|month|size/i.test(cause.message)
+   ? cause.message
+   : 'Local finance tool failed.';
+  return { jsonrpc: '2.0', id, result: { isError: true, content: [{ type: 'text', text: message }] } };
+ }
+}
+
+export function createMcpHandler() {
+ let calls = 0;
+ const methods = new Map([
+  ['initialize', (id) => ({
+   jsonrpc: '2.0',
+   id,
+   result: {
+    protocolVersion: VERSION,
+    capabilities: { tools: {}, prompts: {} },
+    serverInfo: { name: 'personal-budget-readonly', version: '0.2.0' }
+   }
+  })],
+  ['ping', (id) => ({ jsonrpc: '2.0', id, result: {} })],
+  ['tools/list', (id) => ({ jsonrpc: '2.0', id, result: { tools } })],
+  ['prompts/list', (id) => ({ jsonrpc: '2.0', id, result: { prompts } })],
+  ['prompts/get', (id, params) => promptResponse(id, params)],
+  ['tools/call', (id, params) => toolCallResponse(id, params, () => ++calls)]
+ ]);
+
+ return async function handle(message) {
+  if (!message || typeof message !== 'object' || message.jsonrpc !== '2.0' || typeof message.method !== 'string') {
+   return error(message?.id ?? null, -32600, 'Invalid Request');
+  }
+  const id = message.id;
+  if (id === undefined && message.method.startsWith('notifications/')) return null;
+  const method = methods.get(message.method);
+  if (!method) return error(id ?? null, -32601, 'Method not found');
+  return method(id, message.params);
+ };
+}
+
 function parsePrompt(name,args) {
  if(name==='monthly_financial_review'){exact(args,['startDate','endDate','previousStartDate','previousEndDate']);period(args.startDate,args.endDate);period(args.previousStartDate,args.previousEndDate);return args;}
  if(name==='budget_coaching'){exact(args,['month','periodMonths']);if(args.month!==undefined)monthRange(args.month);if(args.periodMonths!==undefined&&![3,6,12].includes(args.periodMonths))throw Error('periodMonths must be 3, 6 or 12.');return {...args,periodMonths:args.periodMonths??6};}
