@@ -104,6 +104,21 @@ describe('MCP protocol logic coverage', () => {
   expect(unknown.result.content[0].text).toMatch(/unknown tool/i);
  });
 
+ it('sanitizes API failures and enforces response byte limits', async () => {
+  const scenarios = [
+   () => new Response('unavailable', { status: 503 }),
+   () => new Response('not-json'),
+   () => new Response('x'.repeat(70000), { headers: { 'content-length': '70000' } }),
+   () => new Response('x'.repeat(70000))
+  ];
+  for (const makeResponse of scenarios) {
+   vi.stubGlobal('fetch', vi.fn(async () => makeResponse()));
+   const result = await callTool(handler, 'get_monthly_summary', { month: '2026-10' });
+   expect(result.result.isError).toBe(true);
+   expect(JSON.stringify(result)).not.toContain('unavailable');
+  }
+ });
+
  it('enforces the per-session tool-call limit', async () => {
   let result;
   for (let index = 0; index < 25; index += 1) result = await callTool(handler, 'not-allowed');
