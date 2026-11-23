@@ -34,29 +34,33 @@ function promptText(name,args) {
 function error(id,code,message){return {jsonrpc:'2.0',id,error:{code,message}};}
 export function createMcpHandler() {
  let calls = 0;
- async function handle(m){
- if(!m||typeof m!=='object'||m.jsonrpc!=='2.0'||typeof m.method!=='string')return error(m?.id??null,-32600,'Invalid Request');
- const id=m.id;if(id===undefined&&m.method.startsWith('notifications/'))return null;
- if(m.method==='initialize')return {jsonrpc:'2.0',id,result:{protocolVersion:VERSION,capabilities:{tools:{},prompts:{}},serverInfo:{name:'personal-budget-readonly',version:'0.2.0'}}};
- if(m.method==='ping')return {jsonrpc:'2.0',id,result:{}};
- if(m.method==='tools/list')return {jsonrpc:'2.0',id,result:{tools}};
- if(m.method==='prompts/list')return {jsonrpc:'2.0',id,result:{prompts}};
- if(m.method==='prompts/get'){
-  const name=m.params?.name;
-  if(typeof name!=='string'||!prompts.some(prompt=>prompt.name===name))return error(id??null,-32602,'Unknown prompt.');
-  try{const args=parsePrompt(name,m.params?.arguments??{});return {jsonrpc:'2.0',id,result:{description:prompts.find(prompt=>prompt.name===name).description,messages:[{role:'user',content:{type:'text',text:promptText(name,args)}}]}};}
-  catch(e){const message=e instanceof Error&&/invalid|must |unsupported|period|date|limit|unknown/i.test(e.message)?e.message:'Invalid prompt arguments.';return error(id??null,-32602,message);}
- }
- if(m.method==='tools/call'){
-  if(++calls>MAX_CALLS)return {jsonrpc:'2.0',id,result:{isError:true,content:[{type:'text',text:'Session tool-call limit reached.'}]}};
-  const name=m.params?.name;if(!tools.some(t=>t.name===name))return {jsonrpc:'2.0',id,result:{isError:true,content:[{type:'text',text:'Unknown tool; no action was taken.'}]}};
-  try{const data=await invoke(name,m.params?.arguments??{});const s=JSON.stringify(data);if(s.length>MAX_OUTPUT)throw Error('Tool response exceeds size limit.');return {jsonrpc:'2.0',id,result:{isError:false,structuredContent:data,content:[{type:'text',text:s}]}};}
-  catch(e){const s=e instanceof Error&&/invalid|must |found|unsupported|unknown|limit|period|date|category|year|month|size/i.test(e.message)?e.message:'Local finance tool failed.';return {jsonrpc:'2.0',id,result:{isError:true,content:[{type:'text',text:s}]}};
+ const methods = new Map([
+  ['initialize', (id) => ({
+   jsonrpc: '2.0',
+   id,
+   result: {
+    protocolVersion: VERSION,
+    capabilities: { tools: {}, prompts: {} },
+    serverInfo: { name: 'personal-budget-readonly', version: '0.2.0' }
+   }
+  })],
+  ['ping', (id) => ({ jsonrpc: '2.0', id, result: {} })],
+  ['tools/list', (id) => ({ jsonrpc: '2.0', id, result: { tools } })],
+  ['prompts/list', (id) => ({ jsonrpc: '2.0', id, result: { prompts } })],
+  ['prompts/get', (id, params) => promptResponse(id, params)],
+  ['tools/call', (id, params) => toolCallResponse(id, params, () => ++calls)]
+ ]);
+
+ return async function handle(message) {
+  if (!message || typeof message !== 'object' || message.jsonrpc !== '2.0' || typeof message.method !== 'string') {
+   return error(message?.id ?? null, -32600, 'Invalid Request');
   }
- }
- return error(id??null,-32601,'Method not found');
-}
- return handle;
+  const id = message.id;
+  if (id === undefined && message.method.startsWith('notifications/')) return null;
+  const method = methods.get(message.method);
+  if (!method) return error(id ?? null, -32601, 'Method not found');
+  return method(id, message.params);
+ };
 }
 
 export function startMcpStdio({
