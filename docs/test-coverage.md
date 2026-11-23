@@ -8,6 +8,9 @@
 - `services/actual-adapter/src/**/*.ts`
 - `services/api/src/**/*.ts`
 - `services/mcp/server.mjs`
+- `services/mcp/runtime-config.mjs`
+- `services/mcp/tool-definitions.mjs`
+- `services/mcp/tool-executors.mjs`
 - `apps/web/src/csv-import.ts`
 - `apps/web/src/export-utils.ts`
 - `apps/web/src/finance-format.ts`

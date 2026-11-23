@@ -3,6 +3,7 @@ import { createInterface } from 'node:readline';
 import { once } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMcpHandler, startMcpStdio } from '../server.mjs';
+import { isLoopbackApiUrl, isValidMcpTimeout } from '../runtime-config.mjs';
 
 const summary = { currency: 'EUR', startDate: '2026-10-01', endDate: '2026-10-31', incomeMinor: 300000, expenseMinor: 5734, savingsMinor: 294266, savingsRatePercent: 98.09, transactionCount: 4, excludedTransferCount: 0, expensesByCategory: [{ categoryName: 'Comida', amountMinor: 4500, transactionCount: 1 }], warnings: [] };
 const transactions = [
@@ -45,6 +46,22 @@ beforeEach(() => {
  vi.stubGlobal('fetch', fetchMock);
 });
 afterEach(() => vi.unstubAllGlobals());
+
+describe('MCP runtime configuration', () => {
+ it('accepts only loopback API URLs and bounded timeout values', () => {
+  expect(isLoopbackApiUrl('http://127.0.0.1:3000')).toBe(true);
+  expect(isLoopbackApiUrl('http://localhost:3000')).toBe(true);
+  expect(isLoopbackApiUrl('https://[::1]:3000')).toBe(true);
+  expect(isLoopbackApiUrl('https://example.com')).toBe(false);
+  expect(isLoopbackApiUrl('http://127.0.0.1:3000/path')).toBe(true);
+  expect(isValidMcpTimeout(100)).toBe(true);
+  expect(isValidMcpTimeout(5000)).toBe(true);
+  expect(isValidMcpTimeout(30000)).toBe(true);
+  expect(isValidMcpTimeout(99)).toBe(false);
+  expect(isValidMcpTimeout(30001)).toBe(false);
+  expect(isValidMcpTimeout(Number.NaN)).toBe(false);
+ });
+});
 
 describe('MCP protocol logic coverage', () => {
  it('validates JSON-RPC requests and exposes discovery methods', async () => {
