@@ -198,29 +198,29 @@ export function startMcpStdio({
  handler = createMcpHandler()
 } = {}) {
  if (!timeoutValid) {
-  errorStream.write('PERSONAL_BUDGET_MCP_API_TIMEOUT_MS must be an integer from 100 to 30000.\\n');
+  errorStream.write('PERSONAL_BUDGET_MCP_API_TIMEOUT_MS must be an integer from 100 to 30000.\n');
   process.exitCode = 2;
   return null;
  }
  if (!baseValid) {
-  errorStream.write('MCP API URL must use loopback.\\n');
+  errorStream.write('MCP API URL must use loopback.\n');
   process.exitCode = 2;
   return null;
  }
  const input = createInterface({ input: inputStream, crlfDelay: Infinity });
  input.on('line', async line => {
   if (line.length > MAX_LINE) {
-   outputStream.write(JSON.stringify(error(null, -32600, 'Request too large.')) + '\\n');
+   outputStream.write(JSON.stringify(error(null, -32600, 'Request too large.')) + '\n');
    return;
   }
   let message;
   try { message = JSON.parse(line); }
   catch {
-   outputStream.write(JSON.stringify(error(null, -32700, 'Parse error')) + '\\n');
+   outputStream.write(JSON.stringify(error(null, -32700, 'Parse error')) + '\n');
    return;
   }
   const result = await handler(message).catch(() => error(message?.id ?? null, -32603, 'Internal error'));
-  if (result) outputStream.write(JSON.stringify(result) + '\\n');
+  if (result) outputStream.write(JSON.stringify(result) + '\n');
  });
  return input;
 }
