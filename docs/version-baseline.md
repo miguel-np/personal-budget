@@ -42,6 +42,7 @@ Se selecciona TypeScript 6.0.3, no la versión 7.0.2, porque la versión estable
 - `.nvmrc` fija Node.js 26.13.1; `package.json` exige Node `>=26.13.1 <27` y npm `>=11.20.0`.
 - `@types/node` se alinea en 26.6.6; su dependencia `undici-types` queda fijada en 8.9.0 en el lockfile.
 - Las GitHub Actions de checkout y setup-node están fijadas por SHA completo.
+- `actions/upload-artifact` v7.0.2 se fija al commit `cf430e030ddbb5b0abf93d22962f4752f3646cd9` y utiliza el runtime Node.js 24; publica cobertura y diagnósticos E2E con retención limitada.
 - CI ejecuta `npm audit --audit-level=moderate`, lint, typecheck, pruebas con cobertura, build y auditoría de dependencias de producción.
 - Ejecutar auditorías semanalmente y antes de cada release.
 - Actualizar dependencias de forma deliberada, revisar lockfile y ejecutar pruebas.
