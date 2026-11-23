@@ -12,12 +12,12 @@ const transactions = [
  { id: 'synthetic-3', date: '2026-10-01', amount: -1020, account: 'Cuenta sintética', category: null, payee_name: 'Internet' }
 ];
 
-function response(data, status = 200, headers = {}) {
+function response(data: unknown, status = 200, headers: Record<string, string> = {}) {
  return new Response(JSON.stringify({ data }), { status, headers: { 'content-type': 'application/json', ...headers } });
 }
 
 function fixtureFetch() {
- return vi.fn(async (request) => {
+ return vi.fn(async (request: RequestInfo | URL) => {
   const url = new URL(String(request));
   if (url.pathname.endsWith('/reports/summary')) return response(summary);
   if (url.pathname.endsWith('/transactions')) return response(transactions);
@@ -30,16 +30,45 @@ function fixtureFetch() {
  });
 }
 
-function request(method, params = {}, id = 1) {
+function request(method: string, params: Record<string, unknown> = {}, id: number | string = 1) {
  return { jsonrpc: '2.0', id, method, params };
 }
 
-async function callTool(session, name, args = {}) {
+function asObject(value: unknown): Record<string, unknown> {
+ if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+  throw new Error('Expected a JSON object response.');
+ }
+ return value as Record<string, unknown>;
+}
+
+function rpcResult(responseValue: unknown): Record<string, unknown> {
+ return asObject(asObject(responseValue).result);
+}
+
+function firstContentText(responseValue: unknown): string {
+ const content = rpcResult(responseValue).content;
+ if (!Array.isArray(content)) throw new Error('Expected JSON-RPC text content.');
+ const text = asObject(content[0]).text;
+ return typeof text === 'string' ? text : '';
+}
+
+function promptTextFrom(responseValue: unknown): string {
+ const messages = rpcResult(responseValue).messages;
+ if (!Array.isArray(messages)) throw new Error('Expected prompt messages.');
+ const text = asObject(asObject(asObject(messages[0]).content).text);
+ return String(text);
+}
+
+async function callTool(
+ session: ReturnType<typeof createMcpHandler>,
+ name: string,
+ args: Record<string, unknown> = {}
+): Promise<unknown> {
  return session(request('tools/call', { name, arguments: args }));
 }
 
-let handler;
-let fetchMock;
+let handler: ReturnType<typeof createMcpHandler>;
+let fetchMock: ReturnType<typeof fixtureFetch>;
 beforeEach(() => {
  handler = createMcpHandler();
  fetchMock = fixtureFetch();
@@ -70,8 +99,8 @@ describe('MCP protocol logic coverage', () => {
   expect(await handler(request('initialize'))).toMatchObject({ result: { protocolVersion: '2024-11-05' } });
   expect(await handler(request('ping'))).toMatchObject({ result: {} });
   expect(await handler(request('notifications/initialized'))).toBeNull();
-  expect((await handler(request('tools/list'))).result.tools).toHaveLength(12);
-  expect((await handler(request('prompts/list'))).result.prompts).toHaveLength(5);
+  expect(rpcResult(await handler(request('tools/list'))).tools).toHaveLength(12);
+  expect(rpcResult(await handler(request('prompts/list'))).prompts).toHaveLength(5);
   expect(await handler(request('unknown/method'))).toMatchObject({ error: { code: -32601 } });
  });
 
@@ -83,7 +112,7 @@ describe('MCP protocol logic coverage', () => {
   ];
   for (const [name, args] of prompts) {
    const result = await handler(request('prompts/get', { name, arguments: args }));
-   expect(result.result.messages[0].content.text.length).toBeGreaterThan(0);
+   expect(promptTextFrom(result).length).toBeGreaterThan(0);
   }
   expect(await handler(request('prompts/get', { name: 'unknown' }))).toMatchObject({ error: { code: -32602 } });
   expect(await handler(request('prompts/get', { name: 'monthly_financial_review', arguments: { startDate: '2026-99-01' } }))).toMatchObject({ error: { code: -32602 } });
@@ -104,21 +133,21 @@ describe('MCP protocol logic coverage', () => {
   ];
   const results = [];
   for (const [name, args] of cases) results.push(await callTool(handler, name, args));
-  expect(results.every((result) => result.result.isError === false)).toBe(true);
-  expect(results[5].result.structuredContent.candidates).toHaveLength(1);
-  expect(results[6].result.structuredContent.persisted).toBe(false);
-  expect(results[10].result.structuredContent.projection.timeline).toHaveLength(1);
+  expect(results.every((result) => rpcResult(result).isError === false)).toBe(true);
+  expect(asObject(rpcResult(results[5]).structuredContent).candidates).toHaveLength(1);
+  expect(asObject(rpcResult(results[6]).structuredContent).persisted).toBe(false);
+  expect(asObject(asObject(rpcResult(results[10]).structuredContent).projection).timeline).toHaveLength(1);
   expect(fetchMock).toHaveBeenCalled();
  });
 
  it('rejects invalid arguments and fails closed for unknown tools', async () => {
   const invalid = await callTool(handler, 'get_spending_by_category', { startDate: '2026-99-01', endDate: '2026-10-31' });
-  expect(invalid.result.isError).toBe(true);
-  expect(invalid.result.content[0].text).toMatch(/date/i);
+  expect(rpcResult(invalid).isError).toBe(true);
+  expect(firstContentText(invalid)).toMatch(/date/i);
   const extra = await callTool(handler, 'get_monthly_summary', { month: '2026-10', extra: true });
-  expect(extra.result.isError).toBe(true);
+  expect(rpcResult(extra).isError).toBe(true);
   const unknown = await callTool(handler, 'run_shell', { command: 'whoami' });
-  expect(unknown.result.content[0].text).toMatch(/unknown tool/i);
+  expect(firstContentText(unknown)).toMatch(/unknown tool/i);
  });
 
  it('sanitizes API failures and enforces response byte limits', async () => {
@@ -131,15 +160,15 @@ describe('MCP protocol logic coverage', () => {
   for (const makeResponse of scenarios) {
    vi.stubGlobal('fetch', vi.fn(async () => makeResponse()));
    const result = await callTool(handler, 'get_monthly_summary', { month: '2026-10' });
-   expect(result.result.isError).toBe(true);
+   expect(rpcResult(result).isError).toBe(true);
    expect(JSON.stringify(result)).not.toContain('unavailable');
   }
  });
 
  it('enforces the per-session tool-call limit', async () => {
-  let result;
+  let result: unknown;
   for (let index = 0; index < 25; index += 1) result = await callTool(handler, 'not-allowed');
-  expect(result.result.content[0].text).toMatch(/limit/i);
+  expect(firstContentText(result)).toMatch(/limit/i);
  });
 
  it('serves stdio requests and rejects malformed and oversized lines', async () => {

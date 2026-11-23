@@ -15,6 +15,22 @@ const prompts = [
  {name:'wealth_review',title:'Net-worth review',description:'Review net-worth totals together with completeness and valuation coverage.',arguments:[]},
 ];
 
+function parsePrompt(name,args) {
+ if(name==='monthly_financial_review'){exact(args,['startDate','endDate','previousStartDate','previousEndDate']);period(args.startDate,args.endDate);period(args.previousStartDate,args.previousEndDate);return args;}
+ if(name==='budget_coaching'){exact(args,['month','periodMonths']);if(args.month!==undefined)monthRange(args.month);if(args.periodMonths!==undefined&&![3,6,12].includes(args.periodMonths))throw Error('periodMonths must be 3, 6 or 12.');return {...args,periodMonths:args.periodMonths??6};}
+ if(name==='cash_flow_review'){exact(args,['horizonDays']);if(args.horizonDays!==undefined&&![7,30,90].includes(args.horizonDays))throw Error('horizonDays must be 7, 30 or 90.');return {horizonDays:args.horizonDays??30};}
+ if(name==='recurring_payment_audit'){exact(args,['startDate','endDate']);period(args.startDate,args.endDate);return args;}
+ if(name==='wealth_review'){exact(args,[]);return {};}
+ throw Error('Unknown prompt.');
+}
+function promptText(name,args) {
+ if(name==='monthly_financial_review')return 'Revisa el periodo '+args.startDate+' a '+args.endDate+' y compáralo con '+args.previousStartDate+' a '+args.previousEndDate+'. Usa compare_periods, get_spending_by_category y get_financial_findings. No inventes ni recalcules importes; separa hechos observados, estimaciones, candidatos, advertencias y hasta tres acciones sugeridas. No modifiques datos ni atribuyas causas no medidas.';
+ if(name==='budget_coaching')return 'Revisa el presupuesto del mes '+(args.month??'(mes actual de la aplicación)')+' y la ventana histórica de '+args.periodMonths+' meses. Consulta get_budget_alerts y get_budget_improvement_context. Explica evidencia, clasificación, supuestos y advertencias. Puedes usar simulate_budget_change para escenarios hipotéticos no persistentes. No recomiendes recortar categorías esenciales/protegidas por defecto y no guardes preferencias, escenarios ni decisiones.';
+ if(name==='cash_flow_review')return 'Revisa la proyección de caja a '+args.horizonDays+' días con project_cash_flow. Separa movimientos registrados, compromisos, recurrencias confirmadas y candidatos; estos últimos solo se incluyen si el usuario los selecciona expresamente. Destaca fechas de déficit/reserva solo cuando existan. El saldo es estimado, no saldo bancario disponible garantizado. No crees ni modifiques pagos o compromisos.';
+ if(name==='recurring_payment_audit')return 'Audita patrones potencialmente recurrentes entre '+args.startDate+' y '+args.endDate+' usando get_recurring_candidates. Agrupa por beneficiario, frecuencia, variabilidad y fechas. Distingue candidatos de suscripciones confirmadas. No asumas que habrá un cargo futuro ni recomiendes cancelar sin verificación manual. No edites movimientos ni compromisos.';
+ return 'Revisa el patrimonio con get_net_worth_summary. Si el estado es incomplete o netWorthMinor es null, explica la cobertura faltante y no fabriques un total alternativo. Separa Actual y activos/pasivos externos. No infieras rentabilidad, valor de mercado ni recomendaciones de inversión; no modifiques activos, valoraciones ni clasificaciones.';
+}
+
 function error(id, code, message) {
  return { jsonrpc: '2.0', id, error: { code, message } };
 }
@@ -74,54 +90,6 @@ async function toolCallResponse(id, params, incrementCalls) {
  }
 }
 
-export function createMcpHandler() {
- let calls = 0;
- const methods = new Map([
-  ['initialize', (id) => ({
-   jsonrpc: '2.0',
-   id,
-   result: {
-    protocolVersion: VERSION,
-    capabilities: { tools: {}, prompts: {} },
-    serverInfo: { name: 'personal-budget-readonly', version: '0.2.0' }
-   }
-  })],
-  ['ping', (id) => ({ jsonrpc: '2.0', id, result: {} })],
-  ['tools/list', (id) => ({ jsonrpc: '2.0', id, result: { tools } })],
-  ['prompts/list', (id) => ({ jsonrpc: '2.0', id, result: { prompts } })],
-  ['prompts/get', (id, params) => promptResponse(id, params)],
-  ['tools/call', (id, params) => toolCallResponse(id, params, () => ++calls)]
- ]);
-
- return async function handle(message) {
-  if (!message || typeof message !== 'object' || message.jsonrpc !== '2.0' || typeof message.method !== 'string') {
-   return error(message?.id ?? null, -32600, 'Invalid Request');
-  }
-  const id = message.id;
-  if (id === undefined && message.method.startsWith('notifications/')) return null;
-  const method = methods.get(message.method);
-  if (!method) return error(id ?? null, -32601, 'Method not found');
-  return method(id, message.params);
- };
-}
-
-function parsePrompt(name,args) {
- if(name==='monthly_financial_review'){exact(args,['startDate','endDate','previousStartDate','previousEndDate']);period(args.startDate,args.endDate);period(args.previousStartDate,args.previousEndDate);return args;}
- if(name==='budget_coaching'){exact(args,['month','periodMonths']);if(args.month!==undefined)monthRange(args.month);if(args.periodMonths!==undefined&&![3,6,12].includes(args.periodMonths))throw Error('periodMonths must be 3, 6 or 12.');return {...args,periodMonths:args.periodMonths??6};}
- if(name==='cash_flow_review'){exact(args,['horizonDays']);if(args.horizonDays!==undefined&&![7,30,90].includes(args.horizonDays))throw Error('horizonDays must be 7, 30 or 90.');return {horizonDays:args.horizonDays??30};}
- if(name==='recurring_payment_audit'){exact(args,['startDate','endDate']);period(args.startDate,args.endDate);return args;}
- if(name==='wealth_review'){exact(args,[]);return {};}
- throw Error('Unknown prompt.');
-}
-function promptText(name,args) {
- if(name==='monthly_financial_review')return 'Revisa el periodo '+args.startDate+' a '+args.endDate+' y compáralo con '+args.previousStartDate+' a '+args.previousEndDate+'. Usa compare_periods, get_spending_by_category y get_financial_findings. No inventes ni recalcules importes; separa hechos observados, estimaciones, candidatos, advertencias y hasta tres acciones sugeridas. No modifiques datos ni atribuyas causas no medidas.';
- if(name==='budget_coaching')return 'Revisa el presupuesto del mes '+(args.month??'(mes actual de la aplicación)')+' y la ventana histórica de '+args.periodMonths+' meses. Consulta get_budget_alerts y get_budget_improvement_context. Explica evidencia, clasificación, supuestos y advertencias. Puedes usar simulate_budget_change para escenarios hipotéticos no persistentes. No recomiendes recortar categorías esenciales/protegidas por defecto y no guardes preferencias, escenarios ni decisiones.';
- if(name==='cash_flow_review')return 'Revisa la proyección de caja a '+args.horizonDays+' días con project_cash_flow. Separa movimientos registrados, compromisos, recurrencias confirmadas y candidatos; estos últimos solo se incluyen si el usuario los selecciona expresamente. Destaca fechas de déficit/reserva solo cuando existan. El saldo es estimado, no saldo bancario disponible garantizado. No crees ni modifiques pagos o compromisos.';
- if(name==='recurring_payment_audit')return 'Audita patrones potencialmente recurrentes entre '+args.startDate+' y '+args.endDate+' usando get_recurring_candidates. Agrupa por beneficiario, frecuencia, variabilidad y fechas. Distingue candidatos de suscripciones confirmadas. No asumas que habrá un cargo futuro ni recomiendes cancelar sin verificación manual. No edites movimientos ni compromisos.';
- return 'Revisa el patrimonio con get_net_worth_summary. Si el estado es incomplete o netWorthMinor es null, explica la cobertura faltante y no fabriques un total alternativo. Separa Actual y activos/pasivos externos. No infieras rentabilidad, valor de mercado ni recomendaciones de inversión; no modifiques activos, valoraciones ni clasificaciones.';
-}
-
-function error(id,code,message){return {jsonrpc:'2.0',id,error:{code,message}};}
 export function createMcpHandler() {
  let calls = 0;
  const methods = new Map([
