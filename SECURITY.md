@@ -26,6 +26,19 @@ En ese SHA histórico, el alcance de instrumentación incluía `packages/finance
 
 Estas métricas describen una ejecución y un SHA concretos. No se deben copiar como métricas actuales de otro commit: consulta el workflow correspondiente al HEAD que se vaya a integrar.
 
+## Evidencia de cobertura ampliada — 23-nov-2026
+
+Ejecución reproducible sobre el commit [`c33f8592f4c21fd23968fe692dfad94e36a29788`](https://github.com/miguel-np/personal-budget/commit/c33f8592f4c21fd23968fe692dfad94e36a29788):
+
+- [CI, run 45207041952](https://github.com/miguel-np/personal-budget/actions/runs/45207041952): jobs `quality`, `browser-e2e`, `actual-container-smoke`, `windows-quality` y `actual-update-acceptance` completados correctamente.
+- [Security, run 45207041872](https://github.com/miguel-np/personal-budget/actions/runs/45207041872): CodeQL y dependency/secret scan completados correctamente.
+- Vitest V8: 51 ficheros de test pasaron y 3 se omitieron; 501 tests pasaron y 4 se omitieron deliberadamente.
+- Cobertura global: 86,09 % statements, 76,37 % branches, 90,56 % functions y 90,22 % lines; se mantuvieron los umbrales 80/75/80/80.
+- Área MCP (`server.mjs`, configuración, definiciones y ejecutores): 85,83 % statements, 71,11 % branches, 93,97 % functions y 91,32 % lines. Las métricas por área son informativas; los umbrales configurados se aplican al conjunto global.
+- `npm audit` y `npm audit --omit=dev` informaron cero vulnerabilidades conocidas durante esa ejecución. Esto describe la base de avisos consultada en ese momento y no acredita ausencia de vulnerabilidades.
+
+El mapa de instrumentación, las exclusiones y la separación entre Vitest, `node:test` y Playwright se mantienen en [docs/test-coverage.md](docs/test-coverage.md). La cobertura no mide por sí sola calidad de aserciones, conformidad WCAG ni ausencia de vulnerabilidades.
+
 ## Revisiones manuales y aceptación
 
 La documentación previa registra verificaciones manuales del entorno objetivo WSL2: binding de servicios a `127.0.0.1`, rechazo CORS de orígenes no permitidos, saneamiento de errores y exclusión de prompts/detalles de movimientos de logs. Es evidencia de esa sesión, no una comprobación repetida por cada CI.
