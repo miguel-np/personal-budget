@@ -23,6 +23,12 @@ Se excluyen los entrypoints `**/index.ts` y `**/main.ts`. La lista es deliberada
 
 El protocolo MCP dispone de dos niveles complementarios. Las pruebas con el cliente oficial y el transporte stdio conservan la verificación de interoperabilidad en procesos separados. Además, `createMcpHandler()` permite ejecutar la lógica JSON-RPC/herramientas directamente en Vitest; ese camino sí contribuye a la cobertura V8 del proceso de pruebas. El entrypoint `npm run mcp:serve` conserva el arranque stdio y solo se activa al ejecutar `services/mcp/server.mjs` directamente.
 
+### Umbral específico de MCP
+
+Además de los umbrales globales, Vitest aplica `branches: 75` al patrón `services/mcp/**`. El patrón se evalúa de forma agregada sobre los cuatro módulos MCP incluidos explícitamente en `coverage.include`; no exige que cada fichero alcance individualmente el 75 %. Los ficheros MCP siguen contando también para los umbrales globales, que no se sustituyen ni relajan.
+
+El umbral por área permite detectar una regresión de cobertura MCP aunque otras áreas mantengan el promedio global por encima del mínimo. Las pruebas complementarias de MCP usan fixtures sintéticos y stubs locales; no dependen de datos reales de Actual ni de servicios externos.
+
 ## Suites que no forman parte del porcentaje Vitest
 
 - Las pruebas Playwright (`npm run test:e2e`) validan comportamiento renderizado, navegación, responsive, accesibilidad y flujos de navegador. No se presentan como cobertura de líneas.

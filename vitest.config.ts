@@ -35,7 +35,13 @@ export default defineConfig({
       ],
       exclude: ['**/index.ts', '**/main.ts'],
       reporter: ['text', 'text-summary', 'lcov', 'html', 'json-summary'],
-      thresholds: { statements: 80, branches: 75, functions: 80, lines: 80 },
+      thresholds: {
+        statements: 80,
+        branches: 75,
+        functions: 80,
+        lines: 80,
+        'services/mcp/**': { branches: 75 },
+      },
     },
   },
 });
