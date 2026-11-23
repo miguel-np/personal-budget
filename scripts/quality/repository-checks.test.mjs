@@ -58,6 +58,9 @@ test('enforces internal workspace boundaries across every dependency section', (
   assert.equal(getManifestBoundaryViolations('services/api/package.json', {
     devDependencies: { '@personal-budget/finance-core': '0.1.0' },
   }).length, 0);
+  assert.equal(getManifestBoundaryViolations('package.json', {
+    devDependencies: { '@personal-budget/api': '0.1.0' },
+  }).length, 1);
   assert.match(
     getImportBoundaryViolation('packages/finance-core/src/domain.ts', '@personal-budget/api') ?? '',
     /forbidden workspace boundary/u,

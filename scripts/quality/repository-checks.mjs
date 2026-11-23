@@ -29,6 +29,7 @@ const RESTRICTED_PACKAGES = new Map([
   ['@modelcontextprotocol/sdk', 'services/mcp'],
 ]);
 const MANIFEST_RULES = new Map([
+  ['package.json', new Set()],
   ['packages/finance-core/package.json', new Set()],
   ['services/actual-adapter/package.json', new Set(['@personal-budget/finance-core'])],
   ['services/api/package.json', new Set(['@personal-budget/finance-core', '@personal-budget/actual-adapter'])],
