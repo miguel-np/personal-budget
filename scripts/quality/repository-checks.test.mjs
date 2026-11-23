@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { evaluateFileBudget, extractMarkdownLinks, extractNpmCommands, getImportBoundaryViolation } from './repository-checks.mjs';
+import { buildComplexityLintArgs, evaluateFileBudget, extractMarkdownLinks, extractNpmCommands, getImportBoundaryViolation, getManifestBoundaryViolations } from './repository-checks.mjs';
 
 test('extracts local Markdown links and ignores code examples and external URLs', () => {
   const markdown = [
@@ -42,5 +42,33 @@ test('only validates npm commands shown as inline or fenced code', () => {
   assert.deepEqual(extractNpmCommands(markdown).sort((left, right) => left.script.localeCompare(right.script)), [
     { script: 'lint', suffix: '' },
     { script: 'quality:repo', suffix: '' },
+  ]);
+});
+
+test('enforces internal workspace boundaries across every dependency section', () => {
+  const violations = getManifestBoundaryViolations('packages/finance-core/package.json', {
+    dependencies: {},
+    devDependencies: { '@personal-budget/api': '0.1.0' },
+    peerDependencies: { '@personal-budget/actual-adapter': '0.1.0' },
+    optionalDependencies: {},
+  });
+  assert.equal(violations.length, 2);
+  assert.match(violations[0] ?? '', /devDependencies/u);
+  assert.match(violations[1] ?? '', /peerDependencies/u);
+  assert.equal(getManifestBoundaryViolations('services/api/package.json', {
+    devDependencies: { '@personal-budget/finance-core': '0.1.0' },
+  }).length, 0);
+  assert.match(
+    getImportBoundaryViolation('packages/finance-core/src/domain.ts', '@personal-budget/api') ?? '',
+    /forbidden workspace boundary/u,
+  );
+});
+
+test('uses native ESLint complexity rules for changed source files', () => {
+  assert.deepEqual(buildComplexityLintArgs(['apps/web/src/new-view.tsx'], 'node_modules/eslint/bin/eslint.js'), [
+    'node_modules/eslint/bin/eslint.js',
+    '--rule', 'complexity:["error",20]',
+    '--rule', 'max-depth:["error",4]',
+    'apps/web/src/new-view.tsx',
   ]);
 });

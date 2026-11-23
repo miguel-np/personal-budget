@@ -10,6 +10,8 @@ const WORKSPACES = ['packages/finance-core', 'services/actual-adapter', 'service
 const INTERNAL_PACKAGE_PATHS = new Map([
   ['@personal-budget/finance-core', 'packages/finance-core'],
   ['@personal-budget/actual-adapter', 'services/actual-adapter'],
+  ['@personal-budget/api', 'services/api'],
+  ['@personal-budget/web', 'apps/web'],
 ]);
 const ALLOWED_WORKSPACE_IMPORTS = new Map([
   ['packages/finance-core', new Set(['packages/finance-core'])],
@@ -26,6 +28,14 @@ const RESTRICTED_PACKAGES = new Map([
   ['react-dom', 'apps/web'],
   ['@modelcontextprotocol/sdk', 'services/mcp'],
 ]);
+const MANIFEST_RULES = new Map([
+  ['packages/finance-core/package.json', new Set()],
+  ['services/actual-adapter/package.json', new Set(['@personal-budget/finance-core'])],
+  ['services/api/package.json', new Set(['@personal-budget/finance-core', '@personal-budget/actual-adapter'])],
+  ['apps/web/package.json', new Set()],
+]);
+const MANIFEST_DEPENDENCY_SECTIONS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'];
+
 const FILE_LINE_LIMIT = 600;
 const FILE_BYTE_LIMIT = 40 * 1024;
 
@@ -118,6 +128,21 @@ function extractImportSpecifiers(source) {
   return [...specifiers];
 }
 
+export function getManifestBoundaryViolations(manifestPath, manifest) {
+  const allowed = MANIFEST_RULES.get(manifestPath);
+  if (!allowed) return [];
+  const violations = [];
+  for (const section of MANIFEST_DEPENDENCY_SECTIONS) {
+    const dependencies = Object.keys(manifest[section] ?? {}).filter((name) => name.startsWith('@personal-budget/'));
+    for (const dependency of dependencies) {
+      if (!allowed.has(dependency)) {
+        violations.push(manifestPath + ' declares forbidden workspace dependency ' + dependency + ' in ' + section + '.');
+      }
+    }
+  }
+  return violations;
+}
+
 async function checkArchitecture() {
   const errors = [];
   for (const workspace of WORKSPACES) {
@@ -134,17 +159,9 @@ async function checkArchitecture() {
     }
   }
 
-  const manifestRules = new Map([
-    ['packages/finance-core/package.json', new Set()],
-    ['services/actual-adapter/package.json', new Set(['@personal-budget/finance-core'])],
-    ['services/api/package.json', new Set(['@personal-budget/finance-core', '@personal-budget/actual-adapter'])],
-    ['apps/web/package.json', new Set()],
-  ]);
-  for (const [manifestPath, allowed] of manifestRules) {
+  for (const [manifestPath] of MANIFEST_RULES) {
     const manifest = JSON.parse(await readFile(path.join(ROOT, manifestPath), 'utf8'));
-    for (const dependency of Object.keys(manifest.dependencies ?? {}).filter((name) => name.startsWith('@personal-budget/'))) {
-      if (!allowed.has(dependency)) errors.push(manifestPath + ' declares forbidden workspace dependency ' + dependency + '.');
-    }
+    errors.push(...getManifestBoundaryViolations(manifestPath, manifest));
   }
   return errors;
 }
@@ -180,6 +197,13 @@ export function evaluateFileBudget(previous, current, filePath) {
   return undefined;
 }
 
+function readChangedSourcePaths(base, head) {
+  const changedOutput = execFileSync('git', [
+    'diff', '--name-only', '--diff-filter=ACMR', '-z', base + '...' + head,
+  ], { cwd: ROOT, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
+  return changedOutput.split('\0').filter((file) => file && SOURCE_EXTENSIONS.has(path.extname(file)));
+}
+
 async function checkChangedFileBudgets() {
   const base = process.env.QUALITY_BASE_SHA;
   const head = process.env.QUALITY_HEAD_SHA || 'HEAD';
@@ -187,10 +211,7 @@ async function checkChangedFileBudgets() {
     console.log('Maintainability delta check skipped: no valid base SHA was supplied.');
     return [];
   }
-  const changedOutput = execFileSync('git', [
-    'diff', '--name-only', '--diff-filter=ACMR', '-z', base + '...' + head,
-  ], { cwd: ROOT, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
-  const changedPaths = changedOutput.split('\0').filter((file) => file && SOURCE_EXTENSIONS.has(path.extname(file)));
+  const changedPaths = readChangedSourcePaths(base, head);
   const errors = [];
 
   for (const filePath of changedPaths) {
@@ -212,6 +233,44 @@ async function checkChangedFileBudgets() {
     }
   }
   return errors;
+}
+
+export function buildComplexityLintArgs(files, eslintPath) {
+  return [
+    eslintPath,
+    '--rule', 'complexity:["error",20]',
+    '--rule', 'max-depth:["error",4]',
+    ...files,
+  ];
+}
+
+async function checkChangedCodeComplexity() {
+  const base = process.env.QUALITY_BASE_SHA;
+  const head = process.env.QUALITY_HEAD_SHA || 'HEAD';
+  if (!base || !/^[0-9a-f]{40}$/i.test(base) || base === '0000000000000000000000000000000000000000') {
+    console.log('Changed-code complexity check skipped: no valid base SHA was supplied.');
+    return [];
+  }
+  const changedPaths = readChangedSourcePaths(base, head);
+  if (changedPaths.length === 0) {
+    console.log('Changed-code complexity: no source files changed.');
+    return [];
+  }
+  const eslintPath = path.join(ROOT, 'node_modules', 'eslint', 'bin', 'eslint.js');
+  try {
+    execFileSync(process.execPath, buildComplexityLintArgs(changedPaths, eslintPath), {
+      cwd: ROOT,
+      encoding: 'utf8',
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    return [];
+  } catch (error) {
+    const output = [error.stdout, error.stderr]
+      .map((value) => value?.toString().trim())
+      .filter(Boolean)
+      .join('\n');
+    return ['Changed-code complexity/depth gate failed (maximum complexity 20, nesting depth 4).\n' + output];
+  }
 }
 
 export function extractNpmCommands(markdown) {
@@ -283,10 +342,15 @@ async function checkDocumentation() {
 }
 
 async function main() {
-  const [documentationErrors, architectureErrors, budgetErrors] = await Promise.all([
-    checkDocumentation(), checkArchitecture(), checkChangedFileBudgets(),
+  const [documentationErrors, architectureErrors, budgetErrors, complexityErrors] = await Promise.all([
+    checkDocumentation(), checkArchitecture(), checkChangedFileBudgets(), checkChangedCodeComplexity(),
   ]);
-  const groups = [['Documentation', documentationErrors], ['Architecture', architectureErrors], ['Maintainability', budgetErrors]];
+  const groups = [
+    ['Documentation', documentationErrors],
+    ['Architecture', architectureErrors],
+    ['Maintainability', budgetErrors],
+    ['Complexity', complexityErrors],
+  ];
   let total = 0;
   for (const [name, errors] of groups) {
     if (errors.length === 0) console.log(name + ': passed.');

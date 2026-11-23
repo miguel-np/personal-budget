@@ -139,6 +139,9 @@ jobs:
   windows-quality:
     runs-on: windows-latest
     timeout-minutes: 35
+    env:
+      QUALITY_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+      QUALITY_HEAD_SHA: ${{ github.sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
