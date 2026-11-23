@@ -118,6 +118,36 @@ describe('MCP runtime configuration and startup', () => {
     output.destroy();
   });
 
+  it('sanitizes unexpected prompt and tool parser exceptions', async () => {
+    vi.resetModules();
+    const { createMcpHandler } = await import('../server.mjs');
+    const handler = createMcpHandler();
+    const privateArguments = new Proxy({}, {
+      ownKeys() { throw new Error('sensitive internal detail'); }
+    });
+
+    const prompt = await handler({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'prompts/get',
+      params: { name: 'wealth_review', arguments: privateArguments }
+    });
+    expect(prompt).toMatchObject({
+      error: { code: -32602, message: 'Invalid prompt arguments.' }
+    });
+
+    const tool = await handler({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'get_monthly_summary', arguments: privateArguments }
+    });
+    expect(tool).toMatchObject({
+      result: { isError: true, content: [{ text: 'Local finance tool failed.' }] }
+    });
+    expect(JSON.stringify({ prompt, tool })).not.toContain('sensitive internal detail');
+  });
+
   it('rejects direct CLI startup with a non-loopback API URL', async () => {
     const entrypoint = fileURLToPath(new URL('../server.mjs', import.meta.url));
     const result = await new Promise<{ code: number | null; stderr: string }>((resolve, reject) => {
