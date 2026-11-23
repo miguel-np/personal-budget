@@ -100,7 +100,7 @@ describe('MCP protocol logic coverage', () => {
   expect(await handler({ jsonrpc: '1.0', method: 'ping' })).toMatchObject({ error: { code: -32600 } });
   expect(await handler(request('initialize'))).toMatchObject({ result: { protocolVersion: '2024-11-05' } });
   expect(await handler(request('ping'))).toMatchObject({ result: {} });
-  expect(await handler(request('notifications/initialized'))).toBeNull();
+  expect(await handler({ jsonrpc: '2.0', method: 'notifications/initialized' })).toBeNull();
   expect(rpcResult(await handler(request('tools/list'))).tools).toHaveLength(12);
   expect(rpcResult(await handler(request('prompts/list'))).prompts).toHaveLength(5);
   expect(await handler(request('unknown/method'))).toMatchObject({ error: { code: -32601 } });
