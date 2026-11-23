@@ -288,6 +288,44 @@ export function extractNpmCommands(markdown) {
   }
   return commands;
 }
+async function checkMarkdownFileLinks(file, relative, content) {
+  const errors = [];
+  for (const destination of extractMarkdownLinks(content)) {
+    let decoded;
+    try { decoded = decodeURIComponent(destination.split(/[?#]/u, 1)[0] ?? ''); }
+    catch {
+      errors.push(relative + ' contains an invalid encoded link: ' + destination);
+      continue;
+    }
+    if (!decoded) continue;
+    const absolute = decoded.startsWith('/')
+      ? path.resolve(ROOT, '.' + decoded)
+      : path.resolve(path.dirname(file), decoded);
+    let exists = false;
+    for (const candidate of [absolute, absolute + '.md', path.join(absolute, 'README.md'), path.join(absolute, 'index.md')]) {
+      try { await stat(candidate); exists = true; break; } catch { /* Try the next Markdown target. */ }
+    }
+    if (!exists) errors.push(relative + ' links to a missing local path: ' + destination);
+  }
+  return errors;
+}
+
+function checkDocumentedCommands(relative, content, rootScripts, workspaceScripts) {
+  const errors = [];
+  for (const { script, suffix } of extractNpmCommands(content)) {
+    const workspaceMatch = suffix.match(/(?:--workspace(?:=|\s+)|-w\s+)([^\s]+)/);
+    if (workspaceMatch) {
+      const scripts = workspaceScripts.get(workspaceMatch[1]);
+      if (scripts && !scripts.has(script)) {
+        errors.push(relative + ' documents an unknown workspace npm script: ' + workspaceMatch[1] + ' run ' + script + '.');
+      }
+      continue;
+    }
+    if (!rootScripts.has(script)) errors.push(relative + ' documents an unknown root npm script: ' + script + '.');
+  }
+  return errors;
+}
+
 async function checkDocumentation() {
   const errors = [];
   const markdownFiles = await walkFiles(ROOT, (file) => file.toLowerCase().endsWith('.md'));
@@ -309,39 +347,11 @@ async function checkDocumentation() {
   for (const file of markdownFiles) {
     const relative = relativePath(file);
     const content = await readFile(file, 'utf8');
-    for (const destination of extractMarkdownLinks(content)) {
-      let decoded;
-      try { decoded = decodeURIComponent(destination.split(/[?#]/u, 1)[0] ?? ''); }
-      catch {
-        errors.push(relative + ' contains an invalid encoded link: ' + destination);
-        continue;
-      }
-      if (!decoded) continue;
-      const absolute = decoded.startsWith('/')
-        ? path.resolve(ROOT, '.' + decoded)
-        : path.resolve(path.dirname(file), decoded);
-      let exists = false;
-      for (const candidate of [absolute, absolute + '.md', path.join(absolute, 'README.md'), path.join(absolute, 'index.md')]) {
-        try { await stat(candidate); exists = true; break; } catch { /* Try the next Markdown target. */ }
-      }
-      if (!exists) errors.push(relative + ' links to a missing local path: ' + destination);
-    }
-
-    for (const { script, suffix } of extractNpmCommands(content)) {
-      const workspaceMatch = suffix.match(/(?:--workspace(?:=|\s+)|-w\s+)([^\s]+)/);
-      if (workspaceMatch) {
-        const scripts = workspaceScripts.get(workspaceMatch[1]);
-        if (scripts && !scripts.has(script)) {
-          errors.push(relative + ' documents an unknown workspace npm script: ' + workspaceMatch[1] + ' run ' + script + '.');
-        }
-        continue;
-      }
-      if (!rootScripts.has(script)) errors.push(relative + ' documents an unknown root npm script: ' + script + '.');
-    }
+    errors.push(...await checkMarkdownFileLinks(file, relative, content));
+    errors.push(...checkDocumentedCommands(relative, content, rootScripts, workspaceScripts));
   }
   return errors;
 }
-
 async function main() {
   const [documentationErrors, architectureErrors, budgetErrors, complexityErrors] = await Promise.all([
     checkDocumentation(), checkArchitecture(), checkChangedFileBudgets(), checkChangedCodeComplexity(),
