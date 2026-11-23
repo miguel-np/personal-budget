@@ -22,9 +22,22 @@ Esta política define requisitos de diseño y operación. **No certifica que una
 | Functions | 90,50 % | 80 % |
 | Lines | 90,73 % | 80 % |
 
-Los umbrales están definidos en `vitest.config.ts`; el alcance de instrumentación incluye `packages/finance-core/src`, `services/actual-adapter/src` y `services/api/src`, excluyendo los entrypoints `index.ts` y `main.ts`. La cobertura mide ejecución de código, no probabilidad de ausencia de vulnerabilidades ni suficiencia de pruebas de seguridad.
+En ese SHA histórico, el alcance de instrumentación incluía `packages/finance-core/src`, `services/actual-adapter/src` y `services/api/src`, excluyendo los entrypoints `index.ts` y `main.ts`. Ese dato describe únicamente la configuración de aquel commit. La instrumentación vigente y sus exclusiones se mantienen en [docs/test-coverage.md](docs/test-coverage.md); no deben inferirse desde esta ejecución histórica. La cobertura mide ejecución de código, no probabilidad de ausencia de vulnerabilidades ni suficiencia de pruebas de seguridad.
 
 Estas métricas describen una ejecución y un SHA concretos. No se deben copiar como métricas actuales de otro commit: consulta el workflow correspondiente al HEAD que se vaya a integrar.
+
+## Evidencia de cobertura ampliada — 23-nov-2026
+
+Ejecución reproducible sobre el commit [`c33f8592f4c21fd23968fe692dfad94e36a29788`](https://github.com/miguel-np/personal-budget/commit/c33f8592f4c21fd23968fe692dfad94e36a29788):
+
+- [CI, run 45207041952](https://github.com/miguel-np/personal-budget/actions/runs/45207041952): jobs `quality`, `browser-e2e`, `actual-container-smoke`, `windows-quality` y `actual-update-acceptance` completados correctamente.
+- [Security, run 45207041872](https://github.com/miguel-np/personal-budget/actions/runs/45207041872): CodeQL y dependency/secret scan completados correctamente.
+- Vitest V8: 51 ficheros de test pasaron y 3 se omitieron; 501 tests pasaron y 4 se omitieron deliberadamente.
+- Cobertura global: 86,09 % statements, 76,37 % branches, 90,56 % functions y 90,22 % lines; se mantuvieron los umbrales 80/75/80/80.
+- Área MCP (`server.mjs`, configuración, definiciones y ejecutores): 85,83 % statements, 71,11 % branches, 93,97 % functions y 91,32 % lines. Las métricas por área son informativas; los umbrales configurados se aplican al conjunto global.
+- `npm audit` y `npm audit --omit=dev` informaron cero vulnerabilidades conocidas durante esa ejecución. Esto describe la base de avisos consultada en ese momento y no acredita ausencia de vulnerabilidades.
+
+El mapa de instrumentación, las exclusiones y la separación entre Vitest, `node:test` y Playwright se mantienen en [docs/test-coverage.md](docs/test-coverage.md). La cobertura no mide por sí sola calidad de aserciones, conformidad WCAG ni ausencia de vulnerabilidades.
 
 ## Revisiones manuales y aceptación
 
