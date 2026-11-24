@@ -18,7 +18,7 @@ import type {
 import type { AppConfig } from './config.js';
 import type { CurrencyPreferences } from './currency-preferences.js';
 import { resolveAccountScope } from './account-scope.js';
-import type { AccountScopePreference, AccountScopeMetadata, ResolvedAccountScope } from './account-scope.js';
+import type { AccountScopePreference, AccountScopeMetadata } from './account-scope.js';
 import { readPlanningData } from './planning-store.js';
 import { effectiveFindingReview, readFindingReviewState } from './intelligence-store.js';
 import { buildBudgetOverspendFindings, buildCommitmentFindings, buildGoalFindings, buildRecurringFindings } from './intelligence-finding-builders.js';
@@ -249,8 +249,7 @@ async function finalizeFindings(
   const unique = new Map<string, FinancialFinding>();
   for (const finding of findings) unique.set(finding.id, finding);
   const state = await readFindingReviewState(context.actualDataDir);
-
-    const validated = sortFinancialFindings([...unique.values()]).slice(0, 100).map((finding) => {
+  const validated = sortFinancialFindings([...unique.values()]).slice(0, 100).map((finding) => {
       const record = state.reviews.find((item) => item.findingId === finding.id);
       const review = effectiveFindingReview(record, finding.fingerprint, asOfDate);
       return validateFinding({
@@ -259,19 +258,18 @@ async function finalizeFindings(
         ...(review.snoozedUntil ? { snoozedUntil: review.snoozedUntil } : {}),
       });
     });
-    if (findings.length > validated.length) {
+  if (findings.length > validated.length) {
       warnings.push('Se muestran los 100 hallazgos con mayor prioridad; el resto queda fuera de esta respuesta para mantener acotado el panel.');
     }
-    return {
-      findings: validated,
-      warnings: [...new Set(warnings)],
-      currentSummary,
-      accountScope: context.scope.metadata,
-      currency: context.preferences.displayCurrency,
-      calculatedAt,
-      asOfDate,
-    };
-
+  return {
+    findings: validated,
+    warnings: [...new Set(warnings)],
+    currentSummary,
+    accountScope: context.scope.metadata,
+    currency: context.preferences.displayCurrency,
+    calculatedAt,
+    asOfDate,
+  };
 }
 
 export interface IntelligenceResult {
