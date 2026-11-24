@@ -2,12 +2,11 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
   LocalAiBusyError,
   LocalAiCancelledError,
-  LocalAiClient,
   LocalAiContextBudgetError,
   LocalAiToolCallUnsupportedError,
   LocalAiUnavailableError,
 } from './local-ai.js';
-import type { WebResearchRequest } from './local-ai.js';
+import type { LocalAiClient, WebResearchRequest } from './local-ai.js';
 import {
   WebSearchResponseTooLargeError,
   WebSearchUnavailableError,
@@ -19,7 +18,21 @@ import { buildClaimEvidence, shouldAbstainFromTaxConclusion } from './claim-evid
 
 const TAX_RESEARCH_ABSTENTION_ANSWER = 'La investigación se abstiene de ofrecer una conclusión categórica: al menos una afirmación no tiene evidencia documental literal verificable o existe una posible discrepancia sin resolver. Consulta las fuentes y fragmentos asociados. La coincidencia literal no demuestra que la fuente respalde la afirmación ni su aplicabilidad jurídica.';
 
-type ParsedWebResearchRequest = WebResearchRequest & { readonly domains: readonly string[] };
+type ParsedWebResearchRequest = Omit<WebResearchRequest,
+  'jurisdiction' | 'autonomousCommunity' | 'municipality' | 'taxpayerType' |
+  'eventDate' | 'matter' | 'taxYear' | 'filingYear' | 'referenceDate'
+> & {
+  readonly domains: readonly string[];
+  readonly jurisdiction?: string | undefined;
+  readonly autonomousCommunity?: string | undefined;
+  readonly municipality?: string | undefined;
+  readonly taxpayerType?: WebResearchRequest['taxpayerType'] | undefined;
+  readonly eventDate?: string | undefined;
+  readonly matter?: string | undefined;
+  readonly taxYear?: string | undefined;
+  readonly filingYear?: string | undefined;
+  readonly referenceDate?: string | undefined;
+};
 
 type SanitizedError = {
   readonly statusCode: number;
