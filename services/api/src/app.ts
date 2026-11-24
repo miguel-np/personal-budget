@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import Fastify, { LogController, type FastifyInstance, type FastifyReply, type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import helmet from '@fastify/helmet';
-import { buildFinancialAnomalyFindings, buildPeriodChangeFindings, buildUncategorizedFinding, buildBudgetImprovementProposals, calculateSummary, convertAmountMinor, createFinancialFinding, detectRecurringCandidates, estimatePlanningCashFlow, evaluateBudgetAlertRules, expandCommitmentOccurrences, isIsoDate, normalizeCurrencyCode, normalizeTransactions, projectCashFlow, projectSavings, projectSavingsGoal, simulateBudgetImprovement, sortFinancialFindings, suggestCategories, validatePeriod, BudgetRepositoryError } from '@personal-budget/finance-core';
-import type { BudgetAlertCategory, BudgetAlertRule, BudgetImprovementCategoryPreference, CashFlowEvent, BudgetCategoryClassification, BudgetRepository, BudgetTransaction, FinancialFinding, FindingPriority, ForecastScenario, ImportRecord, PlanningCommitment } from '@personal-budget/finance-core';
+import { buildFinancialAnomalyFindings, buildPeriodChangeFindings, buildUncategorizedFinding, calculateSummary, convertAmountMinor, createFinancialFinding, detectRecurringCandidates, estimatePlanningCashFlow, evaluateBudgetAlertRules, expandCommitmentOccurrences, isIsoDate, normalizeCurrencyCode, normalizeTransactions, projectCashFlow, projectSavings, projectSavingsGoal, simulateBudgetImprovement, sortFinancialFindings, suggestCategories, validatePeriod, BudgetRepositoryError } from '@personal-budget/finance-core';
+import type { BudgetAlertCategory, BudgetAlertRule, CashFlowEvent, BudgetRepository, BudgetTransaction, FinancialFinding, FindingPriority, ForecastScenario, ImportRecord, PlanningCommitment } from '@personal-budget/finance-core';
 import { z, ZodError } from 'zod';
 import type { AppConfig } from './config.js';
 import { validateRequestBoundary } from './request-boundary.js';
@@ -32,6 +32,7 @@ import { createPeriodicReviewReport } from './periodic-review-service.js';
 import { handleCategorizeRequest } from './categorize-route.js';
 import { handlePlanningConversationPreview } from './planning-conversation.js';
 import { createCashFlowProjection } from './cash-flow-service.js';
+import { loadBudgetImprovementContext as buildBudgetImprovementContext } from './budget-improvement-context.js';
 import type { IntelligenceAnomalyOptions } from './intelligence-service.js';
 
 
@@ -1380,283 +1381,19 @@ function monthsBefore(date: string, months: number): string {
   });
 
   async function loadBudgetImprovementContext(periodMonths: 3 | 6 | 12) {
-    const asOfDate = civilDateInTimeZone('UTC');
-    const endMonth = shiftPlanningMonth(asOfDate.slice(0, 7), -1);
-    const startMonth = shiftPlanningMonth(endMonth, -(periodMonths - 1));
-    const startDate = startMonth + '-01';
-    const endDate = planningMonthPeriod(endMonth).endDate;
-    const [accounts, categories, preferences, accountPreference, actionState, planningData] = await Promise.all([
-      repository.listAccounts(), repository.listCategories(), currencyPreferences(), accountScopePreference(),
-      readFinancialActionState(config.actualDataDir), readPlanningData(config.actualDataDir),
-    ]);
-    const scope = resolveAccountScope(accounts, accountPreference);
-    const accountScopeSignature = createHash('sha256').update(JSON.stringify({
-      mode: scope.metadata.mode, accountIds: [...scope.metadata.accountIds].sort(),
-    })).digest('hex');
-    const rawTransactions = await transactionsForAccounts(scope.accounts, startDate, endDate, preferences);
-    const converted = convertTransactionsForAnalysis(rawTransactions, preferences);
-    const entries = normalizeTransactions(converted.transactions);
-    const summary = calculateSummary(entries, categories, {
-      startDate, endDate, currency: preferences.displayCurrency, exchangeRates: preferences.exchangeRates,
+    return buildBudgetImprovementContext(periodMonths, {
+      config,
+      repository,
+      currencyPreferences,
+      accountScopePreference,
+      transactionsForAccounts,
+      convertTransactionsForAnalysis,
+      civilDateInTimeZone,
+      shiftPlanningMonth,
+      planningMonthPeriod,
+      planningScopeMatches,
+      toPlanningCommitment,
     });
-    const monthsByCategory = new Map<string, Set<string>>();
-    const expenseByCategoryMonth = new Map<string, Map<string, number>>();
-    const incomeCategoryIds = new Set(categories.filter((category) => category.isIncome).map((category) => category.id));
-    for (const entry of entries) {
-      if (entry.isTransfer || !entry.categoryId || incomeCategoryIds.has(entry.categoryId)) continue;
-      const entryMonth = entry.date.slice(0, 7);
-      if (entry.amountMinor < 0) {
-        const months = monthsByCategory.get(entry.categoryId) ?? new Set<string>();
-        months.add(entryMonth);
-        monthsByCategory.set(entry.categoryId, months);
-      }
-      const monthAmounts = expenseByCategoryMonth.get(entry.categoryId) ?? new Map<string, number>();
-      // Positive movements in expense categories are refunds; net them against
-      // the month's outflows before producing trend evidence.
-      monthAmounts.set(entryMonth, (monthAmounts.get(entryMonth) ?? 0) - entry.amountMinor);
-      expenseByCategoryMonth.set(entry.categoryId, monthAmounts);
-    }
-    const budgetWarnings: string[] = [];
-    const budgetRows = new Map<string, { budgetedMinor: number | null; spentMinor: number | null; availableMinor: number | null }>();
-    if (typeof repository.getBudgetMonth === 'function') {
-      try {
-        const allocationsAvailable = typeof repository.getBudgetAllocations === 'function';
-        const [budgetMonth, allocations] = await Promise.all([
-          repository.getBudgetMonth(endMonth),
-          allocationsAvailable ? repository.getBudgetAllocations!(endMonth) : Promise.resolve(null),
-        ]);
-        const allocationByCategory = new Map((allocations ?? []).map((item) => [item.categoryId, item.amountMinor]));
-        for (const group of budgetMonth.categoryGroups) {
-          for (const row of group.categories ?? []) {
-            budgetRows.set(row.id, {
-              budgetedMinor: allocationsAvailable ? (allocationByCategory.get(row.id) ?? null) : (row.budgeted ?? null),
-              spentMinor: row.spent === undefined || row.spent === null ? null : Math.abs(row.spent),
-              availableMinor: row.balance ?? null,
-            });
-          }
-        }
-      } catch {
-        budgetWarnings.push('No se pudo recuperar el presupuesto asignado del último mes completo; las propuestas se basan solo en el historial de movimientos.');
-      }
-    } else {
-      budgetWarnings.push('El adaptador no expone asignaciones mensuales; las propuestas no pueden contrastarse con límites presupuestarios explícitos.');
-    }
-    const referenceMonths = Array.from({ length: periodMonths - 1 }, (_, index) => shiftPlanningMonth(startMonth, index));
-    const observations = summary.expensesByCategory
-      .filter((item) => item.categoryId !== null && item.amountMinor > 0)
-      .map((item) => {
-        const categoryId = item.categoryId as string;
-        const monthAmounts = expenseByCategoryMonth.get(categoryId) ?? new Map<string, number>();
-        const priorTotal = referenceMonths.reduce((sum, month) => sum + (monthAmounts.get(month) ?? 0), 0);
-        const budget = budgetRows.get(categoryId);
-        return {
-          categoryId, categoryName: item.categoryName, expenseMinor: item.amountMinor,
-          transactionCount: item.transactionCount,
-          monthsWithActivity: monthsByCategory.get(categoryId)?.size ?? 0,
-          latestMonthExpenseMinor: monthAmounts.get(endMonth) ?? 0,
-          priorMonthsAverageExpenseMinor: Math.round(priorTotal / Math.max(1, periodMonths - 1)),
-          budgetedMinor: budget?.budgetedMinor ?? null,
-          budgetSpentMinor: budget?.spentMinor ?? null,
-          budgetAvailableMinor: budget?.availableMinor ?? null,
-        };
-      });
-    const categoryBreakdown = categories.filter((category) => !category.isIncome).map((category) => {
-      const observation = observations.find((item) => item.categoryId === category.id);
-      const budget = budgetRows.get(category.id);
-      return {
-        categoryId: category.id, categoryName: category.name,
-        observedExpenseMinor: observation?.expenseMinor ?? 0,
-        observedMonthlyExpenseMinor: observation ? Math.round(observation.expenseMinor / periodMonths) : 0,
-        transactionCount: observation?.transactionCount ?? 0,
-        monthsWithActivity: observation?.monthsWithActivity ?? 0,
-        latestMonthExpenseMinor: observation?.latestMonthExpenseMinor ?? 0,
-        priorMonthsAverageExpenseMinor: observation?.priorMonthsAverageExpenseMinor ?? 0,
-        budgetedMinor: budget?.budgetedMinor ?? null,
-        budgetSpentMinor: budget?.spentMinor ?? null,
-        budgetAvailableMinor: budget?.availableMinor ?? null,
-      };
-    }).filter((item) => item.observedExpenseMinor > 0 || item.budgetedMinor !== null);
-    const recurringCandidates = detectRecurringCandidates(converted.transactions, {
-      startDate, endDate, minOccurrences: 3, intervalWindowDays: [20, 400],
-    }).map((candidate) => ({
-      payee: candidate.payee, occurrenceCount: candidate.occurrenceCount,
-      estimatedIntervalDays: candidate.estimatedIntervalDays, estimatedFrequency: candidate.estimatedFrequency,
-      meanAbsoluteAmountMinor: candidate.meanAbsoluteAmountMinor, amountDeviationPercent: candidate.amountDeviationPercent,
-      lastObservedDate: candidate.lastDate, signals: candidate.signals, warnings: candidate.warnings,
-    }));
-    const activeCommitments = planningData.commitments.filter((item) =>
-      item.status === 'active' && planningScopeMatches(item.scope, accountPreference),
-    ).map((item) => {
-      const conversion = item.currency === preferences.displayCurrency
-        ? { amountMinor: item.amountMinor }
-        : convertAmountMinor(item.amountMinor, item.currency, preferences.displayCurrency, asOfDate, preferences.exchangeRates);
-      return {
-        id: item.id, title: item.title, date: item.date, direction: item.direction, frequency: item.frequency,
-        amountMinor: conversion.amountMinor, sourceCurrency: item.currency,
-        currency: conversion.amountMinor === null ? item.currency : preferences.displayCurrency,
-        conversionAvailable: conversion.amountMinor !== null && conversion.amountMinor > 0,
-      };
-    });
-    if (activeCommitments.some((item) => !item.conversionAvailable)) {
-      budgetWarnings.push('Hay compromisos activos cuyo importe no se puede convertir a la divisa de análisis; se muestran en su divisa original y no se suman a los escenarios.');
-    }
-    const rawEntryCount = normalizeTransactions(rawTransactions).length;
-    const unconvertedTransactionCount = Math.max(0, rawEntryCount - entries.length);
-    const baseline = {
-      currency: preferences.displayCurrency, startDate, endDate, periodMonths,
-      monthlyIncomeMinor: Math.round(summary.incomeMinor / periodMonths),
-      monthlyExpenseMinor: Math.round(summary.expenseMinor / periodMonths),
-      monthlySavingsMinor: Math.round(summary.savingsMinor / periodMonths),
-      savingsRatePercent: summary.savingsRatePercent,
-      transactionCount: summary.transactionCount,
-      unconvertedTransactionCount,
-      observations,
-    };
-    const storedPreferences = actionState.budgetImprovements.categories;
-    const corePreferences: BudgetImprovementCategoryPreference[] = storedPreferences
-      .filter((item) => item.classification !== 'unclassified')
-      .map((item) => ({ categoryId: item.categoryId, classification: item.classification as BudgetCategoryClassification }));
-    const proposals = buildBudgetImprovementProposals(baseline, corePreferences, actionState.budgetImprovements.goal);
-    const compatibleCommitments = planningData.commitments.filter((item) =>
-      item.status === 'active' && item.currency === preferences.displayCurrency && planningScopeMatches(item.scope, accountPreference),
-    ).map(toPlanningCommitment);
-    const savingsGoals = planningData.goals.map((goal) => {
-      const scopeMatches = planningScopeMatches(goal.scope, accountPreference);
-      const currencyMatches = goal.currency === preferences.displayCurrency;
-      const goalWarnings: string[] = [];
-      if (!scopeMatches) goalWarnings.push('El ámbito guardado del objetivo ha cambiado; revísalo desde Objetivos antes de usarlo para esta simulación.');
-      if (!currencyMatches) goalWarnings.push('La divisa guardada del objetivo no coincide con la divisa de análisis; no se convierten importes automáticamente.');
-      if (goal.status === 'paused') goalWarnings.push('El objetivo está pausado; reanúdalo desde Objetivos antes de incluirlo en una proyección.');
-      if (goal.targetDate <= asOfDate) goalWarnings.push('La fecha objetivo ya ha pasado; actualiza el objetivo para proyectarlo.');
-      const projection = goal.status === 'active' && scopeMatches && currencyMatches && goal.targetDate > asOfDate
-        ? projectSavingsGoal({
-            asOfDate, targetDate: goal.targetDate, targetAmountMinor: goal.targetAmountMinor,
-            initialAmountMinor: goal.initialAmountMinor, monthlyContributionMinor: goal.monthlyContributionMinor,
-            currency: preferences.displayCurrency,
-            monthlyIncomeMinor: goal.monthlyIncomeMinor ?? baseline.monthlyIncomeMinor,
-            monthlyExpenseMinor: goal.monthlyExpenseMinor ?? baseline.monthlyExpenseMinor,
-            commitments: compatibleCommitments,
-          })
-        : null;
-      return {
-        id: goal.id, name: goal.name, targetDate: goal.targetDate,
-        targetAmountMinor: goal.targetAmountMinor, initialAmountMinor: goal.initialAmountMinor,
-        monthlyContributionMinor: goal.monthlyContributionMinor,
-        monthlyIncomeMinor: goal.monthlyIncomeMinor ?? baseline.monthlyIncomeMinor,
-        monthlyExpenseMinor: goal.monthlyExpenseMinor ?? baseline.monthlyExpenseMinor,
-        currency: goal.currency, status: goal.status, scopeMatches, currencyMatches, projection, warnings: goalWarnings,
-      };
-    });
-    const savingsGoalContextStatus = savingsGoals.some((goal) => goal.projection !== null)
-      ? 'ready'
-      : savingsGoals.length > 0 ? 'review_required' : 'not_configured';
-    const savingsGoalContextWarnings = savingsGoals.flatMap((goal) => goal.warnings.map((warning) => goal.name + ': ' + warning));
-    const targetSavingsGoal = savingsGoals
-      .filter((goal) => goal.status === 'active' && goal.projection !== null && goal.projection.requiredMonthlyContributionMinor !== null)
-      .sort((left, right) => {
-        const leftGap = Math.max(0, left.projection!.requiredMonthlyContributionMinor! - left.monthlyContributionMinor);
-        const rightGap = Math.max(0, right.projection!.requiredMonthlyContributionMinor! - right.monthlyContributionMinor);
-        return rightGap - leftGap || left.targetDate.localeCompare(right.targetDate);
-      })[0] ?? null;
-    const targetRequiredMonthlyContributionMinor = targetSavingsGoal?.projection?.requiredMonthlyContributionMinor ?? null;
-    const targetSavingsGapMinor = targetSavingsGoal && targetRequiredMonthlyContributionMinor !== null
-      ? Math.max(0, targetRequiredMonthlyContributionMinor - targetSavingsGoal.monthlyContributionMinor)
-      : null;
-    const prioritizedProposals = proposals
-      .map((proposal) => {
-        let priorityTier = 0;
-        let priorityValue = proposal.estimatedMonthlySavingsMinor;
-        let priorityReason = 'Ordenada por el margen mensual hipotético que podría liberar, calculado sobre el gasto observado.';
-        let goalImpact: {
-          goalId: string; goalName: string; monthlyContributionGapMinor: number;
-          estimatedGapCoveredMinor: number; estimatedGapRemainingMinor: number;
-        } | null = null;
-        if (actionState.budgetImprovements.goal === 'reduce_variable_spending') {
-          const latest = proposal.evidence.latestMonthExpenseMinor ?? 0;
-          const previous = proposal.evidence.priorMonthsAverageExpenseMinor ?? 0;
-          const increase = Math.max(0, latest - previous);
-          priorityTier = increase > 0 ? 1 : 0;
-          priorityValue = increase;
-          priorityReason = priorityTier
-            ? 'Prioridad por tendencia: el último mes completo superó la media de referencia. Revisa primero esta variación antes de fijar un recorte.'
-            : 'No hay un aumento reciente cuantificado; se mantiene como alternativa secundaria basada en el presupuesto y el historial.';
-        } else if (actionState.budgetImprovements.goal === 'reach_savings_goal') {
-          if (targetSavingsGoal && targetSavingsGapMinor !== null) {
-            const covered = Math.min(
-              targetSavingsGapMinor, proposal.estimatedMonthlySavingsMinor,
-              Math.max(0, targetSavingsGoal.monthlyExpenseMinor),
-            );
-            goalImpact = {
-              goalId: targetSavingsGoal.id, goalName: targetSavingsGoal.name,
-              monthlyContributionGapMinor: targetSavingsGapMinor,
-              estimatedGapCoveredMinor: covered,
-              estimatedGapRemainingMinor: Math.max(0, targetSavingsGapMinor - covered),
-            };
-            priorityTier = targetSavingsGapMinor > 0 ? 1 : 0;
-            priorityValue = covered;
-            priorityReason = targetSavingsGapMinor > 0
-              ? 'Prioridad vinculada a «' + targetSavingsGoal.name + '»: se ordena por la parte de la brecha de aportación mensual que esta propuesta podría cubrir si se destina íntegramente al objetivo.'
-              : 'El plan actual ya cubre la aportación mensual requerida para «' + targetSavingsGoal.name + '»; se ordena por ahorro potencial adicional.';
-          } else {
-            priorityReason = 'No hay un objetivo activo compatible con la divisa, el ámbito y una fecha proyectable; se ordena por ahorro mensual potencial sin atribuir impacto a una meta.';
-          }
-        } else if (actionState.budgetImprovements.goal === 'free_cash_flow') {
-          priorityTier = proposal.evidence.latestMonthExpenseMinor === null ? 0 : 1;
-          priorityValue = proposal.evidence.latestMonthExpenseMinor ?? proposal.estimatedMonthlySavingsMinor;
-          priorityReason = 'Prioridad por liquidez inmediata: se ordena por el gasto neto del último mes completo, además de mostrar el ahorro mensual potencial; los compromisos activos siguen siendo independientes.';
-        } else {
-          priorityReason = 'Prioridad por margen: se ordena por el ahorro mensual hipotético derivado del gasto observado, sin asumir cambios automáticos.';
-        }
-        return { proposal, priorityTier, priorityValue, priorityReason, goalImpact };
-      })
-      .sort((left, right) => right.priorityTier - left.priorityTier ||
-        right.priorityValue - left.priorityValue ||
-        right.proposal.estimatedMonthlySavingsMinor - left.proposal.estimatedMonthlySavingsMinor ||
-        left.proposal.categoryName.localeCompare(right.proposal.categoryName))
-      .map(({ proposal, priorityReason, goalImpact }, index) => ({
-        ...proposal, priorityRank: index + 1, priorityReason, goalImpact,
-      }));
-    const scenarios = actionState.budgetImprovements.scenarios.map((scenario) => {
-      if (scenario.currency !== baseline.currency) {
-        return { ...scenario, comparisonStatus: 'different_currency' as const, comparison: null };
-      }
-      if (scenario.startDate !== baseline.startDate || scenario.endDate !== baseline.endDate) {
-        return { ...scenario, comparisonStatus: 'different_period' as const, comparison: null };
-      }
-      if (!scenario.accountScopeSignature || scenario.accountScopeSignature !== accountScopeSignature) {
-        return { ...scenario, comparisonStatus: 'different_scope' as const, comparison: null };
-      }
-      try {
-        const comparison = simulateBudgetImprovement(baseline, corePreferences, scenario.reductions);
-        return {
-          ...scenario, comparisonStatus: 'comparable' as const,
-          comparison: {
-            baselineMonthlySavingsMinor: baseline.monthlySavingsMinor,
-            estimatedMonthlySavingsMinor: comparison.estimatedMonthlySavingsMinor,
-            projectedMonthlySavingsMinor: comparison.projectedMonthlySavingsMinor,
-            estimatedAnnualSavingsMinor: comparison.estimatedAnnualSavingsMinor,
-            projectedAnnualSavingsMinor: comparison.projectedAnnualSavingsMinor,
-            assumptions: comparison.assumptions, warnings: comparison.warnings,
-          },
-        };
-      } catch {
-        return { ...scenario, comparisonStatus: 'preferences_changed' as const, comparison: null };
-      }
-    });
-    const categoryChoices = categories.filter((category) => !category.isIncome).map((category) => ({
-      categoryId: category.id,
-      categoryName: category.name,
-      classification: storedPreferences.find((item) => item.categoryId === category.id)?.classification ?? 'unclassified',
-    }));
-    return {
-      asOfDate, currency: preferences.displayCurrency, accountScope: scope.metadata, accountScopeSignature, baseline,
-      categoryBreakdown, recurringCandidates, commitments: compatibleCommitments,
-      proposals: prioritizedProposals, corePreferences, categoryChoices, savingsGoals, savingsGoalContextStatus, savingsGoalContextWarnings,
-      goal: actionState.budgetImprovements.goal,
-      decisions: actionState.budgetImprovements.decisions,
-      scenarios,
-      warnings: [...summary.warnings, ...converted.warnings, ...budgetWarnings, 'Se usan ' + periodMonths + ' meses naturales completos, hasta ' + endDate + '; el mes en curso se excluye para evitar extrapolar un periodo parcial.', 'La comparación de tendencia usa el último mes completo frente a la media de los meses anteriores; un patrón recurrente detectado es un candidato, no una obligación.'],
-    };
   }
 
   app.get('/api/v1/budget-improvements', async (request, reply) => {
