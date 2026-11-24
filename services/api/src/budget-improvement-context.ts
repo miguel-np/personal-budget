@@ -459,7 +459,11 @@ export async function loadBudgetImprovementContext(
     readFinancialActionState(dependencies.config.actualDataDir),
     readPlanningData(dependencies.config.actualDataDir),
   ]);
-  const scope = resolveAccountScope(accounts, accountPreference);
+  const resolvedScope = resolveAccountScope(accounts, accountPreference);
+  const accountsById = new Map(accounts.map((account) => [account.id, account]));
+  const scopedAccounts = resolvedScope.accounts.map((account) => accountsById.get(account.id))
+    .filter((account): account is BudgetAccount => account !== undefined);
+  const scope = { accounts: scopedAccounts, metadata: resolvedScope.metadata };
   const accountScopeSignature = createAccountScopeSignature(scope.metadata.mode, scope.metadata.accountIds);
   const rawTransactions = await dependencies.transactionsForAccounts(scope.accounts, startDate, endDate, preferences);
   const converted = dependencies.convertTransactionsForAnalysis(rawTransactions, preferences);
