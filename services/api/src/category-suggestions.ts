@@ -210,7 +210,7 @@ async function runAiFallback(
   rulesById: ReadonlyMap<string, CoreCategorySuggestion>,
   suggestions: HybridCategorySuggestion[],
   dependencies: ClassificationDependencies,
-): Promise<{ outcome: ClassificationOutcome; durationMs: number; batchesAttempted: 1 }> {
+): Promise<ClassificationDiagnostics> {
   const startedAt = Date.now();
   try {
     const raw = await dependencies.localAi.classifyCategories({
@@ -229,11 +229,11 @@ async function runAiFallback(
     }
     const hasAiResult = suggestions.some((item) =>
       batch.entries.some((entry) => entry.id === item.transactionId) && item.source === 'local_ai');
-    return { outcome: hasAiResult ? 'completed' : 'abstained', durationMs: Math.max(0, Date.now() - startedAt), batchesAttempted: 1 };
+    return { outcome: hasAiResult ? 'completed' : 'abstained', inferenceDurationMs: Math.max(0, Date.now() - startedAt), batchesAttempted: 1, candidatesConsidered: batch.entries.length };
   } catch (error) {
     const outcome = unavailableOutcome(error);
     addUnassessedFallbacks(batch.entries, rulesById, suggestions, fallbackRationale(outcome), 'not_assessed');
-    return { outcome, durationMs: Math.max(0, Date.now() - startedAt), batchesAttempted: 1 };
+    return { outcome, inferenceDurationMs: Math.max(0, Date.now() - startedAt), batchesAttempted: 1, candidatesConsidered: batch.entries.length };
   }
 }
 
