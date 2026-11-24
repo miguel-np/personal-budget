@@ -1,10 +1,10 @@
 import {
-  detectRecurringCandidates,
   estimatePlanningCashFlow,
   expandCommitmentOccurrences,
   createFinancialFinding,
   projectSavingsGoal,
 } from '@personal-budget/finance-core';
+import type { detectRecurringCandidates } from '@personal-budget/finance-core';
 import type {
   BudgetCategory,
   BudgetRepository,
@@ -251,6 +251,58 @@ type BudgetMonth = Awaited<ReturnType<NonNullable<BudgetRepository['getBudgetMon
 type BudgetCategoryGroup = BudgetMonth['categoryGroups'][number];
 type BudgetCategoryRow = NonNullable<BudgetCategoryGroup['categories']>[number];
 
+function budgetOverspendMetrics(
+  category: BudgetCategoryRow,
+  group: BudgetCategoryGroup,
+  categories: readonly BudgetCategory[],
+): {
+  readonly categoryName: string;
+  readonly budgetedMinor: number;
+  readonly spentMinor: number;
+  readonly overByMinor: number;
+  readonly percentUsed: number;
+} | null {
+  const metadata = categories.find((item) => item.id === category.id);
+  const income = group.is_income ?? metadata?.isIncome ?? false;
+  if (income || category.hidden || group.hidden) return null;
+  const budgetedMinor = category.budgeted;
+  const spent = category.spent;
+  if (budgetedMinor === undefined || budgetedMinor === null ||
+      spent === undefined || spent === null ||
+      !Number.isSafeInteger(budgetedMinor) || !Number.isSafeInteger(spent) ||
+      budgetedMinor <= 0) return null;
+  const spentMinor = Math.abs(spent);
+  const overByMinor = spentMinor - budgetedMinor;
+  if (overByMinor <= 0) return null;
+  return {
+    categoryName: metadata?.name ?? category.name,
+    budgetedMinor, spentMinor, overByMinor,
+    percentUsed: (spentMinor / budgetedMinor) * 100,
+  };
+}
+
+function budgetOverspendPriority(metrics: {
+  readonly overByMinor: number;
+  readonly percentUsed: number;
+}): { readonly priority: FindingPriority; readonly reason: string } {
+  if (metrics.overByMinor >= 100_000 || metrics.percentUsed >= 150) {
+    return {
+      priority: 'high',
+      reason: 'Exceso ≥ 100000 unidades menores o gasto ≥ 150 % de la asignación (regla v1).',
+    };
+  }
+  if (metrics.overByMinor >= 25_000 || metrics.percentUsed >= 110) {
+    return {
+      priority: 'medium',
+      reason: 'Exceso ≥ 25000 unidades menores o gasto ≥ 110 % de la asignación (regla v1).',
+    };
+  }
+  return {
+    priority: 'low',
+    reason: 'La categoría supera la asignación, sin alcanzar los umbrales de prioridad superiores (regla v1).',
+  };
+}
+
 function buildBudgetFinding(
   category: BudgetCategoryRow,
   group: BudgetCategoryGroup,
@@ -260,42 +312,33 @@ function buildBudgetFinding(
   displayCurrency: string,
   month: string,
 ): FinancialFinding | null {
-  const metadata = categories.find((item) => item.id === category.id);
-  if (group.is_income ?? metadata?.isIncome ?? false) return null;
-  if (category.hidden || group.hidden) return null;
-  if (category.budgeted === undefined || category.budgeted === null ||
-      category.spent === undefined || category.spent === null ||
-      !Number.isSafeInteger(category.budgeted) || !Number.isSafeInteger(category.spent) ||
-      category.budgeted <= 0) return null;
-  const budgetedMinor = category.budgeted;
-  const spentMinor = Math.abs(category.spent);
-  const overByMinor = spentMinor - budgetedMinor;
-  if (overByMinor <= 0) return null;
-  const percentUsed = (spentMinor / budgetedMinor) * 100;
-  const priority: FindingPriority = overByMinor >= 100_000 || percentUsed >= 150
-    ? 'high' : overByMinor >= 25_000 || percentUsed >= 110 ? 'medium' : 'low';
-  const priorityReason = priority === 'high'
-    ? 'Exceso ≥ 100000 unidades menores o gasto ≥ 150 % de la asignación (regla v1).'
-    : priority === 'medium' ? 'Exceso ≥ 25000 unidades menores o gasto ≥ 110 % de la asignación (regla v1).'
-      : 'La categoría supera la asignación, sin alcanzar los umbrales de prioridad superiores (regla v1).';
+  const metrics = budgetOverspendMetrics(category, group, categories);
+  if (!metrics) return null;
+  const priority = budgetOverspendPriority(metrics);
   return createFinancialFinding({
     entityKey: category.id,
     type: 'budget-overspend',
-    title: 'Categoría por encima del presupuesto: ' + (metadata?.name ?? category.name),
+    title: 'Categoría por encima del presupuesto: ' + metrics.categoryName,
     explanation: 'El gasto registrado en esta categoría supera la asignación del mes. Comprueba la asignación y los movimientos antes de hacer cambios.',
     period: planningMonthPeriod(month),
     accountScope: findingScope,
     currency: displayCurrency,
     confidence: 'observed',
-    priority,
-    priorityReason,
-    impactMinor: overByMinor,
-    metrics: { categoryId: category.id, budgetedMinor, spentMinor, overByMinor, percentUsed },
+    priority: priority.priority,
+    priorityReason: priority.reason,
+    impactMinor: metrics.overByMinor,
+    metrics: {
+      categoryId: category.id,
+      budgetedMinor: metrics.budgetedMinor,
+      spentMinor: metrics.spentMinor,
+      overByMinor: metrics.overByMinor,
+      percentUsed: metrics.percentUsed,
+    },
     evidence: [
-      { label: 'Presupuesto asignado', value: budgetedMinor, source: 'Actual Budget getBudgetMonth', rule: 'Asignación positiva conocida para el mes.' },
-      { label: 'Gasto registrado', value: spentMinor, source: 'Actual Budget getBudgetMonth', rule: 'Valor absoluto del gasto acumulado informado por Actual.' },
-      { label: 'Exceso', value: overByMinor, source: 'finance-core', rule: 'Gasto registrado menos asignación.' },
-      { label: 'Porcentaje utilizado', value: Number(percentUsed.toFixed(2)), source: 'finance-core', rule: 'Gasto registrado dividido por asignación por 100.' },
+      { label: 'Presupuesto asignado', value: metrics.budgetedMinor, source: 'Actual Budget getBudgetMonth', rule: 'Asignación positiva conocida para el mes.' },
+      { label: 'Gasto registrado', value: metrics.spentMinor, source: 'Actual Budget getBudgetMonth', rule: 'Valor absoluto del gasto acumulado informado por Actual.' },
+      { label: 'Exceso', value: metrics.overByMinor, source: 'finance-core', rule: 'Gasto registrado menos asignación.' },
+      { label: 'Porcentaje utilizado', value: Number(metrics.percentUsed.toFixed(2)), source: 'finance-core', rule: 'Gasto registrado dividido por asignación por 100.' },
     ],
     limitations: [
       'El presupuesto corresponde al mes completo en Actual Budget.',
