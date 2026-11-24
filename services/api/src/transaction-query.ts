@@ -11,10 +11,10 @@ import type {
 import type { CurrencyPreferences } from './currency-preferences.js';
 
 export interface TransactionQueryInput {
-  readonly accountId?: string;
-  readonly categoryId?: string;
-  readonly search?: string;
-  readonly uncategorized?: 'true' | 'false';
+  readonly accountId?: string | undefined;
+  readonly categoryId?: string | undefined;
+  readonly search?: string | undefined;
+  readonly uncategorized?: 'true' | 'false' | undefined;
   readonly startDate: string;
   readonly endDate: string;
   readonly limit: number;
