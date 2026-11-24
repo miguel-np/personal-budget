@@ -191,7 +191,15 @@ interface ScenarioContext {
   readonly dependencies: Dependencies;
 }
 
-function contributionScenarios(context: ScenarioContext) {
+type PlanningScenario = {
+  readonly label: string;
+  readonly monthlyContributionMinor: number;
+  readonly projection: ReturnType<typeof projectSavingsGoal>;
+};
+
+type PlanningScenarioBuild = PlanningScenario[] | ReturnType<typeof clarification>;
+
+function contributionScenarios(context: ScenarioContext): PlanningScenario[] | ReturnType<typeof clarification> {
   const amounts = [...new Set(context.draft.contributionOptionsMajor)]
     .map((amount) => context.dependencies.majorToMinor(amount, context.currency, 'aportación comparada'))
     .sort((left, right) => left - right);
@@ -205,7 +213,7 @@ function contributionScenarios(context: ScenarioContext) {
   }));
 }
 
-function expenseScenarios(context: ScenarioContext) {
+function expenseScenarios(context: ScenarioContext): PlanningScenario[] {
   const expenseAmountMinor = context.dependencies.majorToMinor(
     context.draft.expenseAmountMajor!, context.currency, 'gasto hipotético',
   );
@@ -234,7 +242,7 @@ function expenseScenarios(context: ScenarioContext) {
   ];
 }
 
-function ordinaryGoalScenario(context: ScenarioContext) {
+function ordinaryGoalScenario(context: ScenarioContext): PlanningScenario {
   const initialProjection = context.makeProjection(context.baseContributionMinor, context.commitments);
   if (!context.goal.selectedGoal && context.draft.monthlyContributionMajor === null &&
       initialProjection.requiredMonthlyContributionMinor !== null &&
@@ -255,7 +263,7 @@ function ordinaryGoalScenario(context: ScenarioContext) {
   };
 }
 
-function buildScenarios(context: ScenarioContext) {
+function buildScenarios(context: ScenarioContext): PlanningScenarioBuild {
   if (context.draft.intent === 'compare_contributions') return contributionScenarios(context);
   if (context.draft.intent === 'test_expense') return expenseScenarios(context);
   return [ordinaryGoalScenario(context)];
@@ -325,7 +333,7 @@ function buildReadyPlanningResponse(
   asOfDate: string,
   preferences: CurrencyPreferences,
   loaded: Awaited<ReturnType<typeof preparePlanningScenario>>,
-  scenarios: ReturnType<typeof buildScenarios> & readonly unknown[],
+  scenarios: PlanningScenario[],
   dependencies: Dependencies,
 ) {
   const warnings = [...new Set([
