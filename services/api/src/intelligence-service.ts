@@ -59,7 +59,7 @@ interface IntelligenceContext {
   readonly preferences: CurrencyPreferences;
   readonly accountPreference: AccountScopePreference;
   readonly stored: Awaited<ReturnType<typeof readPlanningData>>;
-  readonly scope: ResolvedAccountScope;
+  readonly scope: { readonly accounts: readonly BudgetAccount[]; readonly metadata: AccountScopeMetadata };
   readonly actualDataDir: string;
   readonly findingScope: {
     readonly mode: AccountScopePreference['mode'];
@@ -86,13 +86,6 @@ function monthsBefore(date: string, months: number): string {
   return shifted.toISOString().slice(0, 10);
 }
 
-function planningMonthPeriod(month: string): { readonly startDate: string; readonly endDate: string } {
-  const year = Number(month.slice(0, 4));
-  const monthNumber = Number(month.slice(5, 7));
-  const lastDay = new Date(Date.UTC(year, monthNumber, 0)).toISOString().slice(0, 10);
-  return { startDate: month + '-01', endDate: lastDay };
-}
-
 async function loadContext(dependencies: IntelligenceDependencies): Promise<IntelligenceContext> {
   const [accounts, categories, preferences, accountPreference, stored] = await Promise.all([
     dependencies.repository.listAccounts(),
@@ -101,7 +94,11 @@ async function loadContext(dependencies: IntelligenceDependencies): Promise<Inte
     dependencies.accountScopePreference(),
     readPlanningData(dependencies.config.actualDataDir),
   ]);
-  const scope = resolveAccountScope(accounts, accountPreference);
+  const resolvedScope = resolveAccountScope(accounts, accountPreference);
+  const accountsById = new Map(accounts.map((account) => [account.id, account]));
+  const scopedAccounts = resolvedScope.accounts.map((account) => accountsById.get(account.id))
+    .filter((account): account is BudgetAccount => account !== undefined);
+  const scope = { accounts: scopedAccounts, metadata: resolvedScope.metadata };
   return {
     accounts, categories, preferences, accountPreference, stored, scope,
     actualDataDir: dependencies.config.actualDataDir,
@@ -240,7 +237,7 @@ async function buildPeriodComparison(
   return { findings: [...comparison.findings], warnings: [...comparison.limitations] };
 }
 
-function finalizeFindings(
+async function finalizeFindings(
   findings: readonly FinancialFinding[],
   warnings: string[],
   asOfDate: string,
@@ -248,10 +245,11 @@ function finalizeFindings(
   context: IntelligenceContext,
   calculatedAt: string,
   validateFinding: (finding: unknown) => FinancialFinding,
-): IntelligenceResult {
+): Promise<IntelligenceResult> {
   const unique = new Map<string, FinancialFinding>();
   for (const finding of findings) unique.set(finding.id, finding);
-  return readFindingReviewState(context.actualDataDir).then((state) => {
+  const state = await readFindingReviewState(context.actualDataDir);
+
     const validated = sortFinancialFindings([...unique.values()]).slice(0, 100).map((finding) => {
       const record = state.reviews.find((item) => item.findingId === finding.id);
       const review = effectiveFindingReview(record, finding.fingerprint, asOfDate);
@@ -273,7 +271,7 @@ function finalizeFindings(
       calculatedAt,
       asOfDate,
     };
-  });
+
 }
 
 export interface IntelligenceResult {
