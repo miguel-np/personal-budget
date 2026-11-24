@@ -25,7 +25,6 @@ import type { StoredPlanningCommitment, StoredPlanningGoal } from './planning-st
 import { readPlanningData } from './planning-store.js';
 import { readFinancialActionState } from './financial-actions-store.js';
 
-type PlanningData = Awaited<ReturnType<typeof readPlanningData>>;
 type FinancialActionState = Awaited<ReturnType<typeof readFinancialActionState>>;
 type Summary = ReturnType<typeof calculateSummary>;
 type BudgetRows = ReadonlyMap<string, {
@@ -71,13 +70,6 @@ interface CategoryObservation {
   readonly budgetAvailableMinor: number | null;
 }
 
-interface GoalContext {
-  readonly savingsGoals: Array<Record<string, unknown>>;
-  readonly status: 'ready' | 'review_required' | 'not_configured';
-  readonly warnings: string[];
-  readonly targetRequiredMonthlyContributionMinor: number | null;
-  readonly targetSavingsGapMinor: number | null;
-}
 
 function createAccountScopeSignature(
   mode: AccountScopePreference['mode'],
@@ -417,6 +409,7 @@ function compareSavedScenarios(
   scenarios: FinancialActionState['budgetImprovements']['scenarios'],
   baseline: ReturnType<typeof buildBaseline>,
   preferences: BudgetImprovementCategoryPreference[],
+  currentAccountScopeSignature: string,
 ) {
   return scenarios.map((scenario) => {
     if (scenario.currency !== baseline.currency) {
@@ -425,7 +418,7 @@ function compareSavedScenarios(
     if (scenario.startDate !== baseline.startDate || scenario.endDate !== baseline.endDate) {
       return { ...scenario, comparisonStatus: 'different_period' as const, comparison: null };
     }
-    if (!scenario.accountScopeSignature) {
+    if (!scenario.accountScopeSignature || scenario.accountScopeSignature !== currentAccountScopeSignature) {
       return { ...scenario, comparisonStatus: 'different_scope' as const, comparison: null };
     }
     try {
@@ -502,7 +495,7 @@ export async function loadBudgetImprovementContext(
     .map(dependencies.toPlanningCommitment);
   const savingsGoals = projectSavingsGoals(
     planningData.goals, baseline, asOfDate, preferences, accountPreference,
-    dependencies.planningScopeMatches, compatibleCommitments, asOfDate,
+    dependencies.planningScopeMatches, compatibleCommitments,
   );
   const status = savingsGoals.some((goal) => goal.projection !== null)
     ? 'ready' : savingsGoals.length > 0 ? 'review_required' : 'not_configured';
@@ -510,7 +503,9 @@ export async function loadBudgetImprovementContext(
     goal.warnings.map((warning) => goal.name + ': ' + warning));
   const target = selectTargetSavingsGoal(savingsGoals);
   const prioritizedProposals = prioritizeProposals(proposals, actionState.budgetImprovements.goal, target);
-  const scenarios = compareSavedScenarios(actionState.budgetImprovements.scenarios, baseline, corePreferences);
+  const scenarios = compareSavedScenarios(
+    actionState.budgetImprovements.scenarios, baseline, corePreferences, accountScopeSignature,
+  );
   const categoryChoices = categories.filter((category) => !category.isIncome).map((category) => ({
     categoryId: category.id,
     categoryName: category.name,
