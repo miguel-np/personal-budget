@@ -11,10 +11,9 @@ import type { AssistantContext, PlanningIntentDraft, WebResearchRequest } from '
 import { OFFICIAL_SOURCE_DOMAINS, SearXNGSearchProvider, WebSearchResponseTooLargeError, WebSearchUnavailableError } from './web-search.js';
 import type { WebSearchProvider } from './web-search.js';
 import { buildClaimEvidence, shouldAbstainFromTaxConclusion } from './claim-evidence.js';
-import { CurrencyPreferencesSchema, defaultCurrencyPreferences, readCurrencyPreferences, writeCurrencyPreferences } from './currency-preferences.js';
+import { readCurrencyPreferences } from './currency-preferences.js';
 import type { CurrencyPreferences } from './currency-preferences.js';
-import { AccountScopeError, AccountScopePreferenceSchema, defaultAccountScope, readAccountScope, resolveAccountScope, writeAccountScope } from './account-scope.js';
-import { AppPreferencesSchema, defaultAppPreferences, readAppPreferences, writeAppPreferences } from './app-preferences.js';
+import { readAccountScope, resolveAccountScope } from './account-scope.js';
 import type { AccountScopePreference, AccountScopeMetadata } from './account-scope.js';
 import { PlanningCommitmentInputSchema, PlanningGoalInputSchema, readPlanningData, resetPlanningData, updatePlanningData, StoredPlanningCommitmentSchema, StoredPlanningGoalSchema } from './planning-store.js';
 import type { StoredPlanningCommitment } from './planning-store.js';
@@ -23,6 +22,7 @@ import { createPeriodicReview, readPeriodicReviewState, updatePeriodicReviewItem
 import { readFinancialActionState, updateFinancialActionState } from './financial-actions-store.js';
 import { readWealthData } from './wealth-store.js';
 import { registerPortfolioRoutes } from './portfolio-routes.js';
+import { registerPreferencesRoutes } from './preferences-routes.js';
 
 
 const TAX_RESEARCH_ABSTENTION_ANSWER = 'La investigación se abstiene de ofrecer una conclusión categórica: al menos una afirmación no tiene evidencia documental literal verificable o existe una posible discrepancia sin resolver. Consulta las fuentes y fragmentos asociados. La coincidencia literal no demuestra que la fuente respalde la afirmación ni su aplicabilidad jurídica.';
@@ -245,7 +245,6 @@ const TransactionUpdateRequestSchema = z.object({
     cleared: z.boolean().optional(),
   }).strict().refine((fields) => Object.keys(fields).length > 0, 'At least one supported field must change.'),
 }).strict();
-const ResetPreferencesRequestSchema = z.object({ confirmation: z.literal('RESET_APP_PREFERENCES') }).strict();
 const ForecastScenarioSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('category_reduction'), categoryId: z.string().trim().min(1).max(128), percent: z.number().min(0).max(100) }).strict(),
   z.object({ type: z.literal('income_change'), percent: z.number().min(-100).max(1000) }).strict(),
@@ -891,103 +890,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     try { return { data: await repository.listCategories() }; }
     catch (error) { const normalized = sanitizedErrorResponse(error); return reply.code(normalized.statusCode).send(normalized.body); }
   });
-  app.get('/api/v1/preferences/accounts', async (_request, reply) => {
-    try {
-      const [accounts, preference] = await Promise.all([repository.listAccounts(), accountScopePreference()]);
-      try {
-        const resolved = resolveAccountScope(accounts, preference);
-        return { data: { ...preference, label: resolved.metadata.label, activeAccountIds: resolved.metadata.accountIds, accountNames: resolved.metadata.accountNames } };
-      } catch (error) {
-        if (!(error instanceof AccountScopeError) || error.code !== 'INVALID_ACCOUNT_SCOPE') throw error;
-        // Preserve access to settings so a user can repair a persisted scope after an account was closed or removed.
-        return { data: {
-          ...preference,
-          label: 'Configuración pendiente: revisa las cuentas seleccionadas',
-          activeAccountIds: [],
-          accountNames: [],
-          warning: error.message,
-        } };
-      }
-    } catch (error) {
-      const normalized = sanitizedErrorResponse(error);
-      return reply.code(normalized.statusCode).send(normalized.body);
-    }
-  });
-  app.put('/api/v1/preferences/accounts', async (request, reply) => {
-    try {
-      const preference = AccountScopePreferenceSchema.parse(request.body);
-      const accounts = await repository.listAccounts();
-      const resolved = resolveAccountScope(accounts, preference);
-      await writeAccountScope(config.actualDataDir, preference);
-      return { data: { ...preference, label: resolved.metadata.label, activeAccountIds: resolved.metadata.accountIds, accountNames: resolved.metadata.accountNames } };
-    } catch (error) {
-      const normalized = sanitizedErrorResponse(error);
-      return reply.code(normalized.statusCode).send(normalized.body);
-    }
-  });
-  app.get('/api/v1/preferences/currency', async (_request, reply) => {
-    try { return { data: { ...(await currencyPreferences()), budgetCurrency: config.budgetCurrency } }; }
-    catch (error) { const normalized = sanitizedErrorResponse(error); return reply.code(normalized.statusCode).send(normalized.body); }
-  });
-  app.put('/api/v1/preferences/currency', async (request, reply) => {
-    try {
-      const preferences = CurrencyPreferencesSchema.parse(request.body);
-      const accounts = await repository.listAccounts();
-      const accountById = new Map(accounts.filter((account) => !account.closed).map((account) => [account.id, account]));
-      for (const [accountId, currencyCode] of Object.entries(preferences.accountCurrencyOverrides)) {
-        const account = accountById.get(accountId);
-        if (!account) return reply.code(400).send({ error: { code: 'INVALID_ACCOUNT_CURRENCY', message: 'La divisa solo se puede asignar a una cuenta abierta del presupuesto configurado.' } });
-        const sourceCurrency = normalizeCurrencyCode(account.currencyCode);
-        if (sourceCurrency && sourceCurrency !== currencyCode) {
-          return reply.code(400).send({ error: { code: 'NATIVE_CURRENCY_IS_AUTHORITATIVE', message: 'Actual Budget proporciona la divisa nativa de esta cuenta y tiene prioridad sobre la preferencia local.' } });
-        }
-      }
-      await writeCurrencyPreferences(config.actualDataDir, preferences);
-      return { data: { ...(await currencyPreferences()), budgetCurrency: config.budgetCurrency } };
-    } catch (error) {
-      const normalized = sanitizedErrorResponse(error);
-      return reply.code(normalized.statusCode).send(normalized.body);
-    }
-  });
-  app.get('/api/v1/preferences/app', async (_request, reply) => {
-    try { return { data: await readAppPreferences(config.actualDataDir) }; }
-    catch (error) {
-      const normalized = sanitizedErrorResponse(error);
-      return reply.code(normalized.statusCode).send(normalized.body);
-    }
-  });
-  app.put('/api/v1/preferences/app', async (request, reply) => {
-    try {
-      const preferences = AppPreferencesSchema.parse(request.body);
-      await writeAppPreferences(config.actualDataDir, preferences);
-      return { data: await readAppPreferences(config.actualDataDir) };
-    } catch (error) {
-      const normalized = sanitizedErrorResponse(error);
-      return reply.code(normalized.statusCode).send(normalized.body);
-    }
-  });
-  app.post('/api/v1/preferences/reset', async (request, reply) => {
-    try {
-      ResetPreferencesRequestSchema.parse(request.body);
-      // Reset only app-owned JSON preferences. Never remove Actual's data directory, backups or browser downloads.
-      await Promise.all([
-        writeAppPreferences(config.actualDataDir, defaultAppPreferences()),
-        writeCurrencyPreferences(config.actualDataDir, defaultCurrencyPreferences(config.budgetCurrency)),
-        writeAccountScope(config.actualDataDir, defaultAccountScope()),
-      ]);
-      return {
-        data: {
-          reset: true,
-          app: await readAppPreferences(config.actualDataDir),
-          currency: { ...(await readCurrencyPreferences(config.actualDataDir, config.budgetCurrency)), budgetCurrency: config.budgetCurrency },
-          accountScope: await readAccountScope(config.actualDataDir),
-        },
-      };
-    } catch (error) {
-      const normalized = sanitizedErrorResponse(error);
-      return reply.code(normalized.statusCode).send(normalized.body);
-    }
-  });
+  await registerPreferencesRoutes(app, { repository, config, currencyPreferences, accountScopePreference, sanitizedErrorResponse });
 
   app.get('/api/v1/transactions', async (request, reply) => {
     try {
