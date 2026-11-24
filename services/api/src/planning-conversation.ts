@@ -261,31 +261,28 @@ function buildScenarios(context: ScenarioContext) {
   return [ordinaryGoalScenario(context)];
 }
 
-async function buildPlanningPreview(
-  draft: PlanningIntentDraft,
-  asOfDate: string,
-  stored: Awaited<ReturnType<typeof readPlanningData>>,
-  accounts: Awaited<ReturnType<BudgetRepository['listAccounts']>>,
-  categories: Awaited<ReturnType<BudgetRepository['listCategories']>>,
-  preferences: CurrencyPreferences,
-  preference: AccountScopePreference,
-  dependencies: Dependencies,
-): Promise<unknown> {
-  const initialError = validateInitialDraft(draft, preferences.displayCurrency);
-  if (initialError) return initialError;
-  const [scope, eligibleGoals] = [
-    resolveAccountScope(accounts, preference),
-    stored.goals.filter((goal) =>
-      goal.status === 'active' && goal.currency === preferences.displayCurrency &&
-      dependencies.planningScopeMatches(goal.scope, preference) && goal.targetDate > asOfDate),
-  ];
-  const selected = selectGoal(draft, stored.goals, eligibleGoals, preference, preferences.displayCurrency, dependencies);
-  if ('response' in selected) return { statusCode: selected.statusCode, response: selected.response };
-  const goal = resolveGoalParameters(draft, selected.goal, preferences.displayCurrency, asOfDate, dependencies);
-  if (!('targetAmountMinor' in goal)) return goal;
+interface PlanningScenarioInput {
+  readonly draft: PlanningIntentDraft;
+  readonly asOfDate: string;
+  readonly goal: GoalParameters;
+  readonly accounts: Awaited<ReturnType<BudgetRepository['listAccounts']>>;
+  readonly categories: Awaited<ReturnType<BudgetRepository['listCategories']>>;
+  readonly stored: Awaited<ReturnType<typeof readPlanningData>>;
+  readonly preferences: CurrencyPreferences;
+  readonly preference: AccountScopePreference;
+  readonly dependencies: Dependencies;
+}
 
+async function preparePlanningScenario(input: PlanningScenarioInput) {
+  const {
+    draft, asOfDate, goal, accounts, categories, stored, preferences, preference, dependencies,
+  } = input;
+  const allAccountsById = new Map(accounts.map((account) => [account.id, account]));
+  const scope = resolveAccountScope(accounts, preference);
+  const scopedAccounts = scope.accounts.map((account) => allAccountsById.get(account.id))
+    .filter((account): account is NonNullable<typeof accounts[number]> => account !== undefined);
   const historyStartDate = dependencies.shiftPlanningMonth(asOfDate.slice(0, 7), -11) + '-01';
-  const historyTransactions = await dependencies.transactionsForAccounts(scope.accounts, historyStartDate, asOfDate, preferences);
+  const historyTransactions = await dependencies.transactionsForAccounts(scopedAccounts, historyStartDate, asOfDate, preferences);
   const convertedHistory = dependencies.convertTransactionsForAnalysis(historyTransactions, preferences);
   const estimate = estimatePlanningCashFlow(convertedHistory.transactions, categories, {
     currency: preferences.displayCurrency, startDate: historyStartDate, endDate: asOfDate,
@@ -308,26 +305,32 @@ async function buildPlanningPreview(
       dependencies.majorToMinor(draft.monthlyContributionMajor, preferences.displayCurrency, 'aportación mensual'));
   const makeProjection = (monthlyContribution: number, activeCommitments: readonly PlanningCommitment[]) =>
     projectSavingsGoal({
-      asOfDate,
-      targetDate: goal.targetDate,
-      targetAmountMinor: goal.targetAmountMinor,
-      initialAmountMinor: goal.initialAmountMinor,
-      currency: preferences.displayCurrency,
-      monthlyContributionMinor: monthlyContribution,
-      monthlyIncomeMinor,
-      monthlyExpenseMinor,
+      asOfDate, targetDate: goal.targetDate, targetAmountMinor: goal.targetAmountMinor,
+      initialAmountMinor: goal.initialAmountMinor, currency: preferences.displayCurrency,
+      monthlyContributionMinor: monthlyContribution, monthlyIncomeMinor, monthlyExpenseMinor,
       commitments: activeCommitments,
     });
-  const scenarioContext: ScenarioContext = {
-    draft, currency: preferences.displayCurrency, goal,
-    monthlyIncomeMinor, monthlyExpenseMinor, baseContributionMinor,
-    commitments, makeProjection, dependencies,
+  return {
+    historyStartDate, convertedHistory, estimate, recurringCandidates, commitments, scope,
+    scenarioContext: {
+      draft, currency: preferences.displayCurrency, goal,
+      monthlyIncomeMinor, monthlyExpenseMinor, baseContributionMinor,
+      commitments, makeProjection, dependencies,
+    } satisfies ScenarioContext,
   };
-  const scenarios = buildScenarios(scenarioContext);
-  if (!Array.isArray(scenarios)) return scenarios;
+}
+
+function buildReadyPlanningResponse(
+  draft: PlanningIntentDraft,
+  asOfDate: string,
+  preferences: CurrencyPreferences,
+  loaded: Awaited<ReturnType<typeof preparePlanningScenario>>,
+  scenarios: ReturnType<typeof buildScenarios> & readonly unknown[],
+  dependencies: Dependencies,
+) {
   const warnings = [...new Set([
-    ...convertedHistory.warnings,
-    ...estimate.warnings,
+    ...loaded.convertedHistory.warnings,
+    ...loaded.estimate.warnings,
     ...scenarios.flatMap((scenario) => scenario.projection.warnings),
   ])];
   return {
@@ -337,11 +340,11 @@ async function buildPlanningPreview(
       label: 'Simulación conversacional · no guardada',
       intent: draft.intent,
       goal: {
-        id: goal.selectedGoal?.id ?? null,
-        name: goal.goalName,
-        targetAmountMinor: goal.targetAmountMinor,
-        initialAmountMinor: goal.initialAmountMinor,
-        targetDate: goal.targetDate,
+        id: loaded.scenarioContext.goal.selectedGoal?.id ?? null,
+        name: loaded.scenarioContext.goal.goalName,
+        targetAmountMinor: loaded.scenarioContext.goal.targetAmountMinor,
+        initialAmountMinor: loaded.scenarioContext.goal.initialAmountMinor,
+        targetDate: loaded.scenarioContext.goal.targetDate,
         currency: preferences.displayCurrency,
       },
       scenarios,
@@ -350,35 +353,67 @@ async function buildPlanningPreview(
         date: draft.expenseDate!,
         currency: preferences.displayCurrency,
       } : null,
-      manualCommitments: commitments.map((item) => ({
+      manualCommitments: loaded.commitments.map((item) => ({
         title: item.title, amountMinor: item.amountMinor, date: item.date,
         direction: item.direction, frequency: item.frequency, currency: item.currency,
       })),
       sources: {
-        historyStartDate,
+        historyStartDate: loaded.historyStartDate,
         historyEndDate: asOfDate,
-        monthsWithData: estimate.monthsWithData,
-        transactionCount: estimate.transactionCount,
-        monthlyIncomeSource: draft.monthlyIncomeMajor === null && goal.selectedGoal?.monthlyIncomeMinor == null
+        monthsWithData: loaded.estimate.monthsWithData,
+        transactionCount: loaded.estimate.transactionCount,
+        monthlyIncomeSource: draft.monthlyIncomeMajor === null && loaded.scenarioContext.goal.selectedGoal?.monthlyIncomeMinor == null
           ? 'observed_median' : 'user_or_goal_assumption',
-        monthlyExpenseSource: draft.monthlyExpenseMajor === null && goal.selectedGoal?.monthlyExpenseMinor == null
+        monthlyExpenseSource: draft.monthlyExpenseMajor === null && loaded.scenarioContext.goal.selectedGoal?.monthlyExpenseMinor == null
           ? 'observed_median' : 'user_or_goal_assumption',
-        accountScope: scope.metadata,
+        accountScope: loaded.scope.metadata,
         currency: preferences.displayCurrency,
-        commitmentsConsidered: commitments.length,
-        unconfirmedRecurringCandidatesExcluded: recurringCandidates.length,
+        commitmentsConsidered: loaded.commitments.length,
+        unconfirmedRecurringCandidatesExcluded: loaded.recurringCandidates.length,
       },
       assumptions: [
-        ...estimate.assumptions,
+        ...loaded.estimate.assumptions,
         'Los importes propuestos por la IA se consideran entradas del usuario, se validan en el backend y no son cálculos del modelo.',
         'Ingresos y gastos proceden de la mediana mensual observada o de supuestos explícitos del objetivo o de la petición.',
         'Las simulaciones no aplican intereses, inflación ni revalorización y no constituyen una garantía.',
         'Los escenarios y el gasto extraordinario conversacional son efímeros; no crean ni modifican objetivos, compromisos ni movimientos.',
       ],
       warnings,
-      notes: convertedHistory.warnings,
+      notes: loaded.convertedHistory.warnings,
     },
   };
+}
+
+async function buildPlanningPreview(
+  draft: PlanningIntentDraft,
+  asOfDate: string,
+  stored: Awaited<ReturnType<typeof readPlanningData>>,
+  accounts: Awaited<ReturnType<BudgetRepository['listAccounts']>>,
+  categories: Awaited<ReturnType<BudgetRepository['listCategories']>>,
+  preferences: CurrencyPreferences,
+  preference: AccountScopePreference,
+  dependencies: Dependencies,
+): Promise<unknown> {
+  const initialError = validateInitialDraft(draft, preferences.displayCurrency);
+  if (initialError) return initialError;
+  const eligibleGoals = stored.goals.filter((goal) =>
+    goal.status === 'active' && goal.currency === preferences.displayCurrency &&
+    dependencies.planningScopeMatches(goal.scope, preference) && goal.targetDate > asOfDate);
+  const selected = selectGoal(draft, stored.goals, eligibleGoals, preference, preferences.displayCurrency, dependencies);
+  if ('response' in selected) return { statusCode: selected.statusCode, response: selected.response };
+  const goal = resolveGoalParameters(draft, selected.goal, preferences.displayCurrency, asOfDate, dependencies);
+  if (!('targetAmountMinor' in goal)) return goal;
+  const loaded = await preparePlanningScenario({
+    draft, asOfDate, goal, accounts, categories, stored, preferences, preference, dependencies,
+  });
+  const scenarios = buildScenarios(loaded.scenarioContext);
+  if (!Array.isArray(scenarios)) return scenarios;
+  return buildReadyPlanningResponse(draft, asOfDate, preferences, loaded, scenarios, dependencies);
+}
+
+function isPlanningHttpResponse(value: unknown): value is { readonly statusCode: number; readonly response: unknown } {
+  return typeof value === 'object' && value !== null &&
+    'statusCode' in value && typeof value.statusCode === 'number' && 'response' in value;
 }
 
 export async function handlePlanningConversationPreview(
@@ -425,10 +460,8 @@ export async function handlePlanningConversationPreview(
     const result = await buildPlanningPreview(
       parsedDraft.data, asOfDate, stored, accounts, categories, preferences, preference, dependencies,
     );
-    if (typeof result === 'object' && result !== null && 'statusCode' in result) {
-      const status = (result as { statusCode: number }).statusCode;
-      const response = (result as { response: unknown }).response;
-      return status === 200 ? response : reply.code(status).send(response);
+    if (isPlanningHttpResponse(result)) {
+      return result.statusCode === 200 ? result.response : reply.code(result.statusCode).send(result.response);
     }
     return result;
   } catch (error) {
