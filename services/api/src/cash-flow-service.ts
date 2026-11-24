@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   convertAmountMinor,
   detectRecurringCandidates,
@@ -48,6 +49,7 @@ interface Dependencies {
   readonly convertTransactionsForAnalysis: (
     transactions: readonly BudgetTransaction[], preferences: CurrencyPreferences,
   ) => ConvertedTransactions;
+  readonly planningScopeMatches: (saved: AccountScopePreference, current: AccountScopePreference) => boolean;
   readonly accountNativeCurrency: (
     account: { readonly id: string; readonly currencyCode?: string | null },
     preferences: CurrencyPreferences,
@@ -110,12 +112,13 @@ async function buildCommitmentEvents(
   preferences: CurrencyPreferences,
   asOfDate: string,
   endDate: string,
+  scopeMatches: Dependencies['planningScopeMatches'],
   actualMatchKeys: ReadonlySet<string>,
   actualAmountKeys: ReadonlySet<string>,
 ): Promise<CommitmentEvents> {
   const unconvertedCommitmentTitles: string[] = [];
   const eligible = planning.commitments
-    .filter((item) => item.status === 'active' && planningScopeMatches(item.scope, accountPreference))
+    .filter((item) => item.status === 'active' && scopeMatches(item.scope, accountPreference))
     .flatMap((item) => {
       if (item.currency === preferences.displayCurrency) return [item];
       const conversion = convertAmountMinor(
@@ -279,7 +282,7 @@ export async function createCashFlowProjection(
   const ledger = buildFutureLedger(convertedFuture, asOfDate);
   const commitments = await buildCommitmentEvents(
     planning, accountPreference, preferences, asOfDate, endDate,
-    ledger.actualMatchKeys, ledger.actualAmountKeys,
+    ledger.actualMatchKeys, ledger.actualAmountKeys, dependencies.planningScopeMatches,
   );
   const historyStart = addCivilDays(asOfDate, -800);
   const rawHistory = await dependencies.transactionsForAccounts(scope.accounts, historyStart, asOfDate, preferences);
