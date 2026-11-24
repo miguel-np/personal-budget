@@ -13,7 +13,7 @@ import type { WebSearchProvider } from './web-search.js';
 import { buildClaimEvidence, shouldAbstainFromTaxConclusion } from './claim-evidence.js';
 import { readCurrencyPreferences } from './currency-preferences.js';
 import type { CurrencyPreferences } from './currency-preferences.js';
-import { readAccountScope, resolveAccountScope } from './account-scope.js';
+import { AccountScopeError, readAccountScope, resolveAccountScope } from './account-scope.js';
 import type { AccountScopePreference, AccountScopeMetadata } from './account-scope.js';
 import { PlanningCommitmentInputSchema, PlanningGoalInputSchema, readPlanningData, resetPlanningData, updatePlanningData, StoredPlanningCommitmentSchema, StoredPlanningGoalSchema } from './planning-store.js';
 import type { StoredPlanningCommitment } from './planning-store.js';
