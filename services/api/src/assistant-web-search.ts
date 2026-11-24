@@ -86,7 +86,7 @@ function readinessFailure(
   return null;
 }
 
-function buildModelRequest(query: WebResearchRequest): WebResearchRequest {
+function buildModelRequest(query: ParsedWebResearchRequest): WebResearchRequest {
   if (query.mode !== 'tax') return { query: query.query, mode: query.mode };
   return {
     query: query.query,
