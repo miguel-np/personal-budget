@@ -364,7 +364,7 @@ export async function createPeriodicReviewReport(
     previousState.reviews, parsed, period, result, fingerprint,
   );
   const reviewComparison = buildReviewComparison(previousRunCandidate, items);
-  const warnings: string[] = [];
+  const warnings: string[] = [...result.warnings];
   const budgetAssessment = buildBudgetAssessment(
     result, period, parsed, asOfDate, dependencies, warnings,
   );
