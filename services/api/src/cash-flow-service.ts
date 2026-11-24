@@ -16,7 +16,8 @@ import { z } from 'zod';
 import { isIsoDate } from '@personal-budget/finance-core';
 import type { AppConfig } from './config.js';
 import type { CurrencyPreferences } from './currency-preferences.js';
-import type { AccountScopePreference, ResolvedAccountScope } from './account-scope.js';
+import { resolveAccountScope } from './account-scope.js';
+import type { AccountScopePreference } from './account-scope.js';
 import { readPlanningData } from './planning-store.js';
 
 const SafeMinorAmountSchema = z.number().int().refine(Number.isSafeInteger, 'Amounts must be safe integers in minor currency units.');
@@ -50,6 +51,7 @@ interface Dependencies {
     transactions: readonly BudgetTransaction[], preferences: CurrencyPreferences,
   ) => ConvertedTransactions;
   readonly planningScopeMatches: (saved: AccountScopePreference, current: AccountScopePreference) => boolean;
+  readonly toPlanningCommitment: (item: Awaited<ReturnType<typeof readPlanningData>>['commitments'][number]) => import('@personal-budget/finance-core').PlanningCommitment;
   readonly accountNativeCurrency: (
     account: { readonly id: string; readonly currencyCode?: string | null },
     preferences: CurrencyPreferences,
@@ -113,6 +115,7 @@ async function buildCommitmentEvents(
   asOfDate: string,
   endDate: string,
   scopeMatches: Dependencies['planningScopeMatches'],
+  toPlanningCommitment: Dependencies['toPlanningCommitment'],
   actualMatchKeys: ReadonlySet<string>,
   actualAmountKeys: ReadonlySet<string>,
 ): Promise<CommitmentEvents> {
@@ -130,7 +133,7 @@ async function buildCommitmentEvents(
       }
       return [{ ...item, amountMinor: conversion.amountMinor, currency: preferences.displayCurrency }];
     });
-  const manualOccurrences = expandCommitmentOccurrences(eligible, asOfDate, endDate);
+  const manualOccurrences = expandCommitmentOccurrences(eligible.map(toPlanningCommitment), asOfDate, endDate);
   const manualEvents: CashFlowEvent[] = [];
   const confirmedRecurringEvents: CashFlowEvent[] = [];
   const duplicateCommitmentIds: string[] = [];
@@ -276,16 +279,20 @@ export async function createCashFlowProjection(
     readPlanningData(dependencies.config.actualDataDir),
   ]);
   const scope = resolveAccountScope(accounts, accountPreference);
+  const accountsById = new Map(accounts.map((account) => [account.id, account]));
+  const scopedAccounts = scope.accounts.map((account) => accountsById.get(account.id))
+    .filter((account): account is BudgetAccount => account !== undefined);
   const opening = calculateOpeningBalance(scope.accounts, accounts, preferences, asOfDate, dependencies.accountNativeCurrency);
-  const rawFuture = await dependencies.transactionsForAccounts(scope.accounts, asOfDate, endDate, preferences);
+  const rawFuture = await dependencies.transactionsForAccounts(scopedAccounts, asOfDate, endDate, preferences);
   const convertedFuture = dependencies.convertTransactionsForAnalysis(rawFuture, preferences);
   const ledger = buildFutureLedger(convertedFuture, asOfDate);
   const commitments = await buildCommitmentEvents(
     planning, accountPreference, preferences, asOfDate, endDate,
-    ledger.actualMatchKeys, ledger.actualAmountKeys, dependencies.planningScopeMatches,
+    dependencies.planningScopeMatches, dependencies.toPlanningCommitment,
+    ledger.actualMatchKeys, ledger.actualAmountKeys,
   );
   const historyStart = addCivilDays(asOfDate, -800);
-  const rawHistory = await dependencies.transactionsForAccounts(scope.accounts, historyStart, asOfDate, preferences);
+  const rawHistory = await dependencies.transactionsForAccounts(scopedAccounts, historyStart, asOfDate, preferences);
   const convertedHistory = dependencies.convertTransactionsForAnalysis(rawHistory, preferences);
   const recurring = buildRecurringCandidateEvents(
     convertedHistory.transactions, asOfDate, endDate, ledger.actualMatchKeys,
