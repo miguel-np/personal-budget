@@ -75,14 +75,6 @@ interface GoalContext {
   readonly savingsGoals: Array<Record<string, unknown>>;
   readonly status: 'ready' | 'review_required' | 'not_configured';
   readonly warnings: string[];
-  readonly targetSavingsGoal: (Record<string, unknown> & {
-    readonly id: string;
-    readonly name: string;
-    readonly monthlyExpenseMinor: number;
-    readonly monthlyContributionMinor: number;
-    readonly targetDate: string;
-    readonly projection: ReturnType<typeof projectSavingsGoal>;
-  }) | null;
   readonly targetRequiredMonthlyContributionMinor: number | null;
   readonly targetSavingsGapMinor: number | null;
 }
@@ -185,6 +177,7 @@ function buildCategoryBreakdown(
   categories: readonly BudgetCategory[],
   observations: readonly CategoryObservation[],
   budgetRows: BudgetRows,
+  periodMonths: number,
 ) {
   return categories.filter((category) => !category.isIncome).map((category) => {
     const observation = observations.find((item) => item.categoryId === category.id);
@@ -193,8 +186,7 @@ function buildCategoryBreakdown(
       categoryId: category.id,
       categoryName: category.name,
       observedExpenseMinor: observation?.expenseMinor ?? 0,
-      observedMonthlyExpenseMinor: observation ? Math.round(observation.expenseMinor /
-        Math.max(1, 1 + observations.length * 0 + 0)) : 0,
+      observedMonthlyExpenseMinor: observation ? Math.round(observation.expenseMinor / periodMonths) : 0,
       transactionCount: observation?.transactionCount ?? 0,
       monthsWithActivity: observation?.monthsWithActivity ?? 0,
       latestMonthExpenseMinor: observation?.latestMonthExpenseMinor ?? 0,
@@ -291,6 +283,7 @@ function mapCorePreferences(actionState: FinancialActionState): BudgetImprovemen
 function projectSavingsGoals(
   goals: readonly StoredPlanningGoal[],
   baseline: ReturnType<typeof buildBaseline>,
+  asOfDate: string,
   preferences: CurrencyPreferences,
   accountPreference: AccountScopePreference,
   planningScopeMatches: Dependencies['planningScopeMatches'],
@@ -303,10 +296,10 @@ function projectSavingsGoals(
     if (!scopeMatches) warnings.push('El ámbito guardado del objetivo ha cambiado; revísalo desde Objetivos antes de usarlo para esta simulación.');
     if (!currencyMatches) warnings.push('La divisa guardada del objetivo no coincide con la divisa de análisis; no se convierten importes automáticamente.');
     if (goal.status === 'paused') warnings.push('El objetivo está pausado; reanúdalo desde Objetivos antes de incluirlo en una proyección.');
-    if (goal.targetDate <= baseline.endDate.slice(0, 10)) warnings.push('La fecha objetivo ya ha pasado; actualiza el objetivo para proyectarlo.');
-    const projection = goal.status === 'active' && scopeMatches && currencyMatches && goal.targetDate > baseline.endDate.slice(0, 10)
+    if (goal.targetDate <= asOfDate) warnings.push('La fecha objetivo ya ha pasado; actualiza el objetivo para proyectarlo.');
+    const projection = goal.status === 'active' && scopeMatches && currencyMatches && goal.targetDate > asOfDate
       ? projectSavingsGoal({
-        asOfDate: new Date().toISOString().slice(0, 10),
+        asOfDate,
         targetDate: goal.targetDate,
         targetAmountMinor: goal.targetAmountMinor,
         initialAmountMinor: goal.initialAmountMinor,
@@ -508,7 +501,7 @@ export async function loadBudgetImprovementContext(
       dependencies.planningScopeMatches(item.scope, accountPreference))
     .map(dependencies.toPlanningCommitment);
   const savingsGoals = projectSavingsGoals(
-    planningData.goals, baseline, preferences, accountPreference,
+    planningData.goals, baseline, asOfDate, preferences, accountPreference,
     dependencies.planningScopeMatches, compatibleCommitments, asOfDate,
   );
   const status = savingsGoals.some((goal) => goal.projection !== null)
