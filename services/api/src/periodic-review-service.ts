@@ -1,7 +1,5 @@
 import { createHash } from 'node:crypto';
-import {
-  calculateSummary,
-} from '@personal-budget/finance-core';
+import { calculateSummary, normalizeTransactions } from '@personal-budget/finance-core';
 import type {
   BudgetAccount,
   BudgetRepository,
@@ -10,6 +8,7 @@ import type {
 } from '@personal-budget/finance-core';
 import type { AppConfig } from './config.js';
 import type { CurrencyPreferences } from './currency-preferences.js';
+import { resolveAccountScope } from './account-scope.js';
 import type { AccountScopePreference } from './account-scope.js';
 import type { IntelligenceAnomalyOptions, IntelligenceResult } from './intelligence-service.js';
 import {
@@ -32,6 +31,7 @@ interface Dependencies {
     accounts: readonly BudgetAccount[], startDate: string, endDate: string, preferences: CurrencyPreferences,
   ) => Promise<readonly BudgetTransaction[]>;
   readonly assertPeriod: (startDate: string, endDate: string) => void;
+  readonly defaultAnomalyOptions: IntelligenceAnomalyOptions;
   readonly generateIntelligenceData: (
     startDate: string, endDate: string, anomalyOptions: IntelligenceAnomalyOptions, asOfDateOverride?: string,
   ) => Promise<IntelligenceResult>;
@@ -123,27 +123,24 @@ async function buildPreviousSummary(
     dependencies.currencyPreferences(),
     dependencies.accountScopePreference(),
   ]);
-  const openAccounts = accounts.filter((account) => !account.closed);
-  const scoped = preference.mode === 'all'
-    ? openAccounts
-    : preference.accountIds.map((id) => openAccounts.find((account) => account.id === id))
-      .filter((account): account is BudgetAccount => account !== undefined);
+  const scope = resolveAccountScope(accounts, preference);
+  const scoped = scope.accounts;
   const transactions = await dependencies.transactionsForAccounts(
     scoped, period.startDate, period.endDate, preferences,
   );
-  const summary = calculateSummary(
-    (await import('./transaction-query.js')).queryTransactions
-      ? (await import('@personal-budget/finance-core')).normalizeTransactions(transactions)
-      : [],
-    categories,
-    {
-      startDate: period.startDate,
-      endDate: period.endDate,
-      currency: preferences.displayCurrency,
-      exchangeRates: preferences.exchangeRates,
-    },
-  );
+  const summary = calculateSummary(normalizeTransactions(transactions), categories, {
+    startDate: period.startDate,
+    endDate: period.endDate,
+    currency: preferences.displayCurrency,
+    exchangeRates: preferences.exchangeRates,
+  });
   return summary;
+}
+
+function persistedScopeLabel(result: IntelligenceResult): string {
+  return result.accountScope.mode === 'all'
+    ? 'Todas las cuentas abiertas (' + result.accountScope.accountIds.length + ')'
+    : 'Ámbito seleccionado (' + result.accountScope.accountIds.length + ' cuentas)';
 }
 
 function scopeFingerprint(result: IntelligenceResult): string {
