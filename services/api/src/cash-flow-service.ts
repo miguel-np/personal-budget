@@ -352,7 +352,7 @@ export async function createCashFlowProjection(
 }
 
 function calculateOpeningBalance(
-  scopedAccounts: readonly BudgetAccount[],
+  scopedAccounts: readonly { readonly id: string; readonly name: string }[],
   allAccounts: readonly BudgetAccount[],
   preferences: CurrencyPreferences,
   asOfDate: string,
