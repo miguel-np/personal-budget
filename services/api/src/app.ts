@@ -33,7 +33,6 @@ import { handleCategorizeRequest } from './categorize-route.js';
 import { handlePlanningConversationPreview } from './planning-conversation.js';
 import { createCashFlowProjection } from './cash-flow-service.js';
 import { loadBudgetImprovementContext as buildBudgetImprovementContext } from './budget-improvement-context.js';
-import type { IntelligenceAnomalyOptions } from './intelligence-service.js';
 
 
 
@@ -376,6 +375,12 @@ function assertPeriod(startDate: string, endDate: string): void {
 }
 
 /** Returns a civil YYYY-MM-DD date in the same IANA zone used by the browser review. */
+function addCivilDays(date: string, days: number): string {
+  const shifted = new Date(date + 'T00:00:00.000Z');
+  shifted.setUTCDate(shifted.getUTCDate() + days);
+  return shifted.toISOString().slice(0, 10);
+}
+
 function civilDateInTimeZone(timeZone: string, instant: Date = new Date()): string {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
@@ -1370,6 +1375,7 @@ function monthsBefore(date: string, months: number): string {
         transactionsForAccounts,
         convertTransactionsForAnalysis,
         planningScopeMatches,
+        toPlanningCommitment,
         accountNativeCurrency,
       });
       if ('statusCode' in result) return reply.code(result.statusCode).send(result.body);
