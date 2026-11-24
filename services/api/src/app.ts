@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import Fastify, { LogController, type FastifyInstance, type FastifyReply, type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import helmet from '@fastify/helmet';
 import { buildFinancialAnomalyFindings, buildPeriodChangeFindings, buildUncategorizedFinding, buildBudgetImprovementProposals, calculateSummary, convertAmountMinor, createFinancialFinding, detectRecurringCandidates, estimatePlanningCashFlow, evaluateBudgetAlertRules, expandCommitmentOccurrences, isIsoDate, normalizeCurrencyCode, normalizeTransactions, projectCashFlow, projectSavings, projectSavingsGoal, simulateBudgetImprovement, sortFinancialFindings, suggestCategories, validatePeriod, BudgetRepositoryError } from '@personal-budget/finance-core';
-import type { BudgetAlertCategory, BudgetAlertRule, BudgetImprovementCategoryPreference, CashFlowEvent, BudgetCategoryClassification, BudgetRepository, BudgetTransaction, CategorySuggestion as CoreCategorySuggestion, FinancialFinding, FindingPriority, ForecastScenario, ImportRecord, PlanningCommitment, TransactionStructureUpdate } from '@personal-budget/finance-core';
+import type { BudgetAlertCategory, BudgetAlertRule, BudgetImprovementCategoryPreference, CashFlowEvent, BudgetCategoryClassification, BudgetRepository, BudgetTransaction, CategorySuggestion as CoreCategorySuggestion, FinancialFinding, FindingPriority, ForecastScenario, ImportRecord, PlanningCommitment } from '@personal-budget/finance-core';
 import { z, ZodError } from 'zod';
 import type { AppConfig } from './config.js';
 import { validateRequestBoundary } from './request-boundary.js';
@@ -855,7 +855,10 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         repository.listAccounts(), currencyPreferences(), accountScopePreference(), repository.listCategories(),
       ]);
       const scope = resolveAccountScope(allAccounts, preference, query.accountId);
-      const result = await queryTransactions(query, scope.accounts, categories, preferences, repository);
+      const allAccountsById = new Map(allAccounts.map((account) => [account.id, account]));
+      const scopedAccounts = scope.accounts.map((account) => allAccountsById.get(account.id))
+        .filter((account): account is NonNullable<typeof account> => account !== undefined);
+      const result = await queryTransactions(query, scopedAccounts, categories, preferences, repository);
       return { ...result, accountScope: scope.metadata };
     } catch (error) {
       if (error instanceof TransactionQueryTooBroadError) {
