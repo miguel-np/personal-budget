@@ -29,6 +29,7 @@ import { buildBudgetCategoryRows } from './budget-category-presentation.js';
 import { buildCategorySuggestions } from './category-suggestions.js';
 import { generateIntelligenceData } from './intelligence-service.js';
 import { createPeriodicReviewReport } from './periodic-review-service.js';
+import { handleCategorizeRequest } from './categorize-route.js';
 import type { IntelligenceAnomalyOptions } from './intelligence-service.js';
 
 
@@ -192,33 +193,6 @@ const IntelligenceReviewRequestSchema = IntelligenceDatesSchema.extend(Intellige
 const IntelligenceExplainRequestSchema = IntelligenceDatesSchema.extend(IntelligenceAnomalyOptionsSchema.shape).extend({
   findingId: z.string().trim().min(1).max(200),
 }).strict();
-const CategorizeRequestSchema = z.object({
-  startDate: z.string().refine(isIsoDate, 'startDate must be a valid YYYY-MM-DD date.'),
-  endDate: z.string().refine(isIsoDate, 'endDate must be a valid YYYY-MM-DD date.'),
-  commit: z.boolean().default(false),
-  transactions: z.array(z.object({
-    transactionId: z.string().trim().min(1).max(128),
-    categoryId: z.string().trim().min(1).max(128),
-    expectedCategoryId: z.string().trim().min(1).max(128).nullable().optional(),
-  }).strict()).min(1).max(200).superRefine((changes, context) => {
-    const seen = new Set<string>();
-    changes.forEach((change, index) => {
-      if (seen.has(change.transactionId)) context.addIssue({ code: 'custom', path: [index, 'transactionId'], message: 'Transaction ids must be unique.' });
-      seen.add(change.transactionId);
-    });
-  }),
-}).strict().superRefine((value, context) => {
-  if (!value.commit) return;
-  value.transactions.forEach((change, index) => {
-    if (change.expectedCategoryId === undefined) {
-      context.addIssue({
-        code: 'custom',
-        path: ['transactions', index, 'expectedCategoryId'],
-        message: 'A confirmed category batch must include its preview baseline.',
-      });
-    }
-  });
-});
 const ForecastScenarioSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('category_reduction'), categoryId: z.string().trim().min(1).max(128), percent: z.number().min(0).max(100) }).strict(),
   z.object({ type: z.literal('income_change'), percent: z.number().min(-100).max(1000) }).strict(),
@@ -1324,94 +1298,9 @@ function monthsBefore(date: string, months: number): string {
   });
 
   app.post('/api/v1/insights/categorize', async (request, reply) => {
-    try {
-      const parsed = CategorizeRequestSchema.parse(request.body);
-      assertPeriod(parsed.startDate, parsed.endDate);
-      const { transactions } = await openAccountTransactions(undefined, parsed.startDate, parsed.endDate);
-      const transactionById = new Map(transactions
-        .filter((transaction) => !transaction.is_child && !transaction.parent_id)
-        .map((transaction) => [transaction.id, transaction]));
-      for (const change of parsed.transactions) {
-        const transaction = transactionById.get(change.transactionId);
-        if (!transaction) {
-          return reply.code(400).send({ error: { code: 'INVALID_TRANSACTION', message: 'One or more transaction ids do not belong to an open account in the period.' } });
-        }
-        if (parsed.commit && change.expectedCategoryId !== (transaction.category ?? null)) {
-          return reply.code(409).send({ error: {
-            code: 'TRANSACTION_CHANGED_SINCE_PREVIEW',
-            message: 'One or more selected transactions or categories changed after preview. Review the current movements and preview the batch again; no changes were written.',
-            transactionId: change.transactionId,
-          } });
-        }
-        if (transaction.amount >= 0) {
-          return reply.code(400).send({ error: { code: 'CATEGORY_AMOUNT_MISMATCH', message: 'Bulk categorization is limited to ordinary expense movements.' } });
-        }
-        if (transaction.transfer_id) {
-          return reply.code(409).send({ error: { code: 'TRANSFER_EDIT_NOT_SUPPORTED', message: 'Transfer transactions are protected from bulk category changes.' } });
-        }
-        if (transaction.is_parent || (transaction.subtransactions?.length ?? 0) > 0) {
-          return reply.code(409).send({ error: { code: 'SPLIT_EDIT_NOT_SUPPORTED', message: 'Split transactions are protected from bulk category changes.' } });
-        }
-      }
-      const categories = await repository.listCategories();
-      const expenseCategories = new Set(categories.filter((category) => !category.isIncome).map((category) => category.id));
-      if (parsed.transactions.some((change) => !expenseCategories.has(change.categoryId))) {
-        return reply.code(400).send({ error: { code: 'INVALID_CATEGORY', message: 'Choose an expense category from the configured budget.' } });
-      }
-      if (!parsed.commit) {
-        const baseline = parsed.transactions.map((change) => {
-          const transaction = transactionById.get(change.transactionId)!;
-          return { transactionId: change.transactionId, expectedCategoryId: transaction.category ?? null };
-        });
-        return { data: { preview: true, requested: parsed.transactions.length, changes: parsed.transactions.length, baseline } };
-      }
-      if (typeof repository.updateTransactionCategoriesBatch === 'function') {
-        const verifiedChanges = parsed.transactions.map((change) => {
-          const transaction = transactionById.get(change.transactionId);
-          if (!transaction) throw new Error('Transaction disappeared during category batch validation.');
-          return { ...change, accountId: transaction.account, date: transaction.date, expectedCategoryId: change.expectedCategoryId ?? null };
-        });
-        const outcome = await repository.updateTransactionCategoriesBatch(verifiedChanges);
-        const applied = outcome.updatedTransactionIds.length;
-        const complete = applied === outcome.requested && outcome.persisted;
-        if (!complete) {
-          if (outcome.conflictTransactionId && applied === 0) {
-            return reply.code(409).send({ error: {
-              code: 'TRANSACTION_CHANGED_SINCE_PREVIEW',
-              message: 'The transaction or category no longer matches the preview. Review the current movements and preview the batch again; no changes were written by this attempt.',
-              transactionId: outcome.conflictTransactionId,
-            } });
-          }
-          const appliedIds = new Set(outcome.updatedTransactionIds);
-          const pendingTransactionIds = parsed.transactions
-            .map((change) => change.transactionId)
-            .filter((transactionId) => !appliedIds.has(transactionId));
-          return reply.code(207).send({
-            data: {
-              preview: false, requested: outcome.requested, applied, changes: applied,
-              appliedTransactionIds: outcome.updatedTransactionIds,
-              pendingTransactionIds,
-              ...(outcome.failedTransactionId ? { failedTransactionId: outcome.failedTransactionId } : {}),
-              ...(outcome.conflictTransactionId ? { conflictTransactionId: outcome.conflictTransactionId } : {}),
-              persisted: outcome.persisted, partial: true,
-              message: outcome.conflictTransactionId
-                ? 'The transaction or category no longer matches the preview at the indicated transaction id. Earlier listed updates are verified; only the remaining selections are pending and must be previewed again.'
-                : outcome.updatedTransactionIds.length > 0
-                  ? 'Some changes were verified and synced. The batch stopped at the indicated transaction id; inspect that movement in Actual before retrying. No automatic undo was attempted.'
-                  : 'No change was confirmed as persisted. Inspect the indicated movement in Actual before retrying; no automatic undo was attempted.',
-            },
-          });
-        }
-        return { data: { preview: false, requested: outcome.requested, applied, changes: applied, appliedTransactionIds: outcome.updatedTransactionIds, persisted: true, partial: false } };
-      }
-      return reply.code(503).send({ error: {
-        code: 'TRANSACTION_BATCH_UPDATE_NOT_SUPPORTED',
-        message: 'The configured adapter cannot verify category batch outcomes; no transaction was changed.',
-      } });
-    } catch (error) {
-      const normalized = sanitizedErrorResponse(error);
-      return reply.code(normalized.statusCode).send(normalized.body);
-    }
+    return handleCategorizeRequest(request.body, reply, {
+      repository, openAccountTransactions, assertPeriod, sanitizedErrorResponse,
+    });
   });
 
   app.post('/api/v1/forecasts/simulate', async (request, reply) => {
