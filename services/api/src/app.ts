@@ -1043,10 +1043,6 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     return { accounts: resolved.accounts, transactions, scope: resolved.metadata };
   }
 
-  function durationDaysBetween(startDate: string, endDate: string): number {
-  return Math.floor((Date.parse(endDate + 'T00:00:00.000Z') - Date.parse(startDate + 'T00:00:00.000Z')) / 86_400_000) + 1;
-}
-
 function monthsBefore(date: string, months: number): string {
     const year = Number(date.slice(0, 4));
     const month = Number(date.slice(5, 7));
@@ -1124,16 +1120,6 @@ function monthsBefore(date: string, months: number): string {
     const shifted = new Date(date + 'T00:00:00.000Z');
     shifted.setUTCDate(shifted.getUTCDate() + offset);
     return shifted.toISOString().slice(0, 10);
-  }
-
-  function dueDatePriority(daysUntil: number, amountMinor: number): { priority: FindingPriority; reason: string } {
-    if (daysUntil <= 3 || amountMinor >= 100_000) {
-      return { priority: 'high', reason: 'Vence en 3 días o menos, o importe ≥ 100000 unidades menores (regla v1).' };
-    }
-    if (daysUntil <= 7 || amountMinor >= 25_000) {
-      return { priority: 'medium', reason: 'Vence en 7 días o menos, o importe ≥ 25000 unidades menores (regla v1).' };
-    }
-    return { priority: 'low', reason: 'Vence dentro de los próximos 30 días sin alcanzar los umbrales de prioridad superiores (regla v1).' };
   }
 
   async function intelligenceData(
