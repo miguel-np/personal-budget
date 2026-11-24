@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import Fastify, { LogController, type FastifyInstance, type FastifyReply, type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import helmet from '@fastify/helmet';
-import { buildFinancialAnomalyFindings, buildPeriodChangeFindings, buildUncategorizedFinding, calculateSummary, convertAmountMinor, createFinancialFinding, detectRecurringCandidates, estimatePlanningCashFlow, evaluateBudgetAlertRules, expandCommitmentOccurrences, isIsoDate, normalizeCurrencyCode, normalizeTransactions, projectCashFlow, projectSavings, projectSavingsGoal, simulateBudgetImprovement, sortFinancialFindings, suggestCategories, validatePeriod, BudgetRepositoryError } from '@personal-budget/finance-core';
-import type { BudgetAlertCategory, BudgetAlertRule, CashFlowEvent, BudgetRepository, BudgetTransaction, FinancialFinding, FindingPriority, ForecastScenario, ImportRecord, PlanningCommitment } from '@personal-budget/finance-core';
+import { calculateSummary, convertAmountMinor, detectRecurringCandidates, estimatePlanningCashFlow, evaluateBudgetAlertRules, expandCommitmentOccurrences, isIsoDate, normalizeCurrencyCode, normalizeTransactions, projectSavings, projectSavingsGoal, simulateBudgetImprovement, validatePeriod, BudgetRepositoryError } from '@personal-budget/finance-core';
+import type { BudgetAlertCategory, BudgetAlertRule, BudgetRepository, BudgetTransaction, FinancialFinding, ForecastScenario, ImportRecord, PlanningCommitment } from '@personal-budget/finance-core';
 import { z, ZodError } from 'zod';
 import type { AppConfig } from './config.js';
 import { validateRequestBoundary } from './request-boundary.js';
@@ -16,7 +16,7 @@ import { AccountScopeError, readAccountScope, resolveAccountScope } from './acco
 import type { AccountScopePreference, AccountScopeMetadata } from './account-scope.js';
 import { PlanningCommitmentInputSchema, PlanningGoalInputSchema, readPlanningData, resetPlanningData, updatePlanningData, StoredPlanningCommitmentSchema, StoredPlanningGoalSchema } from './planning-store.js';
 import type { StoredPlanningCommitment } from './planning-store.js';
-import { effectiveFindingReview, readFindingReviewState, updateFindingReviewState } from './intelligence-store.js';
+import { updateFindingReviewState } from './intelligence-store.js';
 import { readPeriodicReviewState, updatePeriodicReviewItem } from './periodic-review-store.js';
 import { readFinancialActionState, updateFinancialActionState } from './financial-actions-store.js';
 import { readWealthData } from './wealth-store.js';
