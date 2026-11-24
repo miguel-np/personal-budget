@@ -1,7 +1,7 @@
 import type { FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { isIsoDate } from '@personal-budget/finance-core';
-import type { BudgetRepository, BudgetTransaction } from '@personal-budget/finance-core';
+import type { BudgetRepository, BudgetTransaction, TransactionCategoryBatchResult } from '@personal-budget/finance-core';
 
 export const CategorizeRequestSchema = z.object({
   startDate: z.string().refine(isIsoDate, 'startDate must be a valid YYYY-MM-DD date.'),
@@ -142,7 +142,7 @@ async function buildVerifiedChanges(
 
 function partialBatchResponse(
   changes: CategorizeRequest['transactions'],
-  outcome: NonNullable<BudgetRepository['updateTransactionCategoriesBatch']> extends (...args: never[]) => Promise<infer T> ? T : never,
+  outcome: TransactionCategoryBatchResult,
 ) {
   const applied = outcome.updatedTransactionIds.length;
   if (outcome.conflictTransactionId && applied === 0) {
