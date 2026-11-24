@@ -27,6 +27,8 @@ import { handleTransactionUpdate } from './transaction-update.js';
 import { handleAssistantWebSearch } from './assistant-web-search.js';
 import { buildBudgetCategoryRows } from './budget-category-presentation.js';
 import { buildCategorySuggestions } from './category-suggestions.js';
+import { generateIntelligenceData } from './intelligence-service.js';
+import type { IntelligenceAnomalyOptions } from './intelligence-service.js';
 
 
 
@@ -1134,349 +1136,28 @@ function monthsBefore(date: string, months: number): string {
     return { priority: 'low', reason: 'Vence dentro de los próximos 30 días sin alcanzar los umbrales de prioridad superiores (regla v1).' };
   }
 
-  async function generateIntelligenceData(
+  async function intelligenceData(
     startDate: string,
     endDate: string,
-    anomalyOptions: IntelligenceAnomalyOptions = IntelligenceAnomalyOptionsSchema.parse({}),
+    anomalyOptions: IntelligenceAnomalyOptions,
     asOfDateOverride?: string,
-  ): Promise<{
-    readonly findings: readonly FinancialFinding[];
-    readonly warnings: readonly string[];
-    readonly currentSummary: ReturnType<typeof calculateSummary>;
-    readonly accountScope: AccountScopeMetadata;
-    readonly currency: string;
-    readonly calculatedAt: string;
-    readonly asOfDate: string;
-  }> {
-    assertPeriod(startDate, endDate);
-    const calculatedAt = new Date().toISOString();
-    const asOfDate = asOfDateOverride ?? calculatedAt.slice(0, 10);
-    if (!isIsoDate(asOfDate)) throw new RangeError('asOfDate must be a valid ISO calendar date.');
-    const [accounts, categories, preferences, accountPreference, stored] = await Promise.all([
-      repository.listAccounts(),
-      repository.listCategories(),
-      currencyPreferences(),
-      accountScopePreference(),
-      readPlanningData(config.actualDataDir),
-    ]);
-    const scope = resolveAccountScope(accounts, accountPreference);
-    const findingScope = {
-      mode: accountPreference.mode,
-      accountIds: scope.accounts.map((account) => account.id).sort(),
-      label: scope.metadata.label,
-    } as const;
-    const currentTransactions = await transactionsForAccounts(scope.accounts, startDate, endDate, preferences);
-    const currentSummary = calculateSummary(normalizeTransactions(currentTransactions), categories, {
-      startDate, endDate, currency: preferences.displayCurrency, exchangeRates: preferences.exchangeRates,
+  ) {
+    return generateIntelligenceData(startDate, endDate, anomalyOptions, asOfDateOverride, {
+      repository,
+      config,
+      currencyPreferences,
+      accountScopePreference,
+      transactionsForAccounts,
+      convertTransactionsForAnalysis,
+      assertPeriod,
+      validateFinding: (finding) => FinancialFindingContractSchema.parse(finding) as FinancialFinding,
     });
-    const convertedCurrent = convertTransactionsForAnalysis(currentTransactions, preferences);
-    const findings: FinancialFinding[] = [];
-    const warnings: string[] = [...convertedCurrent.warnings];
-
-    const anomalyDurationDays = durationDaysBetween(startDate, endDate);
-    const anomalyHistoryDays = Math.min(730, Math.max(90, anomalyDurationDays * anomalyOptions.referenceWindows));
-    const anomalyHistoryStartDate = addIntelligenceDays(startDate, -anomalyHistoryDays);
-    const anomalyHistoryEndDate = addIntelligenceDays(startDate, -1);
-    const rawAnomalyHistory = await transactionsForAccounts(scope.accounts, anomalyHistoryStartDate, anomalyHistoryEndDate, preferences);
-    const convertedAnomalyHistory = convertTransactionsForAnalysis(rawAnomalyHistory, preferences);
-    warnings.push(...convertedAnomalyHistory.warnings);
-    const anomalyResult = buildFinancialAnomalyFindings([
-      ...normalizeTransactions(convertedAnomalyHistory.transactions),
-      ...normalizeTransactions(convertedCurrent.transactions),
-    ], {
-      period: { startDate, endDate }, accountScope: findingScope, currency: preferences.displayCurrency,
-      calculatedAt, categories, referenceWindows: anomalyOptions.referenceWindows,
-      minimumAbsoluteChangeMinor: anomalyOptions.minimumAbsoluteChangeMinor,
-      minimumRelativeChangePercent: anomalyOptions.minimumRelativeChangePercent,
-      enabledKinds: anomalyOptions.enabledAnomalyKinds, historyStartDate: anomalyHistoryStartDate,
-      allowPeriodComparisons: endDate < asOfDate && convertedCurrent.warnings.length === 0 && convertedAnomalyHistory.warnings.length === 0,
-      allowTransactionOutliers: convertedCurrent.warnings.length === 0 && convertedAnomalyHistory.warnings.length === 0,
-      sourceWarnings: [...convertedCurrent.warnings, ...convertedAnomalyHistory.warnings],
-    });
-    findings.push(...anomalyResult.findings);
-    warnings.push(...anomalyResult.limitations);
-    if (anomalyHistoryDays === 730 && anomalyDurationDays * anomalyOptions.referenceWindows > 730) {
-      warnings.push('El historial de anomalías está limitado a los 730 días anteriores por razones de rendimiento.');
-    }
-
-    if (endDate < asOfDate) {
-      const durationDays = Math.floor((Date.parse(endDate + 'T00:00:00.000Z') - Date.parse(startDate + 'T00:00:00.000Z')) / 86_400_000) + 1;
-      const previousEndDate = addIntelligenceDays(startDate, -1);
-      const previousStartDate = addIntelligenceDays(startDate, -durationDays);
-      assertPeriod(previousStartDate, previousEndDate);
-      const previousTransactions = await transactionsForAccounts(scope.accounts, previousStartDate, previousEndDate, preferences);
-      const previousSummary = calculateSummary(normalizeTransactions(previousTransactions), categories, {
-        startDate: previousStartDate, endDate: previousEndDate,
-        currency: preferences.displayCurrency, exchangeRates: preferences.exchangeRates,
-      });
-      let priorSummary: ReturnType<typeof calculateSummary> | undefined;
-      if (durationDays <= 92) {
-        const priorEndDate = addIntelligenceDays(previousStartDate, -1);
-        const priorStartDate = addIntelligenceDays(previousStartDate, -durationDays);
-        assertPeriod(priorStartDate, priorEndDate);
-        const priorTransactions = await transactionsForAccounts(scope.accounts, priorStartDate, priorEndDate, preferences);
-        priorSummary = calculateSummary(normalizeTransactions(priorTransactions), categories, {
-          startDate: priorStartDate, endDate: priorEndDate,
-          currency: preferences.displayCurrency, exchangeRates: preferences.exchangeRates,
-        });
-      }
-      const comparison = buildPeriodChangeFindings(currentSummary, previousSummary, {
-        accountScope: findingScope, calculatedAt, ...(priorSummary ? { priorSummary } : {}),
-      });
-      findings.push(...comparison.findings);
-      warnings.push(...comparison.limitations);
-    } else {
-      warnings.push('Las variaciones entre periodos se omiten porque el periodo seleccionado incluye hoy o fechas futuras y todavía no está completo.');
-    }
-
-    const uncategorized = buildUncategorizedFinding(normalizeTransactions(convertedCurrent.transactions), {
-      period: { startDate, endDate },
-      accountScope: findingScope,
-      currency: preferences.displayCurrency,
-      calculatedAt,
-      sourceWarnings: convertedCurrent.warnings,
-    });
-    if (uncategorized) findings.push(uncategorized);
-
-    const lookaheadEnd = addIntelligenceDays(asOfDate, 30);
-    const eligibleCommitments: PlanningCommitment[] = stored.commitments
-      .filter((item) => item.status === 'active' && item.currency === preferences.displayCurrency &&
-        planningScopeMatches(item.scope, accountPreference))
-      .map(toPlanningCommitment);
-    for (const item of expandCommitmentOccurrences(eligibleCommitments, asOfDate, lookaheadEnd)) {
-      const daysUntil = Math.max(0, Math.floor((Date.parse(item.occurrenceDate + 'T00:00:00.000Z') - Date.parse(asOfDate + 'T00:00:00.000Z')) / 86_400_000));
-      const priority = dueDatePriority(daysUntil, item.amountMinor);
-      findings.push(createFinancialFinding({
-        entityKey: item.id + '|' + item.occurrenceDate,
-        type: 'commitment-upcoming',
-        title: 'Compromiso próximo: ' + item.title,
-        explanation: (item.direction === 'expense' ? 'Hay un compromiso de gasto registrado' : 'Hay un ingreso futuro registrado') +
-          ' para la fecha indicada. Es un dato de planificación, no una confirmación de que el cargo o abono se haya producido.',
-        period: { startDate: item.occurrenceDate, endDate: item.occurrenceDate },
-        accountScope: findingScope,
-        currency: item.currency,
-        confidence: 'observed',
-        priority: priority.priority,
-        priorityReason: priority.reason,
-        impactMinor: item.amountMinor,
-        metrics: {
-          amountMinor: item.amountMinor, direction: item.direction, date: item.occurrenceDate,
-          daysUntil, frequency: item.frequency, source: 'manual_commitment',
-        },
-        evidence: [
-          { label: 'Importe registrado', value: item.amountMinor, source: 'planning-data.json', rule: 'Compromiso activo introducido por el usuario.' },
-          { label: 'Fecha prevista', value: item.occurrenceDate, source: 'planning-data.json', rule: 'Ocurrencia calculada según la frecuencia guardada.' },
-          { label: 'Antelación (días)', value: daysUntil, source: 'finance-core.expandCommitmentOccurrences', rule: 'Diferencia de fechas de calendario, calculada en UTC.' },
-        ],
-        limitations: ['La planificación manual no confirma el movimiento bancario.', 'Solo se consideran compromisos activos de la divisa y el ámbito de cuentas actuales.'],
-        calculatedAt,
-        navigationTarget: '/planning',
-      }));
-    }
-
-    const historyStartDate = monthsBefore(asOfDate, 12);
-    const historyTransactions = await transactionsForAccounts(scope.accounts, historyStartDate, asOfDate, preferences);
-    const convertedHistory = convertTransactionsForAnalysis(historyTransactions, preferences);
-    warnings.push(...convertedHistory.warnings);
-    const recurringCandidates = detectRecurringCandidates(convertedHistory.transactions, {
-      startDate: historyStartDate, endDate: asOfDate,
-    });
-    for (const candidate of recurringCandidates) {
-      if (candidate.estimatedIntervalDays === null || candidate.estimatedIntervalDays <= 0) continue;
-      const nextDate = addIntelligenceDays(candidate.lastDate, Math.round(candidate.estimatedIntervalDays));
-      if (nextDate < asOfDate || nextDate > lookaheadEnd) continue;
-      const daysUntil = Math.max(0, Math.floor((Date.parse(nextDate + 'T00:00:00.000Z') - Date.parse(asOfDate + 'T00:00:00.000Z')) / 86_400_000));
-      const priority = dueDatePriority(daysUntil, candidate.meanAbsoluteAmountMinor);
-      findings.push(createFinancialFinding({
-        entityKey: candidate.payee + '|' + nextDate,
-        type: 'recurring-candidate-upcoming',
-        title: 'Posible pago recurrente próximo: ' + (candidate.payeeVariants[0] ?? candidate.payee),
-        explanation: 'El historial muestra un patrón de pagos compatible con una posible recurrencia próxima. El patrón es estadístico y no confirma una suscripción ni garantiza el siguiente cargo.',
-        period: { startDate: nextDate, endDate: nextDate },
-        accountScope: findingScope,
-        currency: preferences.displayCurrency,
-        confidence: 'candidate',
-        priority: priority.priority,
-        priorityReason: priority.reason,
-        impactMinor: candidate.meanAbsoluteAmountMinor,
-        metrics: {
-          nextExpectedDate: nextDate, daysUntil, occurrenceCount: candidate.occurrenceCount,
-          estimatedIntervalDays: candidate.estimatedIntervalDays,
-          meanAbsoluteAmountMinor: candidate.meanAbsoluteAmountMinor,
-          amountDeviationPercent: candidate.amountDeviationPercent,
-        },
-        evidence: [
-          { label: 'Ocurrencias del patrón', value: candidate.occurrenceCount, source: 'finance-core.detectRecurringCandidates', rule: 'Mínimo de observaciones aplicado por el detector determinista.' },
-          { label: 'Intervalo estimado (días)', value: candidate.estimatedIntervalDays, source: 'finance-core.detectRecurringCandidates', rule: 'Estimación a partir de las fechas históricas observadas.' },
-          { label: 'Importe absoluto medio', value: candidate.meanAbsoluteAmountMinor, source: 'finance-core.detectRecurringCandidates', rule: 'Media de importes absolutos observados; puede variar por reembolsos o cambios de precio.' },
-        ],
-        limitations: [
-          'Es un candidato estadístico, no una suscripción confirmada.',
-          ...candidate.warnings,
-          ...convertedHistory.warnings,
-        ],
-        calculatedAt,
-        navigationTarget: '/planning',
-      }));
-    }
-
-    if (stored.goals.length > 0) {
-      const estimate = estimatePlanningCashFlow(convertedHistory.transactions, categories, {
-        currency: preferences.displayCurrency, startDate: historyStartDate, endDate: asOfDate,
-      });
-      for (const goal of stored.goals) {
-        if (goal.status !== 'active' || goal.currency !== preferences.displayCurrency ||
-            !planningScopeMatches(goal.scope, accountPreference) || goal.targetDate <= asOfDate) continue;
-        const projection = projectSavingsGoal({
-          asOfDate, targetDate: goal.targetDate, targetAmountMinor: goal.targetAmountMinor,
-          initialAmountMinor: goal.initialAmountMinor, monthlyContributionMinor: goal.monthlyContributionMinor,
-          currency: preferences.displayCurrency,
-          monthlyIncomeMinor: goal.monthlyIncomeMinor ?? estimate.monthlyIncomeMinor,
-          monthlyExpenseMinor: goal.monthlyExpenseMinor ?? estimate.monthlyExpenseMinor,
-          commitments: eligibleCommitments,
-        });
-        const onTrack = projection.projectedBalanceMinor >= goal.targetAmountMinor;
-        const gapMinor = Math.max(0, goal.targetAmountMinor - projection.projectedBalanceMinor);
-        const priority: FindingPriority = !onTrack && gapMinor >= 100_000
-          ? 'high' : !onTrack && gapMinor >= 25_000 ? 'medium' : 'low';
-        const priorityReason = onTrack
-          ? 'La proyección con los supuestos actuales alcanza el objetivo; prioridad informativa baja.'
-          : gapMinor >= 100_000
-            ? 'Brecha proyectada ≥ 100000 unidades menores (regla v1).'
-            : gapMinor >= 25_000
-              ? 'Brecha proyectada ≥ 25000 unidades menores (regla v1).'
-              : 'Brecha estimada inferior a los umbrales de prioridad media (regla v1).';
-        findings.push(createFinancialFinding({
-          entityKey: goal.id,
-          type: onTrack ? 'goal-progress' : 'goal-at-risk',
-          title: onTrack ? 'Proyección del objetivo: ' + goal.name : 'El objetivo podría no alcanzarse a tiempo: ' + goal.name,
-          explanation: onTrack
-            ? 'La proyección determinista alcanza el importe objetivo con los ingresos, gastos, compromisos y aportaciones configurados. Es una estimación condicional, no una predicción garantizada.'
-            : 'La proyección determinista no alcanza el importe objetivo con las aportaciones configuradas. Comprueba los supuestos y la capacidad de contribución; el flujo disponible podría permitir alcanzar la meta con un plan diferente.',
-          period: { startDate: asOfDate, endDate: goal.targetDate },
-          accountScope: findingScope,
-          currency: preferences.displayCurrency,
-          confidence: 'estimated',
-          priority,
-          priorityReason,
-          impactMinor: gapMinor,
-          metrics: {
-            targetAmountMinor: goal.targetAmountMinor,
-            projectedBalanceMinor: projection.projectedBalanceMinor,
-            gapMinor,
-            projectedProgressPercent: projection.projectedProgressPercent,
-            targetDate: goal.targetDate,
-            monthsRemaining: projection.months,
-            achievableUnderCashFlow: projection.achievableUnderCashFlow,
-            onTrack,
-          },
-          evidence: [
-            { label: 'Importe objetivo', value: goal.targetAmountMinor, source: 'planning-data.json', rule: 'Objetivo activo configurado por el usuario.' },
-            { label: 'Saldo proyectado', value: projection.projectedBalanceMinor, source: 'finance-core.projectSavingsGoal', rule: 'Proyección determinista con supuestos explícitos.' },
-            { label: 'Avance proyectado (%)', value: Number(projection.projectedProgressPercent.toFixed(2)), source: 'finance-core.projectSavingsGoal', rule: 'Saldo proyectado dividido por importe objetivo, limitado por la proyección determinista.' },
-            { label: 'Brecha estimada', value: gapMinor, source: 'finance-core.projectSavingsGoal', rule: 'Importe objetivo menos saldo proyectado, nunca inferior a cero.' },
-          ],
-          limitations: [...projection.assumptions, ...projection.warnings, 'El resultado depende del historial disponible y de las aportaciones configuradas; no es una garantía.'],
-          calculatedAt,
-          navigationTarget: '/goals',
-        }));
-      }
-    }
-
-    const sameCalendarMonth = startDate.slice(0, 7) === endDate.slice(0, 7);
-    const month = startDate.slice(0, 7);
-    const lastCalendarDay = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).toISOString().slice(0, 10);
-    const isFullCompletedMonth = sameCalendarMonth &&
-      startDate === month + '-01' &&
-      endDate === lastCalendarDay &&
-      endDate < asOfDate;
-    if (sameCalendarMonth && typeof repository.getBudgetMonth === 'function') {
-      if (!isFullCompletedMonth) {
-        warnings.push('Desviaciones de presupuesto no incluidas: el intervalo no cubre un mes natural completo ya cerrado.');
-      } else if (accountPreference.mode !== 'all' || preferences.displayCurrency !== config.budgetCurrency) {
-        warnings.push('Desviaciones de presupuesto no incluidas: el presupuesto de Actual es global y/o su divisa no coincide con la divisa de análisis seleccionada.');
-      } else {
-        try {
-          const monthBudget = await repository.getBudgetMonth(startDate.slice(0, 7));
-          for (const group of monthBudget.categoryGroups) {
-            for (const category of group.categories ?? []) {
-              const metadata = categories.find((item) => item.id === category.id);
-              if ((group.is_income ?? metadata?.isIncome ?? false) || category.hidden || group.hidden) continue;
-              if (category.budgeted === undefined || category.budgeted === null ||
-                  category.spent === undefined || category.spent === null ||
-                  !Number.isSafeInteger(category.budgeted) || !Number.isSafeInteger(category.spent) ||
-                  category.budgeted <= 0) continue;
-              const budgetedMinor = category.budgeted;
-              const spentMinor = Math.abs(category.spent);
-              const overByMinor = spentMinor - budgetedMinor;
-              if (overByMinor <= 0) continue;
-              const percentUsed = (spentMinor / budgetedMinor) * 100;
-              const priority: FindingPriority = overByMinor >= 100_000 || percentUsed >= 150
-                ? 'high' : overByMinor >= 25_000 || percentUsed >= 110 ? 'medium' : 'low';
-              const priorityReason = priority === 'high'
-                ? 'Exceso ≥ 100000 unidades menores o gasto ≥ 150 % de la asignación (regla v1).'
-                : priority === 'medium' ? 'Exceso ≥ 25000 unidades menores o gasto ≥ 110 % de la asignación (regla v1).'
-                  : 'La categoría supera la asignación, sin alcanzar los umbrales de prioridad superiores (regla v1).';
-              findings.push(createFinancialFinding({
-                entityKey: category.id,
-                type: 'budget-overspend',
-                title: 'Categoría por encima del presupuesto: ' + (metadata?.name ?? category.name),
-                explanation: 'El gasto registrado en esta categoría supera la asignación del mes. Comprueba la asignación y los movimientos antes de hacer cambios.',
-                period: planningMonthPeriod(startDate.slice(0, 7)),
-                accountScope: findingScope,
-                currency: preferences.displayCurrency,
-                confidence: 'observed',
-                priority,
-                priorityReason,
-                impactMinor: overByMinor,
-                metrics: { categoryId: category.id, budgetedMinor, spentMinor, overByMinor, percentUsed },
-                evidence: [
-                  { label: 'Presupuesto asignado', value: budgetedMinor, source: 'Actual Budget getBudgetMonth', rule: 'Asignación positiva conocida para el mes.' },
-                  { label: 'Gasto registrado', value: spentMinor, source: 'Actual Budget getBudgetMonth', rule: 'Valor absoluto del gasto acumulado informado por Actual.' },
-                  { label: 'Exceso', value: overByMinor, source: 'finance-core', rule: 'Gasto registrado menos asignación.' },
-                  { label: 'Porcentaje utilizado', value: Number(percentUsed.toFixed(2)), source: 'finance-core', rule: 'Gasto registrado dividido por asignación por 100.' },
-                ],
-                limitations: ['El presupuesto corresponde al mes completo en Actual Budget.', 'Solo se compara cuando la vista incluye todas las cuentas y coincide la divisa del presupuesto con la divisa de análisis.'],
-                calculatedAt,
-                navigationTarget: '/budgets',
-              }));
-            }
-          }
-        } catch {
-          warnings.push('Desviaciones de presupuesto omitidas: el presupuesto mensual no devolvió datos verificables.');
-        }
-      }
-    }
-
-    const unique = new Map<string, FinancialFinding>();
-    for (const finding of findings) unique.set(finding.id, finding);
-    const state = await readFindingReviewState(config.actualDataDir);
-    const today = asOfDate;
-    const validated = sortFinancialFindings([...unique.values()]).slice(0, 100).map((finding) => {
-      const record = state.reviews.find((item) => item.findingId === finding.id);
-      const review = effectiveFindingReview(record, finding.fingerprint, today);
-      return FinancialFindingContractSchema.parse({
-        ...finding,
-        reviewStatus: review.status,
-        ...(review.snoozedUntil ? { snoozedUntil: review.snoozedUntil } : {}),
-      }) as FinancialFinding;
-    });
-    if (findings.length > validated.length) warnings.push('Se muestran los 100 hallazgos con mayor prioridad; el resto queda fuera de esta respuesta para mantener acotado el panel.');
-    return {
-      findings: validated,
-      warnings: [...new Set(warnings)],
-      currentSummary,
-      accountScope: scope.metadata,
-      currency: preferences.displayCurrency,
-      calculatedAt,
-      asOfDate,
-    };
   }
 
   app.get('/api/v1/intelligence/findings', async (request, reply) => {
     try {
       const query = IntelligenceFindingsQuerySchema.parse(request.query);
-      const result = await generateIntelligenceData(query.startDate, query.endDate, query);
+      const result = await intelligenceData(query.startDate, query.endDate, query);
       const feedback = result.findings.filter((finding) =>
         finding.reviewStatus === 'reviewed' || finding.reviewStatus === 'expected' || finding.reviewStatus === 'dismissed');
       const dismissedCount = feedback.filter((finding) => finding.reviewStatus === 'dismissed').length;
@@ -1519,7 +1200,7 @@ function monthsBefore(date: string, months: number): string {
           return reply.code(400).send({ error: { code: 'INVALID_SNOOZE_WINDOW', message: 'El aplazamiento debe vencer entre hoy y los próximos 90 días.' } });
         }
       }
-      const result = await generateIntelligenceData(parsed.startDate, parsed.endDate, parsed);
+      const result = await intelligenceData(parsed.startDate, parsed.endDate, parsed);
       const finding = result.findings.find((item) => item.id === parsed.findingId);
       if (!finding) return reply.code(404).send({ error: { code: 'FINDING_NOT_FOUND', message: 'El hallazgo ya no existe en el periodo y ámbito actuales.' } });
       const record = {
@@ -1549,7 +1230,7 @@ function monthsBefore(date: string, months: number): string {
       if (!config.aiEnabled) {
         return reply.code(503).send({ error: { code: 'AI_DISABLED', message: 'La explicación con IA local está desactivada; los hallazgos deterministas siguen disponibles.' } });
       }
-      const result = await generateIntelligenceData(parsed.startDate, parsed.endDate, parsed);
+      const result = await intelligenceData(parsed.startDate, parsed.endDate, parsed);
       const finding = result.findings.find((item) => item.id === parsed.findingId);
       if (!finding) return reply.code(404).send({ error: { code: 'FINDING_NOT_FOUND', message: 'El hallazgo ya no existe en el periodo y ámbito actuales.' } });
       const context: AssistantContext = {
