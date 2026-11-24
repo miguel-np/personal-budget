@@ -27,7 +27,7 @@ export interface IntelligenceAnomalyOptions {
   readonly referenceWindows: number;
   readonly minimumAbsoluteChangeMinor: number;
   readonly minimumRelativeChangePercent: number;
-  readonly enabledAnomalyKinds: readonly (
+  readonly enabledAnomalyKinds: (
     | 'transaction-outlier' | 'total-expense-change' | 'category-change' | 'payee-change'
     | 'possible-duplicate' | 'income-change' | 'refund-change' | 'frequency-change'
   )[];
