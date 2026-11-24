@@ -31,6 +31,7 @@ import { generateIntelligenceData } from './intelligence-service.js';
 import { createPeriodicReviewReport } from './periodic-review-service.js';
 import { handleCategorizeRequest } from './categorize-route.js';
 import { handlePlanningConversationPreview } from './planning-conversation.js';
+import { createCashFlowProjection } from './cash-flow-service.js';
 import type { IntelligenceAnomalyOptions } from './intelligence-service.js';
 
 
@@ -213,17 +214,6 @@ const PlanningScenarioRequestSchema = z.object({
   monthlyExpenseMinor: SafeMinorAmountSchema.nonnegative(),
 }).strict();
 
-const CashFlowRequestSchema = z.object({
-  horizonDays: z.union([z.literal(7), z.literal(30), z.literal(90)]).default(30),
-  reserveMinor: SafeMinorAmountSchema.nonnegative().optional(),
-  scenario: z.object({
-    date: z.string().refine(isIsoDate),
-    amountMinor: SafeMinorAmountSchema.positive(),
-    direction: z.enum(['income', 'expense']),
-    label: z.string().trim().min(1).max(100),
-  }).strict().optional(),
-  recurringCandidateIds: z.array(z.string().regex(/^rc_[a-f0-9]{24}$/)).max(50).default([]),
-}).strict();
 const BudgetImprovementPreferencesRequestSchema = z.object({
   goal: z.enum(['increase_monthly_margin', 'reduce_variable_spending', 'reach_savings_goal', 'free_cash_flow']),
   categories: z.array(z.object({
@@ -1371,177 +1361,18 @@ function monthsBefore(date: string, months: number): string {
 
   app.post('/api/v1/cash-flow/project', async (request, reply) => {
     try {
-      const parsed = CashFlowRequestSchema.parse(request.body);
-      const asOfDate = civilDateInTimeZone('UTC');
-      const endDate = addCivilDays(asOfDate, parsed.horizonDays);
-      const [accounts, preferences, accountPreference, planning] = await Promise.all([
-        repository.listAccounts(), currencyPreferences(), accountScopePreference(), readPlanningData(config.actualDataDir),
-      ]);
-      const scope = resolveAccountScope(accounts, accountPreference);
-      const unknownOpeningAccounts: { id: string; name: string }[] = [];
-      let openingBalanceMinor = 0;
-      let openingKnown = scope.accounts.length > 0;
-      const originalAccountsById = new Map(accounts.map((account) => [account.id, account]));
-      for (const scopedAccount of scope.accounts) {
-        const account = originalAccountsById.get(scopedAccount.id);
-        const nativeCurrency = account ? accountNativeCurrency(account, preferences) : null;
-        if (!account || account.currentBalanceMinor === null || nativeCurrency === null) {
-          openingKnown = false;
-          unknownOpeningAccounts.push({ id: scopedAccount.id, name: scopedAccount.name });
-          continue;
-        }
-        const conversion = convertAmountMinor(account.currentBalanceMinor, nativeCurrency, preferences.displayCurrency, asOfDate, preferences.exchangeRates);
-        if (conversion.amountMinor === null) {
-          openingKnown = false;
-          unknownOpeningAccounts.push({ id: scopedAccount.id, name: scopedAccount.name });
-          continue;
-        }
-        openingBalanceMinor += conversion.amountMinor;
-        if (!Number.isSafeInteger(openingBalanceMinor)) throw new RangeError('The consolidated opening balance exceeds the supported integer range.');
-      }
-      const rawFutureTransactions = await transactionsForAccounts(scope.accounts, asOfDate, endDate, preferences);
-      const convertedFuture = convertTransactionsForAnalysis(rawFutureTransactions, preferences);
-      const ledgerEntries = normalizeTransactions(convertedFuture.transactions);
-      const actualEvents: CashFlowEvent[] = ledgerEntries
-        .filter((entry) => entry.date > asOfDate && entry.amountMinor !== 0)
-        .map((entry) => ({
-          id: 'actual:' + entry.id,
-          date: entry.date,
-          amountMinor: entry.amountMinor,
-          source: 'actual_transaction',
-          label: entry.payeeLabel ?? 'Movimiento registrado en Actual',
-          clearedStatus: entry.cleared === true ? 'cleared' : entry.cleared === false ? 'pending' : 'unknown',
-          isTransfer: entry.isTransfer,
-        }));
-      const actualMatchKeys = new Set(ledgerEntries.filter((entry) => entry.date > asOfDate && entry.amountMinor !== 0).map((entry) =>
-        [entry.date, Math.abs(entry.amountMinor), entry.amountMinor < 0 ? 'expense' : 'income'].join('|') + '|' + normalizedActionLabel(entry.payeeLabel ?? ''),
-      ));
-      const actualAmountKeys = new Set(ledgerEntries.filter((entry) => entry.date > asOfDate && entry.amountMinor !== 0).map((entry) =>
-        [entry.date, Math.abs(entry.amountMinor), entry.amountMinor < 0 ? 'expense' : 'income'].join('|'),
-      ));
-      const scopedActiveCommitments = planning.commitments.filter((item) =>
-        item.status === 'active' && planningScopeMatches(item.scope, accountPreference),
-      );
-      const unconvertedCommitmentTitles: string[] = [];
-      const eligibleCommitments = scopedActiveCommitments.flatMap((item) => {
-        if (item.currency === preferences.displayCurrency) return [toPlanningCommitment(item)];
-        const conversion = convertAmountMinor(item.amountMinor, item.currency, preferences.displayCurrency, asOfDate, preferences.exchangeRates);
-        if (conversion.amountMinor === null || conversion.amountMinor <= 0) { unconvertedCommitmentTitles.push(item.title); return []; }
-        return [{ ...toPlanningCommitment(item), amountMinor: conversion.amountMinor, currency: preferences.displayCurrency }];
+      const result = await createCashFlowProjection(request.body, {
+        config,
+        repository,
+        currencyPreferences,
+        accountScopePreference,
+        transactionsForAccounts,
+        convertTransactionsForAnalysis,
+        planningScopeMatches,
+        accountNativeCurrency,
       });
-      const manualOccurrences = expandCommitmentOccurrences(eligibleCommitments, asOfDate, endDate);
-      const manualEvents: CashFlowEvent[] = [];
-      const confirmedRecurringEvents: CashFlowEvent[] = [];
-      const duplicateCommitmentIds: string[] = [];
-      const possibleDuplicateCommitments: string[] = [];
-      for (const occurrence of manualOccurrences) {
-        if (occurrence.occurrenceDate <= asOfDate) continue;
-        const signedAmount = occurrence.direction === 'expense' ? -occurrence.amountMinor : occurrence.amountMinor;
-        const key = [occurrence.occurrenceDate, occurrence.amountMinor, occurrence.direction].join('|');
-        const label = normalizedActionLabel(occurrence.title);
-        if (actualMatchKeys.has(key + '|' + label)) {
-          duplicateCommitmentIds.push(occurrence.id + '@' + occurrence.occurrenceDate);
-          continue;
-        }
-        if (actualAmountKeys.has(key)) possibleDuplicateCommitments.push(occurrence.title + ' · ' + occurrence.occurrenceDate);
-        const isRecurring = occurrence.frequency !== 'once';
-        const event: CashFlowEvent = {
-          id: (isRecurring ? 'confirmed-recurring:' : 'manual:') + occurrence.id + '@' + occurrence.occurrenceDate,
-          date: occurrence.occurrenceDate,
-          amountMinor: signedAmount,
-          source: isRecurring ? 'confirmed_recurring' : 'manual_commitment',
-          label: occurrence.title,
-        };
-        (isRecurring ? confirmedRecurringEvents : manualEvents).push(event);
-      }
-      const recurringHistoryStartDate = addCivilDays(asOfDate, -800);
-      const recurringHistoryRaw = await transactionsForAccounts(scope.accounts, recurringHistoryStartDate, asOfDate, preferences);
-      const recurringHistoryConverted = convertTransactionsForAnalysis(recurringHistoryRaw, preferences);
-      const recurringHistoryCandidates = detectRecurringCandidates(recurringHistoryConverted.transactions, {
-        startDate: recurringHistoryStartDate, endDate: asOfDate, minOccurrences: 3, intervalWindowDays: [20, 400],
-      });
-      const recurringCandidateEvents: (CashFlowEvent & { candidateId: string })[] = [];
-      const recurringCandidates = recurringHistoryCandidates.map((candidate) => {
-        const normalizedPayee = normalizedActionLabel(candidate.payee);
-        const candidateId = 'rc_' + createHash('sha256').update(normalizedPayee + '|' + candidate.firstDate).digest('hex').slice(0, 24);
-        let nextDate = candidate.estimatedIntervalDays === null ? null : addCivilDays(candidate.lastDate, candidate.estimatedIntervalDays);
-        if (nextDate !== null) {
-          while (nextDate <= asOfDate) nextDate = addCivilDays(nextDate, candidate.estimatedIntervalDays!);
-          let date = nextDate;
-          let occurrenceIndex = 0;
-          while (date <= endDate && occurrenceIndex < 12) {
-            const amountMinor = candidate.meanAbsoluteAmountMinor;
-            const amountKey = [date, amountMinor, 'expense'].join('|');
-            const exactActualMatch = actualMatchKeys.has(amountKey + '|' + normalizedPayee);
-            const exactCommitmentMatch = [...manualEvents, ...confirmedRecurringEvents].some((event) =>
-              event.date === date && event.amountMinor === -amountMinor && normalizedActionLabel(event.label) === normalizedPayee,
-            );
-            if (!exactActualMatch && !exactCommitmentMatch) recurringCandidateEvents.push({
-              id: 'recurring-candidate:' + candidateId + ':' + date, candidateId, date,
-              amountMinor: -amountMinor, source: 'recurring_candidate', label: candidate.payee,
-            });
-            occurrenceIndex += 1;
-            date = addCivilDays(date, candidate.estimatedIntervalDays!);
-          }
-        }
-        return {
-          id: candidateId, payee: candidate.payee, occurrenceCount: candidate.occurrenceCount,
-          estimatedIntervalDays: candidate.estimatedIntervalDays, estimatedFrequency: candidate.estimatedFrequency,
-          meanAbsoluteAmountMinor: candidate.meanAbsoluteAmountMinor, amountDeviationPercent: candidate.amountDeviationPercent,
-          nextDate, upcomingEventsCount: recurringCandidateEvents.filter((event) => event.candidateId === candidateId).length,
-          signals: candidate.signals, warnings: candidate.warnings,
-        };
-      });
-      const requestedCandidateIds = new Set(parsed.recurringCandidateIds);
-      const knownCandidateIds = new Set(recurringCandidates.map((candidate) => candidate.id));
-      if ([...requestedCandidateIds].some((id) => !knownCandidateIds.has(id))) {
-        return reply.code(400).send({ error: { code: 'UNKNOWN_RECURRING_CANDIDATE', message: 'One or more selected recurring candidates are stale. Refresh the cash-flow projection before selecting them.' } });
-      }
-      const selectedRecurringCandidateEvents: CashFlowEvent[] = recurringCandidateEvents
-        .filter((event) => requestedCandidateIds.has(event.candidateId))
-        .map((event) => ({ id: event.id, date: event.date, amountMinor: event.amountMinor, source: event.source, label: event.label }));
-      const scenarioEvents: CashFlowEvent[] = parsed.scenario ? [{
-        id: 'scenario:unsaved',
-        date: parsed.scenario.date,
-        amountMinor: parsed.scenario.direction === 'expense' ? -parsed.scenario.amountMinor : parsed.scenario.amountMinor,
-        source: 'scenario',
-        label: parsed.scenario.label,
-      }] : [];
-      const projection = projectCashFlow({
-        asOfDate,
-        startDate: asOfDate,
-        endDate,
-        openingBalanceMinor: openingKnown ? openingBalanceMinor : null,
-        reserveMinor: parsed.reserveMinor ?? null,
-        events: [...actualEvents, ...manualEvents, ...confirmedRecurringEvents, ...selectedRecurringCandidateEvents, ...scenarioEvents],
-      });
-      const warnings = [
-        ...projection.warnings,
-        ...convertedFuture.warnings,
-        ...(unknownOpeningAccounts.length > 0 ? ['Saldo no disponible o sin conversión para: ' + unknownOpeningAccounts.map((account) => account.name).join(', ') + '.'] : []),
-        ...(scope.accounts.length === 0 ? ['El ámbito no contiene cuentas; selecciona cuentas antes de estimar saldo.'] : []),
-        ...(duplicateCommitmentIds.length > 0 ? [duplicateCommitmentIds.length + ' compromiso(s) manual(es) se han omitido porque coinciden exactamente con un movimiento futuro de Actual.'] : []),
-        ...(possibleDuplicateCommitments.length > 0 ? ['Posibles duplicados no confirmados; se han conservado ambos elementos: ' + possibleDuplicateCommitments.join(', ') + '. Revisa la agenda antes de interpretar el saldo.'] : []),
-        ...(unconvertedCommitmentTitles.length > 0 ? [unconvertedCommitmentTitles.length + ' compromiso(s) activos no se han convertido a la divisa de análisis por falta de tasa local fechada: ' + unconvertedCommitmentTitles.join(', ') + '.'] : []),
-        ...recurringHistoryConverted.warnings,
-      ];
-      return {
-        data: {
-          asOfDate, endDate, currency: preferences.displayCurrency, accountScope: scope.metadata,
-          openingBalanceMinor: projection.openingBalanceMinor,
-          unknownOpeningAccounts,
-          actualEvents, manualEvents, confirmedRecurringEvents, recurringCandidates, recurringCandidateEvents, scenarioEvents,
-          duplicateCommitmentIds, possibleDuplicateCommitments,
-          projection: { ...projection, warnings },
-          notes: [
-            'Saldo estimado a partir del campo balance_current de Actual; no equivale a saldo bancario disponible, saldo liquidado ni efectivo garantizado.',
-            'Las transferencias se incluyen con su signo para proyectar el ámbito seleccionado; las dos patas se compensan si ambas cuentas están dentro del ámbito.',
-            'Los candidatos recurrentes se detectan sobre hasta 800 días de historial convertido; solo se proyectan como hipótesis cuando se seleccionan expresamente.',
-            'Los compromisos en otra divisa se convierten con la tasa local conocida a la fecha de corte; cuando falta tasa, se excluyen y se advierten, sin tratarlos como cero.',
-            ...(parsed.recurringCandidateIds.length > 0 ? ['Se han incorporado como hipótesis los candidatos recurrentes seleccionados; no son obligaciones confirmadas.'] : []),
-          ],
-        },
-      };
+      if ('statusCode' in result) return reply.code(result.statusCode).send(result.body);
+      return result;
     } catch (error) {
       const normalized = sanitizedErrorResponse(error);
       return reply.code(normalized.statusCode).send(normalized.body);
