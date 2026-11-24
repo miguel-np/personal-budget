@@ -19,6 +19,8 @@ import { buildClaimEvidence, shouldAbstainFromTaxConclusion } from './claim-evid
 
 const TAX_RESEARCH_ABSTENTION_ANSWER = 'La investigación se abstiene de ofrecer una conclusión categórica: al menos una afirmación no tiene evidencia documental literal verificable o existe una posible discrepancia sin resolver. Consulta las fuentes y fragmentos asociados. La coincidencia literal no demuestra que la fuente respalde la afirmación ni su aplicabilidad jurídica.';
 
+type ParsedWebResearchRequest = WebResearchRequest & { readonly domains: readonly string[] };
+
 type SanitizedError = {
   readonly statusCode: number;
   readonly body: { readonly error: { readonly code: string; readonly message: string } };
@@ -40,7 +42,7 @@ type SearchFailure = {
 };
 
 function readinessFailure(
-  query: WebResearchRequest,
+  query: ParsedWebResearchRequest,
   dependencies: AssistantWebSearchDependencies,
 ): SearchFailure | null {
   if (!dependencies.config.aiEnabled) {
@@ -88,7 +90,7 @@ function buildModelRequest(query: WebResearchRequest): WebResearchRequest {
   };
 }
 
-function buildSearchResponse(query: WebResearchRequest, researched: Awaited<ReturnType<LocalAiClient['researchWithWebSearch']>>) {
+function buildSearchResponse(query: ParsedWebResearchRequest, researched: Awaited<ReturnType<LocalAiClient['researchWithWebSearch']>>) {
   const claimEvidence = buildClaimEvidence(
     researched.evidenceAnswer,
     researched.search.sources,
@@ -166,7 +168,7 @@ function sendSearchError(
 }
 
 export async function handleAssistantWebSearch(
-  query: WebResearchRequest,
+  query: ParsedWebResearchRequest,
   request: FastifyRequest,
   reply: FastifyReply,
   dependencies: AssistantWebSearchDependencies,
