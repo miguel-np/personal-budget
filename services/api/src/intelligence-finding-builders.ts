@@ -16,12 +16,18 @@ import type {
 import type { AccountScopePreference } from './account-scope.js';
 import type { CurrencyPreferences } from './currency-preferences.js';
 import type { StoredPlanningCommitment, StoredPlanningGoal } from './planning-store.js';
-import { planningMonthPeriod } from './planning-date.js';
 
 export interface IntelligenceFindingScope {
   readonly mode: AccountScopePreference['mode'];
   readonly accountIds: readonly string[];
   readonly label: string;
+}
+
+function planningMonthPeriod(month: string): { readonly startDate: string; readonly endDate: string } {
+  const year = Number(month.slice(0, 4));
+  const monthNumber = Number(month.slice(5, 7));
+  const lastDay = new Date(Date.UTC(year, monthNumber, 0)).toISOString().slice(0, 10);
+  return { startDate: month + '-01', endDate: lastDay };
 }
 
 function planningScopeMatches(saved: AccountScopePreference, current: AccountScopePreference): boolean {
