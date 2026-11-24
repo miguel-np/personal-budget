@@ -280,7 +280,7 @@ async function buildPlanningPreview(
       dependencies.planningScopeMatches(goal.scope, preference) && goal.targetDate > asOfDate),
   ];
   const selected = selectGoal(draft, stored.goals, eligibleGoals, preference, preferences.displayCurrency, dependencies);
-  if ('response' in selected) return selected.statusCode === 200 ? selected.response : selected.response;
+  if ('response' in selected) return { statusCode: selected.statusCode, response: selected.response };
   const goal = resolveGoalParameters(draft, selected.goal, preferences.displayCurrency, asOfDate, dependencies);
   if (!('targetAmountMinor' in goal)) return goal;
 
