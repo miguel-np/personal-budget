@@ -208,7 +208,7 @@ function buildRecurringCandidateEvents(
   manualEvents: readonly CashFlowEvent[],
   confirmedRecurringEvents: readonly CashFlowEvent[],
 ): {
-  readonly candidates: Array<Record<string, unknown>>;
+  readonly candidates: Array<{ readonly id: string; readonly [key: string]: unknown }>;
   readonly events: Array<CashFlowEvent & { candidateId: string }>;
 } {
   const detected = detectRecurringCandidates(transactions, {
