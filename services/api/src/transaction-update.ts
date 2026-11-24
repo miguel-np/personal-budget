@@ -25,7 +25,7 @@ export const TransactionUpdateRequestSchema = z.object({
 
 type UpdateRequest = z.infer<typeof TransactionUpdateRequestSchema>;
 type AccountTransactions = {
-  readonly accounts: readonly BudgetAccount[];
+  readonly accounts: readonly { readonly id: string; readonly name: string; readonly closed: boolean; readonly currencyCode?: string | null }[];
   readonly transactions: readonly BudgetTransaction[];
 };
 type SafeUpdate = NonNullable<BudgetRepository['updateTransactionSafely']>;
