@@ -60,6 +60,7 @@ interface IntelligenceContext {
   readonly accountPreference: AccountScopePreference;
   readonly stored: Awaited<ReturnType<typeof readPlanningData>>;
   readonly scope: ResolvedAccountScope;
+  readonly actualDataDir: string;
   readonly findingScope: {
     readonly mode: AccountScopePreference['mode'];
     readonly accountIds: readonly string[];
@@ -103,6 +104,7 @@ async function loadContext(dependencies: IntelligenceDependencies): Promise<Inte
   const scope = resolveAccountScope(accounts, accountPreference);
   return {
     accounts, categories, preferences, accountPreference, stored, scope,
+    actualDataDir: dependencies.config.actualDataDir,
     findingScope: {
       mode: accountPreference.mode,
       accountIds: scope.accounts.map((account) => account.id).sort(),
@@ -249,7 +251,7 @@ function finalizeFindings(
 ): IntelligenceResult {
   const unique = new Map<string, FinancialFinding>();
   for (const finding of findings) unique.set(finding.id, finding);
-  return readFindingReviewState(context.config.actualDataDir).then((state) => {
+  return readFindingReviewState(context.actualDataDir).then((state) => {
     const validated = sortFinancialFindings([...unique.values()]).slice(0, 100).map((finding) => {
       const record = state.reviews.find((item) => item.findingId === finding.id);
       const review = effectiveFindingReview(record, finding.fingerprint, asOfDate);
