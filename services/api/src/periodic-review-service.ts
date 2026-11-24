@@ -19,7 +19,7 @@ import {
 export interface PeriodicReviewRequest {
   readonly periodType: 'weekly' | 'monthly';
   readonly anchorDate: string;
-  readonly timeZone?: string;
+  readonly timeZone?: string | undefined;
 }
 
 interface Dependencies {
@@ -124,7 +124,9 @@ async function buildPreviousSummary(
     dependencies.accountScopePreference(),
   ]);
   const scope = resolveAccountScope(accounts, preference);
-  const scoped = scope.accounts;
+  const accountsById = new Map(accounts.map((account) => [account.id, account]));
+  const scoped = scope.accounts.map((account) => accountsById.get(account.id))
+    .filter((account): account is BudgetAccount => account !== undefined);
   const transactions = await dependencies.transactionsForAccounts(
     scoped, period.startDate, period.endDate, preferences,
   );
@@ -150,11 +152,6 @@ function scopeFingerprint(result: IntelligenceResult): string {
     .slice(0, 16);
 }
 
-function persistedScopeLabel(result: IntelligenceResult): string {
-  return result.accountScope.mode === 'all'
-    ? 'Todas las cuentas abiertas (' + result.accountScope.accountIds.length + ')'
-    : 'Ámbito seleccionado (' + result.accountScope.accountIds.length + ' cuentas)';
-}
 
 function previousRunForPeriod(
   state: Awaited<ReturnType<typeof readPeriodicReviewState>>,
@@ -314,7 +311,6 @@ function buildWarnings(
   result: IntelligenceResult,
   previousSummary: ReturnType<typeof calculateSummary>,
   period: ReviewPeriod,
-  asOfDate: string,
   legacyUnavailable: boolean,
   warnings: string[],
 ): string[] {
@@ -384,7 +380,7 @@ export async function createPeriodicReviewReport(
     comparisonToPreviousReview: reviewComparison.comparison,
     comparison: { period: previousPeriod, summary: previousSummary },
     findings: result.findings,
-    warnings: buildWarnings(result, previousSummary, period, asOfDate, reviewComparison.legacyUnavailable, warnings),
+    warnings: buildWarnings(result, previousSummary, period, reviewComparison.legacyUnavailable, warnings),
     capabilities: { aiEnabled: dependencies.config.aiEnabled, deterministicReportAvailable: true },
     notes: [
       'Los importes se calculan con finance-core y las mismas preferencias de divisa y ámbito que los informes.',
