@@ -11,6 +11,7 @@ import type {
   BudgetRepository,
   BudgetTransaction,
   CashFlowEvent,
+  PlanningCommitment,
 } from '@personal-budget/finance-core';
 import { z } from 'zod';
 import { isIsoDate } from '@personal-budget/finance-core';
@@ -51,7 +52,7 @@ interface Dependencies {
     transactions: readonly BudgetTransaction[], preferences: CurrencyPreferences,
   ) => ConvertedTransactions;
   readonly planningScopeMatches: (saved: AccountScopePreference, current: AccountScopePreference) => boolean;
-  readonly toPlanningCommitment: (item: Awaited<ReturnType<typeof readPlanningData>>['commitments'][number]) => import('@personal-budget/finance-core').PlanningCommitment;
+  readonly toPlanningCommitment: (item: Awaited<ReturnType<typeof readPlanningData>>['commitments'][number]) => PlanningCommitment;
   readonly accountNativeCurrency: (
     account: { readonly id: string; readonly currencyCode?: string | null },
     preferences: CurrencyPreferences,
