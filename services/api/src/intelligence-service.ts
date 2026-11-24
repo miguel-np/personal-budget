@@ -6,7 +6,6 @@ import {
   detectRecurringCandidates,
   isIsoDate,
   normalizeTransactions,
-  projectSavingsGoal,
   sortFinancialFindings,
 } from '@personal-budget/finance-core';
 import type {
