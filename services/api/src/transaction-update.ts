@@ -2,7 +2,6 @@ import type { FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { isIsoDate } from '@personal-budget/finance-core';
 import type {
-  BudgetAccount,
   BudgetRepository,
   BudgetTransaction,
   TransactionStructureUpdate,
@@ -291,6 +290,43 @@ async function updateSplitChild(
   } };
 }
 
+function hasUnsupportedSplitStructure(transaction: BudgetTransaction): boolean {
+  return Boolean(
+    transaction.is_child || transaction.parent_id || transaction.is_parent ||
+    (transaction.subtransactions?.length ?? 0) > 0,
+  );
+}
+
+function simpleCategoryError(
+  transaction: BudgetTransaction,
+  parsed: UpdateRequest,
+  categories: Awaited<ReturnType<BudgetRepository['listCategories']>>,
+): { readonly code: string; readonly message: string } | null {
+  if (parsed.changes.category === undefined && parsed.changes.amount === undefined) return null;
+  const categoryId = Object.hasOwn(parsed.changes, 'category')
+    ? parsed.changes.category ?? null : transaction.category ?? null;
+  const amount = parsed.changes.amount ?? transaction.amount;
+  if (categoryMatchesAmount(categoryId, amount, categories)) return null;
+  const exists = categories.some((item) => item.id === categoryId);
+  return {
+    code: exists ? 'CATEGORY_AMOUNT_MISMATCH' : 'INVALID_CATEGORY',
+    message: exists
+      ? 'Income movements require an income category and expense movements require an expense category.'
+      : 'Choose a category from the configured budget.',
+  };
+}
+
+function buildSimpleUpdateFields(parsed: UpdateRequest): TransactionStructureUpdate {
+  return {
+    ...(parsed.changes.date === undefined ? {} : { date: parsed.changes.date }),
+    ...(parsed.changes.amount === undefined ? {} : { amount: parsed.changes.amount }),
+    ...(parsed.changes.imported_payee === undefined ? {} : { imported_payee: parsed.changes.imported_payee }),
+    ...(parsed.changes.category === undefined ? {} : { category: parsed.changes.category }),
+    ...(parsed.changes.notes === undefined ? {} : { notes: parsed.changes.notes }),
+    ...(parsed.changes.cleared === undefined ? {} : { cleared: parsed.changes.cleared }),
+  };
+}
+
 async function updateSimpleTransaction(
   reply: FastifyReply,
   transaction: BudgetTransaction,
@@ -299,35 +335,17 @@ async function updateSimpleTransaction(
   write: SafeUpdate,
   transactionId: string,
 ) {
-  if (transaction.is_child || transaction.parent_id || transaction.is_parent || (transaction.subtransactions?.length ?? 0) > 0) {
+  if (hasUnsupportedSplitStructure(transaction)) {
     return reply.code(409).send(invalidRequest(
       'This split row cannot be resolved to a complete, verifiable parent structure.',
       'SPLIT_EDIT_NOT_SUPPORTED',
     ));
   }
-  if (parsed.changes.category !== undefined || parsed.changes.amount !== undefined) {
-    const categoryId = Object.hasOwn(parsed.changes, 'category')
-      ? parsed.changes.category ?? null : transaction.category ?? null;
-    const amount = parsed.changes.amount ?? transaction.amount;
-    if (!categoryMatchesAmount(categoryId, amount, categories)) {
-      const exists = categories.some((item) => item.id === categoryId);
-      return reply.code(400).send(invalidRequest(
-        exists
-          ? 'Income movements require an income category and expense movements require an expense category.'
-          : 'Choose a category from the configured budget.',
-        exists ? 'CATEGORY_AMOUNT_MISMATCH' : 'INVALID_CATEGORY',
-      ));
-    }
-  }
-  const update: TransactionStructureUpdate = {
-    ...(parsed.changes.date === undefined ? {} : { date: parsed.changes.date }),
-    ...(parsed.changes.amount === undefined ? {} : { amount: parsed.changes.amount }),
-    ...(parsed.changes.imported_payee === undefined ? {} : { imported_payee: parsed.changes.imported_payee }),
-    ...(parsed.changes.category === undefined ? {} : { category: parsed.changes.category }),
-    ...(parsed.changes.notes === undefined ? {} : { notes: parsed.changes.notes }),
-    ...(parsed.changes.cleared === undefined ? {} : { cleared: parsed.changes.cleared }),
-  };
-  const result = await write(transaction.id, transaction.account, transaction.date, update);
+  const categoryError = simpleCategoryError(transaction, parsed, categories);
+  if (categoryError) return reply.code(400).send(invalidRequest(categoryError.message, categoryError.code));
+  const result = await write(
+    transaction.id, transaction.account, transaction.date, buildSimpleUpdateFields(parsed),
+  );
   if (!result.persisted || !result.verified) {
     return reply.code(503).send(invalidRequest(
       'Actual Budget did not confirm the edit. Reopen the movement and verify its stored values before retrying.',
